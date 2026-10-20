@@ -4,22 +4,38 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url));
-export const javascriptSlot = { marker: '/*{{KARTOCHNAYA:CORE_PRIMITIVES_JS}}*/\n', file: 'core/primitives.js' };
+export const javascriptSlot = { marker: '/*{{KARTOCHNAYA:CORE_PRIMITIVES_JS}}*/\n', file: 'core/primitives.js', before: 'const clone=', after: 'const types=' };
+export const colorsSlot = { marker: '/*{{KARTOCHNAYA:CORE_COLORS_JS}}*/\n', file: 'core/colors.js', before: 'function syncTextFill(', after: 'function currentPickerKey(' };
+export const javascriptSlots = [javascriptSlot, colorsSlot];
 
-// A source fragment, restored inside the original IIFE without adding any bytes.
+// Literal fragments restored at their original positions inside the same IIFE.
 export async function compileJavaScript(directory = sourceRoot) {
   const editor = await readFile(resolve(directory, 'editor.js'));
-  const token = Buffer.from(javascriptSlot.marker);
-  const offset = editor.indexOf(token);
-  if (offset < 0 || editor.indexOf(token, offset + token.length) !== -1) {
-    throw new Error(`Missing or repeated JavaScript marker: ${javascriptSlot.marker.trimEnd()}`);
+  const chunks = [];
+  let cursor = 0;
+  for (const { marker, file, before, after } of javascriptSlots) {
+    const token = Buffer.from(marker);
+    const offset = editor.indexOf(token);
+    if (offset < cursor || editor.indexOf(token, offset + token.length) !== -1) {
+      throw new Error(`Missing, repeated or out-of-order JavaScript marker: ${marker.trimEnd()}`);
+    }
+    const previousLine = editor.lastIndexOf(10, offset - 2) + 1;
+    if (editor[offset - 1] !== 10
+      || !editor.subarray(previousLine, previousLine + Buffer.byteLength(before)).equals(Buffer.from(before))
+      || !editor.subarray(offset + token.length, offset + token.length + Buffer.byteLength(after)).equals(Buffer.from(after))) {
+      throw new Error(`JavaScript marker must occupy its original position: ${marker.trimEnd()}`);
+    }
+    const literal = editor.subarray(cursor, offset);
+    const fragment = await readFile(resolve(directory, file));
+    if ([literal, fragment].some(bytes => bytes.includes(Buffer.from('{{KARTOCHNAYA:')))) {
+      throw new Error('Unexpected JavaScript source marker');
+    }
+    chunks.push(literal, fragment);
+    cursor = offset + token.length;
   }
-  const before = editor.subarray(0, offset), after = editor.subarray(offset + token.length);
-  const fragment = await readFile(resolve(directory, javascriptSlot.file));
-  if ([before, fragment, after].some(bytes => bytes.includes(Buffer.from('{{KARTOCHNAYA:')))) {
-    throw new Error('Unexpected JavaScript source marker');
-  }
-  return Buffer.concat([before, fragment, after]);
+  const tail = editor.subarray(cursor);
+  if (tail.includes(Buffer.from('{{KARTOCHNAYA:'))) throw new Error('Unexpected JavaScript source marker');
+  return Buffer.concat([...chunks, tail]);
 }
 
 export const slots = [

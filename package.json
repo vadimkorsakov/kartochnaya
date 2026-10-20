@@ -17,6 +17,7 @@
     "build": "node scripts/build.mjs",
     "build:html": "node scripts/build.mjs html",
     "build:pwa": "node scripts/build.mjs pwa",
+    "test:unit": "node --test tests/colors.test.mjs",
     "test:source": "node --test tests/source-extraction.test.mjs",
     "build:verify": "node scripts/verify-build.mjs",
     "pretest": "npm run build",

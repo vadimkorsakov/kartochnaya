@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { compileHTML, compileJavaScript, sourceRoot, slots, javascriptSlot } from '../scripts/compile-html.mjs';
+import { compileHTML, compileJavaScript, sourceRoot, slots, javascriptSlot, colorsSlot, javascriptSlots } from '../scripts/compile-html.mjs';
 import { build, source, hash } from '../scripts/distribution.mjs';
 
 test('each extracted block and the restored HTML retain every original byte', async () => {
@@ -85,7 +85,7 @@ test('both outputs use every src input; two builds and separate targets are iden
     await build('html', options);
     await build('pwa', options);
     assert.deepEqual(await outputs(), original, 'separate build targets');
-    for (const name of ['index.template.html', ...slots.map(slot => slot.file), javascriptSlot.file]) {
+    for (const name of ['index.template.html', ...slots.map(slot => slot.file), ...javascriptSlots.map(slot => slot.file)]) {
       const file = resolve(sources, name);
       const bytes = await readFile(file);
       // Mutate only the temporary copy, never tracked sources or expected hashes.
@@ -98,7 +98,7 @@ test('both outputs use every src input; two builds and separate targets are iden
       assert.deepEqual(readStoredIndex(changed[1]), changed[0], name);
       await writeFile(file, bytes);
     }
-    for (const name of ['editor.js', javascriptSlot.file]) {
+    for (const name of ['editor.js', ...javascriptSlots.map(slot => slot.file)]) {
       const file = resolve(sources, name), bytes = await readFile(file);
       await rm(file);
       await assert.rejects(build('all', options), /ENOENT/, `no historical HTML fallback for ${name}`);
@@ -127,16 +127,40 @@ test('missing, repeated and unexpected JavaScript markers fail the actual build'
   await temporarySources(async (sources, outputDirectory) => {
     const file = resolve(sources, 'editor.js');
     const editor = await readFile(file, 'utf8');
-    const marker = javascriptSlot.marker;
-    for (const invalid of [editor.replace(marker, ''), editor + marker,
-      editor.replace(marker, marker.trimEnd()), editor + '{{KARTOCHNAYA:UNKNOWN}}',
-      editor + '{{KARTOCHNAYA:UNCLOSED']) {
-      await writeFile(file, invalid);
-      await assert.rejects(build('all', { sourceDirectory: sources, outputDirectory }), /marker/i);
+    for (const { marker, file: fragmentName } of javascriptSlots) {
+      for (const invalid of [editor.replace(marker, ''), editor + marker,
+        editor.replace(marker, marker.trimEnd()), editor.replace(marker, ' ' + marker),
+        editor.replace(marker, '').concat(marker), editor + '{{KARTOCHNAYA:UNKNOWN}}',
+        editor + '{{KARTOCHNAYA:UNCLOSED']) {
+        await writeFile(file, invalid);
+        await assert.rejects(build('all', { sourceDirectory: sources, outputDirectory }), /marker/i);
+      }
+      await writeFile(file, editor);
+      const fragmentFile = resolve(sources, fragmentName);
+      const fragment = await readFile(fragmentFile);
+      await writeFile(fragmentFile, '{{KARTOCHNAYA:UNRESOLVED}}');
+      await assert.rejects(compileHTML(sources), /marker/i);
+      await writeFile(fragmentFile, fragment);
     }
-    await writeFile(file, editor);
-    const fragmentFile = resolve(sources, javascriptSlot.file);
-    await writeFile(fragmentFile, '{{KARTOCHNAYA:UNRESOLVED}}');
+    await writeFile(file, editor.replace(javascriptSlot.marker, 'SWAP').replace(colorsSlot.marker, javascriptSlot.marker).replace('SWAP', colorsSlot.marker));
     await assert.rejects(compileHTML(sources), /marker/i);
   });
+});
+
+test('colors retain all original bytes and unique declarations in the original IIFE position', async () => {
+  const original = await readFile(resolve(source, 'index.html'));
+  const start = original.indexOf(Buffer.from('function rgbHex('));
+  const end = original.indexOf(Buffer.from('function currentPickerKey('), start);
+  const fragment = await readFile(resolve(sourceRoot, colorsSlot.file));
+  assert.deepEqual(fragment, original.subarray(start, end));
+  const javascript = (await compileJavaScript()).toString('utf8');
+  const editor = await readFile(resolve(sourceRoot, 'editor.js'), 'utf8');
+  for (const name of ['rgbHex', 'hexRgb', 'hsvRGB', 'rgbHSV', 'rgbHSL', 'hslRGB', 'normalizeHex', 'cpFormatValues']) {
+    assert.equal([...javascript.matchAll(new RegExp(`function ${name}\\(`, 'g'))].length, 1, name);
+    assert.equal(editor.includes(`function ${name}(`), false, name);
+  }
+  assert.ok(javascript.indexOf('const clamp=') < javascript.indexOf(fragment.toString()));
+  assert.ok(javascript.indexOf('function syncTextFill(') < javascript.indexOf(fragment.toString()));
+  assert.ok(javascript.indexOf(fragment.toString()) < javascript.indexOf('function currentPickerKey('));
+  assert.equal(fragment.includes(Buffer.from('const clamp=')), false);
 });

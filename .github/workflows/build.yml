@@ -8,6 +8,7 @@ on:
       - 'src/**'
       - 'scripts/compile-html.mjs'
       - 'tests/source-extraction.test.mjs'
+      - 'tests/colors.test.mjs'
       - 'scripts/build.mjs'
       - 'scripts/distribution.mjs'
       - 'scripts/verify-build.mjs'
@@ -29,6 +30,7 @@ jobs:
           node-version-file: .node-version
       - run: npm ci
       - run: npm run test:source
+      - run: npm run test:unit
       - run: npm run build
       - run: npm run build:verify
       - uses: actions/upload-artifact@v4

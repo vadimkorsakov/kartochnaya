@@ -3,7 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "description": "Development-only regression checks for the unchanged KARTOCHNAYA v0.45 release",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "playwright test --project=chromium",
     "test:known": "playwright test --project=known-failures",
@@ -11,7 +13,14 @@
     "test:visual": "playwright test --project=chromium tests/visual.spec.js",
     "test:visual:record": "node scripts/record-baselines.mjs",
     "test:install": "node scripts/install-browser.mjs",
-    "test:serve": "node scripts/test-server.mjs"
+    "test:serve": "node scripts/test-server.mjs",
+    "build": "node scripts/build.mjs",
+    "build:html": "node scripts/build.mjs html",
+    "build:pwa": "node scripts/build.mjs pwa",
+    "build:verify": "node scripts/verify-build.mjs",
+    "pretest": "npm run build",
+    "pretest:all": "npm run build",
+    "test:build": "npm run build && playwright test --project=chromium tests/build.spec.js"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

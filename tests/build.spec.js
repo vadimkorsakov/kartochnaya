@@ -77,7 +77,11 @@ for (const prefix of ['/', '/nested/editor/']) {
     for (const [name, expected] of Object.entries(baseline.files).filter(([n]) => n !== 'README.md')) {
       const response = await request.get(origin + prefix + name.split('/').map(encodeURIComponent).join('/'));
       expect(response.status()).toBe(200);
-      expect(createHash('sha256').update(await response.body()).digest('hex')).toBe(expected.sha256);
+      if (name === 'index.html') {
+        expect(await response.body()).toEqual(await readFile(path.join(__dirname, '../dist/kartochnaya.html')));
+      } else {
+        expect(createHash('sha256').update(await response.body()).digest('hex')).toBe(expected.sha256);
+      }
     }
     await openHome(page, origin + prefix);
     expect(await page.locator('link[rel="manifest"]').count(), 'KF-003 remains; installability is not claimed').toBe(0);

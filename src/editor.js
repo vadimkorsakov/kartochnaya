@@ -1,9 +1,10 @@
+import { html, clamp, fmt } from './core/primitives.mjs';
+import { rgbHex, hexRgb, hsvRGB, rgbHSV, rgbHSL, hslRGB, normalizeHex, cpFormatValues } from './core/colors.mjs';
 
 (()=>{'use strict';
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const uid=()=>globalThis.crypto?.randomUUID?.()||('id-'+Date.now()+'-'+Math.random().toString(36).slice(2));
 const clone=o=>JSON.parse(JSON.stringify(o));
-/*{{KARTOCHNAYA:CORE_PRIMITIVES_JS}}*/
 const types={path:'Контур Безье',text:'Текст',image:'Изображение',rect:'Прямоугольник',circle:'Круг',triangle:'Треугольник',star:'Звезда',hexagon:'Шестиугольник',parallelogram:'Параллелограмм',diamond:'Ромб',pentagon:'Пятиугольник',octagon:'Восьмиугольник',chevron:'Шеврон',arrow:'Стрелка',heart:'Сердце',cross:'Крест',trapezoid:'Трапеция',speech:'Облачко',semicircle:'Полукруг'};
 const syms={path:'⌁',text:'T',image:'▧',rect:'▭',circle:'◯',triangle:'△',star:'☆',hexagon:'⬡',parallelogram:'▱',diamond:'◇',pentagon:'⬠',octagon:'⯃',chevron:'❯',arrow:'➜',heart:'♡',cross:'✚',trapezoid:'▱',speech:'▢',semicircle:'◠'};
 
@@ -2293,7 +2294,6 @@ function openFillPopover(key,btn){const p=$('#fillPopover'),oldKey=p.dataset.key
  refreshPickerVisual();paint();const b=btn.getBoundingClientRect();p.style.left=Math.max(12,b.left-375)+'px';p.style.top=Math.max(55,Math.min(b.top,innerHeight-p.offsetHeight-12))+'px';}
 function targetFillValue(key){if(key==='_effect'){const f=active()?.effects?.find(v=>v.id===$('#fillPopover').dataset.effectId);return f?.[$('#fillPopover').dataset.effectField||'color']||'#7857de'}if(key==='_ink')return app.inkSettings.color;const e=active();if(key==='_docBackground')return app.doc.background;if(key==='fill'&&e?.type==='text'&&(e.fillType||'solid')==='solid')return e.textColor||'#000000';return e?.[key]||'#ffffff'}
 function syncTextFill(e){if(e?.type==='text'&&(e.fillType||'solid')==='solid')e.fill=e.textColor||'#000000'}
-/*{{KARTOCHNAYA:CORE_COLORS_JS}}*/
 function currentPickerKey(){const p=$('#fillPopover');return p.dataset.key==='fill'&&active()?.fillType==='gradient'?'gradientStop':p.dataset.key}
 function pickerAlphaKey(){const k=$('#fillPopover').dataset.key;return k==='stroke'?'strokeOpacity':'fillOpacity'}
 function cpCurrentHex(){if(currentPickerKey()==='gradientStop')return getGradientStop()?.color||'#ffffff';return normalizeHex(targetFillValue(currentPickerKey()))||'#ffffff'}

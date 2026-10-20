@@ -1,15 +1,23 @@
 name: Build HTML and PWA
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
       - 'kartochnaya v0.45/**'
       - 'src/**'
       - 'scripts/compile-html.mjs'
+      - 'scripts/compile-javascript.mjs'
       - 'tests/source-extraction.test.mjs'
       - 'tests/colors.test.mjs'
       - 'tests/gradient-model.test.mjs'
+      - 'tests/module-bundle.smoke.spec.js'
+      - 'tests/helpers.js'
+      - 'playwright.config.js'
+      - 'scripts/test-server.mjs'
+      - 'scripts/test-summary.cjs'
       - 'scripts/build.mjs'
       - 'scripts/distribution.mjs'
       - 'scripts/verify-build.mjs'
@@ -24,6 +32,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,6 +44,8 @@ jobs:
       - run: npm run test:unit
       - run: npm run build
       - run: npm run build:verify
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:bundle-smoke
       - uses: actions/upload-artifact@v4
         with:
           name: kartochnaya-v045-distributions

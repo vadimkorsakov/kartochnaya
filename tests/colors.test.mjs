@@ -1,14 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import vm from 'node:vm';
 import { inspect } from 'node:util';
-
-// Run the actual production fragments in a fresh strict IIFE, with no DOM, app,
-// browser globals or production test hooks. No duplicate conversion algorithms.
-const fragments = await Promise.all(['primitives', 'colors'].map(name =>
-  readFile(new URL(`../src/core/${name}.js`, import.meta.url), 'utf8')));
-const colors = vm.runInNewContext(`(()=>{'use strict';\n${fragments.join('\n')}\nreturn {rgbHex,hexRgb,hsvRGB,rgbHSV,rgbHSL,hslRGB,normalizeHex,cpFormatValues};})()`);
+import * as colors from '../src/core/colors.mjs';
 
 function equal(actual, expected) {
   // Convert cross-realm arrays without JSON (which would lose NaN/Infinity).

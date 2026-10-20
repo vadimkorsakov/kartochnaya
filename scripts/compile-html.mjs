@@ -6,21 +6,22 @@ import { fileURLToPath } from 'node:url';
 export const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url));
 export const javascriptSlot = { marker: '/*{{KARTOCHNAYA:CORE_PRIMITIVES_JS}}*/\n', file: 'core/primitives.js', before: 'const clone=', after: 'const types=' };
 export const colorsSlot = { marker: '/*{{KARTOCHNAYA:CORE_COLORS_JS}}*/\n', file: 'core/colors.js', before: 'function syncTextFill(', after: 'function currentPickerKey(' };
-export const javascriptSlots = [javascriptSlot, colorsSlot];
+export const gradientModelSlot = { marker: '/*{{KARTOCHNAYA:CORE_GRADIENT_MODEL_JS}}*/\n', file: 'core/gradient-model.js', before: 'function hexAlpha(', after: 'function getGradientStop(', blankLineBefore: true };
+export const javascriptSlots = [javascriptSlot, gradientModelSlot, colorsSlot];
 
 // Literal fragments restored at their original positions inside the same IIFE.
 export async function compileJavaScript(directory = sourceRoot) {
   const editor = await readFile(resolve(directory, 'editor.js'));
   const chunks = [];
   let cursor = 0;
-  for (const { marker, file, before, after } of javascriptSlots) {
+  for (const { marker, file, before, after, blankLineBefore } of javascriptSlots) {
     const token = Buffer.from(marker);
     const offset = editor.indexOf(token);
     if (offset < cursor || editor.indexOf(token, offset + token.length) !== -1) {
       throw new Error(`Missing, repeated or out-of-order JavaScript marker: ${marker.trimEnd()}`);
     }
-    const previousLine = editor.lastIndexOf(10, offset - 2) + 1;
-    if (editor[offset - 1] !== 10
+    const previousLine = editor.lastIndexOf(10, offset - (blankLineBefore ? 3 : 2)) + 1;
+    if ((blankLineBefore && editor[offset - 2] !== 10) || editor[offset - 1] !== 10
       || !editor.subarray(previousLine, previousLine + Buffer.byteLength(before)).equals(Buffer.from(before))
       || !editor.subarray(offset + token.length, offset + token.length + Buffer.byteLength(after)).equals(Buffer.from(after))) {
       throw new Error(`JavaScript marker must occupy its original position: ${marker.trimEnd()}`);

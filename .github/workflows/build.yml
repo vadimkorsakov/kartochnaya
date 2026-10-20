@@ -9,6 +9,7 @@ on:
       - 'scripts/compile-html.mjs'
       - 'tests/source-extraction.test.mjs'
       - 'tests/colors.test.mjs'
+      - 'tests/gradient-model.test.mjs'
       - 'scripts/build.mjs'
       - 'scripts/distribution.mjs'
       - 'scripts/verify-build.mjs'

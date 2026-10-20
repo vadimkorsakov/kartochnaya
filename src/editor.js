@@ -3,9 +3,7 @@
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const uid=()=>globalThis.crypto?.randomUUID?.()||('id-'+Date.now()+'-'+Math.random().toString(36).slice(2));
 const clone=o=>JSON.parse(JSON.stringify(o));
-const html=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
-const fmt=n=>Math.round(Number(n)*100)/100;
+/*{{KARTOCHNAYA:CORE_PRIMITIVES_JS}}*/
 const types={path:'Контур Безье',text:'Текст',image:'Изображение',rect:'Прямоугольник',circle:'Круг',triangle:'Треугольник',star:'Звезда',hexagon:'Шестиугольник',parallelogram:'Параллелограмм',diamond:'Ромб',pentagon:'Пятиугольник',octagon:'Восьмиугольник',chevron:'Шеврон',arrow:'Стрелка',heart:'Сердце',cross:'Крест',trapezoid:'Трапеция',speech:'Облачко',semicircle:'Полукруг'};
 const syms={path:'⌁',text:'T',image:'▧',rect:'▭',circle:'◯',triangle:'△',star:'☆',hexagon:'⬡',parallelogram:'▱',diamond:'◇',pentagon:'⬠',octagon:'⯃',chevron:'❯',arrow:'➜',heart:'♡',cross:'✚',trapezoid:'▱',speech:'▢',semicircle:'◠'};
 

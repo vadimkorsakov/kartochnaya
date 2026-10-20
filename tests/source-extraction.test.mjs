@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { compileHTML, sourceRoot, slots } from '../scripts/compile-html.mjs';
+import { compileHTML, compileJavaScript, sourceRoot, slots, javascriptSlot } from '../scripts/compile-html.mjs';
 import { build, source, hash } from '../scripts/distribution.mjs';
 
 test('each extracted block and the restored HTML retain every original byte', async () => {
@@ -14,7 +14,8 @@ test('each extracted block and the restored HTML retain every original byte', as
     const start = original.indexOf(Buffer.from(opening), cursor) + Buffer.byteLength(opening);
     const end = original.indexOf(Buffer.from(closing), start);
     assert.ok(start >= cursor && end >= start, file);
-    assert.deepEqual(await readFile(resolve(sourceRoot, file)), original.subarray(start, end), file);
+    const restored = file === 'editor.js' ? await compileJavaScript() : await readFile(resolve(sourceRoot, file));
+    assert.deepEqual(restored, original.subarray(start, end), file);
     const position = template.indexOf(Buffer.from(opening)) + Buffer.byteLength(opening);
     template = Buffer.concat([template.subarray(0, position), Buffer.from(marker), template.subarray(position + end - start)]);
     cursor = end + Buffer.byteLength(closing);
@@ -84,7 +85,7 @@ test('both outputs use every src input; two builds and separate targets are iden
     await build('html', options);
     await build('pwa', options);
     assert.deepEqual(await outputs(), original, 'separate build targets');
-    for (const name of ['index.template.html', ...slots.map(slot => slot.file)]) {
+    for (const name of ['index.template.html', ...slots.map(slot => slot.file), javascriptSlot.file]) {
       const file = resolve(sources, name);
       const bytes = await readFile(file);
       // Mutate only the temporary copy, never tracked sources or expected hashes.
@@ -97,7 +98,45 @@ test('both outputs use every src input; two builds and separate targets are iden
       assert.deepEqual(readStoredIndex(changed[1]), changed[0], name);
       await writeFile(file, bytes);
     }
-    await rm(resolve(sources, 'editor.js'));
-    await assert.rejects(build('all', options), /ENOENT/, 'no historical HTML fallback');
+    for (const name of ['editor.js', javascriptSlot.file]) {
+      const file = resolve(sources, name), bytes = await readFile(file);
+      await rm(file);
+      await assert.rejects(build('all', options), /ENOENT/, `no historical HTML fallback for ${name}`);
+      await writeFile(file, bytes);
+    }
+  });
+});
+
+test('primitives retain their literal declarations, order and position inside the original IIFE', async () => {
+  const original = await readFile(resolve(source, 'index.html'));
+  const start = original.indexOf(Buffer.from('const html='));
+  const end = original.indexOf(Buffer.from('const types='), start);
+  const fragment = await readFile(resolve(sourceRoot, javascriptSlot.file));
+  assert.deepEqual(fragment, original.subarray(start, end));
+  const javascript = await compileJavaScript();
+  assert.equal(javascript.indexOf(fragment), javascript.lastIndexOf(fragment));
+  for (const name of ['html', 'clamp', 'fmt']) {
+    assert.equal([...javascript.toString('utf8').matchAll(new RegExp(`const ${name}=`, 'g'))].length, 1, name);
+    assert.equal((await readFile(resolve(sourceRoot, 'editor.js'))).includes(Buffer.from(`const ${name}=`)), false, name);
+  }
+  assert.ok(javascript.indexOf(Buffer.from("(()=>{'use strict';")) < javascript.indexOf(fragment));
+  assert.ok(javascript.indexOf(fragment) < javascript.indexOf(Buffer.from('const types=')));
+});
+
+test('missing, repeated and unexpected JavaScript markers fail the actual build', async () => {
+  await temporarySources(async (sources, outputDirectory) => {
+    const file = resolve(sources, 'editor.js');
+    const editor = await readFile(file, 'utf8');
+    const marker = javascriptSlot.marker;
+    for (const invalid of [editor.replace(marker, ''), editor + marker,
+      editor.replace(marker, marker.trimEnd()), editor + '{{KARTOCHNAYA:UNKNOWN}}',
+      editor + '{{KARTOCHNAYA:UNCLOSED']) {
+      await writeFile(file, invalid);
+      await assert.rejects(build('all', { sourceDirectory: sources, outputDirectory }), /marker/i);
+    }
+    await writeFile(file, editor);
+    const fragmentFile = resolve(sources, javascriptSlot.file);
+    await writeFile(fragmentFile, '{{KARTOCHNAYA:UNRESOLVED}}');
+    await assert.rejects(compileHTML(sources), /marker/i);
   });
 });

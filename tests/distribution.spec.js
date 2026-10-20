@@ -20,11 +20,11 @@ test('all packaged PWA assets are available with their original bytes', async ({
   expect(manifest.icons.map(icon => icon.src)).toEqual(['./icon-192.png', './icon-512.png']);
 });
 
-test('the existing HTML works alone via file:// with the network disabled', async ({ page, context }, testInfo) => {
+test('the built HTML works alone via file:// with the network disabled', async ({ page, context }, testInfo) => {
   const directory = testInfo.outputPath('standalone');
   await mkdir(directory, { recursive: true });
   const target = path.join(directory, 'index.html');
-  await copyFile(path.join(__dirname, '..', baseline.applicationRoot, 'index.html'), target);
+  await copyFile(path.join(__dirname, '../dist/kartochnaya.html'), target);
   expect(await readdir(directory)).toEqual(['index.html']);
   const networkRequests = [];
   page.on('request', request => {

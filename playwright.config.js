@@ -5,6 +5,7 @@ process.env.PLAYWRIGHT_BROWSERS_PATH ||= path.join(__dirname, '.cache/ms-playwri
 
 module.exports = defineConfig({
   testDir: './tests',
+  testMatch: '**/*.spec.js',
   fullyParallel: true,
   workers: 2,
   retries: 0,
@@ -41,6 +42,7 @@ module.exports = defineConfig({
   },
   projects: [
     { name: 'chromium', testIgnore: '**/known-failures.spec.js', use: { browserName: 'chromium' } },
+    { name: 'standalone', testMatch: /(?:smoke|visual)\.spec\.js$/, use: { browserName: 'chromium' } },
     { name: 'known-failures', testMatch: '**/known-failures.spec.js', use: { browserName: 'chromium' } },
   ],
 });

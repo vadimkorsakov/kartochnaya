@@ -1,17 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import vm from 'node:vm';
+import { createGradientModel } from '../src/core/gradient-model.mjs';
 
-import { clamp } from '../src/core/primitives.mjs';
-import { rgbHex, hexRgb, normalizeHex } from '../src/core/colors.mjs';
-
-const fragment = await readFile(new URL('../src/core/gradient-model.js', import.meta.url), 'utf8');
 function model() {
-  return vm.runInNewContext(`(()=>{'use strict';let serial=0;const uid=()=> 'id-'+ ++serial;
-    ${fragment}
-    return {gradientStops,gradientGeometry,gradientSample,addGradientStop};})()`,
-    { clamp, rgbHex, hexRgb, normalizeHex });
+  let serial = 0;
+  return createGradientModel(() => 'id-' + ++serial);
 }
 const plain = value => structuredClone(value);
 function element() { return {gradientStops:[{id:'a',pos:0,color:'#000000',alpha:0},{id:'b',pos:100,color:'#ffffff',alpha:100}]}; }
@@ -138,4 +131,61 @@ check('stops repeated normalization lowercases a previously expanded short upper
 });
 check('geometry invalid angle persists NaN coordinates instead of substituting a default',m=>{
   const e={w:100,h:50,gradientAngle:'invalid'};m.gradientGeometry(e);assert.ok(Number.isNaN(e.gradientStart.x));assert.ok(Number.isNaN(e.gradientEnd.y));
+});
+
+test('factory instances keep independent injected uid sequences when interleaved', () => {
+  let a = 0, b = 0;
+  const first = createGradientModel(() => 'a-' + ++a);
+  const second = createGradientModel(() => 'b-' + ++b);
+  const x = {}, y = {};
+  assert.equal(a, 0); assert.equal(b, 0);
+  first.gradientStops(x); second.gradientStops(y);
+  assert.equal(first.addGradientStop(x).id, 'a-3');
+  assert.equal(second.addGradientStop(y).id, 'b-3');
+  assert.equal(first.addGradientStop(x).id, 'a-4');
+  assert.deepEqual([a, b], [4, 3]);
+  assert.notEqual(first.gradientStops, second.gradientStops);
+});
+
+test('injected uid sees two initial stops generated before assignment and the new stop before push', () => {
+  const e = {}, calls = [];
+  const m = createGradientModel(() => {
+    calls.push(e.gradientStops?.map(s => ({...s})) ?? null);
+    return 'call-' + calls.length;
+  });
+  const stop = m.addGradientStop(e);
+  assert.deepEqual(calls, [null, null, [
+    {id:'call-1',pos:0,color:'#ab92fb',alpha:100},
+    {id:'call-2',pos:100,color:'#fb8c67',alpha:100},
+  ]]);
+  assert.equal(stop.id, 'call-3');
+  assert.deepEqual(e.gradientStops.map(s => s.id), ['call-1', 'call-3', 'call-2']);
+});
+
+test('factory, geometry, normalized reads and sampling do not request ids', () => {
+  const m = createGradientModel(() => { throw new Error('Unexpected uid call'); });
+  const e = {...element(),w:100,h:50};
+  m.gradientGeometry(e); m.gradientGeometry(e);
+  m.gradientStops(e); m.gradientStops(e);
+  assert.deepEqual(m.gradientSample(e,25), {color:'#404040',alpha:25});
+});
+
+test('instances do not share arrays, stop objects or geometry state', () => {
+  const first = model(), second = model(), x = {w:20,h:10}, y = {w:20,h:10};
+  first.gradientStops(x); second.gradientStops(y);
+  first.gradientGeometry(x); second.gradientGeometry(y);
+  assert.notEqual(x.gradientStops, y.gradientStops);
+  assert.notEqual(x.gradientStops[0], y.gradientStops[0]);
+  assert.notEqual(x.gradientStart, y.gradientStart);
+  x.gradientStops[0].color = '#123456'; x.gradientStart.x = 99;
+  assert.equal(y.gradientStops[0].color, '#ab92fb');
+  assert.notEqual(y.gradientStart.x, 99);
+});
+
+test('production imports normalize HEX, clamp values and interpolate RGB without supplied math helpers', () => {
+  const m = model(), e = {fill:'#ABC',fill2:'#000000',fillAlpha1:-20,fillAlpha2:200};
+  m.gradientStops(e);
+  assert.deepEqual(e.gradientStops.map(s => [s.color,s.alpha]), [['#aabbcc',0],['#000000',100]]);
+  assert.deepEqual(m.gradientSample(e,25), {color:'#808c99',alpha:25});
+  assert.deepEqual(m.gradientSample(e,150), {color:'#000000',alpha:100});
 });

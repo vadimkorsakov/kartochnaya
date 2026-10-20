@@ -1,0 +1,45 @@
+{
+  "format": "kartochnaya-v1",
+  "document": {
+    "id": "visual-text",
+    "title": "Visual fixed font",
+    "type": "template",
+    "width": 320,
+    "height": 240,
+    "background": "#f5f3ed",
+    "backgroundAlpha": 100,
+    "elements": [
+      {
+        "x": 24,
+        "y": 36,
+        "w": 272,
+        "h": 140,
+        "rotation": 0,
+        "opacity": 100,
+        "visible": true,
+        "locked": false,
+        "fillType": "solid",
+        "fillOpacity": 100,
+        "fill": "#ab92fb",
+        "stroke": "#111111",
+        "strokeWidth": 0,
+        "id": "text",
+        "name": "Fixed font text",
+        "type": "text",
+        "text": "КАРТОЧНАЯ\nCanvas 0.45",
+        "fontFamily": "DejaVu Sans",
+        "fontWeight": "400",
+        "fontStyle": "normal",
+        "fontSize": 27,
+        "textColor": "#243746",
+        "textAlign": "left",
+        "lineHeight": 1.25,
+        "letterSpacing": 0,
+        "verticalAlign": "top"
+      }
+    ],
+    "createdAt": 1700000000000,
+    "updatedAt": 1700000000000
+  },
+  "fonts": []
+}

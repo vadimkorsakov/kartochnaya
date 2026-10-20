@@ -1,0 +1,105 @@
+{
+  "baseCommit": "7623091139c2b8997067fd51de388918d64566cb",
+  "applicationRoot": "kartochnaya v0.45",
+  "files": {
+    "README.md": {
+      "bytes": 6278,
+      "sha256": "3fbe5d8ac0389e6ad4583414d6b47943eeb4ef7bcaada8c2f61754fc39fc2e99"
+    },
+    "icon-192.png": {
+      "bytes": 4707,
+      "sha256": "1791bd25c9699a12245de4b7a7bd4b692c68b20870b8acdb9f95f5dab514f860"
+    },
+    "icon-512.png": {
+      "bytes": 15052,
+      "sha256": "55228b9b3609ca0fad29e475fd6ea76988d61ee355ca22b644bfc6e7fb637e0c"
+    },
+    "icon.svg": {
+      "bytes": 339,
+      "sha256": "cff02a45e4f4bd1f605ffee5baa1ef4033ddea2f3645c958f23d481547298e3e"
+    },
+    "index.html": {
+      "bytes": 1039010,
+      "sha256": "7d2c286b31ba8e2aa797177e8c7ab359bcbda816fc06bf2f1226dc5b1baec27a"
+    },
+    "manifest.webmanifest": {
+      "bytes": 365,
+      "sha256": "7ba83c468600a4868db0927ea3ae93b5f17bea885f81e97dddf19e2f4727e060"
+    },
+    "sw.js": {
+      "bytes": 719,
+      "sha256": "b6d5f4420efc7959ad60b5363f7d10770b8ce38ccd7f5cc04b8f73216dda3a09"
+    },
+    "tool-icons/Вперед.png": {
+      "bytes": 9402,
+      "sha256": "e0eac942f79fb0fecceca5c808b4af712055fde7a6eeaa99ea1bc7d7bd45e035"
+    },
+    "tool-icons/Выделение.png": {
+      "bytes": 12188,
+      "sha256": "21392a884c8699d43505df2fde75d9993c30a05d46b18920f215a5c3f3717ea3"
+    },
+    "tool-icons/История.png": {
+      "bytes": 18372,
+      "sha256": "737157f56413075a64cfd143998da87fe9521fb97afb1d0bff83b71f4aa370a5"
+    },
+    "tool-icons/Кисть.png": {
+      "bytes": 18118,
+      "sha256": "07e4a98d61aff021c8d25daf5ef9f5bcdb32aa6e6f96fec16b52187c64ee5b97"
+    },
+    "tool-icons/Назад.png": {
+      "bytes": 9699,
+      "sha256": "7be6c1c8b87221384ecd01ed78ddca753117ded0e9c0d1928fe2159edcddef20"
+    },
+    "tool-icons/Перемещение.png": {
+      "bytes": 12939,
+      "sha256": "21b755944d3f7d523faaec5b4d3f0e9530b4af67834c5b64fbb9c58399afb888"
+    },
+    "tool-icons/Перо.png": {
+      "bytes": 11663,
+      "sha256": "61809ebf174cf8fd5a7b74dcc4329e973d1d23610a0df32921e21ab4cc18c466"
+    },
+    "tool-icons/Ресурсы.png": {
+      "bytes": 9602,
+      "sha256": "0a991ae09f7637de883b95dbca1515b276f9c06b2efeb21d8b318042a00086a3"
+    },
+    "tool-icons/Рука.png": {
+      "bytes": 13399,
+      "sha256": "1b28f6459db2590083c8daf5e269535952e8f0d5b56ef41ab8c6907256748424"
+    },
+    "tool-icons/Текст.png": {
+      "bytes": 6497,
+      "sha256": "766e4d59979ca5f28ea06abaf9dc14445c6b28b49ff0d73316b8847f5c12d31c"
+    },
+    "tool-icons/Фигуры.png": {
+      "bytes": 13217,
+      "sha256": "b9abb8c31d9e1827993141f8bae9cb9721000b042685e7693c9efd8118d62a3b"
+    },
+    "tool-icons/Фото.png": {
+      "bytes": 9348,
+      "sha256": "c26bac62c7b6f987ac3cd8d9aa666d8fbc4bbd5b1f34dbee8c8ec4932862ec61"
+    }
+  },
+  "html": {
+    "bytes": 1039010,
+    "newlineCount": 5070,
+    "styleBlocks": 2,
+    "scriptBlocks": 1,
+    "staticManifestLinks": 0
+  },
+  "storage": {
+    "database": "kartochnaya_local_v1",
+    "version": 3,
+    "stores": [
+      "docs",
+      "fonts",
+      "projects",
+      "settings"
+    ]
+  },
+  "formats": [
+    "bare document",
+    "kartochnaya-v1",
+    "kartochnaya-project-v1",
+    "kartochnaya-workspace-v1"
+  ]
+}

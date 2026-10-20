@@ -1,0 +1,72 @@
+{
+  "format": "kartochnaya-v1",
+  "document": {
+    "id": "visual-scene",
+    "title": "Visual shapes",
+    "type": "template",
+    "width": 320,
+    "height": 240,
+    "background": "#f5f3ed",
+    "backgroundAlpha": 100,
+    "elements": [
+      {
+        "x": 24,
+        "y": 24,
+        "w": 130,
+        "h": 84,
+        "rotation": 0,
+        "opacity": 100,
+        "visible": true,
+        "locked": false,
+        "fillType": "solid",
+        "fillOpacity": 100,
+        "fill": "#7857de",
+        "stroke": "#111111",
+        "strokeWidth": 0,
+        "id": "rect",
+        "name": "Violet rectangle",
+        "type": "rect",
+        "corner": 12
+      },
+      {
+        "x": 180,
+        "y": 50,
+        "w": 96,
+        "h": 96,
+        "rotation": 0,
+        "opacity": 80,
+        "visible": true,
+        "locked": false,
+        "fillType": "solid",
+        "fillOpacity": 100,
+        "fill": "#fb8c67",
+        "stroke": "#111111",
+        "strokeWidth": 0,
+        "id": "circle",
+        "name": "Orange circle",
+        "type": "circle"
+      },
+      {
+        "x": 48,
+        "y": 150,
+        "w": 120,
+        "h": 36,
+        "rotation": -12,
+        "opacity": 100,
+        "visible": true,
+        "locked": false,
+        "fillType": "solid",
+        "fillOpacity": 100,
+        "fill": "#243746",
+        "stroke": "#111111",
+        "strokeWidth": 0,
+        "id": "rotated",
+        "name": "Rotated rectangle",
+        "type": "rect"
+      }
+    ],
+    "createdAt": 1700000000000,
+    "updatedAt": 1700000000000
+  },
+  "fonts": []
+}

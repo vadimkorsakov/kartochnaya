@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { compileHTML, compileJavaScript, sourceRoot, slots, javascriptSlot, colorsSlot, javascriptSlots } from '../scripts/compile-html.mjs';
+import { compileHTML, compileJavaScript, sourceRoot, slots, javascriptSlot, colorsSlot, gradientModelSlot, javascriptSlots } from '../scripts/compile-html.mjs';
 import { build, source, hash } from '../scripts/distribution.mjs';
 
 test('each extracted block and the restored HTML retain every original byte', async () => {
@@ -163,4 +163,38 @@ test('colors retain all original bytes and unique declarations in the original I
   assert.ok(javascript.indexOf('function syncTextFill(') < javascript.indexOf(fragment.toString()));
   assert.ok(javascript.indexOf(fragment.toString()) < javascript.indexOf('function currentPickerKey('));
   assert.equal(fragment.includes(Buffer.from('const clamp=')), false);
+});
+
+
+test('gradient model retains original bytes, unique declarations and exact IIFE position', async () => {
+  const original = await readFile(resolve(source, 'index.html'));
+  const start = original.indexOf(Buffer.from('function gradientStops(e)'));
+  const end = original.indexOf(Buffer.from('function getGradientStop('), start);
+  const fragment = await readFile(resolve(sourceRoot, gradientModelSlot.file));
+  assert.deepEqual(fragment, original.subarray(start, end));
+  assert.equal(fragment.at(-1), 10, 'fragment includes its final LF');
+  const javascript = (await compileJavaScript()).toString('utf8');
+  const editor = await readFile(resolve(sourceRoot, 'editor.js'), 'utf8');
+  for (const name of ['gradientStops', 'gradientGeometry', 'gradientSample', 'addGradientStop']) {
+    assert.equal([...javascript.matchAll(new RegExp(`function ${name}\\(`, 'g'))].length, 1, name);
+    assert.equal(editor.includes(`function ${name}(`), false, name);
+  }
+  assert.ok(javascript.indexOf('function hexAlpha(') < javascript.indexOf(fragment.toString()));
+  assert.ok(javascript.indexOf(fragment.toString()) < javascript.indexOf('function getGradientStop('));
+});
+
+test('gradient marker rejects a missing blank line and swapped neighboring slots', async () => {
+  await temporarySources(async sources => {
+    const file = resolve(sources, 'editor.js');
+    const editor = await readFile(file, 'utf8');
+    const marker = gradientModelSlot.marker;
+    const invalid = [editor.replace('\n\n' + marker, '\n' + marker)];
+    for (const other of [javascriptSlot, colorsSlot]) {
+      invalid.push(editor.replace(marker, 'SWAP').replace(other.marker, marker).replace('SWAP', other.marker));
+    }
+    for (const value of invalid) {
+      await writeFile(file, value);
+      await assert.rejects(compileHTML(sources), /marker/i);
+    }
+  });
 });

@@ -8,7 +8,8 @@ const fixturePath = name => path.join(__dirname, 'fixtures', name);
 // Fresh browser contexts are supplied by Playwright for every test. Never expose app
 // or patch the release script. Observe errors from navigation onward, including reloads.
 const test = base.extend({
-  page: async ({ page }, use) => {
+  page: async ({ page }, use, testInfo) => {
+    const standaloneWarnings = [];
     const errors = [];
     page.on('pageerror', error => errors.push(`pageerror: ${error.message}`));
     page.on('console', message => {
@@ -16,14 +17,19 @@ const test = base.extend({
       // part of v0.45; ignore only its resource 404, never application errors.
       const optionalFavicon = message.location().url.endsWith('/favicon.ico')
         && message.text().includes('404');
+      if (testInfo.project.name === 'standalone' && message.type() === 'error'
+        && message.text() === 'A bad HTTP response code (404) was received when fetching the script.') {
+        standaloneWarnings.push(message.text()); return;
+      }
       if (message.type() === 'error' && !optionalFavicon) errors.push(`console: ${message.text()}`);
     });
     await use(page);
+    if (standaloneWarnings.length) await testInfo.attach('standalone-worker-warning', { body: standaloneWarnings.join('\n'), contentType: 'text/plain' });
     expect(errors, 'No uncaught JavaScript or console errors').toEqual([]);
   },
 });
 
-async function openHome(page, url = '/') {
+async function openHome(page, url = base.info().project.name === 'standalone' ? '/standalone/kartochnaya.html' : '/') {
   const response = await page.goto(url);
   if (url.startsWith('http') || url === '/') expect(response.ok()).toBe(true);
   await expect(page.locator('#homeScreen')).toBeVisible();

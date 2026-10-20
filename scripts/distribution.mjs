@@ -1,22 +1,23 @@
-// Packaging boundary: a future compiler can provide inputs here without changing
-// archive writing or verification. Stage 1 reads release bytes without transforms.
+// HTML comes only from src/. Other runtime assets retain the historical bytes.
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
+import { compileHTML, sourceRoot } from './compile-html.mjs';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const source = resolve(root, 'kartochnaya v0.45');
 export const dist = resolve(root, 'dist');
 export const hash = data => createHash('sha256').update(data).digest('hex');
-export async function inputs() {
+export async function inputs(html) {
+  html ??= await compileHTML();
   const names = ['index.html', 'manifest.webmanifest', 'sw.js', 'icon.svg', 'icon-192.png', 'icon-512.png'];
   for (const entry of await readdir(resolve(source, 'tool-icons'), { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.png')) throw new Error(`Unexpected tool resource: ${entry.name}`);
     names.push(`tool-icons/${entry.name}`);
   }
   names.sort(); // Code-unit order, independent of locale and filesystem order.
-  return Promise.all(names.map(async name => ({ name, data: await readFile(resolve(source, name)) })));
+  return Promise.all(names.map(async name => ({ name, data: name === 'index.html' ? html : await readFile(resolve(source, name)) })));
 }
 
 // ZIP 2.0, STORE method: no compressor or platform-dependent metadata.
@@ -64,8 +65,9 @@ export function zip(entries) {
   end.writeUInt32LE(offset, 16);
   return Buffer.concat([...local, directory, end]);
 }
-export async function build(kind = 'all') {
-  await mkdir(dist, { recursive: true });
-  if (kind === 'all' || kind === 'html') await writeFile(resolve(dist, 'kartochnaya.html'), await readFile(resolve(source, 'index.html')));
-  if (kind === 'all' || kind === 'pwa') await writeFile(resolve(dist, 'kartochnaya-pwa.zip'), zip(await inputs()));
+export async function build(kind = 'all', { sourceDirectory = sourceRoot, outputDirectory = dist } = {}) {
+  const html = await compileHTML(sourceDirectory);
+  await mkdir(outputDirectory, { recursive: true });
+  if (kind === 'all' || kind === 'html') await writeFile(resolve(outputDirectory, 'kartochnaya.html'), html);
+  if (kind === 'all' || kind === 'pwa') await writeFile(resolve(outputDirectory, 'kartochnaya-pwa.zip'), zip(await inputs(html)));
 }

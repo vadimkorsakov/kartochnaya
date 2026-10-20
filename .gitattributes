@@ -1,2 +1,5 @@
 # Preserve release bytes even when Windows checkout uses core.autocrlf.
 "/kartochnaya v0.45/**" -text
+
+# Preserve mechanically extracted source bytes on Windows and Linux.
+/src/** -text

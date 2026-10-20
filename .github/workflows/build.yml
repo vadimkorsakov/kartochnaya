@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'kartochnaya v0.45/**'
+      - 'src/**'
+      - 'scripts/compile-html.mjs'
+      - 'tests/source-extraction.test.mjs'
       - 'scripts/build.mjs'
       - 'scripts/distribution.mjs'
       - 'scripts/verify-build.mjs'
@@ -25,6 +28,7 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm ci
+      - run: npm run test:source
       - run: npm run build
       - run: npm run build:verify
       - uses: actions/upload-artifact@v4

@@ -1,0 +1,41 @@
+{
+  "format": "kartochnaya-project-v1",
+  "version": "0.21",
+  "project": {
+    "id": "project-original",
+    "name": "Known folder project",
+    "cover": "",
+    "resourceFolders": [
+      {
+        "id": "folder-original",
+        "name": "Synthetic folder",
+        "parentId": null
+      }
+    ],
+    "resources": [
+      {
+        "id": "resource-original",
+        "name": "Synthetic colour grid",
+        "folderId": "folder-original",
+        "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAYCAYAAACbU/80AAAAVUlEQVR4AcXBMRGDQAAAwctNJKTBATUV9ReRgxys4QAbIOKL2/3c2/9hwlhPZkhMYhKTmMQkJjGJSUxiEvvux48Z1zKYITGJSUxiEpOYxCQmMYlJ7AXxOQV7tAwQOAAAAABJRU5ErkJggg=="
+      }
+    ],
+    "exportCounters": {},
+    "createdAt": 1700000000000,
+    "updatedAt": 1700000000000
+  },
+  "documents": [
+    {
+      "id": "folder-document",
+      "title": "Folder project document",
+      "type": "template",
+      "width": 320,
+      "height": 240,
+      "elements": [],
+      "background": "#ffffff",
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000
+    }
+  ],
+  "fonts": []
+}

@@ -1,0 +1,18 @@
+{
+  "chromium": "154.0.8037.57",
+  "playwright": "1.64.1",
+  "platform": "linux",
+  "arch": "x64",
+  "hostDistribution": "Debian GNU/Linux 13 (trixie)",
+  "chromiumPackage": "154.0.8037.57-1~deb13u1",
+  "fontPackage": "fonts-dejavu-core 2.37-8",
+  "nodeRecorded": "24.19.0",
+  "viewport": { "width": 1280, "height": 900 },
+  "deviceScaleFactor": 1,
+  "font": {
+    "file": "tests/fixtures/fonts/DejaVuSans.ttf",
+    "family": "DejaVu Sans",
+    "sha256": "57f73e11f51999432bf7ab22ce55b6f945d5eca1bf824404cfa9ec2e3718c84e"
+  },
+  "comparison": "Decoded PNG pixels, exact comparison; no automatic baseline updates"
+}

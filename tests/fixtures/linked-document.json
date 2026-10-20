@@ -1,0 +1,102 @@
+{
+  "format": "kartochnaya-v1",
+  "document": {
+    "id": "baseline-linked-document",
+    "title": "Known linked document",
+    "type": "template",
+    "width": 320,
+    "height": 240,
+    "background": "#ffffff",
+    "backgroundAlpha": 100,
+    "groups": [
+      {
+        "id": "group-original",
+        "name": "Locked original group",
+        "parentId": null,
+        "visible": true,
+        "locked": true
+      }
+    ],
+    "elements": [
+      {
+        "x": 20,
+        "y": 20,
+        "w": 200,
+        "h": 100,
+        "rotation": 0,
+        "opacity": 100,
+        "visible": true,
+        "locked": false,
+        "fillType": "solid",
+        "fillOpacity": 100,
+        "fill": "#ab92fb",
+        "stroke": "#111111",
+        "strokeWidth": 0,
+        "id": "shape-original",
+        "type": "rect",
+        "name": "Source rectangle",
+        "groupId": "group-original"
+      },
+      {
+        "x": 20,
+        "y": 20,
+        "w": 200,
+        "h": 100,
+        "rotation": 0,
+        "opacity": 100,
+        "visible": true,
+        "locked": false,
+        "fillType": "solid",
+        "fillOpacity": 100,
+        "fill": "#ab92fb",
+        "stroke": "#111111",
+        "strokeWidth": 0,
+        "id": "text-original",
+        "type": "text",
+        "name": "Boundary text",
+        "groupId": "group-original",
+        "text": "Контур",
+        "fontFamily": "Arial",
+        "fontWeight": "400",
+        "fontSize": 18,
+        "textColor": "#111111",
+        "textMode": "boundary",
+        "pathBoundary": {
+          "sourceId": "shape-original",
+          "position": 0,
+          "offset": 4,
+          "side": "outside",
+          "align": "start",
+          "fallback": {
+            "points": [
+              {
+                "x": 0,
+                "y": 0
+              },
+              {
+                "x": 1,
+                "y": 0
+              },
+              {
+                "x": 1,
+                "y": 1
+              },
+              {
+                "x": 0,
+                "y": 1
+              },
+              {
+                "x": 0,
+                "y": 0
+              }
+            ],
+            "closed": true
+          }
+        }
+      }
+    ],
+    "createdAt": 1700000000000,
+    "updatedAt": 1700000000000
+  },
+  "fonts": []
+}

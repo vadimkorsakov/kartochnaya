@@ -1,0 +1,20 @@
+{
+  "name": "kartochnaya-v045-baseline",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Development-only regression checks for the unchanged KARTOCHNAYA v0.45 release",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "playwright test --project=chromium",
+    "test:known": "playwright test --project=known-failures",
+    "test:all": "playwright test",
+    "test:visual": "playwright test --project=chromium tests/visual.spec.js",
+    "test:visual:record": "node scripts/record-baselines.mjs",
+    "test:install": "node scripts/install-browser.mjs",
+    "test:serve": "node scripts/test-server.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "pngjs": "7.0.0"
+  }
+}

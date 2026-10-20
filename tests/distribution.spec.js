@@ -1,19 +1,23 @@
-const { mkdir, copyFile, readdir } = require('node:fs/promises');
+const { mkdir, copyFile, readdir, readFile } = require('node:fs/promises');
 const { createHash } = require('node:crypto');
 const { pathToFileURL } = require('node:url');
 const path = require('node:path');
 const baseline = require('../docs/baseline-v045.json');
 const { test, expect, openHome, createDocument, addShape, exportPNG } = require('./helpers');
 
-test('all packaged PWA assets are available with their original bytes', async ({ request }) => {
+test('PWA serves the current standalone HTML and unchanged historical assets', async ({ request }) => {
   const assets = Object.entries(baseline.files).filter(([name]) => name !== 'README.md');
   expect(assets).toHaveLength(18);
   for (const [name, expected] of assets) {
     const response = await request.get('/' + name.split('/').map(encodeURIComponent).join('/'));
     expect(response.status(), name).toBe(200);
     const bytes = await response.body();
-    expect(bytes.length, name).toBe(expected.bytes);
-    expect(createHash('sha256').update(bytes).digest('hex'), name).toBe(expected.sha256);
+    if (name === 'index.html') {
+      expect(bytes).toEqual(await readFile(path.join(__dirname, '../dist/kartochnaya.html')));
+    } else {
+      expect(bytes.length, name).toBe(expected.bytes);
+      expect(createHash('sha256').update(bytes).digest('hex'), name).toBe(expected.sha256);
+    }
   }
   const manifest = await (await request.get('/manifest.webmanifest')).json();
   expect(manifest).toMatchObject({ start_url: './', scope: './', display: 'standalone' });

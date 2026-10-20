@@ -120,6 +120,30 @@ test('document tabs preserve their own selection, zoom and Undo history', async 
   expect(await elements(page)).toEqual(first.elements);
 });
 
+test('grouping commits once and preserves member order through Undo, Redo and reload', async ({ page }) => {
+  await openHome(page);
+  await createDocument(page, 'Module group history');
+  await addShape(page); await addShape(page);
+  const before = await elements(page);
+  await page.locator(`#layers [data-layer="${before[0].id}"] .layer-name`).click({ modifiers: ['Shift'] });
+  await expect(page.locator('#layers [data-layer].selected')).toHaveCount(2);
+  await page.locator('#canvas').focus();
+  await page.keyboard.press('ControlOrMeta+g');
+  const grouped = await exportedDocument(page);
+  expect(grouped.groups).toHaveLength(1);
+  expect(grouped.elements.map(e => e.id)).toEqual(before.map(e => e.id));
+  expect(grouped.elements.map(e => e.groupId)).toEqual([grouped.groups[0].id, grouped.groups[0].id]);
+  await page.locator('#canvas').focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await elements(page)).toEqual(before);
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  expect(await elements(page)).toEqual(grouped.elements);
+  await reopen(page, grouped);
+  const restored = await exportedDocument(page);
+  expect(restored.groups).toEqual(grouped.groups);
+  expect(restored.elements).toEqual(grouped.elements);
+});
+
 test('boundary text follows its source shape and retains the link and rendered PNG after reload', async ({ page }) => {
   await openHome(page);
   await createDocument(page, 'Core boundary text');

@@ -22,10 +22,12 @@
     "build:verify": "node scripts/verify-build.mjs",
     "pretest": "npm run build",
     "pretest:all": "npm run build",
-    "test:build": "npm run build && playwright test --project=chromium tests/build.spec.js"
+    "test:build": "npm run build && playwright test --project=chromium tests/build.spec.js",
+    "test:bundle-smoke": "playwright test --project=standalone tests/module-bundle.smoke.spec.js"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
+    "esbuild": "0.28.2",
     "pngjs": "7.0.0"
   }
 }

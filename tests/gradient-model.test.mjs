@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
-const fragments = await Promise.all(['primitives', 'colors', 'gradient-model'].map(name =>
-  readFile(new URL(`../src/core/${name}.js`, import.meta.url), 'utf8')));
+import { clamp } from '../src/core/primitives.mjs';
+import { rgbHex, hexRgb, normalizeHex } from '../src/core/colors.mjs';
+
+const fragment = await readFile(new URL('../src/core/gradient-model.js', import.meta.url), 'utf8');
 function model() {
   return vm.runInNewContext(`(()=>{'use strict';let serial=0;const uid=()=> 'id-'+ ++serial;
-    ${fragments.join('\n')}
-    return {gradientStops,gradientGeometry,gradientSample,addGradientStop};})()`);
+    ${fragment}
+    return {gradientStops,gradientGeometry,gradientSample,addGradientStop};})()`,
+    { clamp, rgbHex, hexRgb, normalizeHex });
 }
 const plain = value => structuredClone(value);
 function element() { return {gradientStops:[{id:'a',pos:0,color:'#000000',alpha:0},{id:'b',pos:100,color:'#ffffff',alpha:100}]}; }

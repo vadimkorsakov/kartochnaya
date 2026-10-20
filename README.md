@@ -1,7 +1,8 @@
 # КАРТОЧНАЯ v0.45 — базовые проверки
 
 Рабочие исходники находятся в [`src/`](src/): HTML-шаблон, два файла CSS
-и единый `editor.js`. Сборка встраивает их обратно без изменения байтов.
+и `editor.js` с прежним IIFE. `core/primitives.mjs` и `core/colors.mjs` — настоящие
+ES-модули; esbuild собирает их с редактором в один встроенный обычный скрипт.
 Исторический эталон [`kartochnaya v0.45/`](<kartochnaya v0.45/>) сохранён без изменений.
 Корневые Node.js-зависимости нужны только для разработки и тестов.
 
@@ -26,9 +27,10 @@ npm run test:known
 ## Готовые HTML и PWA ZIP
 
 [Как скачать через GitHub Actions и как устроена сборка](docs/build-v045.md).
+Актуальная архитектура и проверки: [этап 6 — esbuild и ES-модули](docs/esbuild-foundation-v045.md).
 
 Команды: `npm run build`, `npm run build:html`, `npm run build:pwa`,
 `npm run build:verify`, `npm run test:source`.
 
 [Устройство исходников и результаты этапа 2](docs/source-extraction-v045.md).
-Этап 3 не начат.
+Этапы 0–5 завершены; изменения этапа 6 представлены отдельным PR. Этап 7 не начат.

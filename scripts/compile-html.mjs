@@ -4,6 +4,24 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const sourceRoot = fileURLToPath(new URL('../src/', import.meta.url));
+export const javascriptSlot = { marker: '/*{{KARTOCHNAYA:CORE_PRIMITIVES_JS}}*/\n', file: 'core/primitives.js' };
+
+// A source fragment, restored inside the original IIFE without adding any bytes.
+export async function compileJavaScript(directory = sourceRoot) {
+  const editor = await readFile(resolve(directory, 'editor.js'));
+  const token = Buffer.from(javascriptSlot.marker);
+  const offset = editor.indexOf(token);
+  if (offset < 0 || editor.indexOf(token, offset + token.length) !== -1) {
+    throw new Error(`Missing or repeated JavaScript marker: ${javascriptSlot.marker.trimEnd()}`);
+  }
+  const before = editor.subarray(0, offset), after = editor.subarray(offset + token.length);
+  const fragment = await readFile(resolve(directory, javascriptSlot.file));
+  if ([before, fragment, after].some(bytes => bytes.includes(Buffer.from('{{KARTOCHNAYA:')))) {
+    throw new Error('Unexpected JavaScript source marker');
+  }
+  return Buffer.concat([before, fragment, after]);
+}
+
 export const slots = [
   { marker: '{{KARTOCHNAYA:LEGACY_01_CSS}}', file: 'styles/legacy-01.css', opening: '<style>', closing: '</style>' },
   { marker: '{{KARTOCHNAYA:LEGACY_02_CSS}}', file: 'styles/legacy-02.css', opening: '<style id="v044-fixes">', closing: '</style>' },
@@ -26,7 +44,7 @@ export async function compileHTML(directory = sourceRoot) {
     }
     const literal = template.subarray(cursor, offset);
     if (literal.includes(Buffer.from('{{KARTOCHNAYA:'))) throw new Error('Unexpected source marker');
-    chunks.push(literal, await readFile(resolve(directory, file)));
+    chunks.push(literal, file === 'editor.js' ? await compileJavaScript(directory) : await readFile(resolve(directory, file)));
     cursor = offset + token.length;
   }
   const tail = template.subarray(cursor);

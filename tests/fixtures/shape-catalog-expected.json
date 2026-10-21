@@ -1,0 +1,52 @@
+[
+  {
+    "name": "Синтетические контуры",
+    "shapes": [
+      {
+        "id": "stage8-triangle",
+        "name": "Треугольник",
+        "d": "M0 0 L100 0 L50 100 Z",
+        "mode": "fill",
+        "outlineCaps": false
+      },
+      {
+        "id": "42",
+        "name": "17",
+        "d": "M0,0 C1.5 -2 3e+1 4 50 60 Z",
+        "mode": "true",
+        "lineStyle": "solid",
+        "capStart": "round",
+        "capEnd": "none",
+        "outlineCaps": true,
+        "parts": [
+          {
+            "d": "M0 0 L10 10",
+            "matrix": [
+              1,
+              0,
+              0,
+              1,
+              2.5,
+              -3
+            ]
+          },
+          {
+            "d": "M0 0Z",
+            "matrix": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Синтетические контуры",
+    "shapes": []
+  }
+]

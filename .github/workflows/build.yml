@@ -13,6 +13,8 @@ on:
       - 'tests/source-extraction.test.mjs'
       - 'tests/colors.test.mjs'
       - 'tests/gradient-model.test.mjs'
+      - 'tests/shape-catalog.test.mjs'
+      - 'tests/fixtures/shape-catalog-*.json'
       - 'tests/module-bundle.smoke.spec.js'
       - 'tests/helpers.js'
       - 'playwright.config.js'

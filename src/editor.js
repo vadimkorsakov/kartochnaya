@@ -1,4 +1,5 @@
-import { openDatabase, runStoreRequest } from './storage/indexeddb.mjs';
+import { openDatabase, runStoreRequest, runStoreTransaction } from './storage/indexeddb.mjs';
+import { prepareProjectImport } from './model/project-integrity.mjs';
 import { toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint } from './core/geometry.mjs';
 import { validateShapeCatalog } from './core/shape-catalog.mjs';
 import { html, clamp, fmt } from './core/primitives.mjs';
@@ -156,7 +157,7 @@ async function loadAll(){
  for(const f of app.fonts)await loadFontFace(f);
 }
 function currentProject(){return app.projects.find(p=>p.id===app.currentProjectId)||app.projects[0]}
-async function persistProject(p){p.updatedAt=Date.now();await dbOp('projects','readwrite',store=>store.put(clone(p)))}
+async function persistProject(p){if(p.id===deletingProjectId||deletedProjectIds.has(p.id))throw Error('Проект удаляется или уже удалён');p.updatedAt=Date.now();await dbOp('projects','readwrite',store=>store.put(clone(p)))}
 async function persistProjectForUI(p){try{await persistProject(p);return true}catch(error){console.warn('Проект не сохранён:',error);return false}}
 function projectDocs(pid=app.currentProjectId){return app.docs.filter(d=>d.projectId===pid)}
 function updateProjectBadge(){const project=currentProject();if(!project)return;$('#projectTitle').textContent=project.name+' · '+(app.doc?.title||'Шаблоны');$('#libraryBtn').title='Проекты · '+project.name;renderDocumentTabs();}
@@ -484,6 +485,7 @@ function saveState(id){if(!documentSaves.has(id))documentSaves.set(id,{revision:
 function refreshSaveStatus(){if(!app.doc)return;if(app.historyPreviewOriginal){$('#saveStatus').textContent='Исходное состояние · предпросмотр';return}const state=saveState(app.doc.id);$('#saveStatus').textContent=state.error?'Ошибка сохранения · экспортируй JSON':!app.db?'Хранение недоступно · экспортируй JSON':state.saved===JSON.stringify(app.doc)?'Сохранено на этом устройстве':'Сохраняем…'}
 function confirmDocument(rec){const i=app.docs.findIndex(x=>x.id===rec.id);if(i<0)app.docs.push(rec);else app.docs[i]=rec}
 async function saveDocumentSnapshot(rec){
+ if(rec.projectId===deletingProjectId||deletedProjectIds.has(rec.projectId))return false;
  const state=saveState(rec.id),key=JSON.stringify(rec),revision=state.revision,sequence=++state.sequence;
  if(state.pending?.key===key)return state.pending.promise;
  const pending={key,promise:null};state.pending=pending;
@@ -1902,25 +1904,54 @@ async function exportProjectBackup(){
  const archive={format:'kartochnaya-project-v1',version:'0.19',exportedAt:new Date().toISOString(),project:clone(project),documents,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(f=>clone(f))};
  downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(project.name)+' - проект Карточной.json');toast('Файл JSON проекта подготовлен');
 }
-async function importProjectBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}
- if(!payload.project||!Array.isArray(payload.documents)||payload.documents.length>2000)throw Error('Неверный архив проекта');
- const originals=payload.documents;
- for(const doc of originals)if(!Array.isArray(doc.elements)||!(doc.width>0&&doc.width<=5000&&doc.height>0&&doc.height<=5000))throw Error('Недопустимый документ в архиве');
- if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');
- const old=payload.project,project={id:uid(),name:String(old.name||'Проект').slice(0,90)+' (импорт)',cover:old.cover||'',resources:Array.isArray(old.resources)?clone(old.resources):[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};
- for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(x=>normaliseFont(x).family===normaliseFont(f).family&&x.weight===f.weight&&x.style===f.style)){
-  const imported={...clone(f),id:uid()};try{await loadFontFace(imported);await dbOp('fonts','readwrite',s=>s.put(imported));app.fonts.push(imported)}catch(error){console.warn('Шрифт пропущен при импорте',error)}
- }
- await persistProject(project);app.projects.push(project);
- for(const doc of originals){const incoming=clone(doc);incoming.id=uid();incoming.projectId=project.id;incoming.createdAt=incoming.createdAt||Date.now();incoming.updatedAt=Date.now();
-  // Keep the internal layer, group and mask identifiers unchanged. They are scoped to each document.
-  // Remapping only the layer IDs would break clipping masks, nested folders and other references.
-  await dbOp('docs','readwrite',s=>s.put(incoming));app.docs.push(incoming);
- }
- const fromHome=homeVisible();useProjectId(project.id);const first=projectDocs()[0]||newDoc({title:'Новый шаблон'});if(fromHome)showHome('workspace');else openDocumentTab(first);app.filter='template';
-toast('Проект импортирован: '+project.name);
+// One editor instance serializes project operations; the UI cannot change context mid-commit.
+let projectOperation=false,deletingProjectId=null;
+const deletedProjectIds=new Set();
+function blockProjectInteraction(event){if(projectOperation){event.preventDefault();event.stopImmediatePropagation()}}
+for(const name of ['click','keydown','pointerdown','input','change','drop'])document.addEventListener(name,blockProjectInteraction,true);
+async function importProjectBackup(payload){return importProjectSet(payload,[{project:payload.project,documents:payload.documents}],2000)}
+async function importProjectSet(payload,items,maxDocuments){
+ if(projectOperation)throw Error('Дождись завершения операции с проектами');
+ projectOperation=true;
+ try{
+  const context={projectId:app.currentProjectId,doc:app.doc,tab:documentTabSession.activeId,home:homeVisible()};
+  const plan=prepareProjectImport(items,{generateId:uid,now:Date.now(),existingProjectIds:app.projects.map(p=>p.id),existingDocumentIds:app.docs.map(d=>d.id),maxDocuments});
+  const sections=payload.shapeCatalog?validateShapeCatalog(clone(payload.shapeCatalog)):null;
+  if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');
+  const fonts=[],faces=[],diagnostics=plan.diagnostics;
+  if(payload.fonts!=null&&!Array.isArray(payload.fonts))throw Error('Некорректный список шрифтов');
+  const accepted=app.fonts.map(f=>normaliseFont(clone(f)));
+  for(const [index,raw] of (payload.fonts||[]).entries()){
+   if(!raw||!raw.data){diagnostics.warnings.push({code:'font-without-data',path:`fonts[${index}]`});continue}
+   const f=normaliseFont({...clone(raw),id:uid()});
+   if(accepted.some(x=>x.family===f.family&&x.weight===f.weight&&x.style===f.style)){diagnostics.info.push({code:'duplicate-font-skipped',path:`fonts[${index}]`});continue}
+   try{
+    const loaded=[];
+    for(const name of new Set([f.family,f.name])){const face=new FontFace(name,`url("${f.data}")`,name===f.family?{weight:String(f.weight),style:f.style}:{});await face.load();loaded.push(face)}
+    fonts.push(f);faces.push(...loaded);accepted.push(f);
+   }catch(error){console.warn('Шрифт пропущен при импорте',error);diagnostics.warnings.push({code:'unsupported-font-skipped',path:`fonts[${index}]`})}
+  }
+  if(app.currentProjectId!==context.projectId||app.doc!==context.doc||documentTabSession.activeId!==context.tab||homeVisible()!==context.home)throw Error('Контекст изменился; повтори импорт');
+  const stores=['projects','docs'];if(fonts.length)stores.push('fonts');if(sections)stores.push('settings');
+  await runStoreTransaction(app.db,stores,'readwrite',store=>{
+   for(const project of plan.projects)store('projects').add(project);
+   for(const doc of plan.documents)store('docs').add(doc);
+   for(const font of fonts)store('fonts').add(font);
+   if(sections)store('settings').put({key:'shapes-v1',sections});
+  });
+  app.projects.push(...plan.projects);app.docs.push(...plan.documents);app.fonts.push(...fonts);
+  // Registration is outside IndexedDB atomicity; loading happened before the transaction.
+  for(const face of faces)document.fonts.add(face);
+  if(sections)applyShapeCatalog(sections);
+  if(diagnostics.warnings.length)console.warn('Диагностика импорта',diagnostics);
+  if(app.currentProjectId===context.projectId&&app.doc===context.doc&&documentTabSession.activeId===context.tab&&homeVisible()===context.home&&plan.projects.length){
+   useProjectId(plan.projects[0].id);app.filter='template';
+   if(context.home)showHome('workspace');else if(plan.documents[0])openDocumentTab(plan.documents[0]);
+  }
+  renderLibrary();toast(`Импортировано проектов: ${plan.projects.length}`+(diagnostics.warnings.length?` · предупреждений: ${diagnostics.warnings.length}`:''));
+ }finally{projectOperation=false}
 }
-async function importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
+async function importJSON(file){try{if(file.size>50*1024*1024)throw Error('Архив больше 50 МБ');const payload=JSON.parse(await file.text());if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}if(projectOperation)throw Error('Дождись завершения операции с проектами');if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
 async function storeNewDocument(doc){try{await dbOp('docs','readwrite',s=>s.put(clone(doc)))}catch(error){return false}app.docs.push(clone(doc));app.filter=doc.type;renderLibrary();toast(doc.type==='card'?'Карточка добавлена в список':'Копия добавлена в список');return true}
 async function makeCardFrom(template){if(!await flushSave())return;const doc=clone(template);doc.id=uid();doc.projectId=template.projectId||app.currentProjectId;doc.type='card';doc.hasCustomName=false;doc.title=template.title+' · карточка';doc.createdAt=doc.updatedAt=Date.now();
  const groupMap=new Map();doc.elements.forEach(e=>{e.id=uid();if(e.groupId){if(!groupMap.has(e.groupId))groupMap.set(e.groupId,uid());e.groupId=groupMap.get(e.groupId)}});
@@ -2796,14 +2827,40 @@ window.addEventListener('popstate',ev=>{
 rearmBackGuard();
 
 // Project-scoped removal and multi-project backup.
-async function deleteProject(id){const project=app.projects.find(p=>p.id===id);if(!project)return;const docs=projectDocs(id);if(!confirm(`Удалить проект «${project.name}» и все его ${docs.length} документов, ресурсы и настройки?\n\nЭто действие нельзя отменить. Рекомендуется предварительно экспортировать JSON.`))return;
- if(!await flushSave())return;
- for(const tab of [...documentTabSession.tabs].filter(t=>t.doc.projectId===id))if(!await closeDocumentTab(tab.id))return;
- try{for(const doc of projectDocs(id))await dbOp('docs','readwrite',store=>store.delete(doc.id));await dbOp('projects','readwrite',store=>store.delete(id));app.docs=app.docs.filter(d=>d.projectId!==id);app.projects=app.projects.filter(p=>p.id!==id);
- if(!app.projects.length){const fallback={id:uid(),name:'Мой проект',cover:'',resources:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};try{await persistProject(fallback)}catch(error){app.projects.push(fallback);throw error}app.projects.push(fallback)}
- if(app.currentProjectId===id||app.doc?.projectId===id){app.doc=null;useProjectId(app.projects[0].id);if(documentTabSession.activeId!=='home')showHome('workspace')}
- renderLibrary();if(!homeVisible())updateProjectBadge();toast('Проект удалён');
- }catch(err){console.error(err);toast('Не удалось удалить проект полностью; проверь хранилище')}}
+async function deleteProject(id){
+ if(projectOperation)return;
+ const project=app.projects.find(p=>p.id===id);if(!project)return;
+ if(!confirm(`Удалить проект «${project.name}» и все его ${projectDocs(id).length} документов, ресурсы и настройки?\n\nЭто действие нельзя отменить. Рекомендуется предварительно экспортировать JSON.`))return;
+ projectOperation=true;
+ try{
+  if(!await flushSave())return;
+  for(const tab of documentTabSession.tabs.filter(t=>t.doc.projectId===id)){
+   if(tab.view.historyPreviewOriginal){toast('Выйди из предпросмотра истории перед этим действием');return}
+   const rec=clone(tab.doc);if(!await saveDocumentSnapshot(rec)||JSON.stringify(rec)!==JSON.stringify(tab.doc))return;
+  }
+  // Stop new saves of this project, then drain snapshots already issued by this instance.
+  deletingProjectId=id;clearTimeout(app.saveTimer);app.saveTimer=null;
+  await Promise.all([...documentSaves.values()].map(state=>state.pending?.promise));
+  const now=Date.now(),fallback={id:uid(),name:'Мой проект',cover:'',resources:[],resourceFolders:[],exportCounters:{},createdAt:now,updatedAt:now};
+  let createdFallback=false;
+  await runStoreTransaction(app.db,['projects','docs'],'readwrite',store=>{
+   const projects=store('projects');projects.delete(id);
+   const count=projects.count();count.onsuccess=()=>{if(!count.result){projects.add(fallback);createdFallback=true}};
+   const request=store('docs').openCursor();request.onsuccess=()=>{const cursor=request.result;if(!cursor)return;if(cursor.value.projectId===id)cursor.delete();cursor.continue()};
+  });
+  deletedProjectIds.add(id);
+  app.docs=app.docs.filter(d=>d.projectId!==id);app.projects=app.projects.filter(p=>p.id!==id);
+  if(createdFallback)app.projects.push(fallback);
+  const removed=new Set(documentTabSession.tabs.filter(t=>t.doc.projectId===id).map(t=>t.id));
+  documentTabSession.tabs=documentTabSession.tabs.filter(t=>!removed.has(t.id));
+  if(removed.has(documentTabSession.lastDocumentId))documentTabSession.lastDocumentId=documentTabSession.tabs.at(-1)?.id||null;
+  if(removed.has(documentTabSession.activeId))documentTabSession.activeId='home';
+  if(app.doc?.projectId===id)app.doc=null;
+  if(app.currentProjectId===id){useProjectId(app.projects[0].id);showHome('workspace')}
+  renderDocumentTabs();renderLibrary();if(!homeVisible())updateProjectBadge();toast('Проект удалён');
+ }catch(error){console.error(error);toast('Не удалось удалить проект; данные сохранены')}
+ finally{deletingProjectId=null;projectOperation=false}
+}
 function openProjectExportDialog(){const box=$('#projectExportList');box.replaceChildren();for(const p of app.projects){const row=document.createElement('label');row.className='project-export-row';const count=projectDocs(p.id).length;row.innerHTML=`<input type="checkbox" data-export-project="${p.id}" checked>${p.cover?`<img src="${p.cover}" alt="">`:`<span class="export-project-initial">${html(p.name.charAt(0))}</span>`}<span><strong>${html(p.name)}</strong><small>${count} документов · ${(p.resources||[]).length} ресурсов</small></span>`;box.append(row)}$('#projectExportShade').classList.remove('hidden');updateExportSelectState()}
 function updateExportSelectState(){const checks=[...document.querySelectorAll('[data-export-project]')];const count=checks.filter(x=>x.checked).length;$('#projectExportConfirm').disabled=count===0;$('#projectExportConfirm').textContent=`Экспортировать (${count})`}
 function closeProjectExportDialog(){$('#projectExportShade').classList.add('hidden')}
@@ -2815,7 +2872,7 @@ $('#projectExportShade').addEventListener('click',ev=>{if(ev.target.id==='projec
 $('#projectExportList').addEventListener('change',updateExportSelectState);
 $('#projectExportSelectAll').onclick=()=>{const boxes=[...document.querySelectorAll('[data-export-project]')],areAll=boxes.every(b=>b.checked);for(const box of boxes)box.checked=!areAll;$('#projectExportSelectAll').textContent=areAll?'Выбрать все':'Снять все';updateExportSelectState()};
 $('#projectExportConfirm').onclick=exportSelectedProjects;
-async function importWorkspaceBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(!Array.isArray(payload.projects)||payload.projects.length>500)throw Error('Некорректный архив проектов');const items=payload.projects;if(items.reduce((n,item)=>n+(item.documents?.length||0),0)>5000)throw Error('Слишком много документов');if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');for(const item of items){if(!item.project||!Array.isArray(item.documents))throw Error('Не хватает данных проекта');for(const doc of item.documents){if(!Array.isArray(doc.elements)||!(doc.width>0&&doc.width<=5000&&doc.height>0&&doc.height<=5000))throw Error('Повреждённый документ')}}for(const f of payload.fonts||[]){if(!f.data||app.fonts.some(x=>normaliseFont(x).family===normaliseFont(f).family&&x.weight===f.weight&&x.style===f.style))continue;const imported={...clone(f),id:uid()};try{await loadFontFace(imported);await dbOp('fonts','readwrite',s=>s.put(imported));app.fonts.push(imported)}catch(err){console.warn('Не удалось импортировать шрифт',err)}}let added=0;for(const item of items){const p={...clone(item.project),id:uid(),name:String(item.project.name||'Проект').slice(0,90)+' (импорт)',createdAt:Date.now(),updatedAt:Date.now(),exportCounters:{}};await persistProject(p);app.projects.push(p);for(const original of item.documents){const doc={...clone(original),id:uid(),projectId:p.id,updatedAt:Date.now()};await dbOp('docs','readwrite',s=>s.put(doc));app.docs.push(doc)}added++}if(added){const fromHome=homeVisible();useProjectId(app.projects[app.projects.length-added].id);const first=projectDocs()[0];app.filter='template';if(fromHome)showHome('workspace');else if(first)openDocumentTab(first);renderLibrary();toast(`Импортировано проектов: ${added}`)}}
+async function importWorkspaceBackup(payload){return importProjectSet(payload,payload.projects,5000)}
 
 
 // Touch long press must not show the desktop right-click menu on mobile.

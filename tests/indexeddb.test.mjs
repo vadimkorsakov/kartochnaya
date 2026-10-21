@@ -136,3 +136,67 @@ test('upgrade failure aborts and preserves the cause', async () => {
   const promise = openDatabase({ indexedDB: h.factory }); h.request.onupgradeneeded();
   await assert.rejects(promise, error => error === cause); assert.equal(aborted, true);
 });
+
+// A real IndexedDB implementation in memory complements event ordering doubles above.
+// The same multi-store rollback contract is also exercised in Chromium.
+const { IDBFactory } = await import('fake-indexeddb');
+const { runStoreTransaction } = await import('../src/storage/indexeddb.mjs');
+async function multiDB() {
+  const factory = new IDBFactory();
+  return new Promise((resolve, reject) => {
+    const q = factory.open('multi', 1);
+    q.onupgradeneeded = () => { for (const name of ['projects', 'docs']) q.result.createObjectStore(name, { keyPath: 'id' }); };
+    q.onsuccess = () => resolve(q.result); q.onerror = () => reject(q.error);
+  });
+}
+const multi = (db, operation) => runStoreTransaction(db, ['projects', 'docs'], 'readwrite', operation);
+const readAll = (db, name) => runStoreRequest(db, name, 'readonly', s => s.getAll());
+test('multi-store writes multiple objects, updates and deletes together', async () => {
+  const db = await multiDB();
+  await multi(db, s => { s('projects').put({ id: 'p' }); s('docs').put({ id: 'a', projectId: 'p' }); s('docs').put({ id: 'b', projectId: 'p' }); });
+  assert.equal((await readAll(db, 'docs')).length, 2); assert.equal((await readAll(db, 'projects')).length, 1);
+  await multi(db, s => { s('projects').delete('p'); const q = s('docs').openCursor(); q.onsuccess = () => { if (q.result) { q.result.delete(); q.result.continue(); } }; });
+  assert.deepEqual(await readAll(db, 'docs'), []); assert.deepEqual(await readAll(db, 'projects'), []); db.close();
+});
+test('multi-store resolves after complete, never after request success', async () => {
+  const db = await multiDB(); let settled = false, complete = false;
+  const promise = multi(db, s => { const q = s('docs').put({ id: 'a' }); q.transaction.addEventListener('complete', () => { complete = true; }); q.onsuccess = () => assert.equal(settled, false); });
+  promise.then(() => { settled = true; }); await promise; assert.equal(complete, true); db.close();
+});
+test('multi-store request success then abort rolls back ALL stores', async () => {
+  const db = await multiDB(); let succeeded = false;
+  await assert.rejects(multi(db, s => { s('projects').put({ id: 'p' }); const q = s('docs').put({ id: 'a' }); q.onsuccess = () => { succeeded = true; q.transaction.abort(); }; }), { name: 'AbortError' });
+  assert.equal(succeeded, true); assert.deepEqual(await readAll(db, 'projects'), []); assert.deepEqual(await readAll(db, 'docs'), []); db.close();
+});
+for (const position of [2, 4]) test(`request ${position} ConstraintError retains original reason and rolls back earlier writes`, async () => {
+  const db = await multiDB(); await multi(db, s => { s('docs').put({ id: 'existing', value: 'before' }); }); let cause;
+  await assert.rejects(multi(db, s => {
+    s('projects').put({ id: 'p' });
+    for (let i = 2; i <= position; i++) { const q = s('docs').add({ id: i === position ? 'existing' : 'new-' + i }); if (i === position) q.addEventListener('error', () => { cause = q.error; }); }
+  }), error => error === cause && error.name === 'ConstraintError');
+  assert.deepEqual(await readAll(db, 'projects'), []); assert.deepEqual(await readAll(db, 'docs'), [{ id: 'existing', value: 'before' }]); db.close();
+});
+test('callback throw after queued put aborts and retains cause', async () => {
+  const db = await multiDB(), cause = new Error('original callback cause');
+  await assert.rejects(multi(db, s => { s('docs').put({ id: 'a' }); throw cause; }), error => error === cause);
+  assert.deepEqual(await readAll(db, 'docs'), []); db.close();
+});
+test('unknown scoped store aborts queued changes', async () => {
+  const db = await multiDB(); await assert.rejects(multi(db, s => { s('docs').put({ id: 'a' }); s('fonts'); }), { name: 'NotFoundError' }); assert.deepEqual(await readAll(db, 'docs'), []); db.close();
+});
+test('unknown database store rejects transaction creation', async () => {
+  const db = await multiDB(); await assert.rejects(runStoreTransaction(db, ['missing'], 'readwrite', () => {}), { name: 'NotFoundError' }); db.close();
+});
+test('closed and unavailable databases reject for reads and writes', async () => {
+  const db = await multiDB(); db.close(); await assert.rejects(multi(db, () => {}), { name: 'InvalidStateError' });
+  for (const mode of ['readonly', 'readwrite']) await assert.rejects(runStoreTransaction(null, ['docs'], mode, () => {}), { name: 'InvalidStateError' });
+});
+test('transaction creation exception preserves identity', async () => { const cause = new Error('creation'); await assert.rejects(multi({ transaction() { throw cause; } }, () => {}), error => error === cause); });
+for (const result of [null, 1, {}, Promise.resolve(), Promise.reject(new Error('consumed'))]) {
+  if (result instanceof Promise) result.catch(() => {});
+  test(`non-undefined callback result ${String(result)} rejects and rolls back`, async () => {
+    const db = await multiDB(); await assert.rejects(multi(db, s => { s('docs').put({ id: 'a' }); return result; }), TypeError); assert.deepEqual(await readAll(db, 'docs'), []); db.close();
+  });
+}
+test('async callback is rejected before it runs', async () => { const db = await multiDB(); let called = false; await assert.rejects(multi(db, async () => { called = true; }), TypeError); assert.equal(called, false); db.close(); });
+test('store list and callback contract validation', async () => { const db = await multiDB(); for (const names of [[], ['docs', 'docs'], 'docs', [null]]) await assert.rejects(runStoreTransaction(db, names, 'readwrite', () => {}), TypeError); await assert.rejects(multi(db, null), TypeError); db.close(); });

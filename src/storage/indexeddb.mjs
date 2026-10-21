@@ -84,3 +84,34 @@ export function openDatabase({ indexedDB: factory, onBlocked, onVersionChange, o
     } catch (error) { fail(error); }
   });
 }
+
+// The callback queues requests synchronously and returns undefined. Request handlers
+// may queue dependent requests while the same transaction is still active.
+export function runStoreTransaction(db, storeNames, mode, operation) {
+  return new Promise((resolve, reject) => {
+    let transaction, failure, settled = false;
+    const fail = error => { if (!settled) { settled = true; reject(error); } };
+    const abort = error => { failure ||= error; try { transaction?.abort(); } catch {} fail(failure); };
+    try {
+      if (!db) throw new DOMException('IndexedDB is unavailable', 'InvalidStateError');
+      if (!Array.isArray(storeNames) || !storeNames.length || storeNames.some(name => typeof name !== 'string') || new Set(storeNames).size !== storeNames.length) throw new TypeError('Expected distinct store names');
+      if (typeof operation !== 'function' || operation.constructor?.name === 'AsyncFunction') throw new TypeError('operation must be synchronous');
+      transaction = db.transaction(storeNames, mode);
+      transaction.oncomplete = () => { if (!settled) { settled = true; resolve(); } };
+      transaction.onerror = event => {
+        failure ||= event.target?.error || transaction.error || new DOMException('IndexedDB transaction failed', 'UnknownError');
+        // Never preventDefault: request errors must roll back all stores.
+        fail(failure);
+      };
+      transaction.onabort = () => fail(failure || transaction.error || new DOMException('IndexedDB transaction aborted', 'AbortError'));
+      const result = operation(name => {
+        if (!storeNames.includes(name)) throw new DOMException('Store outside transaction scope', 'NotFoundError');
+        return transaction.objectStore(name);
+      });
+      if (result !== undefined) {
+        if (result && typeof result.then === 'function') Promise.resolve(result).catch(() => {});
+        throw new TypeError('operation must synchronously queue requests and return undefined');
+      }
+    } catch (error) { abort(error); }
+  });
+}

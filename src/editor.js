@@ -1,3 +1,5 @@
+import { installBackupUI } from './backup/ui.mjs';
+import { readWorkspaceSnapshot, createWorkspaceBarrier } from './backup/storage.mjs';
 import { openDatabase, runStoreRequest, runStoreTransaction } from './storage/indexeddb.mjs';
 import { prepareProjectImport } from './model/project-integrity.mjs';
 import { toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint } from './core/geometry.mjs';
@@ -140,7 +142,9 @@ function rememberRaster(src,cv){rasterCache.set(src,cv);if(rasterCache.size>24)r
 function toast(msg){const n=$('#toast');n.textContent=msg;n.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>n.classList.remove('show'),2900)}
 function storageWarning(error){console.warn('Локальное хранилище:',error);$('#saveStatus').textContent='Хранение недоступно · экспортируй JSON';toast('Локальное хранилище недоступно: сохраняй проект в JSON')}
 async function openDB(){try{return await openDatabase({onVersionChange:()=>{app.db=null;storageWarning('Соединение закрыто: база обновляется в другой вкладке')},onClose:()=>{app.db=null;storageWarning('Соединение закрыто браузером')}})}catch(error){storageWarning(error);return null}}
-async function dbOp(store,mode,fn){try{return await runStoreRequest(app.db,store,mode,fn)}catch(error){if(mode==='readwrite'){console.warn('Запись не подтверждена:',error);toast('Не сохранилось. Экспортируй JSON!')}throw error}}
+const workspaceBarrier=createWorkspaceBarrier();
+let zipWorkspaceBusy=false;
+async function dbOp(store,mode,fn){try{return await workspaceBarrier.track(runStoreRequest(app.db,store,mode,fn),{store,write:mode==='readwrite'})}catch(error){if(mode==='readwrite'){console.warn('Запись не подтверждена:',error);toast('Не сохранилось. Экспортируй JSON!')}throw error}}
 function startupReadFailure(error){app.db?.close();app.db=null;storageWarning(error)}
 async function startupWrite(store,record){try{await dbOp(store,'readwrite',s=>s.put(record));return true}catch(error){storageWarning(error);return false}}
 async function loadAll(){
@@ -1887,7 +1891,7 @@ $('#seriesExportCancel').onclick=closeSeriesExportDialog;
 $('#seriesExportDialog').addEventListener('pointerdown',ev=>{if(ev.target.id==='seriesExportDialog')closeSeriesExportDialog()});
 function toPNGBlob(target){return new Promise((resolve,reject)=>target.toBlob(b=>b?resolve(b):reject(new Error('PNG недоступен')),'image/png'))}
 async function loadSlideImages(slide){for(const e of slide.elements||[]){if(e.visible&&e.imageSrc){const item=getImage(e.imageSrc);if(!item){const img=new Image();img.src=e.imageSrc;await img.decode();imgCache.set(e.imageSrc,{image:img,ready:true})}}}}
-async function exportSeriesIndices(indices){const d=app.doc,project=app.projects.find(p=>p.id===d.projectId)||currentProject(),base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';syncCurrentSlide(d);
+async function zipOriginal_exportSeriesIndices(indices){const d=app.doc,project=app.projects.find(p=>p.id===d.projectId)||currentProject(),base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';syncCurrentSlide(d);
  project.exportCounters ||= {};let counter=Number(project.exportCounters[base])||0;let done=0;
  for(const i of indices){const page=slideAsDoc(d,i);if(page.width*page.height>30000000){toast('Слишком большой холст №'+(i+1));break}try{await loadSlideImages(page);const c=document.createElement('canvas');c.width=page.width;c.height=page.height;paintDocument(c.getContext('2d'),page,false);const blob=await toPNGBlob(c);const name=`${base} ${++counter}.png`;downloadBlob(blob,name);done++}catch(error){console.error(error);toast('Ошибка экспорта холста '+(i+1));break}}
  if(done){project.exportCounters[base]=counter;if(!await persistProjectForUI(project)){toast('PNG выгружены; счётчик не сохранён');return}toast(`Экспортировано холстов: ${done}. Если браузер блокирует несколько загрузок, разреши их для приложения.`)}
@@ -1895,7 +1899,7 @@ async function exportSeriesIndices(indices){const d=app.doc,project=app.projects
 $('#seriesExportConfirm').onclick=async()=>{const ids=$$('[data-series-export]:checked').map(x=>Number(x.dataset.seriesExport));if(!ids.length){toast('Выбери хотя бы один холст');return}$('#seriesExportConfirm').disabled=true;closeSeriesExportDialog();await exportSeriesIndices(ids)};
 function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
 function niceName(s){return sanitizeCardTitle(s).slice(0,100)}
-async function exportPNG(){if(app.doc?.type==='card'){ensureCardSlides(app.doc);if(app.doc.slides.length>1){openSeriesExportDialog();return}}const d=app.doc;if(d.width*d.height>30000000){toast('Слишком большой холст для телефона');return}for(const e of d.elements){if(e.visible&&e.fillType==='image'&&e.imageSrc){const im=getImage(e.imageSrc);if(!im){const wait=new Image();wait.src=e.imageSrc;try{await wait.decode();imgCache.set(e.imageSrc,{image:wait,ready:true})}catch(err){toast('Не удалось прочитать изображение для PNG');return}}}}const target=document.createElement('canvas');target.width=d.width;target.height=d.height;const c=target.getContext('2d');paintDocument(c,d,false);target.toBlob(async blob=>{if(!blob){toast('Ошибка экспорта PNG');return}const project=app.projects.find(p=>p.id===d.projectId)||currentProject();const base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';if(project){project.exportCounters||={};const previous=project.exportCounters[base]||0;const name=base+(previous?' '+previous:'')+'.png';downloadBlob(blob,name);project.exportCounters[base]=previous+1;try{await persistProject(project)}catch(error){console.error(error);toast('Счётчик экспорта не сохранён')}}else downloadBlob(blob,base+'.png')},'image/png')}
+async function zipOriginal_exportPNG(){if(app.doc?.type==='card'){ensureCardSlides(app.doc);if(app.doc.slides.length>1){openSeriesExportDialog();return}}const d=app.doc;if(d.width*d.height>30000000){toast('Слишком большой холст для телефона');return}for(const e of d.elements){if(e.visible&&e.fillType==='image'&&e.imageSrc){const im=getImage(e.imageSrc);if(!im){const wait=new Image();wait.src=e.imageSrc;try{await wait.decode();imgCache.set(e.imageSrc,{image:wait,ready:true})}catch(err){toast('Не удалось прочитать изображение для PNG');return}}}}const target=document.createElement('canvas');target.width=d.width;target.height=d.height;const c=target.getContext('2d');paintDocument(c,d,false);await new Promise(resolve=>target.toBlob(async blob=>{try{if(!blob){toast('Ошибка экспорта PNG');return}const project=app.projects.find(p=>p.id===d.projectId)||currentProject();const base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';if(project){project.exportCounters||={};const previous=project.exportCounters[base]||0;const name=base+(previous?' '+previous:'')+'.png';downloadBlob(blob,name);project.exportCounters[base]=previous+1;try{await persistProject(project)}catch(error){console.error(error);toast('Счётчик экспорта не сохранён')}}else downloadBlob(blob,base+'.png')}finally{resolve()}},'image/png'))}
 function exportJSON(){syncCurrentSlide();const payload={format:'kartochnaya-v1',document:app.doc,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts,exportedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});downloadBlob(blob,niceName(app.doc.title)+'.json')}
 function exportProjectDocuments(id=app.currentProjectId){const records=new Map(projectDocs(id).map(d=>[d.id,clone(d)]));for(const tab of documentTabSession.tabs)if(tab.doc.projectId===id)records.set(tab.id,clone(tab.doc));if(app.doc?.projectId===id){syncCurrentSlide();records.set(app.doc.id,clone(app.doc))}return [...records.values()]}
 async function exportProjectBackup(){
@@ -1907,20 +1911,20 @@ async function exportProjectBackup(){
 // One editor instance serializes project operations; the UI cannot change context mid-commit.
 let projectOperation=false,deletingProjectId=null;
 const deletedProjectIds=new Set();
-function blockProjectInteraction(event){if(projectOperation){event.preventDefault();event.stopImmediatePropagation()}}
+function blockProjectInteraction(event){if(projectOperation||zipWorkspaceBusy){event.preventDefault();event.stopImmediatePropagation()}}
 for(const name of ['click','keydown','pointerdown','input','change','drop'])document.addEventListener(name,blockProjectInteraction,true);
 async function importProjectBackup(payload){return importProjectSet(payload,[{project:payload.project,documents:payload.documents}],2000)}
-async function importProjectSet(payload,items,maxDocuments){
+async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null){
  if(projectOperation)throw Error('Дождись завершения операции с проектами');
  projectOperation=true;
  try{
   const context={projectId:app.currentProjectId,doc:app.doc,tab:documentTabSession.activeId,home:homeVisible()};
-  const plan=prepareProjectImport(items,{generateId:uid,now:Date.now(),existingProjectIds:app.projects.map(p=>p.id),existingDocumentIds:app.docs.map(d=>d.id),maxDocuments});
+  const plan=prepareProjectImport(items,{generateId:uid,now:Date.now(),existingProjectIds:(zipSnapshot?.projects||app.projects).map(p=>p.id),existingDocumentIds:(zipSnapshot?.docs||app.docs).map(d=>d.id),maxDocuments,maxProjects:zipSnapshot?Number.MAX_SAFE_INTEGER:500});
   const sections=payload.shapeCatalog?validateShapeCatalog(clone(payload.shapeCatalog)):null;
   if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');
   const fonts=[],faces=[],diagnostics=plan.diagnostics;
   if(payload.fonts!=null&&!Array.isArray(payload.fonts))throw Error('Некорректный список шрифтов');
-  const accepted=app.fonts.map(f=>normaliseFont(clone(f)));
+  const accepted=(zipSnapshot?.fonts||app.fonts).map(f=>normaliseFont(clone(f)));
   for(const [index,raw] of (payload.fonts||[]).entries()){
    if(!raw||!raw.data){diagnostics.warnings.push({code:'font-without-data',path:`fonts[${index}]`});continue}
    const f=normaliseFont({...clone(raw),id:uid()});
@@ -1950,9 +1954,10 @@ async function importProjectSet(payload,items,maxDocuments){
    if(context.home||!first)showHome('workspace');else openDocumentTab(first);
   }
   renderLibrary();toast(`Импортировано проектов: ${plan.projects.length}`+(diagnostics.warnings.length?` · предупреждений: ${diagnostics.warnings.length}`:''));
+  return diagnostics;
  }finally{projectOperation=false}
 }
-async function importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}if(projectOperation)throw Error('Дождись завершения операции с проектами');if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
+async function zipOriginal_importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}if(projectOperation)throw Error('Дождись завершения операции с проектами');if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
 async function storeNewDocument(doc){try{await dbOp('docs','readwrite',s=>s.put(clone(doc)))}catch(error){return false}app.docs.push(clone(doc));app.filter=doc.type;renderLibrary();toast(doc.type==='card'?'Карточка добавлена в список':'Копия добавлена в список');return true}
 async function makeCardFrom(template){if(!await flushSave())return;const doc=clone(template);doc.id=uid();doc.projectId=template.projectId||app.currentProjectId;doc.type='card';doc.hasCustomName=false;doc.title=template.title+' · карточка';doc.createdAt=doc.updatedAt=Date.now();
  const groupMap=new Map();doc.elements.forEach(e=>{e.id=uid();if(e.groupId){if(!groupMap.has(e.groupId))groupMap.set(e.groupId,uid());e.groupId=groupMap.get(e.groupId)}});
@@ -2067,14 +2072,14 @@ $('#assetsPopoverGrid').addEventListener('dblclick',ev=>{const label=ev.target.c
 $('#assetsPopoverGrid').addEventListener('click',async ev=>{const folder=ev.target.closest('[data-folder-open]');if(folder){await openResourceFolder(folder.dataset.folderOpen);return}if(ev.target.closest('select'))return;const card=ev.target.closest('[data-asset-pop-id]');if(!card)return;const a=currentProject()?.resources?.find(x=>x.id===card.dataset.assetPopId);if(!a)return;$('#assetsPopover').classList.add('hidden');await insertResourceAsset(a)});
 document.addEventListener('pointerdown',ev=>{if(!$('#assetsPopover').classList.contains('hidden')&&!ev.target.closest('#assetsPopover,#dockAssets,#assetsBtn,[data-mobile="assets"]'))$('#assetsPopover').classList.add('hidden')});
 
-async function insertResourceAsset(asset){if(!asset)return;if(documentTabSession.activeId==='home'){const target=app.doc?.projectId===app.currentProjectId?app.doc:(projectDocs()[0]||newDoc());openDocumentTab(target)}if(!app.doc)return;const im=new Image();im.src=asset.src;try{await im.decode()}catch{toast('Ресурс не удалось открыть');return}
+async function zipOriginal_insertResourceAsset(asset){if(!asset)return;if(documentTabSession.activeId==='home'){const target=app.doc?.projectId===app.currentProjectId?app.doc:(projectDocs()[0]||newDoc());openDocumentTab(target)}if(!app.doc)return;const im=new Image();im.src=asset.src;try{await im.decode()}catch{toast('Ресурс не удалось открыть');return}
  const e=defaultElement('image');positionNewImage(e,{width:im.naturalWidth,height:im.naturalHeight});e.name=asset.name;e.imageSrc=asset.src;e.fillType='image';e.imageFit='fill';app.doc.elements.push(e);setSelected([e.id],true);commit();refreshLayers();refreshInspector();refreshMobileTools();closeDialogs();openEditor();toast('Ресурс добавлен на холст');
 }
 async function createProject(){const input=$('#newProjectName');const name=input.value.trim();if(!name){input.focus();toast('Укажи название проекта');return}if(name.length>90)return;
  if(!await flushSave())return;const p={id:uid(),name,cover:'',resources:[],resourceFolders:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};if(!await persistProjectForUI(p))return;app.projects.push(p);useProjectId(p.id);const doc=newDoc({title:'Новый шаблон'});setDoc(doc);if(!await flushSave())return;input.value='';app.filter='template';renderLibrary();toast('Проект создан');
 }
 async function switchProject(id){if(id===app.currentProjectId)return;useProjectId(id);app.filter='template';renderLibrary();toast('Проект переключён');}
-async function addProjectResources(files){const p=currentProject();if(!p||!files.length)return;let added=0;for(const file of files){if(!file.type.startsWith('image/'))continue;try{const image=await compressImage(file);p.resources||=[];p.resources.push({id:uid(),name:file.name,src:image.src,folderId:app.resourceFolderId||null,createdAt:Date.now(),width:image.width,height:image.height});added++}catch(e){console.error(e);toast('Не удалось добавить '+file.name)}}if(added){try{await persistProject(p);renderLibrary();toast('Добавлено ресурсов: '+added)}catch(e){console.error(e);toast('Недостаточно места для сохранения ресурсов')}}}
+async function zipOriginal_addProjectResources(files){const p=currentProject();if(!p||!files.length)return;let added=0;for(const file of files){if(!file.type.startsWith('image/'))continue;try{const image=await compressImage(file);p.resources||=[];p.resources.push({id:uid(),name:file.name,src:image.src,folderId:app.resourceFolderId||null,createdAt:Date.now(),width:image.width,height:image.height});added++}catch(e){console.error(e);toast('Не удалось добавить '+file.name)}}if(added){try{await persistProject(p);renderLibrary();toast('Добавлено ресурсов: '+added)}catch(e){console.error(e);toast('Недостаточно места для сохранения ресурсов')}}}
 
 // Folder navigation and moving assets work in both project library and editor popover.
 $('#resourceBreadcrumbs').addEventListener('click',ev=>{const b=ev.target.closest('[data-folder-open]');if(b)openResourceFolder(b.dataset.folderOpen)});
@@ -2116,7 +2121,7 @@ function sfntNames(buffer){try{const d=new DataView(buffer),len=d.byteLength;if(
  if(!offset||offset+6>len)return{};const count=d.getUint16(offset+2),storage=offset+d.getUint16(offset+4),names={};
  for(let i=0;i<count;i++){const p=offset+6+i*12;if(p+12>len)break;const platform=d.getUint16(p),nameId=d.getUint16(p+6),n=d.getUint16(p+8),start=storage+d.getUint16(p+10);if(![1,2,16,17].includes(nameId)||start+n>len||names[nameId])continue;let str='';if(platform===0||platform===3){for(let j=0;j+1<n;j+=2)str+=String.fromCharCode(d.getUint16(start+j))}else {for(let j=0;j<n;j++)str+=String.fromCharCode(d.getUint8(start+j))}if(str.trim())names[nameId]=str.trim()}
  return {family:names[16]||names[1],subfamily:names[17]||names[2]};}catch{return{}}}
-async function importFontFiles(files,fromFolder=false){const list=[...files].filter(file=>/\.(ttf|otf|woff2?)$/i.test(file.name));if(!list.length){toast('В папке нет подходящих шрифтов');return}
+async function zipOriginal_importFontFiles(files,fromFolder=false){const list=[...files].filter(file=>/\.(ttf|otf|woff2?)$/i.test(file.name));if(!list.length){toast('В папке нет подходящих шрифтов');return}
  let added=0,duplicates=0;for(const file of list){try{
  const path=file.webkitRelativePath||'';const folder=file.__importFamily||(path?path.split('/')[0]:'');
  const guessed=inferFontMeta(file.name,fromFolder?folder:'');const names=sfntNames(await file.arrayBuffer());
@@ -2131,7 +2136,7 @@ async function importFontFiles(files,fromFolder=false){const list=[...files].fil
 }
 async function readDataURL(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)})}
 function positionNewImage(e,photo,center){const maxW=app.doc.width*.86,maxH=app.doc.height*.86,scale=Math.min(maxW/photo.width,maxH/photo.height,1);e.w=Math.max(1,Math.round(photo.width*scale));e.h=Math.max(1,Math.round(photo.height*scale));e.x=Math.round((center?.x??app.doc.width/2)-e.w/2);e.y=Math.round((center?.y??app.doc.height/2)-e.h/2);e.cropX=0;e.cropY=0;e.cropZoom=1;e.cropRotation=0}
-async function compressImage(file){if(file.size>35*1024*1024)throw Error('Фото больше 35 МБ');const src=await readDataURL(file);const im=new Image();im.src=src;await im.decode();const maxDim=4096,factor=Math.min(1,maxDim/Math.max(im.naturalWidth,im.naturalHeight));const cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(im.naturalWidth*factor));cv.height=Math.max(1,Math.round(im.naturalHeight*factor));const ct=cv.getContext('2d');ct.drawImage(im,0,0,cv.width,cv.height);return {src:cv.toDataURL('image/webp',.9),width:cv.width,height:cv.height}}
+async function zipOriginal_compressImage(file){if(file.size>35*1024*1024)throw Error('Фото больше 35 МБ');const src=await readDataURL(file);const im=new Image();im.src=src;await im.decode();const maxDim=4096,factor=Math.min(1,maxDim/Math.max(im.naturalWidth,im.naturalHeight));const cv=document.createElement('canvas');cv.width=Math.max(1,Math.round(im.naturalWidth*factor));cv.height=Math.max(1,Math.round(im.naturalHeight*factor));const ct=cv.getContext('2d');ct.drawImage(im,0,0,cv.width,cv.height);return {src:cv.toDataURL('image/webp',.9),width:cv.width,height:cv.height}}
 $('#imageInput').addEventListener('change',async ev=>{const file=ev.target.files[0];ev.target.value='';if(!file)return;try{const photo=await compressImage(file);let e;if(app.pendingImage?.kind==='new'){e=defaultElement('image');positionNewImage(e,photo);app.doc.elements.push(e);app.selected=e.id;app.selectedIds=[e.id]}else e=app.doc.elements.find(x=>x.id===app.pendingImage?.id);if(!e)return;const replacing=app.pendingImage?.kind==='replace'||(app.pendingImage?.kind==='fill'&&!!e.imageSrc),oldMode=e.imageFit||'fill';e.imageSrc=photo.src;e.fillType='image';e.imageFit=replacing?oldMode:'fill';if(!replacing){e.cropX=0;e.cropY=0;e.cropZoom=1;e.cropRotation=0;}e.name=e.name==='Фото'?'Фото · '+file.name.slice(0,32):e.name;app.pendingImage=null;commit();refreshLayers();refreshInspector();refreshMobileTools();if(!$('#fillPopover').classList.contains('hidden'))renderFillPopover();toast('Изображение добавлено')}catch(e){toast('Не удалось открыть изображение')}});
 $('#fontInput').addEventListener('change',async ev=>{const files=[...ev.target.files];ev.target.value='';await importFontFiles(files,false)});
 $('#fontFolderInput').addEventListener('change',async ev=>{const files=[...ev.target.files];ev.target.value='';await importFontFiles(files,true)});
@@ -2144,7 +2149,7 @@ const fontZone=$('#uploadFontBtn');
 fontZone.onclick=e=>{if(e.shiftKey)$('#fontFolderInput').click();else $('#fontInput').click()};
 fontZone.addEventListener('dragover',ev=>{ev.preventDefault();ev.dataTransfer.dropEffect='copy';fontZone.classList.add('dragover')});
 fontZone.addEventListener('dragleave',()=>fontZone.classList.remove('dragover'));
-async function traverseFontEntry(entry,prefix=''){if(entry.isFile)return new Promise(resolve=>entry.file(file=>{file.__importFamily=prefix.split('/')[0]||'';resolve([file])},()=>resolve([])));
+async function zipOriginal_traverseFontEntry(entry,prefix=''){if(entry.isFile)return new Promise(resolve=>entry.file(file=>{file.__importFamily=prefix.split('/')[0]||'';resolve([file])},()=>resolve([])));
  if(!entry.isDirectory)return [];
  const reader=entry.createReader(),all=[];
  while(true){const batch=await new Promise(resolve=>reader.readEntries(resolve,()=>resolve([])));if(!batch.length)break;all.push(...batch)}
@@ -3562,6 +3567,52 @@ function unifiedColorControl(el){if(!el||el.dataset.unifiedBound)return;el.datas
 const unifyColorControls=()=>document.querySelectorAll('input[type="color"]').forEach(unifiedColorControl);
 new MutationObserver(()=>unifyColorControls()).observe(document.body,{subtree:true,childList:true});unifyColorControls();
 
+// Stage 12: track asynchronous inputs without replacing tab or history algorithms.
+function exportPNG(...args){return workspaceBarrier.track(zipOriginal_exportPNG(...args))}
+function importJSON(...args){return workspaceBarrier.track(zipOriginal_importJSON(...args))}
+function importFontFiles(...args){return workspaceBarrier.track(zipOriginal_importFontFiles(...args))}
+function addProjectResources(...args){return workspaceBarrier.track(zipOriginal_addProjectResources(...args))}
+function insertResourceAsset(...args){return workspaceBarrier.track(zipOriginal_insertResourceAsset(...args))}
+function exportSeriesIndices(...args){return workspaceBarrier.track(zipOriginal_exportSeriesIndices(...args))}
+function traverseFontEntry(...args){return workspaceBarrier.track(zipOriginal_traverseFontEntry(...args))}
+function compressImage(...args){return workspaceBarrier.track(zipOriginal_compressImage(...args))}
+async function zipSavedSnapshot(){
+ if(projectOperation||zipWorkspaceBusy)throw Error('Дождись завершения операции с проектами');
+ zipWorkspaceBusy=true;
+ let timer,cancelled=false;
+ const ensureActive=()=>{if(cancelled)throw Error('Подготовка снимка отменена после ожидания хранилища')};
+ try{
+  const barrier=(async()=>{
+   await workspaceBarrier.drain();
+   ensureActive();
+   // Finish text/raster input exactly as a normal tab switch does.
+   captureDocumentTab();
+   if(!await flushSave())throw Error('Сохранение активного документа не подтверждено; экспортируй JSON');
+   for(const tab of documentTabSession.tabs){
+    ensureActive();
+    if(tab.view.historyPreviewOriginal)throw Error('Выйди из предпросмотра истории во всех вкладках');
+    const rec=clone(tab.doc);
+    if(!await saveDocumentSnapshot(rec)||JSON.stringify(rec)!==JSON.stringify(tab.doc))throw Error('Сохранение вкладки не подтверждено; экспортируй JSON');
+   }
+   await workspaceBarrier.drain();
+  })();
+  await Promise.race([barrier,new Promise((_,reject)=>{timer=setTimeout(()=>{cancelled=true;reject(Error('Сохранения не завершены за 30 секунд. Дождись хранилища и повтори; используй JSON при сбое'))},30000)})]);
+  return await readWorkspaceSnapshot(app.db);
+ }finally{cancelled=true;clearTimeout(timer);zipWorkspaceBusy=false}
+}
+installBackupUI({
+ snapshot:zipSavedSnapshot,
+ download:downloadBlob,
+ restore:async verified=>{
+  const existing=await zipSavedSnapshot();
+  // No asynchronous gap before importProjectSet acquires its existing lock.
+  const diagnostics=await importProjectSet({fonts:verified.data.fonts},verified.data.projects.map(project=>({project,documents:verified.data.docs.filter(doc=>doc.projectId===project.id)})),Number.MAX_SAFE_INTEGER,existing);
+  renderDocumentTabs();
+  return [...verified.warnings,...diagnostics.warnings.map(item=>item.code+' ('+item.path+')')];
+ }
+});
+
+// Property handlers also include their asynchronous image decoding.
+for(const selector of ['#projectCoverInput','#resourceInput']){const node=$(selector),handler=node.onchange;node.onchange=(...args)=>workspaceBarrier.track(handler(...args))}
+
 })();
-
-

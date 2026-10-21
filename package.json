@@ -17,7 +17,7 @@
     "build": "node scripts/build.mjs",
     "build:html": "node scripts/build.mjs html",
     "build:pwa": "node scripts/build.mjs pwa",
-    "test:unit": "node --test tests/colors.test.mjs tests/gradient-model.test.mjs tests/shape-catalog.test.mjs tests/geometry.test.mjs tests/indexeddb.test.mjs tests/project-integrity.test.mjs",
+    "test:unit": "node --test tests/colors.test.mjs tests/gradient-model.test.mjs tests/shape-catalog.test.mjs tests/geometry.test.mjs tests/indexeddb.test.mjs tests/project-integrity.test.mjs tests/zip-backup.test.mjs",
     "test:source": "node --test tests/source-extraction.test.mjs",
     "build:verify": "node scripts/verify-build.mjs",
     "pretest": "npm run build",
@@ -30,5 +30,8 @@
     "esbuild": "0.28.2",
     "fake-indexeddb": "6.2.5",
     "pngjs": "7.0.0"
+  },
+  "dependencies": {
+    "fflate": "0.8.2"
   }
 }

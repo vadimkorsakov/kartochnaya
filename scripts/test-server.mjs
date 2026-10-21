@@ -19,8 +19,10 @@ while (archive.readUInt32LE(offset) === 0x04034b50) {
   offset = start + size;
 }
 assets.set('/standalone/kartochnaya.html', await readFile(fileURLToPath(new URL('../dist/kartochnaya.html', import.meta.url))));
+// Test-only URL for importing the actual production helper into isolated contract tests.
+assets.set('/__tests/indexeddb.mjs', await readFile(fileURLToPath(new URL('../src/storage/indexeddb.mjs', import.meta.url))));
 const mime = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.webmanifest': 'application/manifest+json', '.png': 'image/png',
   '.svg': 'image/svg+xml', '.md': 'text/plain; charset=utf-8',
 };

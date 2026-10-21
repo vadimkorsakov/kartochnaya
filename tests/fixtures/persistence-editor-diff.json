@@ -1,0 +1,393 @@
+{
+  "base": "3b9ce5d24a6cddba274a9a542f71de8046882fcb",
+  "baseSHA256": "9d7f0452f0f0309157e975f46de6e7697f696c5ccdccd6353136668fc0bd6d8b",
+  "blocks": [
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 0,
+      "newLine": 0,
+      "before": [],
+      "afterLines": 1,
+      "afterSHA256": "dc2a6b5f4a3806c4e8b4d2109f958c6fc6265adb1bf1d635888396d68740b712"
+    },
+    {
+      "scope": "function shapeCatalogSnapshot(){return JSON.parse(JSON.stringify(SHAPE_SECTIONS))}",
+      "oldLine": 87,
+      "newLine": 88,
+      "before": [
+        "async function persistShapeCatalog(){const sections=shapeCatalogSnapshot();try{if(app.db)await dbOp('settings','readwrite',s=>s.put({key:'shapes-v1',sections}));else localStorage.setItem('kartochnaya-shapes-v1',JSON.stringify(sections))}catch(err){console.error(err);toast('Ошибка сохранения фигур')}}\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "1e3d61abb7ef8e7cacf58ee63e35fe0ce7e348551a87317d3189cedd36132d1f"
+    },
+    {
+      "scope": "function rememberRaster(src,cv){rasterCache.set(src,cv);if(rasterCache.size>24)rasterCache.delete(rasterCache.keys().next().value)}",
+      "oldLine": 138,
+      "newLine": 139,
+      "before": [
+        "function openDB(){return new Promise(resolve=>{try{const req=indexedDB.open('kartochnaya_local_v1',3);req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains('docs'))db.createObjectStore('docs',{keyPath:'id'});if(!db.objectStoreNames.contains('fonts'))db.createObjectStore('fonts',{keyPath:'id'});if(!db.objectStoreNames.contains('projects'))db.createObjectStore('projects',{keyPath:'id'});if(!db.objectStoreNames.contains('settings'))db.createObjectStore('settings',{keyPath:'key'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>resolve(null)}catch(e){resolve(null)}})}\n",
+        "function dbOp(store,mode,fn){return new Promise((resolve,reject)=>{if(!app.db){resolve(null);return}try{const tr=app.db.transaction(store,mode),obj=tr.objectStore(store),rq=fn(obj);rq.onsuccess=()=>resolve(rq.result);rq.onerror=()=>reject(rq.error)}catch(e){reject(e)}})}\n"
+      ],
+      "afterLines": 5,
+      "afterSHA256": "4d0f73e6905be5554c95cadf4859533d4285fc4984908f27d412290649e18557"
+    },
+    {
+      "scope": "function dbOp(store,mode,fn){return new Promise((resolve,reject)=>{if(!app.db){resolve(null);return}try{const tr=app.db.transaction(store,mode),obj=tr.objectSto",
+      "oldLine": 141,
+      "newLine": 145,
+      "before": [
+        " app.docs=await dbOp('docs','readonly',s=>s.getAll())||[];\n",
+        " app.projects=await dbOp('projects','readonly',s=>s.getAll())||[];\n",
+        " if(!app.projects.length){const first={id:uid(),name:'Мой проект',cover:'',resources:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};app.projects.push(first);await dbOp('projects','readwrite',store=>store.put(first))}\n"
+      ],
+      "afterLines": 4,
+      "afterSHA256": "7ccf8bd7eadce558dd1766608f917ad88781c9f0d7193274fed36bcbc52327a5"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 145,
+      "newLine": 150,
+      "before": [
+        " for(const d of app.docs){if(!d.projectId||!app.projects.some(p=>p.id===d.projectId)){d.projectId=fallback.id;await dbOp('docs','readwrite',store=>store.put(d))}}\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "dd5eb033066ebc99fff94e5e587b586036386b4805f6d51c14c88650205e5348"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 149,
+      "newLine": 154,
+      "before": [
+        " app.fonts=await dbOp('fonts','readonly',s=>s.getAll())||[];\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "4a3528f61d0c17c14471089500d9e24c2d43f8df2050f15dd6d9098031ffa83d"
+    },
+    {
+      "scope": "function currentProject(){return app.projects.find(p=>p.id===app.currentProjectId)||app.projects[0]}",
+      "oldLine": 154,
+      "newLine": 159,
+      "before": [],
+      "afterLines": 1,
+      "afterSHA256": "7479f6e4234c0744c9a1f2e41c0b2c178946313045a4ce865b9b532e2aa9fe17"
+    },
+    {
+      "scope": "function renderHistoryList(){const root=$('#historyEntries');if(!root)return;root.innerHTML=(app.history||[]).map((_,i)=>`<button type=\"button\" class=\"history-e",
+      "oldLine": 474,
+      "newLine": 480,
+      "before": [
+        "async function flushSave(){if(!app.doc||app.historyPreviewOriginal)return;syncCurrentSlide();syncAutoCardTitle();const rec=clone(app.doc);try{await dbOp('docs','readwrite',s=>s.put(rec));const i=app.docs.findIndex(x=>x.id===rec.id);if(i<0)app.docs.push(rec);else app.docs[i]=rec;$('#saveStatus').textContent=app.db?'Сохранено на этом устройстве':'Хранение недоступно · экспортируй JSON'}catch(e){console.error(e);$('#saveStatus').textContent='Ошибка сохранения · экспортируй JSON';toast('Не сохранилось. Экспортируй JSON!')}}\n",
+        "function saveSoon(){if(app.historyPreviewOriginal)return;$('#saveStatus').textContent='Сохраняем…';clearTimeout(app.saveTimer);app.saveTimer=setTimeout(flushSave,420)}\n"
+      ],
+      "afterLines": 15,
+      "afterSHA256": "d2757d71f47c46dfcc9cc11b38f02d8e20c6453a4e9b98b7c2c18ca5194425bd"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 1871,
+      "newLine": 1890,
+      "before": [
+        " if(done){project.exportCounters[base]=counter;await persistProject(project);toast(`Экспортировано холстов: ${done}. Если браузер блокирует несколько загрузок, разреши их для приложения.`)}\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "abf1c990d061dd487e57d05f0a30121d6422db22eb883ed1d83e641fa0c86151"
+    },
+    {
+      "scope": "async function exportPNG(){if(app.doc?.type==='card'){ensureCardSlides(app.doc);if(app.doc.slides.length>1){openSeriesExportDialog();return}}const d=app.doc;if(",
+      "oldLine": 1878,
+      "newLine": 1897,
+      "before": [],
+      "afterLines": 1,
+      "afterSHA256": "b2c844dbb3cddd33f9c7383ea8eedd2bf6b438ea91081f57ad353115b829f318"
+    },
+    {
+      "scope": "async function exportProjectBackup(){",
+      "oldLine": 1880,
+      "newLine": 1900,
+      "before": [
+        " const documents=projectDocs().map(d=>clone(d));\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "4ef5acca1346bcc41484f5b0bb1f3c32ce78da677c31878c7e266a51f68e7768"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 1882,
+      "newLine": 1902,
+      "before": [
+        " downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(project.name)+' - проект Карточной.json');toast('Резервная копия проекта сохранена');\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "239bf224d07116ae9bf0684bd8585f63a71ec939457e1d21dc0b8575a61d5656"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 1888,
+      "newLine": 1908,
+      "before": [
+        " await flushSave();\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "3b0836ac0a6cf15fe13385758e5481226f44101ac199dcc9b0cf74e0f9e05959"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 1893,
+      "newLine": 1913,
+      "before": [
+        " app.projects.push(project);await persistProject(project);\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "faa73785d8eda52e06b7bb4780e577fab4df5b554bc00661ad443db976e235d9"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 1897,
+      "newLine": 1917,
+      "before": [
+        "  app.docs.push(incoming);await dbOp('docs','readwrite',s=>s.put(incoming));\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "39dab6cc28c718e1e4561c0d6c22a6b3996af89bd1d07a9bfa7de534771317b3"
+    },
+    {
+      "scope": "async function importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistSh",
+      "oldLine": 1902,
+      "newLine": 1922,
+      "before": [
+        "async function importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();await flushSave();if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}\n",
+        "async function storeNewDocument(doc){await dbOp('docs','readwrite',s=>s.put(clone(doc)));app.docs.push(clone(doc));app.filter=doc.type;renderLibrary();toast(doc.type==='card'?'Карточка добавлена в список':'Копия добавлена в список')}\n",
+        "async function makeCardFrom(template){await flushSave();const doc=clone(template);doc.id=uid();doc.projectId=template.projectId||app.currentProjectId;doc.type='card';doc.hasCustomName=false;doc.title=template.title+' · карточка';doc.createdAt=doc.updatedAt=Date.now();\n"
+      ],
+      "afterLines": 3,
+      "afterSHA256": "65e3020bf19b063a3a77f6fe31ed4aaf0c0e190aec5bbe52a272b0e72c264b69"
+    },
+    {
+      "scope": "async function duplicateDoc(source){await flushSave();const doc=clone(source);doc.id=uid();doc.projectId=source.projectId||app.currentProjectId;doc.title=source",
+      "oldLine": 1907,
+      "newLine": 1927,
+      "before": [
+        " await storeNewDocument(doc);if(!homeVisible())toast('Карточка создана. Открой её из рабочего пространства.')}\n",
+        "async function duplicateDoc(source){await flushSave();const doc=clone(source);doc.id=uid();doc.projectId=source.projectId||app.currentProjectId;doc.title=source.title+' · копия';if(doc.type==='card')doc.hasCustomName=true;doc.createdAt=doc.updatedAt=Date.now();\n"
+      ],
+      "afterLines": 2,
+      "afterSHA256": "513bbbc6b1dd3156994b53a059c8ddbfd3c94728c4bfdb00bb8bd7388b6fe77f"
+    },
+    {
+      "scope": "async function duplicateDoc(source){await flushSave();const doc=clone(source);doc.id=uid();doc.projectId=source.projectId||app.currentProjectId;doc.title=source",
+      "oldLine": 1910,
+      "newLine": 1930,
+      "before": [
+        " await storeNewDocument(doc);if(!homeVisible())toast('Копия создана. Открой её из рабочего пространства.')}\n",
+        "async function removeDoc(source){if(!confirm(`Удалить «${source.title}»? Это действие нельзя отменить.`))return;await closeDocumentTab(source.id);await dbOp('docs','readwrite',s=>s.delete(source.id));app.docs=app.docs.filter(d=>d.id!==source.id);if(app.doc?.id===source.id){app.doc=null}renderDocumentTabs();renderLibrary()}\n"
+      ],
+      "afterLines": 2,
+      "afterSHA256": "9fd14377cdb8c46e5461f5e6fb0204badb72056e14515d87a9d2029df461fd50"
+    },
+    {
+      "scope": "function resourceMoveSelect(asset){return `<select class=\"resource-move\" data-asset-move=\"${html(asset.id)}\" title=\"Переместить в папку\"><option value=\"\" ${!ass",
+      "oldLine": 1947,
+      "newLine": 1967,
+      "before": [
+        "async function moveAssetToFolder(assetId,folderId){const p=currentProject(),a=p?.resources?.find(a=>a.id===assetId);if(!a)return;if(folderId&&!resourceFolders(p).some(f=>f.id===folderId))return;a.folderId=folderId||null;await persistProject(p);renderLibrary();if(!$('#assetsPopover').classList.contains('hidden'))renderAssetsPopover()}\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "ebcf47ff5c454fbe24c3a97e67bad5c92131f7821135875dfc91e34add081238"
+    },
+    {
+      "scope": "async function moveAssetToFolder(assetId,folderId){const p=currentProject(),a=p?.resources?.find(a=>a.id===assetId);if(!a)return;if(folderId&&!resourceFolders(p",
+      "oldLine": 1949,
+      "newLine": 1969,
+      "before": [
+        "async function createResourceFolder(){const p=currentProject();if(!p)return;const name=prompt('Название новой папки','Новая папка')?.trim();if(!name)return;const parentId=app.resourceFolderId||null;resourceFolders(p).push({id:uid(),name:name.slice(0,100),parentId,createdAt:Date.now()});await persistProject(p);renderLibrary();if(!$('#assetsPopover').classList.contains('hidden'))renderAssetsPopover();toast('Папка создана')}\n",
+        "async function renameResourceFolder(id){const p=currentProject(),f=resourceFolders(p).find(x=>x.id===id);if(!f)return;const name=prompt('Название папки',f.name)?.trim();if(!name||name===f.name)return;f.name=name.slice(0,100);await persistProject(p);renderLibrary();renderAssetsPopover()}\n"
+      ],
+      "afterLines": 2,
+      "afterSHA256": "fb9e7dfd3363e4a00a9c3dd7b83f1de8d54dc1d1346cc7bcb2d4eea891441ce7"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 1955,
+      "newLine": 1975,
+      "before": [
+        " if(destroy)p.resources=p.resources.filter(a=>!descendants.has(a.folderId));else for(const a of p.resources)if(descendants.has(a.folderId))a.folderId=null;\n",
+        " p.resourceFolders=p.resourceFolders.filter(f=>!descendants.has(f.id));if(descendants.has(app.resourceFolderId))app.resourceFolderId=folder.parentId||null;await persistProject(p);renderLibrary();renderAssetsPopover();toast('Папка удалена')\n"
+      ],
+      "afterLines": 2,
+      "afterSHA256": "04a662ca03cbb68c1f48cc3300c969a12c8ef5d8239d1c8a457d9c1f8ef5a435"
+    },
+    {
+      "scope": "async function finish(commit=true){if(completed)return;completed=true;const name=textarea.value.trim();if(commit&&name&&name!==initial){",
+      "oldLine": 1998,
+      "newLine": 2018,
+      "before": [
+        "  try{if(doc){await flushSave();const record=app.docs.find(d=>d.id===doc.id)||doc;record.title=name;if(record.type==='card')record.hasCustomName=true;record.updatedAt=Date.now();const openTab=documentTabSession.tabs.find(t=>t.id===doc.id);if(openTab){openTab.doc.title=name;openTab.doc.updatedAt=record.updatedAt;if(openTab.doc.type==='card')openTab.doc.hasCustomName=true;renderDocumentTabs()}if(app.doc?.id===doc.id){app.doc.title=name;markCardNameManual(app.doc);app.doc.updatedAt=record.updatedAt;updateProjectBadge()}await dbOp('docs','readwrite',s=>s.put(clone(record)))}else {asset.name=name;await persistProject(project)};toast('Название сохранено')}\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "ce3f842be3f261c008001d8bd7ab5b5248bf7657f4ed367d3b4a15fc4c60bda6"
+    },
+    {
+      "scope": "async function createProject(){const input=$('#newProjectName');const name=input.value.trim();if(!name){input.focus();toast('Укажи название проекта');return}if(",
+      "oldLine": 2021,
+      "newLine": 2041,
+      "before": [
+        " await flushSave();const p={id:uid(),name,cover:'',resources:[],resourceFolders:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};app.projects.push(p);await persistProject(p);useProjectId(p.id);const doc=newDoc({title:'Новый шаблон'});setDoc(doc);await flushSave();input.value='';app.filter='template';renderLibrary();toast('Проект создан');\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "b64441c7b7902cbe9e0038c3abda2e65c7524c9da7596635c07a06614a607f33"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2046,
+      "newLine": 2066,
+      "before": [
+        "  if(act==='remove'){if(!confirm('Удалить ресурс «'+asset.name+'»?'))return;p.resources=p.resources.filter(a=>a.id!==asset.id);await persistProject(p);renderLibrary();return}\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "e38962b449b63e676b910ea49c63203838cb00bc6ef59228b9567f027a600600"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2075,
+      "newLine": 2095,
+      "before": [
+        " await loadFontFace(entry);app.fonts.push(entry);await dbOp('fonts','readwrite',s=>s.put(entry));added++;\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "948b416e4be6eb21458c2bb685285ce6f5e3443d4cae032cee7045c9c7207cde"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2104,
+      "newLine": 2124,
+      "before": [
+        "$('#libraryBtn').onclick=()=>{$('#editorProjectMenu').classList.toggle('hidden')};$('#editorProjectMenu').onclick=ev=>{const button=ev.target.closest('[data-editor-nav]');if(!button)return;$('#editorProjectMenu').classList.add('hidden');flushSave().then(()=>showHome(button.dataset.editorNav))};document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#libraryBtn,#editorProjectMenu'))$('#editorProjectMenu').classList.add('hidden')});$('#brandHomeBtn').onclick=()=>{flushSave().then(()=>showHome('workspace'))};$('#homeEditorBtn').onclick=()=>{const tab=documentTabSession.tabs.find(t=>t.id===documentTabSession.lastDocumentId)||documentTabSession.tabs.at(-1);if(tab)activateDocumentTab(tab.id);else if(app.doc)openDocumentTab(app.doc);else openDocumentTab(projectDocs()[0]||newDoc())};$('#homeBrandBtn').onclick=()=>showHome('workspace');\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "4a2352db392c176fad9c6fe32f285e94864057a0f2c237c6cef611b88561341f"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2110,
+      "newLine": 2130,
+      "before": [
+        "$('#projectRenameBtn').onclick=()=>{const el=$('#activeProjectName');const p=currentProject();if(!p)return;const input=document.createElement('input');input.className='rename-project';input.value=p.name;el.replaceWith(input);input.focus();input.select();const done=async()=>{const name=input.value.trim();if(name)p.name=name;const heading=document.createElement('h3');heading.id='activeProjectName';heading.textContent=p.name;input.replaceWith(heading);await persistProject(p);updateProjectBadge();renderLibrary()};input.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();done()}if(ev.key==='Escape'){input.value=p.name;done()}});input.addEventListener('blur',()=>{if(input.isConnected)done()},{once:true})};\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "4d98bf30d7c4354cedae53604f4fa204833cec425cc57f327ca2d181c969ebdd"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2491,
+      "newLine": 2511,
+      "before": [
+        "$('#editorProjectMenu').onclick=ev=>{ev.stopPropagation();const b=ev.target.closest('[data-compact-page],[data-compact-project],[data-compact-doc],[data-compact-font-import],[data-compact-json]');if(!b)return;if(b.dataset.compactPage)compactMenuShow(b.dataset.compactPage);if(b.dataset.compactProject){compactBrowseProjectId=b.dataset.compactProject;compactMenuShow('workspace')};if(b.dataset.compactDoc){const doc=app.docs.find(x=>x.id===b.dataset.compactDoc);if(doc){openDocumentTab(doc);$('#editorProjectMenu').classList.add('hidden')}}if(b.dataset.compactFull){$('#editorProjectMenu').classList.add('hidden');flushSave().then(()=>showHome(b.dataset.compactFull))}if(b.dataset.compactJson){const type=b.dataset.compactJson;if(type==='document')exportJSON();else if(type==='backup')openProjectExportDialog();else $('#jsonInput').click()}if(b.dataset.compactFontImport){$('#fontInput')?.click()}};\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "7e143d074ed7bc9b3bbb4d67a3e608b7d93d3aebce2ef1f683e14c2f4eb5a186"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2543,
+      "newLine": 2563,
+      "before": [
+        " openEditor();\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "83f86a9407fa3327b0067253f171fbc6d056aeb413c198d6cfde02a4025ffdcb"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2585,
+      "newLine": 2605,
+      "before": [
+        " renderDocumentTabs();openEditor();\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "28176e01ae3cd983e708ed429f4f5672a7a95daa462f8d45a5fdc8a735440c7f"
+    },
+    {
+      "scope": "async function closeDocumentTab(id){",
+      "oldLine": 2605,
+      "newLine": 2625,
+      "before": [
+        " const index=documentTabSession.tabs.findIndex(t=>t.id===id);if(index<0)return;\n",
+        " const tab=documentTabSession.tabs[index],isActive=documentTabSession.activeId===id;\n",
+        " if(isActive){captureDocumentTab();clearTimeout(app.saveTimer);app.saveTimer=null;await flushSave()}\n",
+        " else { // Dormant tabs already have a saved snapshot but explicitly commit it again on close.\n",
+        "  const rec=clone(tab.doc);\n",
+        "  try{await dbOp('docs','readwrite',s=>s.put(rec));const i=app.docs.findIndex(d=>d.id===rec.id);if(i<0)app.docs.push(rec);else app.docs[i]=rec}catch(err){console.error('Tab close save failed',err);toast('Не удалось сохранить вкладку; экспортируй JSON')}\n",
+        " }\n",
+        " const now=documentTabSession.tabs.findIndex(t=>t.id===id);if(now<0)return;\n"
+      ],
+      "afterLines": 5,
+      "afterSHA256": "5fb6a7dad341bb2f3d5c033309ec32cdba62ba24730ac170d490e97bdb2b5a31"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2615,
+      "newLine": 2632,
+      "before": [
+        " if(isActive){const next=documentTabSession.tabs[now]||documentTabSession.tabs[now-1];documentTabSession.activeId='home';if(next)activateDocumentTab(next.id);else showHome('workspace')}\n",
+        " renderDocumentTabs();\n"
+      ],
+      "afterLines": 3,
+      "afterSHA256": "d880e4c106e0b4f51b2adff10de3eb0a754ae02ee3c1320c8cd858e31757b4da"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2706,
+      "newLine": 2724,
+      "before": [
+        " if(app.doc?.id===doc.id)await flushSave();\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "958a1a62a67b5bd734edbac7770b13e459b15f75fb939fca18bd7b7d8a04a9ad"
+    },
+    {
+      "scope": "async function init(){app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;app.docs.pus",
+      "oldLine": 2737,
+      "newLine": 2755,
+      "before": [
+        "async function init(){app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;app.docs.push(sample);await dbOp('docs','readwrite',s=>s.put(sample));setDoc(sample)}else {const docs=projectDocs().sort((a,b)=>b.updatedAt-a.updatedAt);setDoc(clone(docs[0]||newDoc()))};if(!app.db)toast('Локальное хранилище недоступно: сохраняй проект в JSON');showHome('workspace')}\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "14e0bc2f51162a1ec171918a3e2d1a0d70ab71bf596cfc062e0cc4251fb74d4c"
+    },
+    {
+      "scope": "async function deleteProject(id){const project=app.projects.find(p=>p.id===id);if(!project)return;const docs=projectDocs(id);if(!confirm(`Удалить проект «${proj",
+      "oldLine": 2779,
+      "newLine": 2797,
+      "before": [
+        " await flushSave();\n",
+        " for(const tab of [...documentTabSession.tabs].filter(t=>t.doc.projectId===id))await closeDocumentTab(tab.id);\n",
+        " try{for(const doc of docs)await dbOp('docs','readwrite',store=>store.delete(doc.id));await dbOp('projects','readwrite',store=>store.delete(id));app.docs=app.docs.filter(d=>d.projectId!==id);app.projects=app.projects.filter(p=>p.id!==id);\n",
+        " if(!app.projects.length){const fallback={id:uid(),name:'Мой проект',cover:'',resources:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};app.projects.push(fallback);await persistProject(fallback)}\n"
+      ],
+      "afterLines": 4,
+      "afterSHA256": "7585f67cd59c6aacb96384e888a3f9162f614b0b2ae2b363187c983ce92400ac"
+    },
+    {
+      "scope": "function updateExportSelectState(){const checks=[...document.querySelectorAll('[data-export-project]')];const count=checks.filter(x=>x.checked).length;$('#proje",
+      "oldLine": 2789,
+      "newLine": 2807,
+      "before": [
+        "async function exportSelectedProjects(){const ids=[...document.querySelectorAll('[data-export-project]:checked')].map(x=>x.dataset.exportProject);if(!ids.length)return;try{await flushSave();if(ids.length===1){const p=app.projects.find(x=>x.id===ids[0]);if(!p)return;const archive={format:'kartochnaya-project-v1',version:'0.21',exportedAt:new Date().toISOString(),project:clone(p),documents:projectDocs(p.id).map(clone),shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(p.name)+' - проект Карточной.json')}\n",
+        " else {const projects=ids.map(id=>{const p=app.projects.find(x=>x.id===id);return {project:clone(p),documents:projectDocs(id).map(clone)}}).filter(x=>x.project);const archive={format:'kartochnaya-workspace-v1',version:'0.21',exportedAt:new Date().toISOString(),projects,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),ids.length===app.projects.length?'Все проекты Карточной.json':'Выбранные проекты Карточной.json')}\n",
+        " closeProjectExportDialog();toast('Резервная копия JSON подготовлена')}catch(err){console.error(err);toast('Не удалось экспортировать проекты')}}\n"
+      ],
+      "afterLines": 3,
+      "afterSHA256": "201b03f4a32b240ec6d4b58edc0c5db531c19d63ebf059474d2138a559cf802a"
+    },
+    {
+      "scope": "async function importWorkspaceBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(!Array.isArray(pa",
+      "oldLine": 2797,
+      "newLine": 2815,
+      "before": [
+        "async function importWorkspaceBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(!Array.isArray(payload.projects)||payload.projects.length>500)throw Error('Некорректный архив проектов');const items=payload.projects;if(items.reduce((n,item)=>n+(item.documents?.length||0),0)>5000)throw Error('Слишком много документов');await flushSave();for(const item of items){if(!item.project||!Array.isArray(item.documents))throw Error('Не хватает данных проекта');for(const doc of item.documents){if(!Array.isArray(doc.elements)||!(doc.width>0&&doc.width<=5000&&doc.height>0&&doc.height<=5000))throw Error('Повреждённый документ')}}for(const f of payload.fonts||[]){if(!f.data||app.fonts.some(x=>normaliseFont(x).family===normaliseFont(f).family&&x.weight===f.weight&&x.style===f.style))continue;const imported={...clone(f),id:uid()};try{await loadFontFace(imported);await dbOp('fonts','readwrite',s=>s.put(imported));app.fonts.push(imported)}catch(err){console.warn('Не удалось импортировать шрифт',err)}}let added=0;for(const item of items){const p={...clone(item.project),id:uid(),name:String(item.project.name||'Проект').slice(0,90)+' (импорт)',createdAt:Date.now(),updatedAt:Date.now(),exportCounters:{}};app.projects.push(p);await persistProject(p);for(const original of item.documents){const doc={...clone(original),id:uid(),projectId:p.id,updatedAt:Date.now()};app.docs.push(doc);await dbOp('docs','readwrite',s=>s.put(doc))}added++}if(added){const fromHome=homeVisible();useProjectId(app.projects[app.projects.length-added].id);const first=projectDocs()[0];app.filter='template';if(fromHome)showHome('workspace');else if(first)openDocumentTab(first);renderLibrary();toast(`Импортировано проектов: ${added}`)}}\n"
+      ],
+      "afterLines": 1,
+      "afterSHA256": "2b16c407e60d4aecbea861622d172f69412353bd73c2b00d630e7e8b78f4d939"
+    }
+  ]
+}

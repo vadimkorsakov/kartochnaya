@@ -90,8 +90,13 @@ for (const count of [1, 2]) test(`selection: ${count} projects, including an emp
   expect(parsed.manifest.scope).toBe('selected-projects'); expect(parsed.manifest.projectIds.sort()).toEqual([...ids].sort()); expect(parsed.data.docs).toHaveLength(count - 1); expect(parsed.data.fonts).toHaveLength(1);
 });
 test('snapshot sees documents imported in another editor after this editor loaded', async ({ page, context }) => {
-  await openHome(page); const second = await context.newPage(); await openHome(second); await rich(second); const persisted = await all(second);
-  const parsed = await (await model()).readBackup(await createZIP(page)); expect(parsed.data.docs).toEqual(persisted.docs); expect(parsed.data.projects).toEqual(persisted.projects); await second.close();
+  await openHome(page); const second = await context.newPage(); await openHome(second); const {p} = await rich(second); await settled(second); const persisted = await all(second); await second.close();
+  const parsed = await (await model()).readBackup(await createZIP(page));
+  // The first editor legitimately flushes its own loaded document, including
+  // renderer-generated gradient metadata. Compare the completed snapshot to IDB
+  // after that barrier, and independently prove that unseen external docs survive.
+  expect(parsed.data.docs).toEqual(await records(page, 'docs')); expect(parsed.data.projects).toEqual(persisted.projects);
+  expect(parsed.data.docs.filter(d=>d.projectId===p.id)).toEqual(persisted.docs.filter(d=>d.projectId===p.id));
 });
 test('active and inactive tabs, debounce and held genuine transactions are drained before snapshot', async ({ page }) => {
   await fault(page); await openHome(page); await createDocument(page, 'ZIP tab A'); const a = await exportedDocument(page);

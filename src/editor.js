@@ -1,9 +1,11 @@
 import { html, clamp, fmt } from './core/primitives.mjs';
 import { rgbHex, hexRgb, hsvRGB, rgbHSV, rgbHSL, hslRGB, normalizeHex, cpFormatValues } from './core/colors.mjs';
+import { createGradientModel } from './core/gradient-model.mjs';
 
 (()=>{'use strict';
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const uid=()=>globalThis.crypto?.randomUUID?.()||('id-'+Date.now()+'-'+Math.random().toString(36).slice(2));
+const { gradientStops, gradientGeometry, gradientSample, addGradientStop } = createGradientModel(uid);
 const clone=o=>JSON.parse(JSON.stringify(o));
 const types={path:'Контур Безье',text:'Текст',image:'Изображение',rect:'Прямоугольник',circle:'Круг',triangle:'Треугольник',star:'Звезда',hexagon:'Шестиугольник',parallelogram:'Параллелограмм',diamond:'Ромб',pentagon:'Пятиугольник',octagon:'Восьмиугольник',chevron:'Шеврон',arrow:'Стрелка',heart:'Сердце',cross:'Крест',trapezoid:'Трапеция',speech:'Облачко',semicircle:'Полукруг'};
 const syms={path:'⌁',text:'T',image:'▧',rect:'▭',circle:'◯',triangle:'△',star:'☆',hexagon:'⬡',parallelogram:'▱',diamond:'◇',pentagon:'⬠',octagon:'⯃',chevron:'❯',arrow:'➜',heart:'♡',cross:'✚',trapezoid:'▱',speech:'▢',semicircle:'◠'};
@@ -733,7 +735,6 @@ case'semicircle':c.moveTo(0,h);c.ellipse(w/2,h,w/2,h,0,Math.PI,0);c.closePath();
 case'parallelogram':c.moveTo(w*.22,0);c.lineTo(w,0);c.lineTo(w*.78,h);c.lineTo(0,h);c.closePath();break;default:{const r=clamp(e.corner||0,0,Math.min(w,h)/2);if(typeof c.roundRect==='function')c.roundRect(0,0,w,h,r);else c.rect(0,0,w,h)}}}
 function hexAlpha(hex,alpha){const v=String(hex||'#ffffff').replace('#','');const r=parseInt(v.slice(0,2),16)||0,g=parseInt(v.slice(2,4),16)||0,b=parseInt(v.slice(4,6),16)||0;return `rgba(${r},${g},${b},${clamp(Number(alpha??100),0,100)/100})`}
 
-/*{{KARTOCHNAYA:CORE_GRADIENT_MODEL_JS}}*/
 function getGradientStop(){const p=$('#fillPopover'),e=active();if(!e)return null;const stops=gradientStops(e);return stops.find(x=>x.id===p.dataset.stopId)||stops[0]}
 function gradientCSS(e){
  const stops=gradientStops(e).map(s=>`${hexAlpha(s.color,s.alpha)} ${s.pos}%`).join(',');

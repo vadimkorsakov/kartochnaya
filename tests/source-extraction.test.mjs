@@ -4,16 +4,17 @@ import { cp, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { compileHTML, compileJavaScript, sourceRoot, slots } from '../scripts/compile-html.mjs';
-import { assembleLegacyJavaScript, bundleJavaScript, gradientModelSlot, verifyClassicJavaScript } from '../scripts/compile-javascript.mjs';
+import { bundleJavaScript, verifyClassicJavaScript } from '../scripts/compile-javascript.mjs';
 import { build, root, source, hash } from '../scripts/distribution.mjs';
 import * as primitives from '../src/core/primitives.mjs';
 import * as colors from '../src/core/colors.mjs';
+import * as gradients from '../src/core/gradient-model.mjs';
 
 const primitiveNames = ['html', 'clamp', 'fmt'];
 const colorNames = ['rgbHex', 'hexRgb', 'hsvRGB', 'rgbHSV', 'rgbHSL', 'hslRGB', 'normalizeHex', 'cpFormatValues'];
 const gradientNames = ['gradientStops', 'gradientGeometry', 'gradientSample', 'addGradientStop'];
 const inputs = ['index.template.html', 'styles/legacy-01.css', 'styles/legacy-02.css',
-  'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.js'];
+  'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs'];
 const read = name => readFile(resolve(sourceRoot, name), 'utf8');
 const slice = (text, start, end) => text.slice(text.indexOf(start), text.indexOf(end, text.indexOf(start)));
 
@@ -66,9 +67,22 @@ test('module function bodies and ALL remaining legacy statements retain their hi
   assert.equal(await read('core/primitives.mjs'), prim + '\nexport { html, clamp, fmt };\n');
   assert.equal(await read('core/colors.mjs'), "import { clamp } from './primitives.mjs';\n\n" + color
     + '\nexport { rgbHex, hexRgb, hsvRGB, rgbHSV, rgbHSL, hslRGB, normalizeHex, cpFormatValues };\n');
-  const assembled = await assembleLegacyJavaScript();
-  assert.equal(assembled.replace(/^import [^\n]+;\n/gm, ''), script.replace(prim, '').replace(color, ''));
-  assert.equal(await read('core/gradient-model.js'), slice(script, 'function gradientStops(e)', 'function getGradientStop('));
+  const gradient = slice(script, 'function gradientStops(e)', 'function getGradientStop(');
+  assert.equal(await read('core/gradient-model.mjs'),
+    "import { clamp } from './primitives.mjs';\nimport { normalizeHex, hexRgb, rgbHex } from './colors.mjs';\n\n"
+    + 'export function createGradientModel(uid) {\n' + gradient
+    + '\n return { gradientStops, gradientGeometry, gradientSample, addGradientStop };\n}\n');
+  const binding = 'const { gradientStops, gradientGeometry, gradientSample, addGradientStop } = createGradientModel(uid);\n';
+  const editor = await read('editor.js');
+  assert.equal(editor.split(binding).length, 2);
+  // Only uid's declaration precedes the factory; it cannot be used before initialization.
+  assert.match(editor, /const uid=[^\n]+;\nconst \{ gradientStops, gradientGeometry, gradientSample, addGradientStop \} = createGradientModel\(uid\);/);
+  assert.equal(editor.replace(/^import [^\n]+;\n/gm, '').replace(binding, ''),
+    script.replace(prim, '').replace(color, '').replace(gradient, ''));
+  assert.doesNotMatch(editor, /\{\{KARTOCHNAYA:/);
+  await assert.rejects(read('core/gradient-model.js'), /ENOENT/);
+  const compiler = await readFile(resolve(root, 'scripts/compile-javascript.mjs'), 'utf8');
+  assert.doesNotMatch(compiler, /assembleLegacyJavaScript|gradientModelSlot|CORE_GRADIENT_MODEL_JS|gradient-model\.js/);
   // This protects uid/clone, duplicate function declarations, async init() position,
   // wrapper captures/assignments and ALL keyboard, mobile and pointer handlers.
 });
@@ -76,10 +90,13 @@ test('module function bodies and ALL remaining legacy statements retain their hi
 test('real imports/exports resolve once; the browser bundle is one classic script with no runtime imports', async () => {
   assert.deepEqual(Object.keys(primitives).sort(), [...primitiveNames].sort());
   assert.deepEqual(Object.keys(colors).sort(), [...colorNames].sort());
+  assert.deepEqual(Object.keys(gradients), ['createGradientModel']);
+  assert.deepEqual(Object.keys(gradients.createGradientModel(() => 'test')).sort(), [...gradientNames].sort());
   const { code, metafile } = await bundleJavaScript();
-  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['core/colors.mjs', 'core/primitives.mjs', 'editor.js']);
+  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['core/colors.mjs', 'core/gradient-model.mjs', 'core/primitives.mjs', 'editor.js']);
   assert.equal(metafile.inputs['core/colors.mjs'].imports[0].path, 'core/primitives.mjs');
-  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['core/primitives.mjs', 'core/colors.mjs']);
+  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']);
+  assert.deepEqual(metafile.inputs['core/gradient-model.mjs'].imports.map(i => i.path), ['core/primitives.mjs', 'core/colors.mjs']);
   assert.ok(Object.values(metafile.inputs).every(i => i.format === 'esm'));
   assert.equal(Object.keys(metafile.outputs).length, 1);
   assert.deepEqual(Object.values(metafile.outputs)[0].imports, []);
@@ -88,7 +105,7 @@ test('real imports/exports resolve once; the browser bundle is one classic scrip
   assert.doesNotMatch(js, /^\s*(?:import|export)\s|\bimport\s*\(|\b(?:window|globalThis)\.(?:html|clamp|fmt|rgbHex|hexRgb|hsvRGB|rgbHSV|rgbHSL|hslRGB|normalizeHex|cpFormatValues)\s*=/m);
   assert.doesNotMatch(js, /\{\{KARTOCHNAYA:|sourceMappingURL=/);
   const editor = await read('editor.js');
-  for (const name of [...primitiveNames, ...colorNames, ...gradientNames]) {
+  for (const name of [...primitiveNames, ...colorNames, ...gradientNames, 'createGradientModel']) {
     assert.equal([...js.matchAll(new RegExp(`(?:function|var|const) ${name}(?:\\s*[=(])`, 'g'))].length, 1, name);
     assert.doesNotMatch(editor, new RegExp(`(?:function|const) ${name}[=(]`));
   }
@@ -102,7 +119,7 @@ test('real imports/exports resolve once; the browser bundle is one classic scrip
   assert.doesNotMatch(html, /<script\b[^>]*(?:\bsrc\s*=|\btype\s*=\s*["']module)/i);
 });
 
-test('missing, malformed, repeated and moved HTML/legacy markers fail closed', async () => {
+test('missing, malformed, repeated and moved HTML markers and all stale JS markers fail closed', async () => {
   await temporarySources(async sources => {
     const file = resolve(sources, 'index.template.html'), template = await readFile(file, 'utf8');
     const [first, second] = slots.map(s => s.marker);
@@ -114,17 +131,18 @@ test('missing, malformed, repeated and moved HTML/legacy markers fail closed', a
     }
     await writeFile(file, template);
     const entry = resolve(sources, 'editor.js'), editor = await readFile(entry, 'utf8');
-    const { marker } = gradientModelSlot;
-    for (const invalid of [editor.replace(marker, ''), editor + marker,
-      editor.replace(marker, marker.trimEnd()), editor.replace(marker, ' ' + marker),
-      editor.replace(marker, '').concat(marker), editor.replace('\n\n' + marker, '\n' + marker),
-      editor + '{{KARTOCHNAYA:UNKNOWN}}', editor + '{{KARTOCHNAYA:UNCLOSED']) {
+    for (const invalid of [editor + '\n/*{{KARTOCHNAYA:CORE_GRADIENT_MODEL_JS}}*/',
+      editor + '\n// {{KARTOCHNAYA:UNKNOWN}}', editor + '\n// {{KARTOCHNAYA:UNCLOSED']) {
       await writeFile(entry, invalid);
       await assert.rejects(compileHTML(sources), /marker/i);
     }
     await writeFile(entry, editor);
-    await writeFile(resolve(sources, gradientModelSlot.file), '{{KARTOCHNAYA:UNRESOLVED}}');
-    await assert.rejects(compileHTML(sources), /marker/i);
+    for (const name of ['core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']) {
+      const file = resolve(sources, name), code = await readFile(file, 'utf8');
+      await writeFile(file, code + '\n// {{KARTOCHNAYA:UNRESOLVED}}');
+      await assert.rejects(compileHTML(sources), /marker/i);
+      await writeFile(file, code);
+    }
   });
 });
 
@@ -145,7 +163,7 @@ test('each real source participates through meaningful code changes; all targets
       'editor.js': s => s.replace("'id-'+Date.now()", "'source-probe-'+Date.now()"),
       'core/primitives.mjs': s => s.replace('Math.max(a,x)', 'Math.max(a,x+1)'),
       'core/colors.mjs': s => s.replace("return '#'+", "return '#source-probe'+"),
-      'core/gradient-model.js': s => s.replace('pos=50', 'pos=51'),
+      'core/gradient-model.mjs': s => s.replace('pos=50', 'pos=51'),
     };
     for (const name of inputs) {
       const file = resolve(sources, name), text = await readFile(file, 'utf8');
@@ -174,16 +192,27 @@ test('every missing component, bad import/export or syntax error rejects the act
     }
     const file = resolve(sources, 'editor.js'), editor = await readFile(file, 'utf8');
     for (const invalid of [editor.replace('{ html,', '{ absentExport,'),
-      editor.replace('./core/colors.mjs', './core/missing.mjs'), editor + '\nconst = broken;',
+      editor.replace('./core/colors.mjs', './core/missing.mjs'),
+      editor.replace('./core/gradient-model.mjs', './core/missing-gradient.mjs'),
+      editor.replace('import { createGradientModel }', 'import { missingFactory }'), editor + '\nconst = broken;',
       editor + '\nimport("https://example.com/runtime.js");',
       editor + '\nimport(globalThis.runtimeModule);']) {
       await writeFile(file, invalid);
+      await assert.rejects(build('all', options));
+    }
+    await writeFile(file, editor);
+    const moduleFile = resolve(sources, 'core/gradient-model.mjs'), module = await readFile(moduleFile, 'utf8');
+    for (const invalid of [module.replace('export function', 'function'),
+      module.replace('createGradientModel(uid)', 'wrongFactory(uid)'), module + '\nconst = broken;',
+      module.replace('./colors.mjs', './missing-colors.mjs'), module.replace('{ clamp }', '{ missingClamp }')]) {
+      await writeFile(moduleFile, invalid);
       await assert.rejects(build('all', options));
     }
   });
 });
 
 test('HTML-sensitive JavaScript strings are escaped safely without changing their value', async () => {
+  assert.throws(() => verifyClassicJavaScript('/* </ScRiPt> */'), /Unsafe inline script/);
   await temporarySources(async sources => {
     const file = resolve(sources, 'editor.js');
     const payload = '</ScRiPt><script><!--';

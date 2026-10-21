@@ -1,3 +1,7 @@
+import { clamp } from './primitives.mjs';
+import { normalizeHex, hexRgb, rgbHex } from './colors.mjs';
+
+export function createGradientModel(uid) {
 function gradientStops(e){
  if(!Array.isArray(e.gradientStops)||e.gradientStops.length<2){
   e.gradientStops=[{id:uid(),pos:0,color:normalizeHex(e.fill)||'#ab92fb',alpha:clamp(Number(e.fillAlpha1??100),0,100)},
@@ -24,4 +28,7 @@ function gradientSample(e,pos){
 function addGradientStop(e,pos=50){
  const v=gradientSample(e,pos),stop={id:uid(),pos:Math.round(clamp(pos,0,100)),color:v.color,alpha:Math.round(v.alpha)};
  gradientStops(e).push(stop);gradientStops(e);return stop;
+}
+
+ return { gradientStops, gradientGeometry, gradientSample, addGradientStop };
 }

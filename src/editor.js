@@ -1,3 +1,4 @@
+import { openDatabase, runStoreRequest } from './storage/indexeddb.mjs';
 import { toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint } from './core/geometry.mjs';
 import { validateShapeCatalog } from './core/shape-catalog.mjs';
 import { html, clamp, fmt } from './core/primitives.mjs';
@@ -85,7 +86,7 @@ function shapeSectionsHtml(query=''){
 // v0.26: persisted mutable shape library. Built-in shapes are used only for first-run initialization.
 function shapeCatalogSnapshot(){return JSON.parse(JSON.stringify(SHAPE_SECTIONS))}
 function applyShapeCatalog(data){const newCatalog=validateShapeCatalog(data);SHAPE_SECTIONS=newCatalog;SHAPE_INDEX.clear();for(const group of SHAPE_SECTIONS)for(const s of group.shapes)SHAPE_INDEX.set(s.id,s);if(!$('#shapeTray').classList.contains('hidden'))refreshShapeTray();}
-async function persistShapeCatalog(){const sections=shapeCatalogSnapshot();try{if(app.db)await dbOp('settings','readwrite',s=>s.put({key:'shapes-v1',sections}));else localStorage.setItem('kartochnaya-shapes-v1',JSON.stringify(sections))}catch(err){console.error(err);toast('Ошибка сохранения фигур')}}
+async function persistShapeCatalog(){const sections=shapeCatalogSnapshot();try{if(app.db)await dbOp('settings','readwrite',s=>s.put({key:'shapes-v1',sections}));else {localStorage.setItem('kartochnaya-shapes-v1',JSON.stringify(sections));toast('Фигуры сохранены в localStorage; документы — только в памяти')}}catch(err){console.warn(err);toast('Ошибка сохранения фигур · экспортируй JSON');throw err}}
 async function loadShapeCatalog(){let data=null;try{const r=await dbOp('settings','readonly',s=>s.get('shapes-v1'));data=r?.sections;if(!data){const local=localStorage.getItem('kartochnaya-shapes-v1');if(local)data=JSON.parse(local)}}catch(err){console.warn('Каталог из памяти не прочитан',err)}if(data)try{applyShapeCatalog(data)}catch(err){console.warn('Используется базовый каталог',err)}}
 function refreshShapeTray(){if($('#shapeSections'))$('#shapeSections').innerHTML=shapeSectionsHtml($('#shapeSearch')?.value||'');}
 function shapeCategoryOptions(){return SHAPE_SECTIONS.map((g,i)=>`<option value="${i}">${html(g.name)}</option>`).join('')+'<option value="new">＋ Создать новую категорию…</option>'}
@@ -136,22 +137,27 @@ const canvas=$('#canvas'),ctx=canvas.getContext('2d'),imgCache=new Map();
 const rasterCache=new Map(); // data URL -> live offscreen canvas for immediate rendering of strokes
 function rememberRaster(src,cv){rasterCache.set(src,cv);if(rasterCache.size>24)rasterCache.delete(rasterCache.keys().next().value)}
 function toast(msg){const n=$('#toast');n.textContent=msg;n.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>n.classList.remove('show'),2900)}
-function openDB(){return new Promise(resolve=>{try{const req=indexedDB.open('kartochnaya_local_v1',3);req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains('docs'))db.createObjectStore('docs',{keyPath:'id'});if(!db.objectStoreNames.contains('fonts'))db.createObjectStore('fonts',{keyPath:'id'});if(!db.objectStoreNames.contains('projects'))db.createObjectStore('projects',{keyPath:'id'});if(!db.objectStoreNames.contains('settings'))db.createObjectStore('settings',{keyPath:'key'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>resolve(null)}catch(e){resolve(null)}})}
-function dbOp(store,mode,fn){return new Promise((resolve,reject)=>{if(!app.db){resolve(null);return}try{const tr=app.db.transaction(store,mode),obj=tr.objectStore(store),rq=fn(obj);rq.onsuccess=()=>resolve(rq.result);rq.onerror=()=>reject(rq.error)}catch(e){reject(e)}})}
+function storageWarning(error){console.warn('Локальное хранилище:',error);$('#saveStatus').textContent='Хранение недоступно · экспортируй JSON';toast('Локальное хранилище недоступно: сохраняй проект в JSON')}
+async function openDB(){try{return await openDatabase({onVersionChange:()=>{app.db=null;storageWarning('Соединение закрыто: база обновляется в другой вкладке')},onClose:()=>{app.db=null;storageWarning('Соединение закрыто браузером')}})}catch(error){storageWarning(error);return null}}
+async function dbOp(store,mode,fn){try{return await runStoreRequest(app.db,store,mode,fn)}catch(error){if(mode==='readwrite'){console.warn('Запись не подтверждена:',error);toast('Не сохранилось. Экспортируй JSON!')}throw error}}
+function startupReadFailure(error){app.db?.close();app.db=null;storageWarning(error)}
+async function startupWrite(store,record){try{await dbOp(store,'readwrite',s=>s.put(record));return true}catch(error){storageWarning(error);return false}}
 async function loadAll(){
- app.docs=await dbOp('docs','readonly',s=>s.getAll())||[];
- app.projects=await dbOp('projects','readonly',s=>s.getAll())||[];
- if(!app.projects.length){const first={id:uid(),name:'Мой проект',cover:'',resources:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};app.projects.push(first);await dbOp('projects','readwrite',store=>store.put(first))}
+ try{app.docs=await dbOp('docs','readonly',s=>s.getAll())||[]}catch(error){startupReadFailure(error)}
+ try{app.projects=await dbOp('projects','readonly',s=>s.getAll())||[]}catch(error){startupReadFailure(error)}
+ if(!app.db)for(const d of app.docs)if(d.projectId&&!app.projects.some(p=>p.id===d.projectId))app.projects.push({id:d.projectId,name:'Проект · только в памяти',cover:'',resources:[],exportCounters:{}});
+ if(!app.projects.length){const first={id:uid(),name:'Мой проект',cover:'',resources:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};await startupWrite('projects',first);app.projects.push(first)}
  const fallback=app.projects[0];
- for(const d of app.docs){if(!d.projectId||!app.projects.some(p=>p.id===d.projectId)){d.projectId=fallback.id;await dbOp('docs','readwrite',store=>store.put(d))}}
+ for(const d of app.docs){if(!d.projectId||!app.projects.some(p=>p.id===d.projectId)){const record={...d,projectId:fallback.id};if(await startupWrite('docs',record))d.projectId=fallback.id}}
  let remembered='';try{remembered=localStorage.getItem('kartochnaya_current_project')||''}catch(e){}
  app.currentProjectId=app.projects.some(p=>p.id===remembered)?remembered:fallback.id;
  await loadShapeCatalog();
- app.fonts=await dbOp('fonts','readonly',s=>s.getAll())||[];
+ try{app.fonts=await dbOp('fonts','readonly',s=>s.getAll())||[]}catch(error){startupReadFailure(error)}
  for(const f of app.fonts)await loadFontFace(f);
 }
 function currentProject(){return app.projects.find(p=>p.id===app.currentProjectId)||app.projects[0]}
 async function persistProject(p){p.updatedAt=Date.now();await dbOp('projects','readwrite',store=>store.put(clone(p)))}
+async function persistProjectForUI(p){try{await persistProject(p);return true}catch(error){console.warn('Проект не сохранён:',error);return false}}
 function projectDocs(pid=app.currentProjectId){return app.docs.filter(d=>d.projectId===pid)}
 function updateProjectBadge(){const project=currentProject();if(!project)return;$('#projectTitle').textContent=project.name+' · '+(app.doc?.title||'Шаблоны');$('#libraryBtn').title='Проекты · '+project.name;renderDocumentTabs();}
 function useProjectId(id){if(!app.projects.some(p=>p.id===id))return;app.resourceFolderId=null;app.currentProjectId=id;try{localStorage.setItem('kartochnaya_current_project',id)}catch(e){}updateProjectBadge();const badge=$('#homeProjectBadge');if(badge)badge.textContent=currentProject()?.name||'Проекты'}
@@ -472,8 +478,21 @@ function historyGo(index){if(app.penDraft){toast('Сначала заверши�
 function undo(dir){if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
 function renderHistoryList(){const root=$('#historyEntries');if(!root)return;root.innerHTML=(app.history||[]).map((_,i)=>`<button type="button" class="history-entry ${i===app.historyIndex?'active':''}" data-history-index="${i}" ${i===app.historyIndex?'aria-current="step"':''}><span class="history-step">${i===0?'●':i}</span><span>${html(app.historyNames?.[i]||'Изменение макета')}</span></button>`).join('');const current=root.querySelector('.history-entry.active');if(current&&!$('#historyPopover').classList.contains('hidden'))current.scrollIntoView({block:'nearest'})}
 function updateHistoryButtons(){const draft=app.penDraft;$('#undoBtn').disabled=draft?!draft.undoStack?.length:app.historyIndex===0;$('#redoBtn').disabled=draft?!draft.redoStack?.length:app.historyIndex===app.history.length-1;renderHistoryList()}
-async function flushSave(){if(!app.doc||app.historyPreviewOriginal)return;syncCurrentSlide();syncAutoCardTitle();const rec=clone(app.doc);try{await dbOp('docs','readwrite',s=>s.put(rec));const i=app.docs.findIndex(x=>x.id===rec.id);if(i<0)app.docs.push(rec);else app.docs[i]=rec;$('#saveStatus').textContent=app.db?'Сохранено на этом устройстве':'Хранение недоступно · экспортируй JSON'}catch(e){console.error(e);$('#saveStatus').textContent='Ошибка сохранения · экспортируй JSON';toast('Не сохранилось. Экспортируй JSON!')}}
-function saveSoon(){if(app.historyPreviewOriginal)return;$('#saveStatus').textContent='Сохраняем…';clearTimeout(app.saveTimer);app.saveTimer=setTimeout(flushSave,420)}
+// Revisions describe edits; snapshots describe writes; app.docs contains confirmed records.
+const documentSaves=new Map();
+function saveState(id){if(!documentSaves.has(id))documentSaves.set(id,{revision:0,sequence:0,confirmed:0,pending:null,saved:null,error:null});return documentSaves.get(id)}
+function refreshSaveStatus(){if(!app.doc)return;if(app.historyPreviewOriginal){$('#saveStatus').textContent='Исходное состояние · предпросмотр';return}const state=saveState(app.doc.id);$('#saveStatus').textContent=state.error?'Ошибка сохранения · экспортируй JSON':!app.db?'Хранение недоступно · экспортируй JSON':state.saved===JSON.stringify(app.doc)?'Сохранено на этом устройстве':'Сохраняем…'}
+function confirmDocument(rec){const i=app.docs.findIndex(x=>x.id===rec.id);if(i<0)app.docs.push(rec);else app.docs[i]=rec}
+async function saveDocumentSnapshot(rec){
+ const state=saveState(rec.id),key=JSON.stringify(rec),revision=state.revision,sequence=++state.sequence;
+ if(state.pending?.key===key)return state.pending.promise;
+ const pending={key,promise:null};state.pending=pending;
+ pending.promise=(async()=>{try{await dbOp('docs','readwrite',s=>s.put(rec));if(sequence>state.confirmed){confirmDocument(rec);state.confirmed=sequence}if(state.pending===pending){state.saved=key;state.error=null}return true}catch(error){if(state.pending===pending)state.error=error;return false}finally{if(state.pending===pending)state.pending=null;if(app.doc?.id===rec.id&&state.revision===revision)refreshSaveStatus()}})();
+ return pending.promise;
+}
+// Boolean barrier: false keeps destructive callers from discarding unsaved memory.
+async function flushSave(){clearTimeout(app.saveTimer);app.saveTimer=null;if(!app.doc)return true;if(app.historyPreviewOriginal){toast('Выйди из предпросмотра истории перед этим действием');return false}syncCurrentSlide();syncAutoCardTitle();const doc=app.doc,rec=clone(doc);const ok=await saveDocumentSnapshot(rec);return ok&&app.doc===doc&&JSON.stringify(doc)===JSON.stringify(rec)}
+function saveSoon(){if(!app.doc||app.historyPreviewOriginal)return;const state=saveState(app.doc.id);state.revision++;state.error=null;refreshSaveStatus();clearTimeout(app.saveTimer);app.saveTimer=setTimeout(()=>{void flushSave()},420)}
 function add(type){inkStop();closeToolPopovers();app.handTool=false;app.spaceDown=false;$('#stageScroller').classList.remove('hand-mode');toolDockState();if(app.penTool)setPenMode(false);if(app.marqueeTool||app.insertTool)activateMove();if(!app.doc)return;if(type==='image'){app.pendingImage={kind:'new'};$('#imageInput').click();return}const e=defaultElement(type);app.doc.elements.push(e);app.selected=e.id;app.selectedIds=[e.id];commit();refreshLayers();refreshInspector();refreshMobileTools()}
 
 function newRasterLayer({selectLayer=true,commitNow=true,aboveSelection=true}={}){
@@ -1869,47 +1888,48 @@ async function loadSlideImages(slide){for(const e of slide.elements||[]){if(e.vi
 async function exportSeriesIndices(indices){const d=app.doc,project=app.projects.find(p=>p.id===d.projectId)||currentProject(),base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';syncCurrentSlide(d);
  project.exportCounters ||= {};let counter=Number(project.exportCounters[base])||0;let done=0;
  for(const i of indices){const page=slideAsDoc(d,i);if(page.width*page.height>30000000){toast('Слишком большой холст №'+(i+1));break}try{await loadSlideImages(page);const c=document.createElement('canvas');c.width=page.width;c.height=page.height;paintDocument(c.getContext('2d'),page,false);const blob=await toPNGBlob(c);const name=`${base} ${++counter}.png`;downloadBlob(blob,name);done++}catch(error){console.error(error);toast('Ошибка экспорта холста '+(i+1));break}}
- if(done){project.exportCounters[base]=counter;await persistProject(project);toast(`Экспортировано холстов: ${done}. Если браузер блокирует несколько загрузок, разреши их для приложения.`)}
+ if(done){project.exportCounters[base]=counter;if(!await persistProjectForUI(project)){toast('PNG выгружены; счётчик не сохранён');return}toast(`Экспортировано холстов: ${done}. Если браузер блокирует несколько загрузок, разреши их для приложения.`)}
 }
 $('#seriesExportConfirm').onclick=async()=>{const ids=$$('[data-series-export]:checked').map(x=>Number(x.dataset.seriesExport));if(!ids.length){toast('Выбери хотя бы один холст');return}$('#seriesExportConfirm').disabled=true;closeSeriesExportDialog();await exportSeriesIndices(ids)};
 function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
 function niceName(s){return sanitizeCardTitle(s).slice(0,100)}
 async function exportPNG(){if(app.doc?.type==='card'){ensureCardSlides(app.doc);if(app.doc.slides.length>1){openSeriesExportDialog();return}}const d=app.doc;if(d.width*d.height>30000000){toast('Слишком большой холст для телефона');return}for(const e of d.elements){if(e.visible&&e.fillType==='image'&&e.imageSrc){const im=getImage(e.imageSrc);if(!im){const wait=new Image();wait.src=e.imageSrc;try{await wait.decode();imgCache.set(e.imageSrc,{image:wait,ready:true})}catch(err){toast('Не удалось прочитать изображение для PNG');return}}}}const target=document.createElement('canvas');target.width=d.width;target.height=d.height;const c=target.getContext('2d');paintDocument(c,d,false);target.toBlob(async blob=>{if(!blob){toast('Ошибка экспорта PNG');return}const project=app.projects.find(p=>p.id===d.projectId)||currentProject();const base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';if(project){project.exportCounters||={};const previous=project.exportCounters[base]||0;const name=base+(previous?' '+previous:'')+'.png';downloadBlob(blob,name);project.exportCounters[base]=previous+1;try{await persistProject(project)}catch(error){console.error(error);toast('Счётчик экспорта не сохранён')}}else downloadBlob(blob,base+'.png')},'image/png')}
 function exportJSON(){syncCurrentSlide();const payload={format:'kartochnaya-v1',document:app.doc,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts,exportedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});downloadBlob(blob,niceName(app.doc.title)+'.json')}
+function exportProjectDocuments(id=app.currentProjectId){const records=new Map(projectDocs(id).map(d=>[d.id,clone(d)]));for(const tab of documentTabSession.tabs)if(tab.doc.projectId===id)records.set(tab.id,clone(tab.doc));if(app.doc?.projectId===id){syncCurrentSlide();records.set(app.doc.id,clone(app.doc))}return [...records.values()]}
 async function exportProjectBackup(){
  await flushSave();const project=currentProject();if(!project)return;
- const documents=projectDocs().map(d=>clone(d));
+ const documents=exportProjectDocuments();
  const archive={format:'kartochnaya-project-v1',version:'0.19',exportedAt:new Date().toISOString(),project:clone(project),documents,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(f=>clone(f))};
- downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(project.name)+' - проект Карточной.json');toast('Резервная копия проекта сохранена');
+ downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(project.name)+' - проект Карточной.json');toast('Файл JSON проекта подготовлен');
 }
 async function importProjectBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}
  if(!payload.project||!Array.isArray(payload.documents)||payload.documents.length>2000)throw Error('Неверный архив проекта');
  const originals=payload.documents;
  for(const doc of originals)if(!Array.isArray(doc.elements)||!(doc.width>0&&doc.width<=5000&&doc.height>0&&doc.height<=5000))throw Error('Недопустимый документ в архиве');
- await flushSave();
+ if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');
  const old=payload.project,project={id:uid(),name:String(old.name||'Проект').slice(0,90)+' (импорт)',cover:old.cover||'',resources:Array.isArray(old.resources)?clone(old.resources):[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};
  for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(x=>normaliseFont(x).family===normaliseFont(f).family&&x.weight===f.weight&&x.style===f.style)){
   const imported={...clone(f),id:uid()};try{await loadFontFace(imported);await dbOp('fonts','readwrite',s=>s.put(imported));app.fonts.push(imported)}catch(error){console.warn('Шрифт пропущен при импорте',error)}
  }
- app.projects.push(project);await persistProject(project);
+ await persistProject(project);app.projects.push(project);
  for(const doc of originals){const incoming=clone(doc);incoming.id=uid();incoming.projectId=project.id;incoming.createdAt=incoming.createdAt||Date.now();incoming.updatedAt=Date.now();
   // Keep the internal layer, group and mask identifiers unchanged. They are scoped to each document.
   // Remapping only the layer IDs would break clipping masks, nested folders and other references.
-  app.docs.push(incoming);await dbOp('docs','readwrite',s=>s.put(incoming));
+  await dbOp('docs','readwrite',s=>s.put(incoming));app.docs.push(incoming);
  }
  const fromHome=homeVisible();useProjectId(project.id);const first=projectDocs()[0]||newDoc({title:'Новый шаблон'});if(fromHome)showHome('workspace');else openDocumentTab(first);app.filter='template';
 toast('Проект импортирован: '+project.name);
 }
-async function importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();await flushSave();if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
-async function storeNewDocument(doc){await dbOp('docs','readwrite',s=>s.put(clone(doc)));app.docs.push(clone(doc));app.filter=doc.type;renderLibrary();toast(doc.type==='card'?'Карточка добавлена в список':'Копия добавлена в список')}
-async function makeCardFrom(template){await flushSave();const doc=clone(template);doc.id=uid();doc.projectId=template.projectId||app.currentProjectId;doc.type='card';doc.hasCustomName=false;doc.title=template.title+' · карточка';doc.createdAt=doc.updatedAt=Date.now();
+async function importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
+async function storeNewDocument(doc){try{await dbOp('docs','readwrite',s=>s.put(clone(doc)))}catch(error){return false}app.docs.push(clone(doc));app.filter=doc.type;renderLibrary();toast(doc.type==='card'?'Карточка добавлена в список':'Копия добавлена в список');return true}
+async function makeCardFrom(template){if(!await flushSave())return;const doc=clone(template);doc.id=uid();doc.projectId=template.projectId||app.currentProjectId;doc.type='card';doc.hasCustomName=false;doc.title=template.title+' · карточка';doc.createdAt=doc.updatedAt=Date.now();
  const groupMap=new Map();doc.elements.forEach(e=>{e.id=uid();if(e.groupId){if(!groupMap.has(e.groupId))groupMap.set(e.groupId,uid());e.groupId=groupMap.get(e.groupId)}});
  doc.groups=(doc.groups||[]).map(g=>({...g,id:groupMap.get(g.id)||g.id,parentId:g.parentId?groupMap.get(g.parentId)||g.parentId:null}));doc.slides=[makeSlideFromDoc(doc)];doc.activeSlideIndex=0;syncAutoCardTitle(doc);
- await storeNewDocument(doc);if(!homeVisible())toast('Карточка создана. Открой её из рабочего пространства.')}
-async function duplicateDoc(source){await flushSave();const doc=clone(source);doc.id=uid();doc.projectId=source.projectId||app.currentProjectId;doc.title=source.title+' · копия';if(doc.type==='card')doc.hasCustomName=true;doc.createdAt=doc.updatedAt=Date.now();
+ if(!await storeNewDocument(doc))return;if(!homeVisible())toast('Карточка создана. Открой её из рабочего пространства.')}
+async function duplicateDoc(source){if(!await flushSave())return;const doc=clone(source);doc.id=uid();doc.projectId=source.projectId||app.currentProjectId;doc.title=source.title+' · копия';if(doc.type==='card')doc.hasCustomName=true;doc.createdAt=doc.updatedAt=Date.now();
  if(doc.type==='card'){ensureCardSlides(doc);doc.activeSlideIndex=0;applySlideToRoot(doc,0)}
- await storeNewDocument(doc);if(!homeVisible())toast('Копия создана. Открой её из рабочего пространства.')}
-async function removeDoc(source){if(!confirm(`Удалить «${source.title}»? Это действие нельзя отменить.`))return;await closeDocumentTab(source.id);await dbOp('docs','readwrite',s=>s.delete(source.id));app.docs=app.docs.filter(d=>d.id!==source.id);if(app.doc?.id===source.id){app.doc=null}renderDocumentTabs();renderLibrary()}
+ if(!await storeNewDocument(doc))return;if(!homeVisible())toast('Копия создана. Открой её из рабочего пространства.')}
+async function removeDoc(source){if(!confirm(`Удалить «${source.title}»? Это действие нельзя отменить.`))return;if(app.doc?.id===source.id&&!await flushSave())return;if(!await closeDocumentTab(source.id))return;try{await dbOp('docs','readwrite',s=>s.delete(source.id))}catch(error){return}app.docs=app.docs.filter(d=>d.id!==source.id);if(app.doc?.id===source.id){app.doc=null}renderDocumentTabs();renderLibrary()}
 function homeVisible(){return !$('#homeScreen').classList.contains('hidden')}
 function showHome(section='workspace'){
  if(documentTabSession.activeId!=='home')captureDocumentTab();documentTabSession.activeId='home';renderDocumentTabs();
@@ -1945,16 +1965,16 @@ function folderHTML(folder,popover=false){const folderIcon='<svg viewBox="0 0 64
 }
 function resourceMoveSelect(asset){return `<select class="resource-move" data-asset-move="${html(asset.id)}" title="Переместить в папку"><option value="" ${!asset.folderId?'selected':''}>↳ Корень</option>`+resourceFolders().map(f=>`<option value="${html(f.id)}" ${f.id===asset.folderId?'selected':''}>${'· '.repeat(resourceFolderPath(f.id).length-1)}${html(f.name)}</option>`).join('')+'</select>'}
 function folderChildren(project,folderId){const folders=resourceFolders(project);const found=new Set([folderId]),queue=[folderId];for(const id of queue){for(const f of folders){if(f.parentId===id&&!found.has(f.id)){found.add(f.id);queue.push(f.id)}}}return found}
-async function moveAssetToFolder(assetId,folderId){const p=currentProject(),a=p?.resources?.find(a=>a.id===assetId);if(!a)return;if(folderId&&!resourceFolders(p).some(f=>f.id===folderId))return;a.folderId=folderId||null;await persistProject(p);renderLibrary();if(!$('#assetsPopover').classList.contains('hidden'))renderAssetsPopover()}
+async function moveAssetToFolder(assetId,folderId){const p=currentProject(),a=p?.resources?.find(a=>a.id===assetId);if(!a)return;if(folderId&&!resourceFolders(p).some(f=>f.id===folderId))return;const next=clone(p);next.resources.find(a=>a.id===assetId).folderId=folderId||null;if(!await persistProjectForUI(next))return;Object.assign(p,next);renderLibrary();if(!$('#assetsPopover').classList.contains('hidden'))renderAssetsPopover()}
 async function openResourceFolder(id){const p=currentProject();if(id&&id!=='root'&&!resourceFolders(p).some(f=>f.id===id))return;app.resourceFolderId=id==='root'?null:id;renderLibrary();if(!$('#assetsPopover').classList.contains('hidden'))renderAssetsPopover()}
-async function createResourceFolder(){const p=currentProject();if(!p)return;const name=prompt('Название новой папки','Новая папка')?.trim();if(!name)return;const parentId=app.resourceFolderId||null;resourceFolders(p).push({id:uid(),name:name.slice(0,100),parentId,createdAt:Date.now()});await persistProject(p);renderLibrary();if(!$('#assetsPopover').classList.contains('hidden'))renderAssetsPopover();toast('Папка создана')}
-async function renameResourceFolder(id){const p=currentProject(),f=resourceFolders(p).find(x=>x.id===id);if(!f)return;const name=prompt('Название папки',f.name)?.trim();if(!name||name===f.name)return;f.name=name.slice(0,100);await persistProject(p);renderLibrary();renderAssetsPopover()}
+async function createResourceFolder(){const p=currentProject();if(!p)return;const name=prompt('Название новой папки','Новая папка')?.trim();if(!name)return;const parentId=app.resourceFolderId||null;const next=clone(p);resourceFolders(next).push({id:uid(),name:name.slice(0,100),parentId,createdAt:Date.now()});if(!await persistProjectForUI(next))return;Object.assign(p,next);renderLibrary();if(!$('#assetsPopover').classList.contains('hidden'))renderAssetsPopover();toast('Папка создана')}
+async function renameResourceFolder(id){const p=currentProject(),f=resourceFolders(p).find(x=>x.id===id);if(!f)return;const name=prompt('Название папки',f.name)?.trim();if(!name||name===f.name)return;const next=clone(p);next.resourceFolders.find(f=>f.id===id).name=name.slice(0,100);if(!await persistProjectForUI(next))return;Object.assign(p,next);renderLibrary();renderAssetsPopover()}
 async function deleteResourceFolder(id){const p=currentProject(),folder=resourceFolders(p).find(f=>f.id===id);if(!folder)return;
  const descendants=folderChildren(p,id),count=p.resources.filter(a=>descendants.has(a.folderId)).length;
  const destroy=confirm(`Папка «${folder.name}»: удалить вместе с содержимым (${count} ресурсов)?\nOK — удалить папку и содержимое.\nОтмена — выбрать перемещение в корень.`);
  if(!destroy&&!confirm('Переместить все ресурсы этой папки (и вложенных папок) в корень и удалить папки?'))return;
- if(destroy)p.resources=p.resources.filter(a=>!descendants.has(a.folderId));else for(const a of p.resources)if(descendants.has(a.folderId))a.folderId=null;
- p.resourceFolders=p.resourceFolders.filter(f=>!descendants.has(f.id));if(descendants.has(app.resourceFolderId))app.resourceFolderId=folder.parentId||null;await persistProject(p);renderLibrary();renderAssetsPopover();toast('Папка удалена')
+ const next=clone(p);if(destroy)next.resources=next.resources.filter(a=>!descendants.has(a.folderId));else for(const a of next.resources)if(descendants.has(a.folderId))a.folderId=null;
+ next.resourceFolders=next.resourceFolders.filter(f=>!descendants.has(f.id));if(!await persistProjectForUI(next))return;Object.assign(p,next);if(descendants.has(app.resourceFolderId))app.resourceFolderId=folder.parentId||null;renderLibrary();renderAssetsPopover();toast('Папка удалена')
 }
 
 function renderLibrary(){
@@ -1996,7 +2016,7 @@ async function renameLibraryItem(label){
  const initial=target.name??target.title;const textarea=document.createElement('textarea');textarea.className='project-title-edit';textarea.rows=2;textarea.maxLength=180;textarea.value=initial;label.textContent='';label.append(textarea);textarea.focus();textarea.select();
  let completed=false;
  async function finish(commit=true){if(completed)return;completed=true;const name=textarea.value.trim();if(commit&&name&&name!==initial){
-  try{if(doc){await flushSave();const record=app.docs.find(d=>d.id===doc.id)||doc;record.title=name;if(record.type==='card')record.hasCustomName=true;record.updatedAt=Date.now();const openTab=documentTabSession.tabs.find(t=>t.id===doc.id);if(openTab){openTab.doc.title=name;openTab.doc.updatedAt=record.updatedAt;if(openTab.doc.type==='card')openTab.doc.hasCustomName=true;renderDocumentTabs()}if(app.doc?.id===doc.id){app.doc.title=name;markCardNameManual(app.doc);app.doc.updatedAt=record.updatedAt;updateProjectBadge()}await dbOp('docs','readwrite',s=>s.put(clone(record)))}else {asset.name=name;await persistProject(project)};toast('Название сохранено')}
+  try{if(doc){if(!await flushSave())return;const record=clone(app.docs.find(d=>d.id===doc.id)||doc);record.title=name;if(record.type==='card')record.hasCustomName=true;record.updatedAt=Date.now();await dbOp('docs','readwrite',s=>s.put(record));confirmDocument(record);const openTab=documentTabSession.tabs.find(t=>t.id===doc.id);if(openTab){openTab.doc.title=name;openTab.doc.updatedAt=record.updatedAt;if(openTab.doc.type==='card')openTab.doc.hasCustomName=true;renderDocumentTabs()}if(app.doc?.id===doc.id){app.doc.title=name;markCardNameManual(app.doc);app.doc.updatedAt=record.updatedAt;updateProjectBadge();saveSoon()}}else {asset.name=name;await persistProject(project)};toast('Название сохранено')}
   catch(err){console.error(err);toast('Не удалось сохранить название')}
  }renderLibrary()}
  textarea.addEventListener('keydown',ev=>{ev.stopPropagation();if(ev.key==='Enter'&&!ev.shiftKey){ev.preventDefault();finish()}else if(ev.key==='Escape'){ev.preventDefault();finish(false)}});
@@ -2019,7 +2039,7 @@ async function insertResourceAsset(asset){if(!asset)return;if(documentTabSession
  const e=defaultElement('image');positionNewImage(e,{width:im.naturalWidth,height:im.naturalHeight});e.name=asset.name;e.imageSrc=asset.src;e.fillType='image';e.imageFit='fill';app.doc.elements.push(e);setSelected([e.id],true);commit();refreshLayers();refreshInspector();refreshMobileTools();closeDialogs();openEditor();toast('Ресурс добавлен на холст');
 }
 async function createProject(){const input=$('#newProjectName');const name=input.value.trim();if(!name){input.focus();toast('Укажи название проекта');return}if(name.length>90)return;
- await flushSave();const p={id:uid(),name,cover:'',resources:[],resourceFolders:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};app.projects.push(p);await persistProject(p);useProjectId(p.id);const doc=newDoc({title:'Новый шаблон'});setDoc(doc);await flushSave();input.value='';app.filter='template';renderLibrary();toast('Проект создан');
+ if(!await flushSave())return;const p={id:uid(),name,cover:'',resources:[],resourceFolders:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};if(!await persistProjectForUI(p))return;app.projects.push(p);useProjectId(p.id);const doc=newDoc({title:'Новый шаблон'});setDoc(doc);if(!await flushSave())return;input.value='';app.filter='template';renderLibrary();toast('Проект создан');
 }
 async function switchProject(id){if(id===app.currentProjectId)return;useProjectId(id);app.filter='template';renderLibrary();toast('Проект переключён');}
 async function addProjectResources(files){const p=currentProject();if(!p||!files.length)return;let added=0;for(const file of files){if(!file.type.startsWith('image/'))continue;try{const image=await compressImage(file);p.resources||=[];p.resources.push({id:uid(),name:file.name,src:image.src,folderId:app.resourceFolderId||null,createdAt:Date.now(),width:image.width,height:image.height});added++}catch(e){console.error(e);toast('Не удалось добавить '+file.name)}}if(added){try{await persistProject(p);renderLibrary();toast('Добавлено ресурсов: '+added)}catch(e){console.error(e);toast('Недостаточно места для сохранения ресурсов')}}}
@@ -2044,7 +2064,7 @@ $('#projectGrid').addEventListener('click',async ev=>{
  const assetRow=ev.target.closest('[data-assetid]');
  if(assetRow){const act=ev.target.closest('[data-assetact]')?.dataset.assetact;if(!act)return;
   const p=currentProject(),asset=p?.resources?.find(a=>a.id===assetRow.dataset.assetid);if(!asset)return;
-  if(act==='remove'){if(!confirm('Удалить ресурс «'+asset.name+'»?'))return;p.resources=p.resources.filter(a=>a.id!==asset.id);await persistProject(p);renderLibrary();return}
+  if(act==='remove'){if(!confirm('Удалить ресурс «'+asset.name+'»?'))return;const next={...clone(p),resources:p.resources.filter(a=>a.id!==asset.id)};if(!await persistProjectForUI(next))return;Object.assign(p,next);renderLibrary();return}
   if(act==='insert')await insertResourceAsset(asset);return;
  }
  const card=ev.target.closest('[data-docid]');if(!card)return;
@@ -2073,7 +2093,7 @@ async function importFontFiles(files,fromFolder=false){const list=[...files].fil
  const weight=guessed.weight!==400?guessed.weight:(names.subfamily?styleInfo.weight:guessed.weight),style=guessed.style==='italic'?'italic':(names.subfamily?styleInfo.style:guessed.style);
  if(app.fonts.some(f=>normaliseFont(f).family.toLowerCase()===family.toLowerCase()&&f.weight===weight&&f.style===style)){duplicates++;continue}
  const entry={id:uid(),name:file.name.replace(/\.(ttf|otf|woff2?)$/i,''),family,weight,style,data:await readDataURL(file)};
- await loadFontFace(entry);app.fonts.push(entry);await dbOp('fonts','readwrite',s=>s.put(entry));added++;
+ await loadFontFace(entry);await dbOp('fonts','readwrite',s=>s.put(entry));app.fonts.push(entry);added++;
  }catch(err){console.warn('Шрифт пропущен:',file.name,err)}}
  renderFonts();refreshInspector();paint();toast(`Загружено начертаний: ${added}${duplicates?`; пропущено дублей: ${duplicates}`:''}`);
 }
@@ -2102,13 +2122,13 @@ fontZone.addEventListener('drop',async ev=>{ev.preventDefault();fontZone.classLi
  for(const item of items){const entry=item.webkitGetAsEntry?.();if(entry)files.push(...await traverseFontEntry(entry));}
 }else files.push(...(ev.dataTransfer?.files||[]));await importFontFiles(files,files.some(f=>!!f.__importFamily||!!f.webkitRelativePath));});
 
-$('#libraryBtn').onclick=()=>{$('#editorProjectMenu').classList.toggle('hidden')};$('#editorProjectMenu').onclick=ev=>{const button=ev.target.closest('[data-editor-nav]');if(!button)return;$('#editorProjectMenu').classList.add('hidden');flushSave().then(()=>showHome(button.dataset.editorNav))};document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#libraryBtn,#editorProjectMenu'))$('#editorProjectMenu').classList.add('hidden')});$('#brandHomeBtn').onclick=()=>{flushSave().then(()=>showHome('workspace'))};$('#homeEditorBtn').onclick=()=>{const tab=documentTabSession.tabs.find(t=>t.id===documentTabSession.lastDocumentId)||documentTabSession.tabs.at(-1);if(tab)activateDocumentTab(tab.id);else if(app.doc)openDocumentTab(app.doc);else openDocumentTab(projectDocs()[0]||newDoc())};$('#homeBrandBtn').onclick=()=>showHome('workspace');
+$('#libraryBtn').onclick=()=>{$('#editorProjectMenu').classList.toggle('hidden')};$('#editorProjectMenu').onclick=ev=>{const button=ev.target.closest('[data-editor-nav]');if(!button)return;$('#editorProjectMenu').classList.add('hidden');flushSave().then(ok=>{if(ok)showHome(button.dataset.editorNav)})};document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#libraryBtn,#editorProjectMenu'))$('#editorProjectMenu').classList.add('hidden')});$('#brandHomeBtn').onclick=()=>{flushSave().then(ok=>{if(ok)showHome('workspace')})};$('#homeEditorBtn').onclick=()=>{const tab=documentTabSession.tabs.find(t=>t.id===documentTabSession.lastDocumentId)||documentTabSession.tabs.at(-1);if(tab)activateDocumentTab(tab.id);else if(app.doc)openDocumentTab(app.doc);else openDocumentTab(projectDocs()[0]||newDoc())};$('#homeBrandBtn').onclick=()=>showHome('workspace');
 $$('[data-home-nav]').forEach(b=>b.onclick=()=>showHome(b.dataset.homeNav));
 $('#homeScreen').addEventListener('click',ev=>{const b=ev.target.closest('[data-home-action]');if(!b)return;const action=b.dataset.homeAction;if(action==='import-json')$('#jsonInput').click();if(action==='export-document')exportJSON();if(action==='export-backup')openProjectExportDialog()});$('#dockAssets').onclick=showAssets;$('#assetsBtn').onclick=showAssets;$('#newCardBtn').onclick=()=>makeCardFrom(app.doc);
 $('#createProjectBtn').onclick=createProject;
 $('#newProjectName').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();createProject()}});
 $('#projectChooser').addEventListener('click',ev=>{const remove=ev.target.closest('[data-delete-project]');if(remove){ev.stopPropagation();deleteProject(remove.dataset.deleteProject);return}const b=ev.target.closest('[data-switch-project]');if(b)switchProject(b.dataset.switchProject)});$('#projectChooser').addEventListener('keydown',ev=>{if((ev.key==='Enter'||ev.key===' ')&&ev.target.matches('[data-delete-project]')){ev.preventDefault();ev.stopPropagation();deleteProject(ev.target.dataset.deleteProject)}});$('#projectDeleteBtn').onclick=()=>deleteProject(app.currentProjectId);
-$('#projectRenameBtn').onclick=()=>{const el=$('#activeProjectName');const p=currentProject();if(!p)return;const input=document.createElement('input');input.className='rename-project';input.value=p.name;el.replaceWith(input);input.focus();input.select();const done=async()=>{const name=input.value.trim();if(name)p.name=name;const heading=document.createElement('h3');heading.id='activeProjectName';heading.textContent=p.name;input.replaceWith(heading);await persistProject(p);updateProjectBadge();renderLibrary()};input.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();done()}if(ev.key==='Escape'){input.value=p.name;done()}});input.addEventListener('blur',()=>{if(input.isConnected)done()},{once:true})};
+$('#projectRenameBtn').onclick=()=>{const el=$('#activeProjectName');const p=currentProject();if(!p)return;const input=document.createElement('input');input.className='rename-project';input.value=p.name;el.replaceWith(input);input.focus();input.select();let finishing=false;const done=async()=>{if(finishing)return;finishing=true;const name=input.value.trim();const next={...clone(p),name:name||p.name};const ok=await persistProjectForUI(next);if(ok)Object.assign(p,next);const heading=document.createElement('h3');heading.id='activeProjectName';heading.textContent=p.name;input.replaceWith(heading);updateProjectBadge();renderLibrary()};input.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();done()}if(ev.key==='Escape'){input.value=p.name;done()}});input.addEventListener('blur',()=>{if(input.isConnected)done()},{once:true})};
 $('#projectCoverBtn').onclick=()=>$('#projectCoverInput').click();
 $('#projectCoverInput').onchange=async ev=>{const file=ev.target.files?.[0];ev.target.value='';if(!file)return;try{const photo=await compressImage(file);const im=new Image();im.src=photo.src;await im.decode();const c=document.createElement('canvas');const scale=Math.min(1,360/Math.max(im.naturalWidth,im.naturalHeight));c.width=Math.round(im.naturalWidth*scale);c.height=Math.round(im.naturalHeight*scale);c.getContext('2d').drawImage(im,0,0,c.width,c.height);const p=currentProject();p.cover=c.toDataURL('image/webp',.84);await persistProject(p);renderLibrary()}catch(e){console.error(e);toast('Обложку не удалось загрузить')}};
 $('#projectGrid').addEventListener('dragover',ev=>{if(app.filter!=='resource'||!ev.dataTransfer?.types?.includes('Files'))return;ev.preventDefault();$('#projectGrid').classList.add('asset-drop-active')});
@@ -2258,9 +2278,11 @@ function showShapeTray(forceOpen=false){
 }
 $('#dockShapes').onclick=()=>showShapeTray();
 $('#shapeTray').addEventListener('click',async ev=>{
+ try{
  const move=ev.target.closest('[data-cat-move]');if(move){const i=Number(move.dataset.catMove),j=i+Number(move.dataset.dir);if(j<0||j>=SHAPE_SECTIONS.length)return;[SHAPE_SECTIONS[i],SHAPE_SECTIONS[j]]=[SHAPE_SECTIONS[j],SHAPE_SECTIONS[i]];await persistShapeCatalog();refreshShapeTray();return}
  const group=ev.target.closest('[data-cat-remove]');if(group){const i=Number(group.dataset.catRemove),g=SHAPE_SECTIONS[i];if(!confirm(`Удалить категорию «${g.name}» и её ${g.shapes.length} фигур?`))return;SHAPE_SECTIONS.splice(i,1);SHAPE_INDEX.clear();SHAPE_SECTIONS.forEach(g=>g.shapes.forEach(s=>SHAPE_INDEX.set(s.id,s)));await persistShapeCatalog();refreshShapeTray();return}
  const del=ev.target.closest('[data-shape-remove]');if(del){const id=del.dataset.shapeRemove,group=SHAPE_SECTIONS.find(g=>g.shapes.some(s=>s.id===id)),shape=group?.shapes.find(s=>s.id===id);if(!shape||!confirm('Удалить фигуру «'+shape.name+'» из библиотеки?'))return;group.shapes=group.shapes.filter(s=>s.id!==id);SHAPE_INDEX.delete(id);await persistShapeCatalog();refreshShapeTray();return}
+ }catch(err){console.warn('Изменения каталога не сохранены:',err);refreshShapeTray();toast('Изменения фигур только в памяти · экспортируй JSON');return}
  const b=ev.target.closest('[data-tray-shape]');if(!b)return;makeVectorShape(b.dataset.trayShape);$('#shapeTray').classList.add('hidden');$('#dockShapes').setAttribute('aria-expanded','false')
 });
 $('#shapeSvgInput').onchange=async ev=>{const files=[...ev.target.files];ev.target.value='';await svgFilesToShapes(files)};
@@ -2489,7 +2511,7 @@ function compactMenuShow(page='root'){compactMenuPage=page;const menu=$('#editor
  else if(page==='fonts'){const fams=typeof fontFamilies==='function'?fontFamilies():[];body.innerHTML='<div class="compact-info">Загруженные семейства шрифтов доступны во всех документах.</div><div class="compact-button-row"><button data-compact-font-import="files">＋ Добавить шрифты</button></div><div class="compact-section-name">Семейства</div>'+fams.slice(0,40).map(name=>`<div class="compact-tile">${html(name)}</div>`).join('')}
  else if(page==='data'){body.innerHTML='<div class="compact-info">Быстро экспортируй документ или проект, не покидая редактор.</div><div class="compact-button-row"><button data-compact-json="document">Экспорт документа JSON</button><button data-compact-json="backup">Копия проекта JSON</button><button data-compact-json="import">Импорт JSON</button></div>'}}
 $('#libraryBtn').onclick=ev=>{ev.stopPropagation();const m=$('#editorProjectMenu');if(!m.classList.contains('hidden'))m.classList.add('hidden');else compactMenuShow('root')};
-$('#editorProjectMenu').onclick=ev=>{ev.stopPropagation();const b=ev.target.closest('[data-compact-page],[data-compact-project],[data-compact-doc],[data-compact-font-import],[data-compact-json]');if(!b)return;if(b.dataset.compactPage)compactMenuShow(b.dataset.compactPage);if(b.dataset.compactProject){compactBrowseProjectId=b.dataset.compactProject;compactMenuShow('workspace')};if(b.dataset.compactDoc){const doc=app.docs.find(x=>x.id===b.dataset.compactDoc);if(doc){openDocumentTab(doc);$('#editorProjectMenu').classList.add('hidden')}}if(b.dataset.compactFull){$('#editorProjectMenu').classList.add('hidden');flushSave().then(()=>showHome(b.dataset.compactFull))}if(b.dataset.compactJson){const type=b.dataset.compactJson;if(type==='document')exportJSON();else if(type==='backup')openProjectExportDialog();else $('#jsonInput').click()}if(b.dataset.compactFontImport){$('#fontInput')?.click()}};
+$('#editorProjectMenu').onclick=ev=>{ev.stopPropagation();const b=ev.target.closest('[data-compact-page],[data-compact-project],[data-compact-doc],[data-compact-font-import],[data-compact-json]');if(!b)return;if(b.dataset.compactPage)compactMenuShow(b.dataset.compactPage);if(b.dataset.compactProject){compactBrowseProjectId=b.dataset.compactProject;compactMenuShow('workspace')};if(b.dataset.compactDoc){const doc=app.docs.find(x=>x.id===b.dataset.compactDoc);if(doc){openDocumentTab(doc);$('#editorProjectMenu').classList.add('hidden')}}if(b.dataset.compactFull){$('#editorProjectMenu').classList.add('hidden');flushSave().then(ok=>{if(ok)showHome(b.dataset.compactFull)})}if(b.dataset.compactJson){const type=b.dataset.compactJson;if(type==='document')exportJSON();else if(type==='backup')openProjectExportDialog();else $('#jsonInput').click()}if(b.dataset.compactFontImport){$('#fontInput')?.click()}};
 $('#compactMenuBack').onclick=()=>compactMenuShow('root');$('#compactMenuClose').onclick=()=>$('#editorProjectMenu').classList.add('hidden');
 window.addEventListener('resize',()=>{if(!$('#editorProjectMenu').classList.contains('hidden'))compactMenuPosition()});
 
@@ -2541,7 +2563,7 @@ function restoreDocumentTab(tab){
  document.body.classList.toggle('ink-cursor-on',app.inkTool==='brush');
  if(app.inkTool==='brush')inkRefreshUI();
  updateProjectBadge();
- openEditor();
+ openEditor();refreshSaveStatus();
  requestAnimationFrame(()=>{
   if(documentTabSession.activeId!==tab.id)return;
   applyZoom();
@@ -2583,7 +2605,7 @@ function openDocumentTab(source){
  setDoc(clone(source));
  const tab={id:app.doc.id,doc:app.doc,view:{}};
  documentTabSession.tabs.push(tab);
- renderDocumentTabs();openEditor();
+ renderDocumentTabs();openEditor();refreshSaveStatus();
  requestAnimationFrame(()=>{if(documentTabSession.activeId===tab.id){fitCanvas();captureInitialDocumentTabView(tab);}});
 }
 function captureInitialDocumentTabView(tab){
@@ -2603,18 +2625,16 @@ function activateDocumentTab(id){
  restoreDocumentTab(tab);renderDocumentTabs();
 }
 async function closeDocumentTab(id){
- const index=documentTabSession.tabs.findIndex(t=>t.id===id);if(index<0)return;
- const tab=documentTabSession.tabs[index],isActive=documentTabSession.activeId===id;
- if(isActive){captureDocumentTab();clearTimeout(app.saveTimer);app.saveTimer=null;await flushSave()}
- else { // Dormant tabs already have a saved snapshot but explicitly commit it again on close.
-  const rec=clone(tab.doc);
-  try{await dbOp('docs','readwrite',s=>s.put(rec));const i=app.docs.findIndex(d=>d.id===rec.id);if(i<0)app.docs.push(rec);else app.docs[i]=rec}catch(err){console.error('Tab close save failed',err);toast('Не удалось сохранить вкладку; экспортируй JSON')}
- }
- const now=documentTabSession.tabs.findIndex(t=>t.id===id);if(now<0)return;
+ const tab=documentTabSession.tabs.find(t=>t.id===id);if(!tab)return true;
+ const isActive=documentTabSession.activeId===id;
+ if(isActive){if(app.historyPreviewOriginal){toast('Выйди из предпросмотра истории перед закрытием');return false}captureDocumentTab();if(!await flushSave())return false}
+ else {if(tab.view.historyPreviewOriginal){toast('Выйди из предпросмотра истории перед закрытием');return false}const rec=clone(tab.doc);if(!await saveDocumentSnapshot(rec)||JSON.stringify(tab.doc)!==JSON.stringify(rec))return false}
+ const now=documentTabSession.tabs.findIndex(t=>t.id===id);if(now<0)return true;
  documentTabSession.tabs.splice(now,1);
  if(documentTabSession.lastDocumentId===id)documentTabSession.lastDocumentId=documentTabSession.tabs.at(-1)?.id||null;
- if(isActive){const next=documentTabSession.tabs[now]||documentTabSession.tabs[now-1];documentTabSession.activeId='home';if(next)activateDocumentTab(next.id);else showHome('workspace')}
- renderDocumentTabs();
+ // The user may have activated another tab while this transaction was pending.
+ if(documentTabSession.activeId===id){const next=documentTabSession.tabs[now]||documentTabSession.tabs[now-1];documentTabSession.activeId='home';if(next)activateDocumentTab(next.id);else showHome('workspace')}
+ renderDocumentTabs();return true;
 }
 let v41TabGesture=null;
 $('#documentTabsScroll').addEventListener('pointerdown',ev=>{if(ev.pointerType==='touch')v41TabGesture={id:ev.pointerId,x:ev.clientX,y:ev.clientY,moved:false};},{passive:true});
@@ -2704,7 +2724,7 @@ async function tabPickerLaunch(doc){
  if(!doc)return;
  closeDialogs();openDocumentTab(doc);
  // Persist immediately; creation should not depend on the autosave timer.
- if(app.doc?.id===doc.id)await flushSave();
+ if(app.doc?.id===doc.id)if(!await flushSave())return;
 }
 $('#tabPickerDialog').addEventListener('keydown',ev=>{if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeDialogs()}});
 $('#tabPickerBack').onclick=()=>{
@@ -2735,7 +2755,7 @@ $('#tabPickerCreateRow').onclick=async ev=>{
  await tabPickerLaunch(doc);
 };
 
-async function init(){app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;app.docs.push(sample);await dbOp('docs','readwrite',s=>s.put(sample));setDoc(sample)}else {const docs=projectDocs().sort((a,b)=>b.updatedAt-a.updatedAt);setDoc(clone(docs[0]||newDoc()))};if(!app.db)toast('Локальное хранилище недоступно: сохраняй проект в JSON');showHome('workspace')}
+async function init(){app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;await startupWrite('docs',sample);app.docs.push(sample);setDoc(sample)}else {const docs=projectDocs().sort((a,b)=>b.updatedAt-a.updatedAt);setDoc(clone(docs[0]||newDoc()))};if(!app.db)toast('Локальное хранилище недоступно: сохраняй проект в JSON');showHome('workspace')}
 $$('.tool[data-add]').forEach(t=>{const ico=t.querySelector('.tool-ico');if(ico)ico.innerHTML=uiIcon(t.dataset.add)});
 init();
 // Browser/OS may reserve BrowserBack/BrowserForward before dispatching events to a page.
@@ -2777,25 +2797,25 @@ rearmBackGuard();
 
 // Project-scoped removal and multi-project backup.
 async function deleteProject(id){const project=app.projects.find(p=>p.id===id);if(!project)return;const docs=projectDocs(id);if(!confirm(`Удалить проект «${project.name}» и все его ${docs.length} документов, ресурсы и настройки?\n\nЭто действие нельзя отменить. Рекомендуется предварительно экспортировать JSON.`))return;
- await flushSave();
- for(const tab of [...documentTabSession.tabs].filter(t=>t.doc.projectId===id))await closeDocumentTab(tab.id);
- try{for(const doc of docs)await dbOp('docs','readwrite',store=>store.delete(doc.id));await dbOp('projects','readwrite',store=>store.delete(id));app.docs=app.docs.filter(d=>d.projectId!==id);app.projects=app.projects.filter(p=>p.id!==id);
- if(!app.projects.length){const fallback={id:uid(),name:'Мой проект',cover:'',resources:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};app.projects.push(fallback);await persistProject(fallback)}
+ if(!await flushSave())return;
+ for(const tab of [...documentTabSession.tabs].filter(t=>t.doc.projectId===id))if(!await closeDocumentTab(tab.id))return;
+ try{for(const doc of projectDocs(id))await dbOp('docs','readwrite',store=>store.delete(doc.id));await dbOp('projects','readwrite',store=>store.delete(id));app.docs=app.docs.filter(d=>d.projectId!==id);app.projects=app.projects.filter(p=>p.id!==id);
+ if(!app.projects.length){const fallback={id:uid(),name:'Мой проект',cover:'',resources:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};try{await persistProject(fallback)}catch(error){app.projects.push(fallback);throw error}app.projects.push(fallback)}
  if(app.currentProjectId===id||app.doc?.projectId===id){app.doc=null;useProjectId(app.projects[0].id);if(documentTabSession.activeId!=='home')showHome('workspace')}
  renderLibrary();if(!homeVisible())updateProjectBadge();toast('Проект удалён');
  }catch(err){console.error(err);toast('Не удалось удалить проект полностью; проверь хранилище')}}
 function openProjectExportDialog(){const box=$('#projectExportList');box.replaceChildren();for(const p of app.projects){const row=document.createElement('label');row.className='project-export-row';const count=projectDocs(p.id).length;row.innerHTML=`<input type="checkbox" data-export-project="${p.id}" checked>${p.cover?`<img src="${p.cover}" alt="">`:`<span class="export-project-initial">${html(p.name.charAt(0))}</span>`}<span><strong>${html(p.name)}</strong><small>${count} документов · ${(p.resources||[]).length} ресурсов</small></span>`;box.append(row)}$('#projectExportShade').classList.remove('hidden');updateExportSelectState()}
 function updateExportSelectState(){const checks=[...document.querySelectorAll('[data-export-project]')];const count=checks.filter(x=>x.checked).length;$('#projectExportConfirm').disabled=count===0;$('#projectExportConfirm').textContent=`Экспортировать (${count})`}
 function closeProjectExportDialog(){$('#projectExportShade').classList.add('hidden')}
-async function exportSelectedProjects(){const ids=[...document.querySelectorAll('[data-export-project]:checked')].map(x=>x.dataset.exportProject);if(!ids.length)return;try{await flushSave();if(ids.length===1){const p=app.projects.find(x=>x.id===ids[0]);if(!p)return;const archive={format:'kartochnaya-project-v1',version:'0.21',exportedAt:new Date().toISOString(),project:clone(p),documents:projectDocs(p.id).map(clone),shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(p.name)+' - проект Карточной.json')}
- else {const projects=ids.map(id=>{const p=app.projects.find(x=>x.id===id);return {project:clone(p),documents:projectDocs(id).map(clone)}}).filter(x=>x.project);const archive={format:'kartochnaya-workspace-v1',version:'0.21',exportedAt:new Date().toISOString(),projects,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),ids.length===app.projects.length?'Все проекты Карточной.json':'Выбранные проекты Карточной.json')}
- closeProjectExportDialog();toast('Резервная копия JSON подготовлена')}catch(err){console.error(err);toast('Не удалось экспортировать проекты')}}
+async function exportSelectedProjects(){const ids=[...document.querySelectorAll('[data-export-project]:checked')].map(x=>x.dataset.exportProject);if(!ids.length)return;try{await flushSave();if(ids.length===1){const p=app.projects.find(x=>x.id===ids[0]);if(!p)return;const archive={format:'kartochnaya-project-v1',version:'0.21',exportedAt:new Date().toISOString(),project:clone(p),documents:exportProjectDocuments(p.id),shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(p.name)+' - проект Карточной.json')}
+ else {const projects=ids.map(id=>{const p=app.projects.find(x=>x.id===id);return {project:clone(p),documents:exportProjectDocuments(id)}}).filter(x=>x.project);const archive={format:'kartochnaya-workspace-v1',version:'0.21',exportedAt:new Date().toISOString(),projects,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),ids.length===app.projects.length?'Все проекты Карточной.json':'Выбранные проекты Карточной.json')}
+ closeProjectExportDialog();toast('Файл JSON подготовлен')}catch(err){console.error(err);toast('Не удалось экспортировать проекты')}}
 $('#projectExportClose').onclick=closeProjectExportDialog;
 $('#projectExportShade').addEventListener('click',ev=>{if(ev.target.id==='projectExportShade')closeProjectExportDialog()});
 $('#projectExportList').addEventListener('change',updateExportSelectState);
 $('#projectExportSelectAll').onclick=()=>{const boxes=[...document.querySelectorAll('[data-export-project]')],areAll=boxes.every(b=>b.checked);for(const box of boxes)box.checked=!areAll;$('#projectExportSelectAll').textContent=areAll?'Выбрать все':'Снять все';updateExportSelectState()};
 $('#projectExportConfirm').onclick=exportSelectedProjects;
-async function importWorkspaceBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(!Array.isArray(payload.projects)||payload.projects.length>500)throw Error('Некорректный архив проектов');const items=payload.projects;if(items.reduce((n,item)=>n+(item.documents?.length||0),0)>5000)throw Error('Слишком много документов');await flushSave();for(const item of items){if(!item.project||!Array.isArray(item.documents))throw Error('Не хватает данных проекта');for(const doc of item.documents){if(!Array.isArray(doc.elements)||!(doc.width>0&&doc.width<=5000&&doc.height>0&&doc.height<=5000))throw Error('Повреждённый документ')}}for(const f of payload.fonts||[]){if(!f.data||app.fonts.some(x=>normaliseFont(x).family===normaliseFont(f).family&&x.weight===f.weight&&x.style===f.style))continue;const imported={...clone(f),id:uid()};try{await loadFontFace(imported);await dbOp('fonts','readwrite',s=>s.put(imported));app.fonts.push(imported)}catch(err){console.warn('Не удалось импортировать шрифт',err)}}let added=0;for(const item of items){const p={...clone(item.project),id:uid(),name:String(item.project.name||'Проект').slice(0,90)+' (импорт)',createdAt:Date.now(),updatedAt:Date.now(),exportCounters:{}};app.projects.push(p);await persistProject(p);for(const original of item.documents){const doc={...clone(original),id:uid(),projectId:p.id,updatedAt:Date.now()};app.docs.push(doc);await dbOp('docs','readwrite',s=>s.put(doc))}added++}if(added){const fromHome=homeVisible();useProjectId(app.projects[app.projects.length-added].id);const first=projectDocs()[0];app.filter='template';if(fromHome)showHome('workspace');else if(first)openDocumentTab(first);renderLibrary();toast(`Импортировано проектов: ${added}`)}}
+async function importWorkspaceBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(!Array.isArray(payload.projects)||payload.projects.length>500)throw Error('Некорректный архив проектов');const items=payload.projects;if(items.reduce((n,item)=>n+(item.documents?.length||0),0)>5000)throw Error('Слишком много документов');if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');for(const item of items){if(!item.project||!Array.isArray(item.documents))throw Error('Не хватает данных проекта');for(const doc of item.documents){if(!Array.isArray(doc.elements)||!(doc.width>0&&doc.width<=5000&&doc.height>0&&doc.height<=5000))throw Error('Повреждённый документ')}}for(const f of payload.fonts||[]){if(!f.data||app.fonts.some(x=>normaliseFont(x).family===normaliseFont(f).family&&x.weight===f.weight&&x.style===f.style))continue;const imported={...clone(f),id:uid()};try{await loadFontFace(imported);await dbOp('fonts','readwrite',s=>s.put(imported));app.fonts.push(imported)}catch(err){console.warn('Не удалось импортировать шрифт',err)}}let added=0;for(const item of items){const p={...clone(item.project),id:uid(),name:String(item.project.name||'Проект').slice(0,90)+' (импорт)',createdAt:Date.now(),updatedAt:Date.now(),exportCounters:{}};await persistProject(p);app.projects.push(p);for(const original of item.documents){const doc={...clone(original),id:uid(),projectId:p.id,updatedAt:Date.now()};await dbOp('docs','readwrite',s=>s.put(doc));app.docs.push(doc)}added++}if(added){const fromHome=homeVisible();useProjectId(app.projects[app.projects.length-added].id);const first=projectDocs()[0];app.filter='template';if(fromHome)showHome('workspace');else if(first)openDocumentTab(first);renderLibrary();toast(`Импортировано проектов: ${added}`)}}
 
 
 // Touch long press must not show the desktop right-click menu on mobile.

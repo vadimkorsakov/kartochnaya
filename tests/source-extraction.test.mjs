@@ -9,12 +9,13 @@ import { build, root, source, hash } from '../scripts/distribution.mjs';
 import * as primitives from '../src/core/primitives.mjs';
 import * as colors from '../src/core/colors.mjs';
 import * as gradients from '../src/core/gradient-model.mjs';
+import * as catalog from '../src/core/shape-catalog.mjs';
 
 const primitiveNames = ['html', 'clamp', 'fmt'];
 const colorNames = ['rgbHex', 'hexRgb', 'hsvRGB', 'rgbHSV', 'rgbHSL', 'hslRGB', 'normalizeHex', 'cpFormatValues'];
 const gradientNames = ['gradientStops', 'gradientGeometry', 'gradientSample', 'addGradientStop'];
 const inputs = ['index.template.html', 'styles/legacy-01.css', 'styles/legacy-02.css',
-  'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs'];
+  'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs'];
 const read = name => readFile(resolve(sourceRoot, name), 'utf8');
 const slice = (text, start, end) => text.slice(text.indexOf(start), text.indexOf(end, text.indexOf(start)));
 
@@ -72,13 +73,15 @@ test('module function bodies and ALL remaining legacy statements retain their hi
     "import { clamp } from './primitives.mjs';\nimport { normalizeHex, hexRgb, rgbHex } from './colors.mjs';\n\n"
     + 'export function createGradientModel(uid) {\n' + gradient
     + '\n return { gradientStops, gradientGeometry, gradientSample, addGradientStop };\n}\n');
+  const validator = slice(script, 'function validateShapeCatalog(input){', 'function applyShapeCatalog(');
+  assert.equal(await read('core/shape-catalog.mjs'), 'export ' + validator);
   const binding = 'const { gradientStops, gradientGeometry, gradientSample, addGradientStop } = createGradientModel(uid);\n';
   const editor = await read('editor.js');
   assert.equal(editor.split(binding).length, 2);
   // Only uid's declaration precedes the factory; it cannot be used before initialization.
   assert.match(editor, /const uid=[^\n]+;\nconst \{ gradientStops, gradientGeometry, gradientSample, addGradientStop \} = createGradientModel\(uid\);/);
   assert.equal(editor.replace(/^import [^\n]+;\n/gm, '').replace(binding, ''),
-    script.replace(prim, '').replace(color, '').replace(gradient, ''));
+    script.replace(prim, '').replace(color, '').replace(gradient, '').replace(validator, ''));
   assert.doesNotMatch(editor, /\{\{KARTOCHNAYA:/);
   await assert.rejects(read('core/gradient-model.js'), /ENOENT/);
   const compiler = await readFile(resolve(root, 'scripts/compile-javascript.mjs'), 'utf8');
@@ -90,22 +93,26 @@ test('module function bodies and ALL remaining legacy statements retain their hi
 test('real imports/exports resolve once; the browser bundle is one classic script with no runtime imports', async () => {
   assert.deepEqual(Object.keys(primitives).sort(), [...primitiveNames].sort());
   assert.deepEqual(Object.keys(colors).sort(), [...colorNames].sort());
+  assert.deepEqual(Object.keys(catalog), ['validateShapeCatalog']);
+  assert.match(await read('editor.js'), /import \{ validateShapeCatalog \} from '\.\/core\/shape-catalog\.mjs';/);
   assert.deepEqual(Object.keys(gradients), ['createGradientModel']);
   assert.deepEqual(Object.keys(gradients.createGradientModel(() => 'test')).sort(), [...gradientNames].sort());
   const { code, metafile } = await bundleJavaScript();
-  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['core/colors.mjs', 'core/gradient-model.mjs', 'core/primitives.mjs', 'editor.js']);
+  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['core/colors.mjs', 'core/gradient-model.mjs', 'core/primitives.mjs', 'core/shape-catalog.mjs', 'editor.js']);
   assert.equal(metafile.inputs['core/colors.mjs'].imports[0].path, 'core/primitives.mjs');
-  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']);
+  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['core/shape-catalog.mjs', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']);
+  assert.deepEqual(metafile.inputs['core/shape-catalog.mjs'].imports, []); // Leaf module cannot create a cycle.
   assert.deepEqual(metafile.inputs['core/gradient-model.mjs'].imports.map(i => i.path), ['core/primitives.mjs', 'core/colors.mjs']);
   assert.ok(Object.values(metafile.inputs).every(i => i.format === 'esm'));
   assert.equal(Object.keys(metafile.outputs).length, 1);
+  assert.ok(Object.values(metafile.outputs)[0].inputs['core/shape-catalog.mjs'].bytesInOutput > 0);
   assert.deepEqual(Object.values(metafile.outputs)[0].imports, []);
   const js = code.toString();
   verifyClassicJavaScript(js);
-  assert.doesNotMatch(js, /^\s*(?:import|export)\s|\bimport\s*\(|\b(?:window|globalThis)\.(?:html|clamp|fmt|rgbHex|hexRgb|hsvRGB|rgbHSV|rgbHSL|hslRGB|normalizeHex|cpFormatValues)\s*=/m);
+  assert.doesNotMatch(js, /^\s*(?:import|export)\s|\bimport\s*\(|\b(?:window|globalThis)\.(?:html|clamp|fmt|rgbHex|hexRgb|hsvRGB|rgbHSV|rgbHSL|hslRGB|normalizeHex|cpFormatValues|validateShapeCatalog)\s*=/m);
   assert.doesNotMatch(js, /\{\{KARTOCHNAYA:|sourceMappingURL=/);
   const editor = await read('editor.js');
-  for (const name of [...primitiveNames, ...colorNames, ...gradientNames, 'createGradientModel']) {
+  for (const name of [...primitiveNames, ...colorNames, ...gradientNames, 'createGradientModel', 'validateShapeCatalog']) {
     assert.equal([...js.matchAll(new RegExp(`(?:function|var|const) ${name}(?:\\s*[=(])`, 'g'))].length, 1, name);
     assert.doesNotMatch(editor, new RegExp(`(?:function|const) ${name}[=(]`));
   }
@@ -137,7 +144,7 @@ test('missing, malformed, repeated and moved HTML markers and all stale JS marke
       await assert.rejects(compileHTML(sources), /marker/i);
     }
     await writeFile(entry, editor);
-    for (const name of ['core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']) {
+    for (const name of ['core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs']) {
       const file = resolve(sources, name), code = await readFile(file, 'utf8');
       await writeFile(file, code + '\n// {{KARTOCHNAYA:UNRESOLVED}}');
       await assert.rejects(compileHTML(sources), /marker/i);
@@ -164,6 +171,7 @@ test('each real source participates through meaningful code changes; all targets
       'core/primitives.mjs': s => s.replace('Math.max(a,x)', 'Math.max(a,x+1)'),
       'core/colors.mjs': s => s.replace("return '#'+", "return '#source-probe'+"),
       'core/gradient-model.mjs': s => s.replace('pos=50', 'pos=51'),
+      'core/shape-catalog.mjs': s => s.replace('input.length>300', 'input.length>299'),
     };
     for (const name of inputs) {
       const file = resolve(sources, name), text = await readFile(file, 'utf8');
@@ -193,6 +201,7 @@ test('every missing component, bad import/export or syntax error rejects the act
     const file = resolve(sources, 'editor.js'), editor = await readFile(file, 'utf8');
     for (const invalid of [editor.replace('{ html,', '{ absentExport,'),
       editor.replace('./core/colors.mjs', './core/missing.mjs'),
+      editor.replace('./core/shape-catalog.mjs', './core/missing-shape.mjs'),
       editor.replace('./core/gradient-model.mjs', './core/missing-gradient.mjs'),
       editor.replace('import { createGradientModel }', 'import { missingFactory }'), editor + '\nconst = broken;',
       editor + '\nimport("https://example.com/runtime.js");',
@@ -227,5 +236,16 @@ test('HTML-sensitive JavaScript strings are escaped safely without changing thei
     let actual;
     vm.runInNewContext(line, { console: { log: value => { actual = value; } } });
     assert.equal(actual, payload);
+  });
+});
+
+test('shape catalog missing export and syntax errors fail the actual build', async () => {
+  await temporarySources(async (sources, outputDirectory) => {
+    const file = resolve(sources, 'core/shape-catalog.mjs'), code = await readFile(file, 'utf8');
+    for (const invalid of [code.replace('export function', 'function'), code + '\nconst = broken;']) {
+      await writeFile(file, invalid);
+      await assert.rejects(build('all', { sourceDirectory: sources, outputDirectory }));
+      await assert.rejects(readFile(resolve(outputDirectory, 'kartochnaya.html')), /ENOENT/);
+    }
   });
 });

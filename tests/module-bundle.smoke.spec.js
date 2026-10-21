@@ -98,3 +98,84 @@ test('gradient factory integration: unique stop ids, imported interpolation, rad
   expect((await exportedDocument(page)).elements).toEqual(document.elements);
   expect((await exportPNG(page)).image.data).toEqual(png.image.data);
 });
+
+const catalogInput = require('./fixtures/shape-catalog-input.json');
+const catalogExpected = require('./fixtures/shape-catalog-expected.json');
+const { importPayload } = require('./helpers');
+
+async function importCatalogDocument(page) {
+  await openHome(page);
+  await createDocument(page, 'Synthetic catalog');
+  const document = await exportedDocument(page);
+  await importPayload(page, { format: 'kartochnaya-v1', document, shapeCatalog: catalogInput });
+  await expect(page.locator('#toast')).toHaveText('Документ импортирован');
+  return document;
+}
+async function savedCatalog(page) {
+  return (await records(page, 'settings')).find(row => row.key === 'shapes-v1')?.sections;
+}
+
+test('shape catalog module: real file import, export, IndexedDB, reload and canvas insertion', async ({ page }) => {
+  await importCatalogDocument(page);
+  await expect.poll(() => savedCatalog(page)).toEqual(catalogExpected);
+  const download = page.waitForEvent('download');
+  await page.locator('#jsonExportBtn').click();
+  const file = await download;
+  const payload = JSON.parse(await readFile(await file.path(), 'utf8'));
+  expect(payload.shapeCatalog).toEqual(catalogExpected);
+  await page.locator('#dockShapes').click();
+  await expect(page.locator('#shapeSections .shape-category-name').first()).toContainText('Синтетические контуры');
+  await expect(page.locator('[data-tray-shape="stage8-triangle"]')).toBeVisible();
+  const document = await exportedDocument(page);
+  await expect.poll(async () => (await records(page, 'docs')).some(d => d.id === document.id)).toBe(true);
+  await page.reload();
+  await expect(page.locator('#homeScreen')).toBeVisible();
+  await openLibraryDocument(page, document.id);
+  await page.locator('#dockShapes').click();
+  await expect(page.locator('[data-tray-shape="stage8-triangle"]')).toBeVisible();
+  await page.locator('[data-tray-shape="stage8-triangle"]').click();
+  await expect(page.locator('#shapeTray')).toBeHidden();
+  const result = await exportedDocument(page);
+  expect(result.elements).toHaveLength(1);
+  expect(result.elements[0]).toMatchObject({ type: 'vector', name: 'Треугольник', vectorId: 'stage8-triangle', vectorD: 'M0 0 L100 0 L50 100 Z' });
+  expect(await savedCatalog(page)).toEqual(catalogExpected);
+  expect(await page.evaluate(() => Object.hasOwn(window, 'validateShapeCatalog'))).toBe(false);
+});
+
+// The importer intentionally logs caught validation errors. Observe the exact error
+// here without weakening helpers.js's strict console checks for other tests.
+const { test: importErrorTest } = require('@playwright/test');
+importErrorTest('shape catalog module: duplicate ID rejects import without replacing saved catalog', async ({ page }, testInfo) => {
+  const uncaught = [], errors = [], standaloneWarnings = [];
+  page.on('pageerror', error => uncaught.push(error.message));
+  page.on('console', message => {
+    if (testInfo.project.name === 'standalone' && message.type() === 'error'
+      && message.text() === 'A bad HTTP response code (404) was received when fetching the script.') {
+      standaloneWarnings.push(message.text()); return;
+    }
+    const optionalFavicon = message.location().url.endsWith('/favicon.ico') && message.text().includes('404');
+    if (message.type() === 'error' && !optionalFavicon) errors.push(message.text());
+  });
+  await importCatalogDocument(page);
+  const before = await savedCatalog(page);
+  const document = await exportedDocument(page);
+  await expect.poll(async () => (await records(page, 'docs')).some(d => d.id === document.id)).toBe(true);
+  await importPayload(page, { format: 'kartochnaya-v1', document,
+    shapeCatalog: [{ name: 'Rejected', shapes: [{id:'duplicate',d:'M0 0'}, {id:'duplicate',d:'M1 1'}] }] });
+  await expect(page.locator('#toast')).toHaveText('Ошибка: Некорректный контур: duplicate');
+  expect(await savedCatalog(page)).toEqual(before);
+  await page.locator('#dockShapes').click();
+  await expect(page.locator('[data-tray-shape="stage8-triangle"]')).toBeVisible();
+  await expect(page.locator('[data-tray-shape="duplicate"]')).toHaveCount(0);
+  await expect(page.locator('#shapeSections')).not.toContainText('Rejected');
+  await page.reload();
+  await expect(page.locator('#homeScreen')).toBeVisible();
+  await openLibraryDocument(page, document.id);
+  await page.locator('#dockShapes').click();
+  await expect(page.locator('[data-tray-shape="stage8-triangle"]')).toBeVisible();
+  expect(await savedCatalog(page)).toEqual(before);
+  expect(uncaught).toEqual([]);
+  expect(errors).toHaveLength(1);
+  expect(errors[0]).toContain('Некорректный контур: duplicate');
+  if (standaloneWarnings.length) await testInfo.attach('standalone-worker-warning', { body: standaloneWarnings.join('\n'), contentType: 'text/plain' });
+});

@@ -18,6 +18,9 @@ on:
       - 'tests/indexeddb.test.mjs'
       - 'tests/project-integrity.test.mjs'
       - 'tests/project-integrity.spec.js'
+      - 'tests/workspace-replace.spec.js'
+      - 'tests/workspace-replace.test.mjs'
+      - 'tests/fixtures/workspace-replace-editor-diff.json'
       - 'tests/zip-backup.spec.js'
       - 'tests/zip-backup.test.mjs'
       - 'tests/fixtures/zip-backup-editor-diff.json'
@@ -62,7 +65,7 @@ jobs:
       - run: node scripts/verify-reproducible.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run test:bundle-smoke
-      - run: npx playwright test --project=chromium tests/indexeddb-contracts.spec.js tests/project-integrity.spec.js tests/zip-backup.spec.js
+      - run: npx playwright test --project=chromium tests/indexeddb-contracts.spec.js tests/project-integrity.spec.js tests/zip-backup.spec.js tests/workspace-replace.spec.js
       - run: npx playwright test --project=known-failures tests/known-failures.spec.js
       - uses: actions/upload-artifact@v4
         with:

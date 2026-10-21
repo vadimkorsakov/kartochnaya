@@ -1,3 +1,5 @@
+import { createReplacementSession } from './backup/replace.mjs';
+import { createInstanceGuard } from './backup/instances.mjs';
 import { installBackupUI } from './backup/ui.mjs';
 import { readWorkspaceSnapshot, createWorkspaceBarrier } from './backup/storage.mjs';
 import { openDatabase, runStoreRequest, runStoreTransaction } from './storage/indexeddb.mjs';
@@ -143,8 +145,9 @@ function toast(msg){const n=$('#toast');n.textContent=msg;n.classList.add('show'
 function storageWarning(error){console.warn('Локальное хранилище:',error);$('#saveStatus').textContent='Хранение недоступно · экспортируй JSON';toast('Локальное хранилище недоступно: сохраняй проект в JSON')}
 async function openDB(){try{return await openDatabase({onVersionChange:()=>{app.db=null;storageWarning('Соединение закрыто: база обновляется в другой вкладке')},onClose:()=>{app.db=null;storageWarning('Соединение закрыто браузером')}})}catch(error){storageWarning(error);return null}}
 const workspaceBarrier=createWorkspaceBarrier();
-let zipWorkspaceBusy=false;
-async function dbOp(store,mode,fn){try{return await workspaceBarrier.track(runStoreRequest(app.db,store,mode,fn),{store,write:mode==='readwrite'})}catch(error){if(mode==='readwrite'){console.warn('Запись не подтверждена:',error);toast('Не сохранилось. Экспортируй JSON!')}throw error}}
+let zipWorkspaceBusy=false,replacementFrozen=false,replacementSealed=false,replacementStopped=false;
+const workspaceInstances=createInstanceGuard();
+async function dbOp(store,mode,fn){try{if(!workspaceInstances.writable()||(mode==='readwrite'&&replacementSealed))throw Error('Записи остановлены для замены рабочего пространства');return await workspaceBarrier.track(runStoreRequest(app.db,store,mode,fn),{store,write:mode==='readwrite'})}catch(error){if(mode==='readwrite'){console.warn('Запись не подтверждена:',error);toast('Не сохранилось. Экспортируй JSON!')}throw error}}
 function startupReadFailure(error){app.db?.close();app.db=null;storageWarning(error)}
 async function startupWrite(store,record){try{await dbOp(store,'readwrite',s=>s.put(record));return true}catch(error){storageWarning(error);return false}}
 async function loadAll(){
@@ -489,7 +492,7 @@ function saveState(id){if(!documentSaves.has(id))documentSaves.set(id,{revision:
 function refreshSaveStatus(){if(!app.doc)return;if(app.historyPreviewOriginal){$('#saveStatus').textContent='Исходное состояние · предпросмотр';return}const state=saveState(app.doc.id);$('#saveStatus').textContent=state.error?'Ошибка сохранения · экспортируй JSON':!app.db?'Хранение недоступно · экспортируй JSON':state.saved===JSON.stringify(app.doc)?'Сохранено на этом устройстве':'Сохраняем…'}
 function confirmDocument(rec){const i=app.docs.findIndex(x=>x.id===rec.id);if(i<0)app.docs.push(rec);else app.docs[i]=rec}
 async function saveDocumentSnapshot(rec){
- if(rec.projectId===deletingProjectId||deletedProjectIds.has(rec.projectId))return false;
+ if(replacementSealed||rec.projectId===deletingProjectId||deletedProjectIds.has(rec.projectId))return false;
  const state=saveState(rec.id),key=JSON.stringify(rec),revision=state.revision,sequence=++state.sequence;
  if(state.pending?.key===key)return state.pending.promise;
  const pending={key,promise:null};state.pending=pending;
@@ -497,8 +500,8 @@ async function saveDocumentSnapshot(rec){
  return pending.promise;
 }
 // Boolean barrier: false keeps destructive callers from discarding unsaved memory.
-async function flushSave(){clearTimeout(app.saveTimer);app.saveTimer=null;if(!app.doc)return true;if(app.historyPreviewOriginal){toast('Выйди из предпросмотра истории перед этим действием');return false}syncCurrentSlide();syncAutoCardTitle();const doc=app.doc,rec=clone(doc);const ok=await saveDocumentSnapshot(rec);return ok&&app.doc===doc&&JSON.stringify(doc)===JSON.stringify(rec)}
-function saveSoon(){if(!app.doc||app.historyPreviewOriginal)return;const state=saveState(app.doc.id);state.revision++;state.error=null;refreshSaveStatus();clearTimeout(app.saveTimer);app.saveTimer=setTimeout(()=>{void flushSave()},420)}
+async function flushSave(){if(replacementSealed)return false;clearTimeout(app.saveTimer);app.saveTimer=null;if(!app.doc)return true;if(app.historyPreviewOriginal){toast('Выйди из предпросмотра истории перед этим действием');return false}syncCurrentSlide();syncAutoCardTitle();const doc=app.doc,rec=clone(doc);const ok=await saveDocumentSnapshot(rec);return ok&&app.doc===doc&&JSON.stringify(doc)===JSON.stringify(rec)}
+function saveSoon(){if(replacementSealed||!app.doc||app.historyPreviewOriginal)return;const state=saveState(app.doc.id);state.revision++;state.error=null;refreshSaveStatus();clearTimeout(app.saveTimer);app.saveTimer=setTimeout(()=>{void flushSave()},420)}
 function add(type){inkStop();closeToolPopovers();app.handTool=false;app.spaceDown=false;$('#stageScroller').classList.remove('hand-mode');toolDockState();if(app.penTool)setPenMode(false);if(app.marqueeTool||app.insertTool)activateMove();if(!app.doc)return;if(type==='image'){app.pendingImage={kind:'new'};$('#imageInput').click();return}const e=defaultElement(type);app.doc.elements.push(e);app.selected=e.id;app.selectedIds=[e.id];commit();refreshLayers();refreshInspector();refreshMobileTools()}
 
 function newRasterLayer({selectLayer=true,commitNow=true,aboveSelection=true}={}){
@@ -1897,7 +1900,7 @@ async function zipOriginal_exportSeriesIndices(indices){const d=app.doc,project=
  if(done){project.exportCounters[base]=counter;if(!await persistProjectForUI(project)){toast('PNG выгружены; счётчик не сохранён');return}toast(`Экспортировано холстов: ${done}. Если браузер блокирует несколько загрузок, разреши их для приложения.`)}
 }
 $('#seriesExportConfirm').onclick=async()=>{const ids=$$('[data-series-export]:checked').map(x=>Number(x.dataset.seriesExport));if(!ids.length){toast('Выбери хотя бы один холст');return}$('#seriesExportConfirm').disabled=true;closeSeriesExportDialog();await exportSeriesIndices(ids)};
-function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
+function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;($('#zipBackupDialog[open]')||document.body).append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
 function niceName(s){return sanitizeCardTitle(s).slice(0,100)}
 async function zipOriginal_exportPNG(){if(app.doc?.type==='card'){ensureCardSlides(app.doc);if(app.doc.slides.length>1){openSeriesExportDialog();return}}const d=app.doc;if(d.width*d.height>30000000){toast('Слишком большой холст для телефона');return}for(const e of d.elements){if(e.visible&&e.fillType==='image'&&e.imageSrc){const im=getImage(e.imageSrc);if(!im){const wait=new Image();wait.src=e.imageSrc;try{await wait.decode();imgCache.set(e.imageSrc,{image:wait,ready:true})}catch(err){toast('Не удалось прочитать изображение для PNG');return}}}}const target=document.createElement('canvas');target.width=d.width;target.height=d.height;const c=target.getContext('2d');paintDocument(c,d,false);await new Promise(resolve=>target.toBlob(async blob=>{try{if(!blob){toast('Ошибка экспорта PNG');return}const project=app.projects.find(p=>p.id===d.projectId)||currentProject();const base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';if(project){project.exportCounters||={};const previous=project.exportCounters[base]||0;const name=base+(previous?' '+previous:'')+'.png';downloadBlob(blob,name);project.exportCounters[base]=previous+1;try{await persistProject(project)}catch(error){console.error(error);toast('Счётчик экспорта не сохранён')}}else downloadBlob(blob,base+'.png')}finally{resolve()}},'image/png'))}
 function exportJSON(){syncCurrentSlide();const payload={format:'kartochnaya-v1',document:app.doc,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts,exportedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});downloadBlob(blob,niceName(app.doc.title)+'.json')}
@@ -1911,7 +1914,7 @@ async function exportProjectBackup(){
 // One editor instance serializes project operations; the UI cannot change context mid-commit.
 let projectOperation=false,deletingProjectId=null;
 const deletedProjectIds=new Set();
-function blockProjectInteraction(event){if(projectOperation||zipWorkspaceBusy){event.preventDefault();event.stopImmediatePropagation()}}
+function blockProjectInteraction(event){if(!workspaceInstances.writable()||(replacementFrozen&&!event.target.closest?.('#zipBackupDialog,#zipSafetyInput'))||projectOperation||zipWorkspaceBusy){event.preventDefault();event.stopImmediatePropagation()}}
 for(const name of ['click','keydown','pointerdown','input','change','drop'])document.addEventListener(name,blockProjectInteraction,true);
 async function importProjectBackup(payload){return importProjectSet(payload,[{project:payload.project,documents:payload.documents}],2000)}
 async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null){
@@ -2792,7 +2795,7 @@ $('#tabPickerCreateRow').onclick=async ev=>{
  await tabPickerLaunch(doc);
 };
 
-async function init(){app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;await startupWrite('docs',sample);app.docs.push(sample);setDoc(sample)}else {const docs=projectDocs().sort((a,b)=>b.updatedAt-a.updatedAt);setDoc(clone(docs[0]||newDoc()))};if(!app.db)toast('Локальное хранилище недоступно: сохраняй проект в JSON');showHome('workspace')}
+async function init(){await workspaceInstances.ready;app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;await startupWrite('docs',sample);app.docs.push(sample);setDoc(sample)}else {const docs=projectDocs().sort((a,b)=>b.updatedAt-a.updatedAt);setDoc(clone(docs[0]||newDoc()))};if(!app.db)toast('Локальное хранилище недоступно: сохраняй проект в JSON');showHome('workspace');showWorkspaceRestoreResult()}
 $$('.tool[data-add]').forEach(t=>{const ico=t.querySelector('.tool-ico');if(ico)ico.innerHTML=uiIcon(t.dataset.add)});
 init();
 // Browser/OS may reserve BrowserBack/BrowserForward before dispatching events to a page.
@@ -3600,7 +3603,53 @@ async function zipSavedSnapshot(){
   return await readWorkspaceSnapshot(app.db);
  }finally{cancelled=true;clearTimeout(timer);zipWorkspaceBusy=false}
 }
+const workspaceReplacement=createReplacementSession({
+ db:()=>app.db,
+ storage:{getItem:key=>localStorage.getItem(key),setItem:(key,value)=>localStorage.setItem(key,value),removeItem:key=>localStorage.removeItem(key)},
+ download:downloadBlob,
+ begin:async()=>{
+  if(replacementFrozen||projectOperation||zipWorkspaceBusy)throw Error('Дождись завершения текущей операции');
+  replacementFrozen=true;
+  try{
+   await workspaceInstances.acquire();
+   mobileV36EndNudge();
+   if(v39Pending){clearTimeout(v39Pending.timer);v39Pending=null}
+   const data=await zipSavedSnapshot();
+   replacementSealed=true;
+   clearTimeout(app.saveTimer);app.saveTimer=null;
+   return data;
+  }catch(error){replacementFrozen=false;await workspaceInstances.release();throw error}
+ },
+ end:async()=>{
+  if(replacementStopped)return;
+  replacementSealed=false;replacementFrozen=false;
+  await workspaceInstances.release();
+ },
+ stop:()=>{
+  replacementStopped=true;replacementSealed=true;
+  clearTimeout(app.saveTimer);app.saveTimer=null;
+  clearTimeout(mobileV36NudgeTimer);clearInterval(mobileV36NudgeTimer);mobileV36NudgeTimer=null;
+  if(v39Pending){clearTimeout(v39Pending.timer);v39Pending=null}
+  app.doc=null;documentTabSession.tabs.length=0;documentSaves.clear();
+  app.db?.close();app.db=null;
+ },
+ reload:failures=>{
+  const result={committed:true,failures};
+  try{sessionStorage.setItem('kartochnaya-workspace-restored',JSON.stringify(result))}
+  catch{alert(workspaceRestoreMessage(result))}
+  location.reload();
+ }
+});
+function workspaceRestoreMessage(result){return result.failures.length?'IndexedDB восстановлена. Частичное восстановление настроек: localStorage недоступен для '+result.failures.join(', ')+'. Страховочный ZIP пригоден для повторного восстановления.':'Рабочее пространство восстановлено: транзакция IndexedDB подтверждена.'}
+function showWorkspaceRestoreResult(){
+ try{
+  const raw=sessionStorage.getItem('kartochnaya-workspace-restored');sessionStorage.removeItem('kartochnaya-workspace-restored');
+  if(!raw)return;const result=JSON.parse(raw);if(result.committed!==true||!Array.isArray(result.failures))return;
+  if(result.failures.length)alert(workspaceRestoreMessage(result));else toast(workspaceRestoreMessage(result));
+ }catch{}
+}
 installBackupUI({
+ replacement:workspaceReplacement,
  snapshot:zipSavedSnapshot,
  download:downloadBlob,
  restore:async verified=>{

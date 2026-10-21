@@ -17,6 +17,7 @@ export async function bundleJavaScript(directory = sourceRoot) {
   const result = await build({
     entryPoints: ['editor.js'],
     absWorkingDir: resolve(directory),
+    nodePaths: [fileURLToPath(new URL('../node_modules/', import.meta.url))],
     bundle: true, platform: 'browser', format: 'iife', target: 'es2022',
     minify: false, treeShaking: false, sourcemap: false, charset: 'utf8',
     banner: { js: '"use strict";' },

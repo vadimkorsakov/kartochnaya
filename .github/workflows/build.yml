@@ -18,6 +18,10 @@ on:
       - 'tests/indexeddb.test.mjs'
       - 'tests/project-integrity.test.mjs'
       - 'tests/project-integrity.spec.js'
+      - 'tests/zip-backup.spec.js'
+      - 'tests/zip-backup.test.mjs'
+      - 'tests/fixtures/zip-backup-editor-diff.json'
+      - 'scripts/verify-reproducible.mjs'
       - 'tests/known-failures.spec.js'
       - 'tests/fixtures/project-integrity-editor-diff.json'
       - 'tests/fixtures/project-with-folders.json'
@@ -55,9 +59,10 @@ jobs:
       - run: npm run test:unit
       - run: npm run build
       - run: npm run build:verify
+      - run: node scripts/verify-reproducible.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run test:bundle-smoke
-      - run: npx playwright test --project=chromium tests/indexeddb-contracts.spec.js tests/project-integrity.spec.js
+      - run: npx playwright test --project=chromium tests/indexeddb-contracts.spec.js tests/project-integrity.spec.js tests/zip-backup.spec.js
       - run: npx playwright test --project=known-failures tests/known-failures.spec.js
       - uses: actions/upload-artifact@v4
         with:

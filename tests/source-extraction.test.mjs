@@ -10,12 +10,14 @@ import * as primitives from '../src/core/primitives.mjs';
 import * as colors from '../src/core/colors.mjs';
 import * as gradients from '../src/core/gradient-model.mjs';
 import * as catalog from '../src/core/shape-catalog.mjs';
+import * as geometry from '../src/core/geometry.mjs';
 
+const geometryNames = ['toLocal', 'boundsOf', 'handleCoords', 'gradientLocalPoint', 'gradientDocPoint'];
 const primitiveNames = ['html', 'clamp', 'fmt'];
 const colorNames = ['rgbHex', 'hexRgb', 'hsvRGB', 'rgbHSV', 'rgbHSL', 'hslRGB', 'normalizeHex', 'cpFormatValues'];
 const gradientNames = ['gradientStops', 'gradientGeometry', 'gradientSample', 'addGradientStop'];
 const inputs = ['index.template.html', 'styles/legacy-01.css', 'styles/legacy-02.css',
-  'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs'];
+  'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs', 'core/geometry.mjs'];
 const read = name => readFile(resolve(sourceRoot, name), 'utf8');
 const slice = (text, start, end) => text.slice(text.indexOf(start), text.indexOf(end, text.indexOf(start)));
 
@@ -75,13 +77,20 @@ test('module function bodies and ALL remaining legacy statements retain their hi
     + '\n return { gradientStops, gradientGeometry, gradientSample, addGradientStop };\n}\n');
   const validator = slice(script, 'function validateShapeCatalog(input){', 'function applyShapeCatalog(');
   assert.equal(await read('core/shape-catalog.mjs'), 'export ' + validator);
+  const geometryFunctions = geometryNames.map(name => {
+    const matches = [...script.matchAll(new RegExp('^function ' + name + '\\([^\\n]*\\n', 'gm'))];
+    assert.equal(matches.length, 1, name);
+    return matches[0][0];
+  });
+  assert.equal(await read('core/geometry.mjs'), geometryFunctions.map(f => 'export ' + f).join('\n'));
   const binding = 'const { gradientStops, gradientGeometry, gradientSample, addGradientStop } = createGradientModel(uid);\n';
   const editor = await read('editor.js');
   assert.equal(editor.split(binding).length, 2);
   // Only uid's declaration precedes the factory; it cannot be used before initialization.
   assert.match(editor, /const uid=[^\n]+;\nconst \{ gradientStops, gradientGeometry, gradientSample, addGradientStop \} = createGradientModel\(uid\);/);
   assert.equal(editor.replace(/^import [^\n]+;\n/gm, '').replace(binding, ''),
-    script.replace(prim, '').replace(color, '').replace(gradient, '').replace(validator, ''));
+    geometryFunctions.reduce((s, f) => s.replace(f, ''),
+      script.replace(prim, '').replace(color, '').replace(gradient, '').replace(validator, '')));
   assert.doesNotMatch(editor, /\{\{KARTOCHNAYA:/);
   await assert.rejects(read('core/gradient-model.js'), /ENOENT/);
   const compiler = await readFile(resolve(root, 'scripts/compile-javascript.mjs'), 'utf8');
@@ -93,14 +102,26 @@ test('module function bodies and ALL remaining legacy statements retain their hi
 test('real imports/exports resolve once; the browser bundle is one classic script with no runtime imports', async () => {
   assert.deepEqual(Object.keys(primitives).sort(), [...primitiveNames].sort());
   assert.deepEqual(Object.keys(colors).sort(), [...colorNames].sort());
+  assert.deepEqual(Object.keys(geometry).sort(), [...geometryNames].sort());
+  assert.match(await read('editor.js'), /import \{ toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint \} from '\.\/core\/geometry\.mjs';/);
+  assert.doesNotMatch(await read('core/geometry.mjs'), /\b(?:app|document|window|globalThis|indexedDB|import)\b/);
   assert.deepEqual(Object.keys(catalog), ['validateShapeCatalog']);
   assert.match(await read('editor.js'), /import \{ validateShapeCatalog \} from '\.\/core\/shape-catalog\.mjs';/);
   assert.deepEqual(Object.keys(gradients), ['createGradientModel']);
   assert.deepEqual(Object.keys(gradients.createGradientModel(() => 'test')).sort(), [...gradientNames].sort());
   const { code, metafile } = await bundleJavaScript();
-  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['core/colors.mjs', 'core/gradient-model.mjs', 'core/primitives.mjs', 'core/shape-catalog.mjs', 'editor.js']);
+  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['core/colors.mjs', 'core/geometry.mjs', 'core/gradient-model.mjs', 'core/primitives.mjs', 'core/shape-catalog.mjs', 'editor.js']);
   assert.equal(metafile.inputs['core/colors.mjs'].imports[0].path, 'core/primitives.mjs');
-  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['core/shape-catalog.mjs', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']);
+  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['core/geometry.mjs', 'core/shape-catalog.mjs', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']);
+  assert.deepEqual(metafile.inputs['core/geometry.mjs'].imports, []);
+  assert.ok(Object.values(metafile.outputs)[0].inputs['core/geometry.mjs'].bytesInOutput > 0);
+  for (const name of geometryNames) {
+    assert.doesNotMatch(await read('editor.js'), new RegExp('function ' + name + '\\('));
+    // Unused gradientDocPoint may be omitted if tree shaking is enabled later.
+    const count = [...code.toString().matchAll(new RegExp('function ' + name + '\\(', 'g'))].length;
+    if (name === 'gradientDocPoint') assert.ok(count <= 1, name);
+    else assert.equal(count, 1, name);
+  }
   assert.deepEqual(metafile.inputs['core/shape-catalog.mjs'].imports, []); // Leaf module cannot create a cycle.
   assert.deepEqual(metafile.inputs['core/gradient-model.mjs'].imports.map(i => i.path), ['core/primitives.mjs', 'core/colors.mjs']);
   assert.ok(Object.values(metafile.inputs).every(i => i.format === 'esm'));
@@ -144,7 +165,7 @@ test('missing, malformed, repeated and moved HTML markers and all stale JS marke
       await assert.rejects(compileHTML(sources), /marker/i);
     }
     await writeFile(entry, editor);
-    for (const name of ['core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs']) {
+    for (const name of ['core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs', 'core/geometry.mjs']) {
       const file = resolve(sources, name), code = await readFile(file, 'utf8');
       await writeFile(file, code + '\n// {{KARTOCHNAYA:UNRESOLVED}}');
       await assert.rejects(compileHTML(sources), /marker/i);
@@ -171,6 +192,7 @@ test('each real source participates through meaningful code changes; all targets
       'core/primitives.mjs': s => s.replace('Math.max(a,x)', 'Math.max(a,x+1)'),
       'core/colors.mjs': s => s.replace("return '#'+", "return '#source-probe'+"),
       'core/gradient-model.mjs': s => s.replace('pos=50', 'pos=51'),
+      'core/geometry.mjs': s => s.replace('dx=p.x-e.x-e.w/2', 'dx=p.x-e.x-e.w/2+1'),
       'core/shape-catalog.mjs': s => s.replace('input.length>300', 'input.length>299'),
     };
     for (const name of inputs) {
@@ -200,6 +222,8 @@ test('every missing component, bad import/export or syntax error rejects the act
     }
     const file = resolve(sources, 'editor.js'), editor = await readFile(file, 'utf8');
     for (const invalid of [editor.replace('{ html,', '{ absentExport,'),
+      editor.replace('./core/geometry.mjs', './core/missing-geometry.mjs'),
+      editor.replace('{ toLocal,', '{ missingGeometry,'),
       editor.replace('./core/colors.mjs', './core/missing.mjs'),
       editor.replace('./core/shape-catalog.mjs', './core/missing-shape.mjs'),
       editor.replace('./core/gradient-model.mjs', './core/missing-gradient.mjs'),
@@ -243,6 +267,19 @@ test('shape catalog missing export and syntax errors fail the actual build', asy
   await temporarySources(async (sources, outputDirectory) => {
     const file = resolve(sources, 'core/shape-catalog.mjs'), code = await readFile(file, 'utf8');
     for (const invalid of [code.replace('export function', 'function'), code + '\nconst = broken;']) {
+      await writeFile(file, invalid);
+      await assert.rejects(build('all', { sourceDirectory: sources, outputDirectory }));
+      await assert.rejects(readFile(resolve(outputDirectory, 'kartochnaya.html')), /ENOENT/);
+    }
+  });
+});
+
+
+test('geometry missing export, syntax error and stale marker fail the actual build', async () => {
+  await temporarySources(async (sources, outputDirectory) => {
+    const file = resolve(sources, 'core/geometry.mjs'), code = await readFile(file, 'utf8');
+    for (const invalid of [code.replace('export function toLocal', 'function toLocal'),
+      code + '\nconst = broken;', code + '\n// {{KARTOCHNAYA:UNRESOLVED}}']) {
       await writeFile(file, invalid);
       await assert.rejects(build('all', { sourceDirectory: sources, outputDirectory }));
       await assert.rejects(readFile(resolve(outputDirectory, 'kartochnaya.html')), /ENOENT/);

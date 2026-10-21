@@ -179,3 +179,96 @@ importErrorTest('shape catalog module: duplicate ID rejects import without repla
   expect(errors[0]).toContain('Некорректный контур: duplicate');
   if (standaloneWarnings.length) await testInfo.attach('standalone-worker-warning', { body: standaloneWarnings.join('\n'), contentType: 'text/plain' });
 });
+
+const { canvasPoint } = require('./helpers');
+
+async function rotatedGeometryDocument(page, gradient = false) {
+  await openHome(page);
+  await createDocument(page, gradient ? 'Rotated gradient geometry' : 'Rotated rectangle geometry');
+  const document = await exportedDocument(page);
+  // Synthetic public JSON input, with a plain rectangle so its exact visible
+  // bounds are known independently of the production geometry functions.
+  document.elements = [{id:'geometry-rect',name:'Geometry rectangle',type:'rect',
+    x:100,y:80,w:100,h:40,rotation:90,opacity:100,visible:true,locked:false,
+    fillType:gradient?'gradient':'solid',fill:'#ff0000',fill2:'#0000ff',fillOpacity:100,
+    stroke:'#000000',strokeWidth:0,corner:0,
+    ...(gradient ? {gradientMode:'linear',gradientStart:{x:.2,y:.5},gradientEnd:{x:.8,y:.5},
+      gradientStops:[{id:'geometry-stop-a',pos:0,color:'#ff0000',alpha:100},
+        {id:'geometry-stop-b',pos:100,color:'#0000ff',alpha:100}]} : {})}];
+  await importPayload(page,{format:'kartochnaya-v1',document});
+  await expect(page.locator('#toast')).toHaveText('Документ импортирован');
+  await page.locator('#dockSelect').click();
+  return (await exportedDocument(page)).elements[0];
+}
+async function clickDocumentPoint(page,x,y) {
+  const p=await canvasPoint(page,x,y);
+  await page.mouse.click(p.x,p.y);
+}
+async function dragDocumentPoint(page,from,to) {
+  const a=await canvasPoint(page,...from), b=await canvasPoint(page,...to);
+  await page.mouse.move(a.x,a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x,b.y,{steps:8});
+  await page.mouse.up();
+}
+async function reopenGeometry(page,document,png) {
+  await expect.poll(async () => (await records(page,'docs')).find(d=>d.id===document.id)?.elements).toEqual(document.elements);
+  await page.reload();
+  await expect(page.locator('#homeScreen')).toBeVisible();
+  await openLibraryDocument(page,document.id);
+  expect((await exportedDocument(page)).elements).toEqual(document.elements);
+  expect((await exportPNG(page)).image.data).toEqual(png.image.data);
+}
+
+test('geometry module: rotated hit testing, mouse move/resize, Undo/Redo, JSON and PNG reopening', async ({page}) => {
+  const initial=await rotatedGeometryDocument(page);
+  await page.keyboard.press('Escape');
+  // Rotation 90 makes the visible rectangle [130,50]–[170,150].
+  // (110,90) is inside its unrotated frame but outside the visible rectangle.
+  await clickDocumentPoint(page,110,90);
+  await expect(page.locator('#layers [data-layer].selected')).toHaveCount(0);
+  await clickDocumentPoint(page,150,60);
+  await expect(page.locator(`#layers [data-layer="${initial.id}"]`)).toHaveClass(/selected/);
+  const beforePNG=await exportPNG(page);
+  await dragDocumentPoint(page,[150,100],[173,117]);
+  const moved=(await exportedDocument(page)).elements[0];
+  // Existing snapMovement attracts center Y=117 to the document center Y=120.
+  expect(moved).toEqual({...initial,x:123,y:100});
+  await page.locator('#undoBtn').click();
+  expect((await exportedDocument(page)).elements).toEqual([initial]);
+  await page.locator('#redoBtn').click();
+  expect((await exportedDocument(page)).elements).toEqual([moved]);
+  await page.locator(`#layers [data-layer="${initial.id}"] .layer-name`).click();
+  // Local east midpoint becomes the lower midpoint after the 90° rotation.
+  await dragDocumentPoint(page,[173,170],[173,180]);
+  const document=await exportedDocument(page);
+  expect(document.elements[0]).toEqual({...moved,x:118,y:105,w:110});
+  await page.locator('#undoBtn').click();
+  expect((await exportedDocument(page)).elements).toEqual([moved]);
+  await page.locator('#redoBtn').click();
+  expect((await exportedDocument(page)).elements).toEqual(document.elements);
+  const png=await exportPNG(page);
+  expect(png.image.data).not.toEqual(beforePNG.image.data);
+  await reopenGeometry(page,document,png);
+});
+
+test('geometry module: rotated gradient endpoint mouse drag preserves points and stop ids after reopening', async ({page}) => {
+  const initial=await rotatedGeometryDocument(page,true);
+  await clickDocumentPoint(page,150,100);
+  const beforePNG=await exportPNG(page);
+  await page.locator('#inspector [data-fill-open="fill"]').click();
+  // Local start (20,20) is document (150,70); drag to local (30,10),
+  // document (160,80). Fixed values also check the sign of the rotation.
+  await dragDocumentPoint(page,[150,70],[160,80]);
+  await page.locator('#fillPopover [data-fill-close]').click();
+  const document=await exportedDocument(page), e=document.elements[0];
+  expect(e.rotation).toBe(90);
+  expect(e.gradientStart.x).toBeCloseTo(.3,10);
+  expect(e.gradientStart.y).toBeCloseTo(.25,10);
+  expect(e.gradientEnd).toEqual(initial.gradientEnd);
+  expect(e.gradientStops).toEqual(initial.gradientStops);
+  expect({x:e.x,y:e.y,w:e.w,h:e.h}).toEqual({x:100,y:80,w:100,h:40});
+  const png=await exportPNG(page);
+  expect(png.image.data).not.toEqual(beforePNG.image.data);
+  await reopenGeometry(page,document,png);
+});

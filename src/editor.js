@@ -2278,9 +2278,11 @@ function showShapeTray(forceOpen=false){
 }
 $('#dockShapes').onclick=()=>showShapeTray();
 $('#shapeTray').addEventListener('click',async ev=>{
+ try{
  const move=ev.target.closest('[data-cat-move]');if(move){const i=Number(move.dataset.catMove),j=i+Number(move.dataset.dir);if(j<0||j>=SHAPE_SECTIONS.length)return;[SHAPE_SECTIONS[i],SHAPE_SECTIONS[j]]=[SHAPE_SECTIONS[j],SHAPE_SECTIONS[i]];await persistShapeCatalog();refreshShapeTray();return}
  const group=ev.target.closest('[data-cat-remove]');if(group){const i=Number(group.dataset.catRemove),g=SHAPE_SECTIONS[i];if(!confirm(`Удалить категорию «${g.name}» и её ${g.shapes.length} фигур?`))return;SHAPE_SECTIONS.splice(i,1);SHAPE_INDEX.clear();SHAPE_SECTIONS.forEach(g=>g.shapes.forEach(s=>SHAPE_INDEX.set(s.id,s)));await persistShapeCatalog();refreshShapeTray();return}
  const del=ev.target.closest('[data-shape-remove]');if(del){const id=del.dataset.shapeRemove,group=SHAPE_SECTIONS.find(g=>g.shapes.some(s=>s.id===id)),shape=group?.shapes.find(s=>s.id===id);if(!shape||!confirm('Удалить фигуру «'+shape.name+'» из библиотеки?'))return;group.shapes=group.shapes.filter(s=>s.id!==id);SHAPE_INDEX.delete(id);await persistShapeCatalog();refreshShapeTray();return}
+ }catch(err){console.warn('Изменения каталога не сохранены:',err);refreshShapeTray();toast('Изменения фигур только в памяти · экспортируй JSON');return}
  const b=ev.target.closest('[data-tray-shape]');if(!b)return;makeVectorShape(b.dataset.trayShape);$('#shapeTray').classList.add('hidden');$('#dockShapes').setAttribute('aria-expanded','false')
 });
 $('#shapeSvgInput').onchange=async ev=>{const files=[...ev.target.files];ev.target.value='';await svgFilesToShapes(files)};

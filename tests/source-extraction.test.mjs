@@ -312,7 +312,7 @@ test('storage missing exports, malformed source and stale marker fail the real b
 // Both changed blocks and every byte outside them are protected; there is no regex exclusion.
 async function restorePersistenceChanges(editor) {
   const bytes = await readFile(resolve(root, 'tests/fixtures/persistence-editor-diff.json'));
-  assert.equal(hash(bytes), 'ab17fc164bf400e68d2a10ddf3b263ce4b5c1ba297f30d9366d28e38bcdac130');
+  assert.equal(hash(bytes), '1dd650e3da92a1b62edd01cce310e6005141d076ec3b4f814b03f9124e480054');
   const manifest = JSON.parse(bytes);
   const lines = editor.split(/(?<=\n)/);
   for (const block of [...manifest.blocks].reverse()) {

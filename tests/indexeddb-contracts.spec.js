@@ -307,3 +307,75 @@ test('aborted font upload does not add a phantom installed font', async ({ page 
   expect(await records(page, 'fonts')).toEqual([]);
   await expect(page.locator('#fontList .font-item')).toHaveCount(0);
 });
+
+for (const action of ['move category', 'delete category', 'delete custom shape']) {
+  test(`shape tray ${action}: settings abort refreshes memory UI without unhandled rejection; recovery commits`, async ({ page }) => {
+    await instrument(page);
+    await page.addInitScript(() => {
+      window.shapeUnhandledRejections = [];
+      window.addEventListener('unhandledrejection', event => shapeUnhandledRejections.push(String(event.reason)));
+    });
+    const uncaught = [];
+    page.on('pageerror', error => uncaught.push(error.message));
+    await openHome(page); await createDocument(page, 'Shape tray failure');
+    const doc = await exportedDocument(page);
+    const shape = (id, name) => ({ id, name, d: 'M0 0 L100 0 L50 100 Z', mode: 'fill', outlineCaps: false });
+    const sections = [
+      { name: 'Категория A', shapes: [shape('custom-a1', 'Фигура A1'), shape('custom-a2', 'Фигура A2')] },
+      { name: 'Категория B', shapes: [shape('custom-b', 'Фигура B')] },
+      { name: 'Категория C', shapes: [shape('custom-c', 'Фигура C')] },
+    ];
+    await importPayload(page, { format: 'kartochnaya-v1', document: doc, shapeCatalog: sections });
+    await expect(page.locator('#toast')).toHaveText('Документ импортирован');
+    const catalogInDB = async () => (await records(page, 'settings')).find(record => record.key === 'shapes-v1')?.sections;
+    await expect.poll(catalogInDB).toEqual(sections);
+    const expected = structuredClone(sections);
+    await page.evaluate(() => Object.assign(idbControl, { enabled: true, stores: ['settings'], abort: true }));
+    await page.locator('#dockShapes').click();
+    if (action === 'move category') {
+      [expected[0], expected[1]] = [expected[1], expected[0]];
+      await page.locator('[data-cat-move="0"][data-dir="1"]').click();
+    } else if (action === 'delete category') {
+      expected.splice(1, 1);
+      page.once('dialog', dialog => dialog.accept());
+      await page.locator('[data-cat-remove="1"]').click();
+    } else {
+      expected[0].shapes.shift();
+      page.once('dialog', dialog => dialog.accept());
+      await page.locator('[data-shape-remove="custom-a1"]').click();
+    }
+    await expect(page.locator('#toast')).toHaveText('Изменения фигур только в памяти · экспортируй JSON');
+    await expect.poll(() => page.evaluate(() => idbControl.successes.length)).toBe(1);
+    expect(await page.evaluate(() => idbControl.completes)).toBe(0);
+    expect(await catalogInDB()).toEqual(sections); // Request success was rolled back by the real transaction.
+    const trayNames = () => page.locator('#shapeSections .shape-category-name').evaluateAll(nodes => nodes.map(n => n.firstChild.textContent.trim()));
+    const trayIds = () => page.locator('#shapeSections [data-tray-shape]').evaluateAll(nodes => nodes.map(n => n.dataset.trayShape));
+    expect(await trayNames()).toEqual(expected.map(group => group.name));
+    expect(await trayIds()).toEqual(expected.flatMap(group => group.shapes.map(shape => shape.id)));
+    await page.locator('#dockShapes').click();
+    const downloadPromise = page.waitForEvent('download'); await page.locator('#jsonExportBtn').click();
+    const download = await downloadPromise;
+    const payload = JSON.parse(await readFile(await download.path(), 'utf8'));
+    expect(payload.shapeCatalog).toEqual(expected); // Unsaved catalog can be rescued from memory.
+    expect(uncaught).toEqual([]);
+    expect(await page.evaluate(() => shapeUnhandledRejections)).toEqual([]);
+
+    // Remove only the artificial failure. The next ordinary tray action persists the entire current catalog.
+    await page.evaluate(() => { idbControl.abort = false; });
+    [expected[0], expected[1]] = [expected[1], expected[0]];
+    await page.locator('#dockShapes').click();
+    await page.locator('[data-cat-move="0"][data-dir="1"]').click();
+    await expect.poll(catalogInDB).toEqual(expected);
+    expect(await trayNames()).toEqual(expected.map(group => group.name));
+    expect(await trayIds()).toEqual(expected.flatMap(group => group.shapes.map(shape => shape.id)));
+    expect(await page.evaluate(() => idbControl.completes)).toBe(1);
+    await expect(page.locator('#saveStatus')).toHaveText('Сохранено на этом устройстве');
+    await page.reload(); await openLibraryDocument(page, payload.document.id);
+    await page.locator('#dockShapes').click();
+    expect(await trayNames()).toEqual(expected.map(group => group.name));
+    expect(await trayIds()).toEqual(expected.flatMap(group => group.shapes.map(shape => shape.id)));
+    expect(await catalogInDB()).toEqual(expected);
+    expect(uncaught).toEqual([]);
+    expect(await page.evaluate(() => shapeUnhandledRejections)).toEqual([]);
+  });
+}

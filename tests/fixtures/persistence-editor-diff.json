@@ -278,8 +278,24 @@
     },
     {
       "scope": "persistence consumer / event boundary",
+      "oldLine": 2260,
+      "newLine": 2280,
+      "before": [],
+      "afterLines": 1,
+      "afterSHA256": "b7c0694e1f2b8d1727e5bc1762cba180ead959991e01d9b32548f2c3c14f904e"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
+      "oldLine": 2263,
+      "newLine": 2284,
+      "before": [],
+      "afterLines": 1,
+      "afterSHA256": "3f43231dd406b86c4286f4649f11ac5078b816fc4e714f8eadb4006ba6e16b1e"
+    },
+    {
+      "scope": "persistence consumer / event boundary",
       "oldLine": 2491,
-      "newLine": 2511,
+      "newLine": 2513,
       "before": [
         "$('#editorProjectMenu').onclick=ev=>{ev.stopPropagation();const b=ev.target.closest('[data-compact-page],[data-compact-project],[data-compact-doc],[data-compact-font-import],[data-compact-json]');if(!b)return;if(b.dataset.compactPage)compactMenuShow(b.dataset.compactPage);if(b.dataset.compactProject){compactBrowseProjectId=b.dataset.compactProject;compactMenuShow('workspace')};if(b.dataset.compactDoc){const doc=app.docs.find(x=>x.id===b.dataset.compactDoc);if(doc){openDocumentTab(doc);$('#editorProjectMenu').classList.add('hidden')}}if(b.dataset.compactFull){$('#editorProjectMenu').classList.add('hidden');flushSave().then(()=>showHome(b.dataset.compactFull))}if(b.dataset.compactJson){const type=b.dataset.compactJson;if(type==='document')exportJSON();else if(type==='backup')openProjectExportDialog();else $('#jsonInput').click()}if(b.dataset.compactFontImport){$('#fontInput')?.click()}};\n"
       ],
@@ -289,7 +305,7 @@
     {
       "scope": "persistence consumer / event boundary",
       "oldLine": 2543,
-      "newLine": 2563,
+      "newLine": 2565,
       "before": [
         " openEditor();\n"
       ],
@@ -299,7 +315,7 @@
     {
       "scope": "persistence consumer / event boundary",
       "oldLine": 2585,
-      "newLine": 2605,
+      "newLine": 2607,
       "before": [
         " renderDocumentTabs();openEditor();\n"
       ],
@@ -309,7 +325,7 @@
     {
       "scope": "async function closeDocumentTab(id){",
       "oldLine": 2605,
-      "newLine": 2625,
+      "newLine": 2627,
       "before": [
         " const index=documentTabSession.tabs.findIndex(t=>t.id===id);if(index<0)return;\n",
         " const tab=documentTabSession.tabs[index],isActive=documentTabSession.activeId===id;\n",
@@ -326,7 +342,7 @@
     {
       "scope": "persistence consumer / event boundary",
       "oldLine": 2615,
-      "newLine": 2632,
+      "newLine": 2634,
       "before": [
         " if(isActive){const next=documentTabSession.tabs[now]||documentTabSession.tabs[now-1];documentTabSession.activeId='home';if(next)activateDocumentTab(next.id);else showHome('workspace')}\n",
         " renderDocumentTabs();\n"
@@ -337,7 +353,7 @@
     {
       "scope": "persistence consumer / event boundary",
       "oldLine": 2706,
-      "newLine": 2724,
+      "newLine": 2726,
       "before": [
         " if(app.doc?.id===doc.id)await flushSave();\n"
       ],
@@ -347,7 +363,7 @@
     {
       "scope": "async function init(){app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;app.docs.pus",
       "oldLine": 2737,
-      "newLine": 2755,
+      "newLine": 2757,
       "before": [
         "async function init(){app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;app.docs.push(sample);await dbOp('docs','readwrite',s=>s.put(sample));setDoc(sample)}else {const docs=projectDocs().sort((a,b)=>b.updatedAt-a.updatedAt);setDoc(clone(docs[0]||newDoc()))};if(!app.db)toast('Локальное хранилище недоступно: сохраняй проект в JSON');showHome('workspace')}\n"
       ],
@@ -357,7 +373,7 @@
     {
       "scope": "async function deleteProject(id){const project=app.projects.find(p=>p.id===id);if(!project)return;const docs=projectDocs(id);if(!confirm(`Удалить проект «${proj",
       "oldLine": 2779,
-      "newLine": 2797,
+      "newLine": 2799,
       "before": [
         " await flushSave();\n",
         " for(const tab of [...documentTabSession.tabs].filter(t=>t.doc.projectId===id))await closeDocumentTab(tab.id);\n",
@@ -370,7 +386,7 @@
     {
       "scope": "function updateExportSelectState(){const checks=[...document.querySelectorAll('[data-export-project]')];const count=checks.filter(x=>x.checked).length;$('#proje",
       "oldLine": 2789,
-      "newLine": 2807,
+      "newLine": 2809,
       "before": [
         "async function exportSelectedProjects(){const ids=[...document.querySelectorAll('[data-export-project]:checked')].map(x=>x.dataset.exportProject);if(!ids.length)return;try{await flushSave();if(ids.length===1){const p=app.projects.find(x=>x.id===ids[0]);if(!p)return;const archive={format:'kartochnaya-project-v1',version:'0.21',exportedAt:new Date().toISOString(),project:clone(p),documents:projectDocs(p.id).map(clone),shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(p.name)+' - проект Карточной.json')}\n",
         " else {const projects=ids.map(id=>{const p=app.projects.find(x=>x.id===id);return {project:clone(p),documents:projectDocs(id).map(clone)}}).filter(x=>x.project);const archive={format:'kartochnaya-workspace-v1',version:'0.21',exportedAt:new Date().toISOString(),projects,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),ids.length===app.projects.length?'Все проекты Карточной.json':'Выбранные проекты Карточной.json')}\n",
@@ -382,7 +398,7 @@
     {
       "scope": "async function importWorkspaceBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(!Array.isArray(pa",
       "oldLine": 2797,
-      "newLine": 2815,
+      "newLine": 2817,
       "before": [
         "async function importWorkspaceBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(!Array.isArray(payload.projects)||payload.projects.length>500)throw Error('Некорректный архив проектов');const items=payload.projects;if(items.reduce((n,item)=>n+(item.documents?.length||0),0)>5000)throw Error('Слишком много документов');await flushSave();for(const item of items){if(!item.project||!Array.isArray(item.documents))throw Error('Не хватает данных проекта');for(const doc of item.documents){if(!Array.isArray(doc.elements)||!(doc.width>0&&doc.width<=5000&&doc.height>0&&doc.height<=5000))throw Error('Повреждённый документ')}}for(const f of payload.fonts||[]){if(!f.data||app.fonts.some(x=>normaliseFont(x).family===normaliseFont(f).family&&x.weight===f.weight&&x.style===f.style))continue;const imported={...clone(f),id:uid()};try{await loadFontFace(imported);await dbOp('fonts','readwrite',s=>s.put(imported));app.fonts.push(imported)}catch(err){console.warn('Не удалось импортировать шрифт',err)}}let added=0;for(const item of items){const p={...clone(item.project),id:uid(),name:String(item.project.name||'Проект').slice(0,90)+' (импорт)',createdAt:Date.now(),updatedAt:Date.now(),exportCounters:{}};app.projects.push(p);await persistProject(p);for(const original of item.documents){const doc={...clone(original),id:uid(),projectId:p.id,updatedAt:Date.now()};app.docs.push(doc);await dbOp('docs','readwrite',s=>s.put(doc))}added++}if(added){const fromHome=homeVisible();useProjectId(app.projects[app.projects.length-added].id);const first=projectDocs()[0];app.filter='template';if(fromHome)showHome('workspace');else if(first)openDocumentTab(first);renderLibrary();toast(`Импортировано проектов: ${added}`)}}\n"
       ],

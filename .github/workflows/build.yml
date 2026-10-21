@@ -7,7 +7,7 @@ on:
     branches: [main]
     paths:
       - 'kartochnaya v0.45/**'
-      - 'src/**' # Includes src/storage/**
+      - 'src/**' # Includes src/storage/** and src/model/**
       - 'scripts/compile-html.mjs'
       - 'scripts/compile-javascript.mjs'
       - 'tests/source-extraction.test.mjs'
@@ -16,6 +16,11 @@ on:
       - 'tests/shape-catalog.test.mjs'
       - 'tests/geometry.test.mjs'
       - 'tests/indexeddb.test.mjs'
+      - 'tests/project-integrity.test.mjs'
+      - 'tests/project-integrity.spec.js'
+      - 'tests/known-failures.spec.js'
+      - 'tests/fixtures/project-integrity-editor-diff.json'
+      - 'tests/fixtures/project-with-folders.json'
       - 'tests/indexeddb-contracts.spec.js'
       - 'tests/fixtures/persistence-editor-diff.json'
       - 'tests/fixtures/shape-catalog-*.json'
@@ -52,7 +57,8 @@ jobs:
       - run: npm run build:verify
       - run: npx playwright install --with-deps chromium
       - run: npm run test:bundle-smoke
-      - run: npx playwright test --project=chromium tests/indexeddb-contracts.spec.js
+      - run: npx playwright test --project=chromium tests/indexeddb-contracts.spec.js tests/project-integrity.spec.js
+      - run: npx playwright test --project=known-failures tests/known-failures.spec.js
       - uses: actions/upload-artifact@v4
         with:
           name: kartochnaya-v045-distributions

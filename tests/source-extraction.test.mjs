@@ -18,7 +18,7 @@ const primitiveNames = ['html', 'clamp', 'fmt'];
 const colorNames = ['rgbHex', 'hexRgb', 'hsvRGB', 'rgbHSV', 'rgbHSL', 'hslRGB', 'normalizeHex', 'cpFormatValues'];
 const gradientNames = ['gradientStops', 'gradientGeometry', 'gradientSample', 'addGradientStop'];
 const inputs = ['index.template.html', 'styles/legacy-01.css', 'styles/legacy-02.css',
-  'storage/indexeddb.mjs', 'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs', 'core/geometry.mjs'];
+  'storage/indexeddb.mjs', 'model/project-integrity.mjs', 'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs', 'core/geometry.mjs'];
 const read = name => readFile(resolve(sourceRoot, name), 'utf8');
 const slice = (text, start, end) => text.slice(text.indexOf(start), text.indexOf(end, text.indexOf(start)));
 
@@ -89,7 +89,7 @@ test('module function bodies and ALL remaining legacy statements retain their hi
   assert.equal(editor.split(binding).length, 2);
   // Only uid's declaration precedes the factory; it cannot be used before initialization.
   assert.match(editor, /const uid=[^\n]+;\nconst \{ gradientStops, gradientGeometry, gradientSample, addGradientStop \} = createGradientModel\(uid\);/);
-  const restored = await restorePersistenceChanges(editor);
+  const restored = await restorePersistenceChanges(await restoreIntegrityChanges(editor));
   assert.equal(restored.replace(/^import [^\n]+;\n/gm, '').replace(binding, ''),
     geometryFunctions.reduce((s, f) => s.replace(f, ''),
       script.replace(prim, '').replace(color, '').replace(gradient, '').replace(validator, '')));
@@ -107,16 +107,16 @@ test('real imports/exports resolve once; the browser bundle is one classic scrip
   assert.deepEqual(Object.keys(geometry).sort(), [...geometryNames].sort());
   assert.match(await read('editor.js'), /import \{ toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint \} from '\.\/core\/geometry\.mjs';/);
   assert.doesNotMatch(await read('core/geometry.mjs'), /\b(?:app|document|window|globalThis|indexedDB|import)\b/);
-  assert.deepEqual(Object.keys(storage).sort(), ['openDatabase', 'runStoreRequest']);
-  assert.match(await read('editor.js'), /import \{ openDatabase, runStoreRequest \} from '\.\/storage\/indexeddb\.mjs';/);
+  assert.deepEqual(Object.keys(storage).sort(), ['openDatabase', 'runStoreRequest', 'runStoreTransaction']);
+  assert.match(await read('editor.js'), /import \{ openDatabase, runStoreRequest, runStoreTransaction \} from '\.\/storage\/indexeddb\.mjs';/);
   assert.deepEqual(Object.keys(catalog), ['validateShapeCatalog']);
   assert.match(await read('editor.js'), /import \{ validateShapeCatalog \} from '\.\/core\/shape-catalog\.mjs';/);
   assert.deepEqual(Object.keys(gradients), ['createGradientModel']);
   assert.deepEqual(Object.keys(gradients.createGradientModel(() => 'test')).sort(), [...gradientNames].sort());
   const { code, metafile } = await bundleJavaScript();
-  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['core/colors.mjs', 'core/geometry.mjs', 'core/gradient-model.mjs', 'core/primitives.mjs', 'core/shape-catalog.mjs', 'editor.js', 'storage/indexeddb.mjs']);
+  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['core/colors.mjs', 'core/geometry.mjs', 'core/gradient-model.mjs', 'core/primitives.mjs', 'core/shape-catalog.mjs', 'editor.js', 'model/project-integrity.mjs', 'storage/indexeddb.mjs']);
   assert.equal(metafile.inputs['core/colors.mjs'].imports[0].path, 'core/primitives.mjs');
-  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['storage/indexeddb.mjs', 'core/geometry.mjs', 'core/shape-catalog.mjs', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']);
+  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['storage/indexeddb.mjs', 'model/project-integrity.mjs', 'core/geometry.mjs', 'core/shape-catalog.mjs', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']);
   assert.deepEqual(metafile.inputs['core/geometry.mjs'].imports, []);
   assert.deepEqual(metafile.inputs['storage/indexeddb.mjs'].imports, []); // Leaf; no import cycle or app dependency.
   assert.ok(Object.values(metafile.outputs)[0].inputs['storage/indexeddb.mjs'].bytesInOutput > 0);
@@ -172,7 +172,7 @@ test('missing, malformed, repeated and moved HTML markers and all stale JS marke
       await assert.rejects(compileHTML(sources), /marker/i);
     }
     await writeFile(entry, editor);
-    for (const name of ['storage/indexeddb.mjs', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs', 'core/geometry.mjs']) {
+    for (const name of ['storage/indexeddb.mjs', 'model/project-integrity.mjs', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs', 'core/geometry.mjs']) {
       const file = resolve(sources, name), code = await readFile(file, 'utf8');
       await writeFile(file, code + '\n// {{KARTOCHNAYA:UNRESOLVED}}');
       await assert.rejects(compileHTML(sources), /marker/i);
@@ -196,6 +196,7 @@ test('each real source participates through meaningful code changes; all targets
       'styles/legacy-01.css': s => s + '\n.source-probe{color:#123456}\n',
       'styles/legacy-02.css': s => s + '\n.source-probe{width:123px}\n',
       'storage/indexeddb.mjs': s => s.replace("'IndexedDB is unavailable'", "'Storage dependency probe'"),
+      'model/project-integrity.mjs': s => s.replace('maxDocuments = 5000', 'maxDocuments = 4999'),
       'editor.js': s => s.replace("'id-'+Date.now()", "'source-probe-'+Date.now()"),
       'core/primitives.mjs': s => s.replace('Math.max(a,x)', 'Math.max(a,x+1)'),
       'core/colors.mjs': s => s.replace("return '#'+", "return '#source-probe'+"),
@@ -299,7 +300,7 @@ test('storage missing exports, malformed source and stale marker fail the real b
   await temporarySources(async (sources, outputDirectory) => {
     const file = resolve(sources, 'storage/indexeddb.mjs'), code = await readFile(file, 'utf8');
     for (const invalid of [code.replace('export function runStoreRequest', 'function runStoreRequest'),
-      code.replace('export function openDatabase', 'function openDatabase'), code + '\nconst = broken;',
+      code.replace('export function openDatabase', 'function openDatabase'), code.replace('export function runStoreTransaction', 'function runStoreTransaction'), code + '\nconst = broken;',
       code + '\n// {{KARTOCHNAYA:UNRESOLVED}}']) {
       await writeFile(file, invalid);
       await assert.rejects(build('all', { sourceDirectory: sources, outputDirectory }));
@@ -328,6 +329,38 @@ async function restorePersistenceChanges(editor) {
 
 test('persistence diff guard rejects changes both inside and outside reviewed blocks', async () => {
   const editor = await read('editor.js');
-  await assert.rejects(restorePersistenceChanges(editor.replace("'Сохранено на этом устройстве'", "'Unreviewed status'")));
-  await assert.rejects(restorePersistenceChanges(editor.replace('function paint()', 'function unexpectedPaint()')));
+  await assert.rejects(restorePersistenceChanges((await restoreIntegrityChanges(editor)).replace("'Сохранено на этом устройстве'", "'Unreviewed status'")));
+  await assert.rejects(restorePersistenceChanges((await restoreIntegrityChanges(editor)).replace('function paint()', 'function unexpectedPaint()')));
+});
+
+// Stage 10's exact manifest remains immutable. Undo only the seven reviewed stage 11
+// integration blocks before applying that older manifest and the historical check.
+async function restoreIntegrityChanges(editor) {
+  const bytes = await readFile(resolve(root, 'tests/fixtures/project-integrity-editor-diff.json'));
+  assert.equal(hash(bytes), 'a44e6c84f99771441ad4ae69c3c88ee1f31aa596ab7f858a14a3c3bd353fad9c');
+  const manifest = JSON.parse(bytes), lines = editor.split(/(?<=\n)/);
+  for (const block of [...manifest.blocks].reverse()) {
+    assert.equal(hash(lines.slice(block.newLine, block.newLine + block.afterLines).join('')), block.afterSHA256, block.scope);
+    lines.splice(block.newLine, block.afterLines, ...block.before);
+  }
+  assert.equal(hash(lines.join('')), manifest.baseSHA256);
+  assert.equal(manifest.baseSHA256, 'b6f5e464a8ed982c7ece776007f079087c28a3ffc3ab12bef6d6ea67aad4253a');
+  return lines.join('');
+}
+test('project integrity guard rejects edits within and outside every integration block; old storage API bytes stay fixed', async () => {
+  const editor = await read('editor.js');
+  for (const [from, to] of [
+    ['runStoreTransaction }', 'unreviewedTransaction }'],
+    ['deletedProjectIds.has(rec.projectId)', 'false'],
+    ['deletedProjectIds.has(p.id)', 'false'],
+    ['const plan=prepareProjectImport', 'const plan=unreviewedImport'],
+    ['doc.projectId===plan.projects[0].id', 'true'],
+    ['JSON.parse(await file.text())', 'JSON.parse(await file.unreviewed())'],
+    ["projects.delete(id);", "projects.delete('wrong');"],
+    ['payload.projects,5000)', 'payload.projects,5001)'],
+    ['function paint()', 'function changedPaint()'],
+  ]) { assert.ok(editor.includes(from), from); await assert.rejects(restoreIntegrityChanges(editor.replace(from, to))); }
+  const storage = await read('storage/indexeddb.mjs');
+  assert.equal(hash(storage.slice(0, storage.indexOf('\n// The callback queues'))), '9b0a0b1799fd46f46f932c3b5224752c97d29100374d633065a181318cab9dc5');
+  assert.doesNotMatch(await read('model/project-integrity.mjs'), /\b(?:app|window|globalThis|indexedDB|localStorage|fetch|document)\s*[.(]/);
 });

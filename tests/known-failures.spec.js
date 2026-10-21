@@ -39,6 +39,5 @@ test('KF-002: project import should preserve resource folders', async ({ page },
   }).toBe(1);
   expect(imported.resources[0].folderId).toBe('folder-original');
   await testInfo.attach('imported-folder-diagnostics', { body: JSON.stringify(imported, null, 2), contentType: 'application/json' });
-  test.fail(true, 'KF-002: importProjectBackup omits resourceFolders; see docs/known-issues.md');
   expect(imported.resourceFolders).toEqual(archive.project.resourceFolders);
 });

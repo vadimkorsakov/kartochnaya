@@ -226,3 +226,96 @@ test('late resource-file decoding cannot recreate a project after its deletion',
   expect((await records(page, 'projects')).some(x => x.id === p.id)).toBe(false);
   await page.reload(); await expect(page.locator('#homeScreen')).toBeVisible(); expect((await records(page, 'projects')).some(x => x.id === p.id)).toBe(false);
 });
+
+for (const workspace of [false, true]) test(`empty first imported project preserves tabs and selected project; workspace=${workspace}`, async ({ page }) => {
+  await openHome(page); await createDocument(page, 'Retained first tab'); await addShape(page); const first = await exportedDocument(page);
+  await page.locator('#documentTabsHome').click(); await createDocument(page, 'Retained active tab'); await addShape(page); const active = await exportedDocument(page);
+  const empty = { project: { id: 'empty-source', name: 'Empty first', resources: [], resourceFolders: [] }, documents: [] };
+  const payload = workspace ? { format: 'kartochnaya-workspace-v1', projects: [empty, structuredClone(archive)] } : { format: 'kartochnaya-project-v1', ...empty };
+  const beforeDocs = await records(page, 'docs');
+  await importPayload(page, payload); const selected = await imported(page, 'Empty first');
+  await expect(page.locator('#homeScreen')).toBeVisible();
+  await expect(page.locator('#documentTabsHome')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator(`[data-switch-project="${selected.id}"]`)).toHaveClass(/active/);
+  expect(await page.evaluate(() => localStorage.getItem('kartochnaya_current_project'))).toBe(selected.id);
+  expect((await records(page, 'docs')).filter(d => d.projectId === selected.id)).toEqual([]);
+  const beforeIds = new Set([...beforeDocs.map(d => d.id), first.id, active.id]);
+  expect(await records(page, 'docs')).toHaveLength(beforeIds.size + (workspace ? archive.documents.length : 0));
+  for (const doc of [first, active]) {
+    await expect(page.locator(`[data-tab-id="${doc.id}"]`)).toBeVisible();
+    await page.locator(`[data-tab-id="${doc.id}"]`).click();
+    await expect(page.locator(`[data-tab-id="${doc.id}"]`)).toHaveAttribute('aria-selected', 'true');
+    expect(await page.evaluate(() => localStorage.getItem('kartochnaya_current_project'))).toBe(doc.projectId);
+    const reopened = await exportedDocument(page); expect(reopened.id).toBe(doc.id); expect(reopened.elements).toEqual(doc.elements);
+  }
+  await page.locator('#documentTabsHome').click(); await page.locator(`[data-switch-project="${selected.id}"]`).click();
+  expect(await page.evaluate(() => localStorage.getItem('kartochnaya_current_project'))).toBe(selected.id);
+  await page.reload(); await expect(page.locator('#homeScreen')).toBeVisible();
+  await expect(page.locator(`[data-switch-project="${selected.id}"]`)).toHaveClass(/active/);
+  for (const doc of [first, active]) expect((await records(page, 'docs')).find(d => d.id === doc.id).elements).toEqual(doc.elements);
+});
+
+test.describe('large native JSON round trips', () => {
+  test.describe.configure({ mode: 'serial' });
+  for (const workspace of [false, true]) test(`native ${workspace ? 'workspace' : 'project'} export over 50 MiB can be imported unchanged`, async ({ page }, testInfo) => {
+    test.setTimeout(120_000);
+    const { PNG } = require('pngjs');
+    const { writeFile, stat } = require('node:fs/promises');
+    // Valid deterministic noise PNGs make the normal image-resource JSON > 50 MiB.
+    const image = new PNG({ width: 1024, height: 1024 }); let state = 12345;
+    for (let i = 0; i < image.data.length; i++) { state ^= state << 13; state ^= state >>> 17; state ^= state << 5; image.data[i] = state & 255; }
+    const src = 'data:image/png;base64,' + PNG.sync.write(image).toString('base64');
+    const source = structuredClone(archive); source.project.name = 'Large native';
+    source.project.resources = Array.from({ length: 10 }, (_, i) => ({ ...source.project.resources[0], id: 'large-resource-' + i, src }));
+    const other = { project: { id: 'large-other', name: 'Other native', resources: [], resourceFolders: [] }, documents: [] };
+    const payload = workspace ? { format: 'kartochnaya-workspace-v1', projects: [source, other] } : source;
+    const seedPath = testInfo.outputPath('large-synthetic.json'); await writeFile(seedPath, JSON.stringify(payload));
+    expect((await stat(seedPath)).size).toBeGreaterThan(50 * 1024 * 1024);
+    await openHome(page); await page.locator('#jsonInput').setInputFiles(seedPath);
+    await expect(page.locator('#toast')).toContainText('Импортировано проектов', { timeout: 60_000 });
+    await page.locator('[data-home-nav="data"]').click(); await page.locator('#homeDataPane [data-home-action="export-backup"]').click();
+    const boxes = page.locator('[data-export-project]');
+    for (const box of await boxes.all()) {
+      const row = await box.locator('..').textContent();
+      await box.setChecked(row.includes('Large native') || (workspace && row.includes('Other native')));
+    }
+    const pending = page.waitForEvent('download'); await page.locator('#projectExportConfirm').click(); const download = await pending;
+    const exportedPath = await download.path(); const exportedBytes = (await stat(exportedPath)).size; expect(exportedBytes).toBeGreaterThan(50 * 1024 * 1024);
+    await testInfo.attach('native-export-size', { body: JSON.stringify({ workspace, exportedBytes }), contentType: 'application/json' });
+    // Use the exact file generated by the editor, with no changes after export.
+    await page.locator('#jsonInput').setInputFiles(exportedPath);
+    await expect(page.locator('#homeProjectBadge')).toHaveText('Large native (импорт) (импорт)', { timeout: 60_000 });
+    await page.reload(); await expect(page.locator('#homeScreen')).toBeVisible({ timeout: 60_000 });
+    const summary = await page.evaluate(async () => {
+      const db = await new Promise(r => { const q = indexedDB.open('kartochnaya_local_v1'); q.onsuccess = () => r(q.result); });
+      try {
+        return await new Promise((resolve, reject) => {
+          const tr = db.transaction(['projects', 'docs'], 'readonly'), q = tr.objectStore('projects').getAll(), d = tr.objectStore('docs').getAll();
+          tr.oncomplete = async () => {
+            const resource = q.result.find(p => p.name === 'Large native (импорт) (импорт)')?.resources[0];
+            const digest = resource ? await crypto.subtle.digest('SHA-256', new TextEncoder().encode(resource.src)) : new ArrayBuffer(0);
+            resolve({ imageHash: Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join(''), projects: q.result.map(p => ({ id: p.id, name: p.name, resources: (p.resources || []).map(r => ({ id: r.id, folderId: r.folderId, length: r.src.length, same: r.src === p.resources[0].src })), folders: p.resourceFolders })), docs: d.result.map(x => ({ projectId: x.projectId, title: x.title })) });
+          };
+          tr.onabort = () => reject(tr.error);
+        });
+      } finally { db.close(); }
+    });
+    expect(summary.imageHash).toBe(require('node:crypto').createHash('sha256').update(src).digest('hex'));
+    const imported = summary.projects.find(p => p.name === 'Large native (импорт) (импорт)'); expect(imported).toBeTruthy();
+    expect(imported.folders).toEqual(source.project.resourceFolders);
+    expect(imported.resources).toEqual(source.project.resources.map(r => ({ id: r.id, folderId: r.folderId, length: src.length, same: true })));
+    expect(summary.docs.filter(d => d.projectId === imported.id)).toHaveLength(source.documents.length);
+    if (workspace) expect(summary.projects.some(p => p.name === 'Other native (импорт) (импорт)')).toBe(true);
+  });
+});
+
+for (const readFailure of [false, true]) test(`JSON ${readFailure ? 'reading' : 'parsing'} error keeps existing records`, async ({ page }) => {
+  if (readFailure) await page.addInitScript(() => {
+    const original = File.prototype.text;
+    File.prototype.text = function () { return this.name === 'denied.json' ? Promise.reject(new DOMException('Synthetic read failure', 'NotReadableError')) : original.call(this); };
+  });
+  await openHome(page); await expect(page.locator('#saveStatus')).toHaveText('Сохранено на этом устройстве'); const before = await all(page);
+  await page.locator('#jsonInput').setInputFiles({ name: readFailure ? 'denied.json' : 'invalid.json', mimeType: 'application/json', buffer: Buffer.from('{invalid JSON') });
+  await expect(page.locator('#toast')).toContainText('Ошибка'); if (readFailure) await expect(page.locator('#toast')).toContainText('Synthetic read failure');
+  expect(await all(page)).toEqual(before);
+});

@@ -52,23 +52,23 @@
         " const fromHome=homeVisible();useProjectId(project.id);const first=projectDocs()[0]||newDoc({title:'Новый шаблон'});if(fromHome)showHome('workspace');else openDocumentTab(first);app.filter='template';\n",
         "toast('Проект импортирован: '+project.name);\n"
       ],
-      "afterLines": 46,
-      "afterSHA256": "96b8fcc17113624017aebad77f9e7a930b3ae9dac212217162d1759dd19b42b3"
+      "afterLines": 47,
+      "afterSHA256": "33d0521e0d9bb30505631575f72c25aa1548b4302cc6f071b97094dcee06aaed"
     },
     {
-      "scope": "importJSON: dispatch project archives before legacy catalog side effects; 50 MiB input limit",
+      "scope": "importJSON: dispatch project archives before legacy catalog side effects",
       "oldLine": 1922,
-      "newLine": 1953,
+      "newLine": 1954,
       "before": [
         "async function importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}\n"
       ],
       "afterLines": 1,
-      "afterSHA256": "f5f76ab807f77a7e46a1fe38c2c0ed703a3a6131c640e7a133e75c647531a0e3"
+      "afterSHA256": "1dffca611f5c5a1a1038e8bd664192b88f974266d610b805ba701e53a4e9a9ac"
     },
     {
       "scope": "deleteProject: save barrier, same-transaction cursor/fallback, post-commit tabs",
       "oldLine": 2798,
-      "newLine": 2829,
+      "newLine": 2830,
       "before": [
         "async function deleteProject(id){const project=app.projects.find(p=>p.id===id);if(!project)return;const docs=projectDocs(id);if(!confirm(`Удалить проект «${project.name}» и все его ${docs.length} документов, ресурсы и настройки?\\n\\nЭто действие нельзя отменить. Рекомендуется предварительно экспортировать JSON.`))return;\n",
         " if(!await flushSave())return;\n",
@@ -85,7 +85,7 @@
     {
       "scope": "importWorkspaceBackup: delegate one shared transaction",
       "oldLine": 2817,
-      "newLine": 2874,
+      "newLine": 2875,
       "before": [
         "async function importWorkspaceBackup(payload){if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}if(!Array.isArray(payload.projects)||payload.projects.length>500)throw Error('Некорректный архив проектов');const items=payload.projects;if(items.reduce((n,item)=>n+(item.documents?.length||0),0)>5000)throw Error('Слишком много документов');if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');for(const item of items){if(!item.project||!Array.isArray(item.documents))throw Error('Не хватает данных проекта');for(const doc of item.documents){if(!Array.isArray(doc.elements)||!(doc.width>0&&doc.width<=5000&&doc.height>0&&doc.height<=5000))throw Error('Повреждённый документ')}}for(const f of payload.fonts||[]){if(!f.data||app.fonts.some(x=>normaliseFont(x).family===normaliseFont(f).family&&x.weight===f.weight&&x.style===f.style))continue;const imported={...clone(f),id:uid()};try{await loadFontFace(imported);await dbOp('fonts','readwrite',s=>s.put(imported));app.fonts.push(imported)}catch(err){console.warn('Не удалось импортировать шрифт',err)}}let added=0;for(const item of items){const p={...clone(item.project),id:uid(),name:String(item.project.name||'Проект').slice(0,90)+' (импорт)',createdAt:Date.now(),updatedAt:Date.now(),exportCounters:{}};await persistProject(p);app.projects.push(p);for(const original of item.documents){const doc={...clone(original),id:uid(),projectId:p.id,updatedAt:Date.now()};await dbOp('docs','readwrite',s=>s.put(doc));app.docs.push(doc)}added++}if(added){const fromHome=homeVisible();useProjectId(app.projects[app.projects.length-added].id);const first=projectDocs()[0];app.filter='template';if(fromHome)showHome('workspace');else if(first)openDocumentTab(first);renderLibrary();toast(`Импортировано проектов: ${added}`)}}\n"
       ],

@@ -337,7 +337,7 @@ test('persistence diff guard rejects changes both inside and outside reviewed bl
 // integration blocks before applying that older manifest and the historical check.
 async function restoreIntegrityChanges(editor) {
   const bytes = await readFile(resolve(root, 'tests/fixtures/project-integrity-editor-diff.json'));
-  assert.equal(hash(bytes), '93e71c1a6bd7b22f75542b9fbb7fd9e50f52fd7d4baf53eccd51d054c7da2af1');
+  assert.equal(hash(bytes), 'a44e6c84f99771441ad4ae69c3c88ee1f31aa596ab7f858a14a3c3bd353fad9c');
   const manifest = JSON.parse(bytes), lines = editor.split(/(?<=\n)/);
   for (const block of [...manifest.blocks].reverse()) {
     assert.equal(hash(lines.slice(block.newLine, block.newLine + block.afterLines).join('')), block.afterSHA256, block.scope);
@@ -354,7 +354,8 @@ test('project integrity guard rejects edits within and outside every integration
     ['deletedProjectIds.has(rec.projectId)', 'false'],
     ['deletedProjectIds.has(p.id)', 'false'],
     ['const plan=prepareProjectImport', 'const plan=unreviewedImport'],
-    ['Архив больше 50 МБ', 'Unreviewed import limit'],
+    ['doc.projectId===plan.projects[0].id', 'true'],
+    ['JSON.parse(await file.text())', 'JSON.parse(await file.unreviewed())'],
     ["projects.delete(id);", "projects.delete('wrong');"],
     ['payload.projects,5000)', 'payload.projects,5001)'],
     ['function paint()', 'function changedPaint()'],

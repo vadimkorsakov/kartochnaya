@@ -59,6 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: ${{ github.workspace }}/.cache/chrome-linux64/chrome
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -72,7 +73,14 @@ jobs:
       - run: npm run build
       - run: npm run build:verify
       - run: node scripts/verify-reproducible.mjs
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install-deps chromium
+      # PNG baselines require their recorded browser, not Playwright's newer one.
+      - name: Install recorded Chromium version
+        run: |
+          chromium_version=$(node -p "require('./tests/baselines/environment.json').chromium")
+          curl --fail --show-error --location --retry 3 "https://storage.googleapis.com/chrome-for-testing-public/${chromium_version}/linux64/chrome-linux64.zip" -o "$RUNNER_TEMP/chromium.zip"
+          unzip -q "$RUNNER_TEMP/chromium.zip" -d "$GITHUB_WORKSPACE/.cache"
+          "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" --version
       - run: npm run test:netlify
       - run: npm run test:all
       - uses: actions/upload-artifact@v4

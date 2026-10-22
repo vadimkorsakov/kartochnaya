@@ -18,7 +18,7 @@ const primitiveNames = ['html', 'clamp', 'fmt'];
 const colorNames = ['rgbHex', 'hexRgb', 'hsvRGB', 'rgbHSV', 'rgbHSL', 'hslRGB', 'normalizeHex', 'cpFormatValues'];
 const gradientNames = ['gradientStops', 'gradientGeometry', 'gradientSample', 'addGradientStop'];
 const inputs = ['index.template.html', 'styles/legacy-01.css', 'styles/legacy-02.css',
-  'backup/archive.mjs', 'backup/storage.mjs', 'backup/ui.mjs', 'storage/indexeddb.mjs', 'model/project-integrity.mjs', 'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs', 'core/geometry.mjs'];
+  'backup/archive.mjs', 'backup/instances.mjs', 'backup/replace.mjs', 'backup/storage.mjs', 'backup/ui.mjs', 'storage/indexeddb.mjs', 'model/project-integrity.mjs', 'editor.js', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs', 'core/shape-catalog.mjs', 'core/geometry.mjs'];
 const read = name => readFile(resolve(sourceRoot, name), 'utf8');
 const slice = (text, start, end) => text.slice(text.indexOf(start), text.indexOf(end, text.indexOf(start)));
 
@@ -114,9 +114,9 @@ test('real imports/exports resolve once; the browser bundle is one classic scrip
   assert.deepEqual(Object.keys(gradients), ['createGradientModel']);
   assert.deepEqual(Object.keys(gradients.createGradientModel(() => 'test')).sort(), [...gradientNames].sort());
   const { code, metafile } = await bundleJavaScript();
-  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['../node_modules/fflate/esm/browser.js', 'backup/archive.mjs', 'backup/storage.mjs', 'backup/ui.mjs', 'core/colors.mjs', 'core/geometry.mjs', 'core/gradient-model.mjs', 'core/primitives.mjs', 'core/shape-catalog.mjs', 'editor.js', 'model/project-integrity.mjs', 'storage/indexeddb.mjs']);
+  assert.deepEqual(Object.keys(metafile.inputs).sort(), ['../node_modules/fflate/esm/browser.js', 'backup/archive.mjs', 'backup/instances.mjs', 'backup/replace.mjs', 'backup/storage.mjs', 'backup/ui.mjs', 'core/colors.mjs', 'core/geometry.mjs', 'core/gradient-model.mjs', 'core/primitives.mjs', 'core/shape-catalog.mjs', 'editor.js', 'model/project-integrity.mjs', 'storage/indexeddb.mjs']);
   assert.equal(metafile.inputs['core/colors.mjs'].imports[0].path, 'core/primitives.mjs');
-  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['backup/ui.mjs', 'backup/storage.mjs', 'storage/indexeddb.mjs', 'model/project-integrity.mjs', 'core/geometry.mjs', 'core/shape-catalog.mjs', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']);
+  assert.deepEqual(metafile.inputs['editor.js'].imports.map(i => i.path), ['backup/replace.mjs', 'backup/instances.mjs', 'backup/ui.mjs', 'backup/storage.mjs', 'storage/indexeddb.mjs', 'model/project-integrity.mjs', 'core/geometry.mjs', 'core/shape-catalog.mjs', 'core/primitives.mjs', 'core/colors.mjs', 'core/gradient-model.mjs']);
   assert.deepEqual(metafile.inputs['core/geometry.mjs'].imports, []);
   assert.deepEqual(metafile.inputs['storage/indexeddb.mjs'].imports, []); // Leaf; no import cycle or app dependency.
   assert.ok(Object.values(metafile.outputs)[0].inputs['storage/indexeddb.mjs'].bytesInOutput > 0);
@@ -193,6 +193,8 @@ test('each real source participates through meaningful code changes; all targets
     assert.deepEqual(await outputs(), original);
     const probes = {
       'backup/archive.mjs': s => s.replace('512 * 1024 * 1024', '513 * 1024 * 1024'),
+      'backup/instances.mjs': s => s.replace('kartochnaya-workspace-v1', 'workspace-source-probe'),
+      'backup/replace.mjs': s => s.replace('Нет страховочного снимка', 'Source replacement probe'),
       'backup/storage.mjs': s => s.replace('Есть неподтверждённая запись', 'Source storage probe'),
       'backup/ui.mjs': s => s.replace('Локальные ZIP-копии', 'Source ZIP UI probe'),
       'index.template.html': s => s.replace('Карточная · v0.45', 'Source dependency probe'),
@@ -368,7 +370,19 @@ test('project integrity guard rejects edits within and outside every integration
   assert.doesNotMatch(await read('model/project-integrity.mjs'), /\b(?:app|window|globalThis|indexedDB|localStorage|fetch|document)\s*[.(]/);
 });
 
+async function restoreWorkspaceChanges(editor) {
+  const bytes = await readFile(resolve(root, 'tests/fixtures/workspace-replace-editor-diff.json'));
+  assert.equal(hash(bytes), '7273ab89151d10b1abc2110d73afeb37bba5520e47a85ff281121cfa544036ec');
+  const manifest = JSON.parse(bytes), lines = editor.split(/(?<=\n)/);
+  for (const block of [...manifest.blocks].reverse()) {
+    assert.equal(hash(lines.slice(block.newLine, block.newLine + block.afterLines).join('')), block.afterSHA256, block.scope);
+    lines.splice(block.newLine, block.afterLines, ...block.before);
+  }
+  assert.equal(hash(lines.join('')), manifest.baseSHA256);
+  return lines.join('');
+}
 async function restoreZipChanges(editor) {
+  editor = await restoreWorkspaceChanges(editor);
   const bytes = await readFile(resolve(root, 'tests/fixtures/zip-backup-editor-diff.json'));
   assert.equal(hash(bytes), '0ee6ed882b0e47a3795bead9707ebed2e2025cc67b46d95b143f79d08eb2891c');
   const manifest = JSON.parse(bytes), lines = editor.split(/(?<=\n)/);

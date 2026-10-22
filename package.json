@@ -23,7 +23,9 @@
     "pretest": "npm run build",
     "pretest:all": "npm run build",
     "test:build": "npm run build && playwright test --project=chromium tests/build.spec.js",
-    "test:bundle-smoke": "playwright test --project=standalone tests/module-bundle.smoke.spec.js"
+    "test:bundle-smoke": "playwright test --project=standalone tests/module-bundle.smoke.spec.js",
+    "build:netlify": "node scripts/build.mjs netlify",
+    "test:netlify": "npm run build:netlify && playwright test --config=playwright.netlify.config.js"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

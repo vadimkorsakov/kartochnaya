@@ -67,6 +67,10 @@ export function zip(entries) {
 }
 export async function build(kind = 'all', { sourceDirectory = sourceRoot, outputDirectory = dist } = {}) {
   const html = await compileHTML(sourceDirectory);
+  if (kind === 'all' || kind === 'netlify') {
+    const { buildNetlify } = await import('./netlify.mjs');
+    await buildNetlify({ sourceDirectory, outputDirectory: resolve(outputDirectory, 'netlify') });
+  }
   await mkdir(outputDirectory, { recursive: true });
   if (kind === 'all' || kind === 'html') await writeFile(resolve(outputDirectory, 'kartochnaya.html'), html);
   if (kind === 'all' || kind === 'pwa') await writeFile(resolve(outputDirectory, 'kartochnaya-pwa.zip'), zip(await inputs(html)));

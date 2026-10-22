@@ -13,9 +13,14 @@ export function verifyClassicJavaScript(code) {
   new vm.Script(code, { filename: 'kartochnaya.bundle.js' });
 }
 
-export async function bundleJavaScript(directory = sourceRoot) {
+export async function bundleJavaScript(directory = sourceRoot, { transformEditor } = {}) {
   const result = await build({
     entryPoints: ['editor.js'],
+    plugins: transformEditor ? [{ name: 'distribution-editor', setup(builder) {
+      builder.onLoad({ filter: /[\\/]editor\.js$/ }, async args => ({
+        contents: transformEditor(await readFile(args.path, 'utf8')), loader: 'js', resolveDir: resolve(directory),
+      }));
+    } }] : [],
     absWorkingDir: resolve(directory),
     nodePaths: [fileURLToPath(new URL('../node_modules/', import.meta.url))],
     bundle: true, platform: 'browser', format: 'iife', target: 'es2022',
@@ -40,6 +45,6 @@ export async function bundleJavaScript(directory = sourceRoot) {
   return { code: Buffer.from(code), metafile: result.metafile };
 }
 
-export async function compileJavaScript(directory = sourceRoot) {
-  return (await bundleJavaScript(directory)).code;
+export async function compileJavaScript(directory = sourceRoot, options = {}) {
+  return (await bundleJavaScript(directory, options)).code;
 }

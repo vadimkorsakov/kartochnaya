@@ -11,7 +11,7 @@ export const slots = [
   { marker: '{{KARTOCHNAYA:EDITOR_JS}}', file: 'editor.js', opening: '<script>', closing: '</script>' },
 ];
 
-export async function compileHTML(directory = sourceRoot) {
+export async function compileHTML(directory = sourceRoot, options = {}) {
   const template = await readFile(resolve(directory, 'index.template.html'));
   const chunks = [];
   let cursor = 0;
@@ -27,7 +27,7 @@ export async function compileHTML(directory = sourceRoot) {
     }
     const literal = template.subarray(cursor, offset);
     if (literal.includes(Buffer.from('{{KARTOCHNAYA:'))) throw new Error('Unexpected source marker');
-    chunks.push(literal, file === 'editor.js' ? await compileJavaScript(directory) : await readFile(resolve(directory, file)));
+    chunks.push(literal, file === 'editor.js' ? await compileJavaScript(directory, options) : await readFile(resolve(directory, file)));
     cursor = offset + token.length;
   }
   const tail = template.subarray(cursor);

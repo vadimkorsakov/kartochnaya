@@ -38,6 +38,10 @@ on:
       - 'scripts/test-summary.cjs'
       - 'scripts/build.mjs'
       - 'scripts/distribution.mjs'
+      - 'scripts/netlify*.mjs'
+      - 'tests/netlify.spec.js'
+      - 'playwright.netlify.config.js'
+      - 'netlify.toml'
       - 'scripts/verify-build.mjs'
       - 'docs/baseline-v045.json'
       - 'package.json'
@@ -64,6 +68,7 @@ jobs:
       - run: npm run build:verify
       - run: node scripts/verify-reproducible.mjs
       - run: npx playwright install --with-deps chromium
+      - run: npm run test:netlify
       - run: npm run test:bundle-smoke
       - run: npx playwright test --project=chromium tests/indexeddb-contracts.spec.js tests/project-integrity.spec.js tests/zip-backup.spec.js tests/workspace-replace.spec.js
       - run: npx playwright test --project=known-failures tests/known-failures.spec.js
@@ -73,5 +78,6 @@ jobs:
           path: |
             dist/kartochnaya.html
             dist/kartochnaya-pwa.zip
+            dist/netlify/
           if-no-files-found: error
           retention-days: 30

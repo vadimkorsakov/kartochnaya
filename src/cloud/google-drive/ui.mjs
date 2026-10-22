@@ -14,14 +14,14 @@ export function installGoogleDriveUI({ snapshot, download }) {
   document.body.append(dialog);
   const style = document.createElement('style'); style.textContent = '#googleDriveCard button{margin:6px 6px 0 0;min-height:44px;white-space:normal}#googleDriveCard{min-width:0}#googleDriveCard p,#driveAccounts{overflow-wrap:anywhere}#driveAccounts article{border-top:1px solid #574661;padding:12px 0}#driveAccounts label{display:flex;align-items:center;gap:10px;min-height:44px}#driveAccounts input{width:22px;height:22px;flex-shrink:0}#driveSettings{background:#261e30;color:#f4effb;border:1px solid #574661;border-radius:18px;padding:24px;width:min(540px,calc(100% - 24px));box-sizing:border-box;max-height:calc(100dvh - 32px);overflow:auto}#driveSettings::backdrop{background:#100b18bb}#driveSettings input{display:block;width:100%;box-sizing:border-box;margin:12px 0;padding:10px}#driveSettings p{line-height:1.55}#driveSettingsError{color:#ffb8a0}'; document.head.append(style);
   const find = id => document.getElementById(id), selected = new Set(), lists = new Map();
-  let active = null, authTarget = null, authorizing = false, notice = '', manager;
+  let active = null, authTarget = null, notice = '', manager;
   const size = value => (value / 1024 / 1024).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' МБ';
   const run = action => Promise.resolve().then(action).catch(error => { notice = error.message; render(); });
   function button(text, action, disabled = false) {
     const node = document.createElement('button'); node.type = 'button'; node.className = 'btn btn-outline'; node.textContent = text; node.disabled = disabled; node.onclick = action; return node;
   }
   function authorize(id) {
-    authTarget = id; authorizing = true; notice = '';
+    authTarget = id; notice = '';
     // Preserve synchronous user activation for GIS requestAccessToken.
     try { const result = manager.authorize(id); result?.catch(error => { notice = error.message; render(); }); }
     catch (error) { notice = error.message; }
@@ -43,13 +43,12 @@ export function installGoogleDriveUI({ snapshot, download }) {
   function render() {
     if (!manager) return;
     const view = manager.view(), accounts = manager.list(), auth = view.authorization;
-    if (authorizing && !auth) authorizing = false;
     const supported = location.protocol === 'https:' || (location.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname));
     const online = navigator.onLine;
     find('driveStatus').textContent = notice || (!supported ? 'Авторизация недоступна в file://. Открой КАРТОЧНУЮ на HTTPS-сайте.' : !online ? 'Отсутствует интернет. Локальные проекты, JSON и ZIP доступны.' : auth?.message || (!view.clientId ? 'Не настроен Client ID.' : !accounts.length ? 'Требуется повторное подключение. Нажми «Добавить Google-аккаунт».' : 'Аккаунтов: ' + accounts.length + '.'));
     find('driveStatus').dataset.state = auth?.status || (accounts.some(a => a.session.view().status === 'connected') ? 'connected' : 'disconnected');
     find('driveAdd').disabled = !view.clientId || !online || !supported || !!auth?.busy;
-    const connect = find('driveConnect'); connect.hidden = !authorizing;
+    const connect = find('driveConnect'); connect.hidden = !auth;
     connect.disabled = !online || !supported || !!auth?.busy;
     connect.textContent = auth?.busy ? 'Подключение…' : auth?.ready ? 'Подключить Google Drive' : 'Подготовить авторизацию';
     // Reuse row nodes while progress changes, preserving focus and Android selection.

@@ -24,9 +24,10 @@ async function mock(page, { scope = SCOPE, error, popup, status = 200, body = { 
   return seen;
 }
 async function prepare(page) {
+  const before = await page.evaluate(() => window.__testCalls || 0);
   await page.locator('#driveAdd').click();
   await expect(page.locator('#driveConnect')).toHaveText('Подключить Google Drive');
-  expect(await page.evaluate(() => window.__testCalls || 0)).toBe(0);
+  expect(await page.evaluate(() => window.__testCalls || 0)).toBe(before);
 }
 async function connect(page) { await prepare(page); await page.locator('#driveConnect').click(); }
 
@@ -66,7 +67,7 @@ test('Drive: expiry, explicit reconnect and Client ID change reset', async ({ pa
   await expect(page.locator('#driveAdd')).toBeEnabled();
 });
 
-test('Drive: no account, Client ID or token in workspace ZIP or persistent account storage', async ({ page }) => {
+test('Drive: registry metadata persists, tokens stay in memory and cloud settings never enter ZIP', async ({ page }) => {
   await mock(page); await home(page); await configure(page); await connect(page); await expect(page.locator('#driveAccounts')).toContainText('Подключён');
   const durable = await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => { const q = indexedDB.open('kartochnaya_local_v1'); q.onsuccess = () => resolve(q.result); q.onerror = reject; });
@@ -201,4 +202,56 @@ test('Drive backups: editing is unlocked during upload; disconnect terminates it
   await context.setOffline(true); await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
   const pending = page.waitForEvent('download'); await page.locator('#zipConfirm').click(); const bytes = await readFile(await (await pending).path());
   expect((await (await import('../src/backup/archive.mjs')).readBackup(bytes)).data.docs.some(d => d.elements.length)).toBe(true);
+});
+
+test('Drive accounts: three rows, shared ZIP, partial failure, isolated lists/downloads, reload and identity mismatch', async ({ page }) => {
+  let chosen = 'A'; const states = new Map();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('https://accounts.google.com/gsi/client', route => route.fulfill({ contentType: 'text/javascript', body: `window.google={accounts:{oauth2:{initTokenClient(config){return {requestAccessToken(){config.callback({scope:${JSON.stringify(SCOPE)},access_token:'secret-'+window.__pick,expires_in:3600});}};}}}};` }));
+  await page.route('https://www.googleapis.com/**', async route => {
+    const request = route.request(), url = new URL(request.url()), method = request.method();
+    const id = request.headers().authorization.replace('Bearer secret-', ''); expect(['A', 'B', 'C']).toContain(id); expect(['PATCH', 'DELETE']).not.toContain(method);
+    if (url.pathname.endsWith('/about')) { await route.fulfill({ json: { user: { permissionId: id, displayName: 'Google ' + id } } }); return; }
+    let state = states.get(id); if (!state) states.set(id, state = { folder: null, files: [], bytes: null });
+    if (url.pathname === '/drive/v3/files') {
+      if (method === 'POST') { state.folder = { ...request.postDataJSON(), id: 'folder-' + id }; await route.fulfill({ json: state.folder }); return; }
+      await route.fulfill({ json: { files: url.searchParams.get('q').includes("mimeType = 'application/vnd.google-apps.folder'") ? state.folder ? [state.folder] : [] : state.files } }); return;
+    }
+    if (url.pathname === '/upload/drive/v3/files') {
+      if (method === 'POST') {
+        if (id === 'B') { await route.fulfill({ status: 403, json: {} }); return; }
+        state.meta = request.postDataJSON(); expect(state.meta.parents).toEqual(['folder-' + id]);
+        await route.fulfill({ headers: { Location: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=' + id, 'Access-Control-Expose-Headers': 'Location, Range' } }); return;
+      }
+      expect(url.searchParams.get('upload_id')).toBe(id); state.bytes = request.postDataBuffer();
+      state.files.push({ ...state.meta, id: 'file-' + id, size: String(state.bytes.length), createdTime: '2026-10-22T12:00:00Z' });
+      await route.fulfill({ status: 201, json: { id: 'file-' + id } }); return;
+    }
+    if (url.pathname.endsWith('/folder-' + id)) { await route.fulfill({ json: state.folder }); return; }
+    expect(url.pathname).toBe('/drive/v3/files/file-' + id);
+    if (url.searchParams.get('alt') === 'media') await route.fulfill({ body: state.bytes, contentType: 'application/zip', headers: { 'Content-Length': String(state.bytes.length) } });
+    else await route.fulfill({ json: state.files[0] });
+  });
+  await home(page); await configure(page);
+  const rows = page.locator('#driveAccounts article');
+  const row = id => rows.filter({ has: page.locator('label', { hasText: 'Google ' + id }) });
+  for (chosen of ['A', 'B', 'C']) { await page.evaluate(id => { window.__pick = id; }, chosen); await connect(page); await expect(row(chosen)).toContainText('Подключён'); }
+  await page.evaluate(() => { window.__pick = 'A'; }); await connect(page); await expect(rows).toHaveCount(3);
+  for (const id of ['A', 'B', 'C']) await row(id).locator('input').check();
+  await page.locator('#driveCreateSelected').click();
+  await expect(row('A')).toContainText('Резервная копия сохранена'); await expect(row('B')).toContainText('403'); await expect(row('C')).toContainText('Резервная копия сохранена');
+  await expect(page.locator('#driveStatus')).toContainText('неподтверждённые'); expect(states.get('A').bytes).toEqual(states.get('C').bytes);
+  for (const id of ['A', 'B', 'C']) {
+    await row(id).getByRole('button', { name: 'Просмотр копий', exact: true }).click();
+    await expect(page.locator('#driveAccountTitle')).toHaveText('Копии: Google ' + id);
+    await expect(page.locator('#driveList button')).toHaveCount(id === 'B' ? 0 : 1);
+  }
+  await row('A').getByRole('button', { name: 'Просмотр копий', exact: true }).click(); await page.locator('#driveList button').click(); await expect(page.locator('#driveProgress')).toContainText('ZIP проверен');
+  const pending = page.waitForEvent('download'); await page.locator('#driveSaveZip').click(); expect(await readFile(await (await pending).path())).toEqual(states.get('A').bytes);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.reload(); await page.locator('[data-home-nav=data]').click(); await expect(rows).toHaveCount(3);
+  for (const id of ['A', 'B', 'C']) await expect(row(id)).toContainText('Требуется подключение');
+  await page.evaluate(() => { window.__pick = 'C'; }); await row('A').getByRole('button', { name: 'Подключить', exact: true }).click(); await page.locator('#driveConnect').click();
+  await expect(page.locator('#driveStatus')).toContainText('другой Google-аккаунт'); await expect(row('A')).toContainText('Требуется подключение'); await expect(rows).toHaveCount(3);
+  await row('A').getByRole('button', { name: 'Удалить из списка', exact: true }).click(); await expect(rows).toHaveCount(2); expect(states.get('A').files).toHaveLength(1);
 });

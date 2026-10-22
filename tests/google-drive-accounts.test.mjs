@@ -98,6 +98,9 @@ test('reconnecting with a foreign identity cannot rebind or replace the original
   await h.connect('B', 'A'); assert.equal(h.manager.get('A').session, original); assert.equal(original.view().status, 'connected');
   assert.equal(h.manager.get('B'), undefined); assert.match(h.manager.view().authorization.message, /другой Google-аккаунт/);
   await h.connect('A', 'A'); assert.equal(h.manager.list().length, 1); assert.equal(h.manager.get('A').session.view().status, 'connected');
+  const saved = h.manager.get('A').session, write = h.storage.setItem; h.storage.setItem = () => { throw Error('quota'); };
+  await h.connect('A', 'A'); h.storage.setItem = write;
+  assert.equal(h.manager.get('A').session, saved); assert.equal(saved.view().status, 'connected'); assert.match(h.manager.view().message, /Не удалось сохранить список/);
 });
 test('removal during shared ZIP preparation cancels that recipient without affecting others', async t => {
   const h = harness(t); await h.connect('A'); await h.connect('B'); let resume;

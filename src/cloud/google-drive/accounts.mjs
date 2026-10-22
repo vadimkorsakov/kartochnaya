@@ -6,7 +6,7 @@ const validId = id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(id
 // Durable metadata only. Each runtime record owns its client, session and operation.
 export function createDriveAccounts({ storage, sessionFactory = createDriveSession, clientFactory = createDriveClient, prepareBackup = prepareDriveBackup, changed = () => {} } = {}) {
   const accounts = new Map();
-  let clientId = '', candidate = null, targetId = null, batch = false;
+  let clientId = '', candidate = null, targetId = null, batch = false, message = '';
   const notify = () => changed();
   function persist() {
     storage.setItem(ACCOUNTS_KEY, JSON.stringify([...accounts.values()].map(a => ({ provider: 'google-drive', id: a.id, name: a.name, clientId }))));
@@ -47,26 +47,28 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
   }
   function cancelAuthorization() { const old = candidate; candidate = null; targetId = null; old?.disconnect(); }
   function authorize(id = null) {
+    message = '';
     if (id && accounts.get(id)?.operation) throw Error('Дождись завершения операции аккаунта.');
     if (id && !accounts.has(id)) throw Error('Аккаунт удалён из списка.');
     if (!candidate || targetId !== id) {
       cancelAuthorization(); targetId = id;
-      let owner = null;
-      candidate = makeSession(id, () => {
-        if (owner && owner.session.view().status !== 'connected') { owner.client.reset(); owner.verified = null; }
-        if (candidate?.view().status === 'connected') {
+      let owner = null, pending;
+      pending = makeSession(id, () => {
+        if (owner && owner.session === pending && owner.session.view().status !== 'connected') { owner.client.reset(); owner.verified = null; }
+        if (candidate === pending && pending?.view().status === 'connected') {
           const session = candidate, view = session.view(), existing = accounts.get(view.accountId);
           // Duplicate additions leave the existing live session and operations intact.
           if (existing && !id) { cancelAuthorization(); existing.result = 'Этот аккаунт уже добавлен. Используй его строку для подключения.'; notify(); return; }
           const a = existing || record(view.accountId, view.account);
-          const previous = a.session;
+          const previous = a.session, previousName = a.name;
           a.name = view.account; a.session = session; accounts.set(a.id, a);
           try { persist(); }
-          catch { a.session = previous; if (!existing) accounts.delete(a.id); cancelAuthorization(); throw Error('Не удалось сохранить список аккаунтов.'); }
+          catch { a.session = previous; a.name = previousName; if (!existing) accounts.delete(a.id); message = 'Не удалось сохранить список аккаунтов. Разреши локальное хранилище и подключи повторно.'; cancelAuthorization(); notify(); return; }
           owner = a; candidate = null; targetId = null; previous.disconnect(); a.client.reset(); a.verified = null; a.result = '';
         }
         notify();
       });
+      candidate = pending;
     }
     if (candidate.view().ready) candidate.connect(); else return candidate.prepare();
   }
@@ -115,7 +117,7 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
   }
   return { reload, configure, authorize, cancelAuthorization, disconnect, remove, task, createCopies,
     list: () => [...accounts.values()], get: id => accounts.get(id),
-    view: () => ({ clientId, batch, authorization: candidate?.view() || null, targetId }),
+    view: () => ({ clientId, batch, message, authorization: candidate?.view() || null, targetId }),
     networkChanged() { candidate?.networkChanged(); for (const a of accounts.values()) a.session.networkChanged(); notify(); },
     checkExpiry() { candidate?.checkExpiry(); for (const a of accounts.values()) a.session.checkExpiry(); },
     close() { cancelAuthorization(); for (const a of accounts.values()) disconnect(a.id); },

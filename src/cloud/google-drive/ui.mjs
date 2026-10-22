@@ -34,7 +34,8 @@ export function installGoogleDriveUI({ snapshot, download }) {
     render();
   }
   async function refresh(id) {
-    active = id;
+    if (active !== id) { const previous = manager.get(active); if (previous) previous.verified = null; }
+    active = id; notice = '';
     await manager.task(id, async (op, a) => {
       const files = await a.client.list(op); op.check(); lists.set(id, files);
       a.result = files.length ? `Найдено копий: ${files.length}.` : 'Облачных копий пока нет. Папка создаётся при первой загрузке.';
@@ -45,7 +46,7 @@ export function installGoogleDriveUI({ snapshot, download }) {
     const view = manager.view(), accounts = manager.list(), auth = view.authorization;
     const supported = location.protocol === 'https:' || (location.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname));
     const online = navigator.onLine;
-    find('driveStatus').textContent = notice || (!supported ? 'Авторизация недоступна в file://. Открой КАРТОЧНУЮ на HTTPS-сайте.' : !online ? 'Отсутствует интернет. Локальные проекты, JSON и ZIP доступны.' : auth?.message || (!view.clientId ? 'Не настроен Client ID.' : !accounts.length ? 'Требуется повторное подключение. Нажми «Добавить Google-аккаунт».' : 'Аккаунтов: ' + accounts.length + '.'));
+    find('driveStatus').textContent = notice || view.message || (!supported ? 'Авторизация недоступна в file://. Открой КАРТОЧНУЮ на HTTPS-сайте.' : !online ? 'Отсутствует интернет. Локальные проекты, JSON и ZIP доступны.' : auth?.message || (!view.clientId ? 'Не настроен Client ID.' : !accounts.length ? 'Требуется повторное подключение. Нажми «Добавить Google-аккаунт».' : 'Аккаунтов: ' + accounts.length + '.'));
     find('driveStatus').dataset.state = auth?.status || (accounts.some(a => a.session.view().status === 'connected') ? 'connected' : 'disconnected');
     find('driveAdd').disabled = !view.clientId || !online || !supported || !!auth?.busy;
     const connect = find('driveConnect'); connect.hidden = !auth;

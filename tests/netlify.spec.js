@@ -136,3 +136,33 @@ test('save failure postpones update and keeps editing state', async ({ page }) =
   expect(await page.locator('meta[name=test-deploy]').count()).toBe(0);
   expect((await exportedDocument(page)).elements).toHaveLength(2);
 });
+
+test('modified HTTP HTML fails integrity visibly and retries safely without clearing caches', async ({ page, context }) => {
+  const filename = join(site, 'index.html');
+  const original = await readFile(filename);
+  // Model a host changing only the response HTML after SHA256SUMS generation.
+  await writeFile(filename, Buffer.concat([original, Buffer.from('\n<!-- host mutation -->')]));
+  await page.goto('/');
+  await expect(page.locator('#pwaStatus')).toContainText('Не удалось установить');
+  await expect(page.locator('#pwaRetry')).toBeEnabled();
+  expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations().then(x => x.length))).toBe(0);
+  await page.evaluate(async () => { await (await caches.open('unrelated-working-cache')).put('/keep', new Response('keep')); });
+  await writeFile(filename, original);
+  await page.locator('#pwaRetry').click();
+  await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
+  expect(await page.evaluate(() => caches.has('unrelated-working-cache'))).toBe(true);
+  await context.setOffline(true); await page.reload();
+  await expect(page.locator('#homeScreen')).toBeVisible();
+});
+
+test('stalled registration stops preparation after deadline and offers retry', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    navigator.serviceWorker.register = () => new Promise(() => {});
+  });
+  await openHome(page);
+  await expect(page.locator('#pwaStatus')).toContainText('Подготовка');
+  await page.clock.runFor(30001);
+  await expect(page.locator('#pwaStatus')).toContainText('30 секунд');
+  await expect(page.locator('#pwaRetry')).toBeEnabled();
+});

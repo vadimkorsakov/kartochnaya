@@ -10,7 +10,7 @@ export async function buildNetlify({ sourceDirectory, outputDirectory }) {
   let html = (await compileHTML(sourceDirectory, { transformEditor(editor) {
     const registration = "if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});";
     if (!editor.includes(registration) || !editor.endsWith('})();\n')) throw Error('Netlify editor hook no longer matches');
-    return editor.replace(registration, '').slice(0, -6) + runtime.replaceAll('export function ', 'function ') + '\n' + hook + '\n})();\n';
+    return "import { installGoogleDriveUI } from './cloud/google-drive/ui.mjs';\n" + editor.replace(registration, '').slice(0, -6) + runtime.replaceAll('export function ', 'function ') + '\n' + hook + '\ninstallGoogleDriveUI();\n})();\n';
   } })).toString('utf8');
   if (!html.includes('</head>')) throw Error('Missing head');
   html = html.replace('</head>', '<link rel="manifest" href="./manifest.webmanifest">\n<link rel="icon" href="./icon.svg" type="image/svg+xml">\n</head>');

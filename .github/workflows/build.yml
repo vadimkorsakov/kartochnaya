@@ -40,6 +40,8 @@ on:
       - 'scripts/distribution.mjs'
       - 'scripts/netlify*.mjs'
       - 'tests/netlify.spec.js'
+      - 'tests/google-drive.spec.js'
+      - 'tests/google-drive.test.mjs'
       - 'playwright.netlify.config.js'
       - 'netlify.toml'
       - 'scripts/verify-build.mjs'
@@ -65,6 +67,7 @@ jobs:
       - run: npm run test:source
       - run: npm run test:unit
       - run: npm run test:pwa
+      - run: npm run test:drive
       - run: npm run build
       - run: npm run build:verify
       - run: node scripts/verify-reproducible.mjs

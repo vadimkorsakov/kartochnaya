@@ -9,15 +9,27 @@ const messages = {
   origin_mismatch: 'Адрес сайта не разрешён в Google Cloud. Проверь Authorized JavaScript origins для этого Client ID.',
 };
 
+// Validate before adding Authorization, including every resumable Location.
+export function driveEndpoint(value, method = 'GET') {
+  const url = new URL(value);
+  if (url.origin !== 'https://www.googleapis.com' || url.username || url.password || url.hash || url.searchParams.has('access_token')) throw Error('Недопустимый адрес Drive API');
+  const files = /^\/drive\/v3\/files(?:\/[A-Za-z0-9_-]+)?$/.test(url.pathname);
+  const upload = url.pathname === '/upload/drive/v3/files' && url.searchParams.get('uploadType') === 'resumable';
+  if (!(files && (method === 'GET' || (method === 'POST' && url.pathname === '/drive/v3/files'))) && !(upload && (method === 'POST' || (method === 'PUT' && /^[A-Za-z0-9_-]+$/.test(url.searchParams.get('upload_id') || ''))))) throw Error('Недопустимый запрос Drive API');
+  return url.href;
+}
+
 // Tokens and account data live only in this closure. No background OAuth/refresh.
 export function createDriveSession({ load = loadGoogleIdentity, request = globalThis.fetch.bind(globalThis), online = () => navigator.onLine, supported = () => location.protocol === 'https:' || (location.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)), changed = () => {} } = {}) {
   let clientId = '', oauth = null, token = null, expiresAt = 0;
   let state = { status: 'unconfigured', message: 'Не настроен Client ID.', account: '' };
   let generation = 0, deadline, expiry, abort;
+  const operations = new Set();
   const busy = () => ['preparing', 'authorizing', 'checking'].includes(state.status);
   const emit = (status, message, account = '') => { state = { status, message, account }; changed(view()); };
   function clear() {
     generation++; clearTimeout(deadline); clearTimeout(expiry); abort?.abort(); abort = null;
+    for (const controller of operations) controller.abort();
     token = null; expiresAt = 0;
   }
   function fail(message, status = 'error') { clear(); emit(status, message); }
@@ -98,5 +110,32 @@ export function createDriveSession({ load = loadGoogleIdentity, request = global
     else if (token && Date.now() >= expiresAt) expire();
     else if (state.status === 'offline') emit(clientId ? 'disconnected' : 'unconfigured', clientId ? 'Не подключён. Интернет доступен, можно подключиться.' : 'Не настроен Client ID.');
   }
-  return { view, configure, prepare, connect, networkChanged, checkExpiry() { if (token && Date.now() >= expiresAt) expire(); }, disconnect() { clear(); emit(clientId ? 'disconnected' : 'unconfigured', clientId ? 'Не подключён.' : 'Не настроен Client ID.'); } };
+  async function withDriveOperation(action, { signal: external } = {}) {
+    if (token && Date.now() >= expiresAt) expire();
+    if (!token || state.status !== 'connected') throw Error('Подключи Google Drive повторно.');
+    const run = generation, controller = new AbortController(); operations.add(controller);
+    const signal = external ? AbortSignal.any([controller.signal, external]) : controller.signal;
+    const check = () => {
+      if (token && Date.now() >= expiresAt) expire();
+      if (signal.aborted || run !== generation || !token) throw Error('Облачная операция прервана. Проверь список копий перед повторной загрузкой.');
+    };
+    let rejectAbort;
+    const cancelled = new Promise((_, reject) => { rejectAbort = () => reject(Error('Облачная операция прервана. Проверь список копий перед повторной загрузкой.')); });
+    signal.addEventListener('abort', rejectAbort, { once: true });
+    try {
+      check();
+      return await Promise.race([cancelled, action({ signal, check, request: async (value, options = {}) => {
+        check();
+        const method = options.method || 'GET', endpoint = driveEndpoint(value, method);
+        const headers = new Headers(options.headers); headers.set('Authorization', 'Bearer ' + token);
+        let res;
+        try { res = await request(endpoint, { ...options, method, headers, signal: AbortSignal.any([signal, AbortSignal.timeout(60000)]), credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer' }); }
+        catch { check(); throw Error('Ошибка сети или время ожидания Drive API истекло.'); }
+        check();
+        if (res.status === 401) { expire(); throw Error('Срок доступа истёк. Подключи Google Drive повторно.'); }
+        return res;
+      } })]);
+    } finally { signal.removeEventListener('abort', rejectAbort); operations.delete(controller); controller.abort(); }
+  }
+  return { view, configure, prepare, connect, networkChanged, withDriveOperation, checkExpiry() { if (token && Date.now() >= expiresAt) expire(); }, disconnect() { clear(); emit(clientId ? 'disconnected' : 'unconfigured', clientId ? 'Не подключён.' : 'Не настроен Client ID.'); } };
 }

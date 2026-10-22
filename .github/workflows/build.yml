@@ -42,6 +42,7 @@ on:
       - 'tests/netlify.spec.js'
       - 'tests/google-drive.spec.js'
       - 'tests/google-drive.test.mjs'
+      - 'tests/google-drive-backup.test.mjs'
       - 'playwright.netlify.config.js'
       - 'netlify.toml'
       - 'scripts/verify-build.mjs'
@@ -58,6 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: ${{ github.workspace }}/.cache/chrome-linux64/chrome
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -71,11 +73,16 @@ jobs:
       - run: npm run build
       - run: npm run build:verify
       - run: node scripts/verify-reproducible.mjs
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install-deps chromium
+      # PNG baselines require their recorded browser, not Playwright's newer one.
+      - name: Install recorded Chromium version
+        run: |
+          chromium_version=$(node -p "require('./tests/baselines/environment.json').chromium")
+          curl --fail --show-error --location --retry 3 "https://storage.googleapis.com/chrome-for-testing-public/${chromium_version}/linux64/chrome-linux64.zip" -o "$RUNNER_TEMP/chromium.zip"
+          unzip -q "$RUNNER_TEMP/chromium.zip" -d "$GITHUB_WORKSPACE/.cache"
+          "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" --version
       - run: npm run test:netlify
-      - run: npm run test:bundle-smoke
-      - run: npx playwright test --project=chromium tests/indexeddb-contracts.spec.js tests/project-integrity.spec.js tests/zip-backup.spec.js tests/workspace-replace.spec.js
-      - run: npx playwright test --project=known-failures tests/known-failures.spec.js
+      - run: npm run test:all
       - uses: actions/upload-artifact@v4
         with:
           name: kartochnaya-v045-distributions

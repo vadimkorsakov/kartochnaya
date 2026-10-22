@@ -27,7 +27,7 @@
     "test:bundle-smoke": "playwright test --project=standalone tests/module-bundle.smoke.spec.js",
     "build:netlify": "node scripts/build.mjs netlify",
     "test:netlify": "npm run build:netlify && playwright test --config=playwright.netlify.config.js",
-    "test:drive": "node --test tests/google-drive.test.mjs"
+    "test:drive": "node --test tests/google-drive.test.mjs tests/google-drive-backup.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

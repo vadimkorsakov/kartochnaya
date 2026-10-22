@@ -42,6 +42,7 @@ on:
       - 'tests/netlify.spec.js'
       - 'tests/google-drive.spec.js'
       - 'tests/google-drive.test.mjs'
+      - 'tests/google-drive-backup.test.mjs'
       - 'playwright.netlify.config.js'
       - 'netlify.toml'
       - 'scripts/verify-build.mjs'
@@ -73,9 +74,7 @@ jobs:
       - run: node scripts/verify-reproducible.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run test:netlify
-      - run: npm run test:bundle-smoke
-      - run: npx playwright test --project=chromium tests/indexeddb-contracts.spec.js tests/project-integrity.spec.js tests/zip-backup.spec.js tests/workspace-replace.spec.js
-      - run: npx playwright test --project=known-failures tests/known-failures.spec.js
+      - run: npm run test:all
       - uses: actions/upload-artifact@v4
         with:
           name: kartochnaya-v045-distributions

@@ -116,3 +116,89 @@ test('Drive: file mode explains unsupported OAuth without loading Google', async
   await configure(page); await expect(page.locator('#driveConnect')).toBeDisabled();
   expect(seen.gis).toBe(0); expect(seen.drive).toBe(0);
 });
+
+async function driveStorage(page) {
+  const result = {};
+  for (const store of ['projects', 'docs', 'fonts', 'settings']) result[store] = await require('./helpers').records(page, store);
+  return result;
+}
+async function backupDriveMock(page, { hold = false } = {}) {
+  await mock(page);
+  const state = { folder: null, files: [], bytes: new Map(), folderCreates: 0, uploads: 0, media: 0, chunks: 0, broken: false };
+  const json = (route, body, status = 200, headers = {}) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body), headers });
+  await page.route('https://www.googleapis.com/**/files**', async route => {
+    const request = route.request(), url = new URL(request.url()), method = request.method();
+    expect(request.headers().authorization).toBe('Bearer ' + TOKEN); expect(request.url()).not.toContain(TOKEN);
+    expect(['DELETE', 'PATCH']).not.toContain(method);
+    if (url.pathname === '/upload/drive/v3/files') {
+      if (method === 'POST') {
+        state.uploads++; state.current = request.postDataJSON();
+        expect(state.current.parents).toEqual(['app-folder']); expect(state.current.appProperties.scope).toBe('workspace');
+        await route.fulfill({ status: 200, headers: { Location: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=session', 'Access-Control-Expose-Headers': 'Location, Range' } }); return;
+      }
+      state.chunks++;
+      if (hold) return; // Aborted by session disconnect; no fabricated server success.
+      const data = request.postDataBuffer(); expect(data[0]).toBe(80); expect(data[1]).toBe(75);
+      const id = 'cloud-' + state.uploads;
+      state.files.push({ ...state.current, id, size: String(data.length), createdTime: '2026-10-22T12:00:00Z' }); state.bytes.set(id, data);
+      await json(route, { id }, 201); return;
+    }
+    if (url.pathname === '/drive/v3/files' && method === 'GET') {
+      if (url.searchParams.get('q').includes("mimeType = 'application/vnd.google-apps.folder'")) { await json(route, { files: state.folder ? [state.folder] : [] }); return; }
+      // Deliberately include a foreign file: client must filter it again.
+      await json(route, { files: [...state.files, { id: 'foreign', name: 'foreign.zip', parents: ['app-folder'], mimeType: 'application/zip', size: '10' }] }); return;
+    }
+    if (method === 'POST') {
+      state.folderCreates++; state.folder = { ...request.postDataJSON(), id: 'app-folder' }; await json(route, state.folder); return;
+    }
+    const id = url.pathname.split('/').pop();
+    if (id === 'app-folder') { await json(route, state.folder); return; }
+    const file = state.files.find(f => f.id === id); expect(file).toBeTruthy();
+    if (url.searchParams.get('alt') === 'media') {
+      state.media++; const data = Buffer.from(state.bytes.get(id)); if (state.broken) data[0] ^= 255;
+      await route.fulfill({ status: 200, contentType: 'application/zip', body: data, headers: { 'Content-Length': String(data.length) } }); return;
+    }
+    await json(route, file);
+  });
+  return state;
+}
+test('Drive backups: create separate complete ZIPs, list safe text, download exact bytes, then restore through local ZIP UI', async ({ page }) => {
+  const state = await backupDriveMock(page); await openHome(page); await createDocument(page, 'Облачный проект'); await addShape(page);
+  await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click(); await configure(page); await connect(page);
+  expect(state.folderCreates).toBe(0); await page.locator('#driveRefresh').click(); await expect(page.locator('#driveProgress')).toContainText('пока нет'); expect(state.folderCreates).toBe(0);
+  for (let i = 0; i < 2; i++) { await page.locator('#driveCreate').click(); await expect(page.locator('#driveProgress')).toContainText('Резервная копия сохранена в Google Drive'); }
+  expect(state.folderCreates).toBe(1); expect(state.uploads).toBe(2); expect(state.files[0].name).not.toBe(state.files[1].name);
+  const before = await driveStorage(page); const { readBackup, sha256 } = await import('../src/backup/archive.mjs');
+  const uploaded = state.bytes.get('cloud-1'), parsed = await readBackup(uploaded);
+  expect(parsed.data.docs).toEqual(before.docs); expect(parsed.data.projects).toEqual(before.projects); expect(parsed.data.fonts).toEqual(before.fonts); expect(parsed.data.settings).toEqual(before.settings);
+  expect(state.files[0].appProperties.sha256).toBe(await sha256(uploaded));
+  expect(Object.values(unzipSync(uploaded)).map(strFromU8).join('')).not.toContain(TOKEN);
+  state.files[0].name = '<img src=x onerror=alert(1)>../опасный.zip';
+  await page.locator('#driveRefresh').click(); await expect(page.locator('#driveList button')).toHaveCount(2); await expect(page.locator('#driveList')).toContainText(state.files[0].name); await expect(page.locator('#driveList img')).toHaveCount(0);
+  await page.locator('#driveList button').first().click(); await expect(page.locator('#driveProgress')).toContainText('ZIP проверен');
+  expect(await driveStorage(page)).toEqual(before);
+  const pending = page.waitForEvent('download'); await page.locator('#driveSaveZip').click(); const downloaded = await pending;
+  expect(downloaded.suggestedFilename()).not.toMatch(/[<>/\\]/); expect(await readFile(await downloaded.path())).toEqual(uploaded);
+  await page.locator('#zipInput').setInputFiles({ name: 'cloud.zip', mimeType: 'application/zip', buffer: uploaded }); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await page.locator('#zipConfirm').click(); await expect(page.locator('#zipStatus')).toContainText('Транзакция завершена');
+  expect((await driveStorage(page)).projects.length).toBeGreaterThan(before.projects.length);
+});
+test('Drive backups: corrupted download never enables save and leaves all stores unchanged', async ({ page }) => {
+  const state = await backupDriveMock(page); await home(page); await configure(page); await connect(page);
+  await page.locator('#driveCreate').click(); await expect(page.locator('#driveProgress')).toContainText('Резервная копия сохранена');
+  const before = await driveStorage(page); state.broken = true;
+  await page.locator('#driveRefresh').click(); await expect(page.locator('#driveList button')).toHaveCount(1); await page.locator('#driveList button').click();
+  await expect(page.locator('#driveProgress')).toContainText('SHA-256'); await expect(page.locator('#driveSaveZip')).toBeHidden(); expect(await driveStorage(page)).toEqual(before);
+});
+test('Drive backups: editing is unlocked during upload; disconnect terminates it, then local ZIP works offline', async ({ page, context }) => {
+  const state = await backupDriveMock(page, { hold: true }); await openHome(page); await createDocument(page, 'Редактор во время загрузки');
+  await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click(); await configure(page); await connect(page);
+  const before = await driveStorage(page); await page.locator('#driveCreate').click(); await expect.poll(() => state.chunks).toBe(1);
+  await page.locator('[data-tab-id]').first().click(); await addShape(page); await savedDocument(page, 'Редактор во время загрузки', 1);
+  await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click(); await page.locator('#driveDisconnect').click();
+  await expect(page.locator('#driveBackups')).toBeHidden(); await expect(page.locator('#driveProgress')).toContainText('прервана');
+  const after = await driveStorage(page); expect(after.projects).toEqual(before.projects); expect(after.fonts).toEqual(before.fonts); expect(after.settings).toEqual(before.settings);
+  await context.setOffline(true); await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  const pending = page.waitForEvent('download'); await page.locator('#zipConfirm').click(); const bytes = await readFile(await (await pending).path());
+  expect((await (await import('../src/backup/archive.mjs')).readBackup(bytes)).data.docs.some(d => d.elements.length)).toBe(true);
+});

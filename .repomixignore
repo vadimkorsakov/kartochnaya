@@ -1,0 +1,9 @@
+# Исключения только для обзорных выгрузок Repomix.
+# При целевом историческом аудите явно включайте нужные архивные файлы.
+kartochnaya v0.45/**
+docs/*-v045.md
+dist/**
+node_modules/**
+.cache/**
+test-results/**
+playwright-report/**

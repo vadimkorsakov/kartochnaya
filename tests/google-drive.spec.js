@@ -8,7 +8,7 @@ async function home(page) { await openHome(page); await page.locator('[data-home
 async function configure(page, value = ID) {
   await page.locator('#driveConfigure').click(); await page.locator('#driveClientId').fill(value); await page.locator('#driveSave').click();
 }
-async function mock(page, { scope = SCOPE, error, popup, status = 200, body = { user: { displayName: 'Тестовый аккаунт', emailAddress: 'test@example.invalid' } }, network = false, expires = 3600 } = {}) {
+async function mock(page, { scope = SCOPE, error, popup, status = 200, body = { user: { permissionId: 'permission-test', displayName: 'Тестовый аккаунт', emailAddress: 'test@example.invalid' } }, network = false, expires = 3600 } = {}) {
   const seen = { gis: 0, drive: 0 };
   await page.route('https://accounts.google.com/gsi/client', async route => {
     seen.gis++;
@@ -24,7 +24,7 @@ async function mock(page, { scope = SCOPE, error, popup, status = 200, body = { 
   return seen;
 }
 async function prepare(page) {
-  await page.locator('#driveConnect').click();
+  await page.locator('#driveAdd').click();
   await expect(page.locator('#driveConnect')).toHaveText('Подключить Google Drive');
   expect(await page.evaluate(() => window.__testCalls || 0)).toBe(0);
 }
@@ -35,11 +35,11 @@ test('Drive: no Google on startup, Client ID validation and deferred popup, acco
   await configure(page, 'wrong'); await expect(page.locator('#driveSettingsError')).toContainText('Web application Client ID');
   await page.locator('#driveClientId').fill(ID); await page.locator('#driveSave').click();
   expect(await page.evaluate(key => localStorage.getItem(key), KEY)).toBe(ID); expect(seen.gis).toBe(0);
-  await connect(page); await expect(page.locator('#driveStatus')).toContainText('Google Drive подключён — Тестовый аккаунт');
+  await connect(page); await expect(page.locator('#driveAccounts')).toContainText('Тестовый аккаунт');
   expect(seen.gis).toBe(1); expect(seen.drive).toBe(1);
   expect(await page.evaluate(() => ({ active: window.__testActive, scope: window.__testConfig.scope, include: window.__testConfig.include_granted_scopes }))).toEqual({ active: true, scope: SCOPE, include: false });
-  await page.locator('#driveDisconnect').click(); await expect(page.locator('#driveStatus')).toHaveText('Не подключён.');
-  await page.reload(); await page.locator('[data-home-nav=data]').click(); await expect(page.locator('#driveStatus')).toHaveText('Не подключён.'); expect(seen.gis).toBe(1);
+  await page.locator('#driveDisconnect').click(); await expect(page.locator('#driveAccounts')).toContainText('Требуется подключение');
+  await page.reload(); await page.locator('[data-home-nav=data]').click(); await expect(page.locator('#driveAccounts')).toContainText('Требуется подключение'); expect(seen.gis).toBe(1);
 });
 for (const [name, options, message] of [
   ['popup close', { popup: 'popup_closed' }, 'закрыто'],
@@ -59,21 +59,21 @@ for (const [name, options, message] of [
 
 test('Drive: expiry, explicit reconnect and Client ID change reset', async ({ page }) => {
   await page.clock.install(); const seen = await mock(page, { expires: 5 }); await home(page); await configure(page); await connect(page);
-  await expect(page.locator('#driveStatus')).toContainText('Google Drive подключён');
-  await page.clock.fastForward(5001); await expect(page.locator('#driveStatus')).toContainText('Срок доступа истёк'); expect(seen.drive).toBe(1);
-  await page.locator('#driveConnect').click(); await expect(page.locator('#driveStatus')).toContainText('Google Drive подключён'); expect(seen.drive).toBe(2);
-  await configure(page, 'other.apps.googleusercontent.com'); await expect(page.locator('#driveStatus')).toHaveText('Не подключён.');
-  await expect(page.locator('#driveConnect')).toHaveText('Подготовить авторизацию');
+  await expect(page.locator('#driveAccounts')).toContainText('Подключён');
+  await page.clock.fastForward(5001); await expect(page.locator('#driveAccounts')).toContainText('Срок доступа истёк'); expect(seen.drive).toBe(1);
+  await page.locator('#driveAccounts button').filter({hasText: /^Подключить$/}).click(); await page.locator('#driveConnect').click(); await expect(page.locator('#driveAccounts')).toContainText('Подключён'); expect(seen.drive).toBe(2);
+  await configure(page, 'other.apps.googleusercontent.com'); await expect(page.locator('#driveAccounts')).toContainText('Требуется подключение');
+  await expect(page.locator('#driveAdd')).toBeEnabled();
 });
 
 test('Drive: no account, Client ID or token in workspace ZIP or persistent account storage', async ({ page }) => {
-  await mock(page); await home(page); await configure(page); await connect(page); await expect(page.locator('#driveStatus')).toContainText('Google Drive подключён');
+  await mock(page); await home(page); await configure(page); await connect(page); await expect(page.locator('#driveAccounts')).toContainText('Подключён');
   const durable = await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => { const q = indexedDB.open('kartochnaya_local_v1'); q.onsuccess = () => resolve(q.result); q.onerror = reject; });
     const all = await Promise.all([...db.objectStoreNames].map(name => new Promise(resolve => { const q = db.transaction(name).objectStore(name).getAll(); q.onsuccess = () => resolve(q.result); })));
     db.close(); return JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage }, all });
   });
-  expect(durable).not.toContain(TOKEN); expect(durable).not.toContain('Тестовый аккаунт'); expect(durable).not.toContain('test@example.invalid');
+  expect(durable).not.toContain(TOKEN); expect(durable).toContain('Тестовый аккаунт'); expect(durable).toContain('permission-test');
   await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
   const pending = page.waitForEvent('download'); await page.locator('#zipConfirm').click(); const bytes = await readFile(await (await pending).path());
   const files = unzipSync(bytes); const all = Object.values(files).map(strFromU8).join('\n');
@@ -84,8 +84,8 @@ test('Drive: no account, Client ID or token in workspace ZIP or persistent accou
 
 test('Drive: GIS timeout and concurrent clicks recover without automatic OAuth', async ({ page }) => {
   await page.clock.install(); await page.route('https://accounts.google.com/gsi/client', () => {});
-  await home(page); await configure(page); await page.locator('#driveConnect').click();
-  await expect(page.locator('#driveConnect')).toBeDisabled(); await page.clock.fastForward(15001);
+  await home(page); await configure(page); await page.locator('#driveAdd').click();
+  await expect(page.locator('#driveAdd')).toBeDisabled(); await page.clock.fastForward(15001);
   await expect(page.locator('#driveStatus')).toContainText('Не удалось загрузить'); await expect(page.locator('#driveConnect')).toBeEnabled();
 });
 
@@ -94,7 +94,7 @@ test('Drive: offline editor remains independent with configured Client ID and no
   await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
   await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state)).toBe('activated');
   await context.setOffline(true); await page.reload(); await page.locator('[data-home-nav=data]').click();
-  await expect(page.locator('#driveStatus')).toContainText('Отсутствует интернет'); await expect(page.locator('#driveConnect')).toBeDisabled();
+  await expect(page.locator('#driveStatus')).toContainText('Отсутствует интернет'); await expect(page.locator('#driveAdd')).toBeDisabled();
   await page.locator('[data-home-nav=workspace]').click();
   await createDocument(page, 'Drive offline document'); await addShape(page); await savedDocument(page, 'Drive offline document', 1);
   expect((await exportedDocument(page)).elements).toHaveLength(1); expect(seen.gis).toBe(0); expect(seen.drive).toBe(0);
@@ -113,7 +113,7 @@ test('Drive: file mode explains unsupported OAuth without loading Google', async
   }
   await page.locator('[data-home-nav=data]').click();
   await expect(page.locator('#driveStatus')).toContainText('Авторизация недоступна в file://');
-  await configure(page); await expect(page.locator('#driveConnect')).toBeDisabled();
+  await configure(page); await expect(page.locator('#driveAdd')).toBeDisabled();
   expect(seen.gis).toBe(0); expect(seen.drive).toBe(0);
 });
 

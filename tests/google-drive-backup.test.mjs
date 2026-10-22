@@ -20,7 +20,7 @@ async function harness(options = {}) {
       assert.equal(init.redirect, 'error'); assert.equal(init.credentials, 'omit');
       assert.ok(!address.includes('private-test-token'));
       state.calls.push({ url, method, headers, body: init.body, signal: init.signal });
-      if (url.pathname.endsWith('/about')) return json({ user: { displayName: 'Test' } });
+      if (url.pathname.endsWith('/about')) return json({ user: { permissionId: 'permission-test', displayName: 'Test' } });
       if (options.intercept) { const response = await options.intercept({ url, method, init, state }); if (response !== undefined) return response; }
       if (url.pathname === '/drive/v3/files' && method === 'GET') {
         if (url.searchParams.get('q').includes("mimeType = 'application/vnd.google-apps.folder'")) return json({ files: [...state.folders, { ...folder, id: 'foreign-folder', appProperties: {} }] });

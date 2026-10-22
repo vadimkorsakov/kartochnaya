@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createDriveSession, DRIVE_SCOPE, validClientId } from '../src/cloud/google-drive/session.mjs';
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-function harness(request = async () => ({ ok: true, status: 200, json: async () => ({ user: { displayName: 'Тест', emailAddress: 'test@example.invalid' } }) })) {
+function harness(request = async () => ({ ok: true, status: 200, json: async () => ({ user: { permissionId: 'permission-test', displayName: 'Тест', emailAddress: 'test@example.invalid' } }) })) {
   let callbacks, calls = 0, online = true, requested;
   const session = createDriveSession({ supported: () => true, online: () => online,
     load: async () => ({ initTokenClient(config) { callbacks = config; return { requestAccessToken() { calls++; } }; } }),
@@ -19,7 +19,7 @@ test('public Client ID validation, prepare separate from connect; scope, Bearer 
   assert.equal(h.callbacks.scope, DRIVE_SCOPE); assert.equal(h.callbacks.include_granted_scopes, false);
   h.callbacks.callback(response()); await tick();
   assert.equal(h.session.view().status, 'connected'); assert.equal(h.session.view().account, 'Тест');
-  assert.equal(h.requested[0], 'https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)');
+  assert.equal(h.requested[0], 'https://www.googleapis.com/drive/v3/about?fields=user(permissionId,displayName,emailAddress)');
   assert.deepEqual(h.requested[1].headers, { Authorization: 'Bearer memory-only-test-token' });
   assert.equal(h.requested[1].cache, 'no-store');
   assert.ok(!JSON.stringify(h.session.view()).includes('memory-only-test-token'));
@@ -60,7 +60,7 @@ test('Client ID change cancels verification; stale result does not confirm accou
   h.session.connect(); h.callbacks.callback(response());
   h.session.configure('other.apps.googleusercontent.com');
   assert.ok(h.requested[1].signal.aborted);
-  done({ ok: true, status: 200, json: async () => ({ user: { displayName: 'Late' } }) }); await tick();
+  done({ ok: true, status: 200, json: async () => ({ user: { permissionId: 'permission-test', displayName: 'Late' } }) }); await tick();
   assert.equal(h.session.view().status, 'disconnected'); assert.equal(h.session.view().ready, false);
 });
 test('expiry requires user action to reconnect', async () => {

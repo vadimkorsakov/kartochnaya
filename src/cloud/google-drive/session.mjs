@@ -20,13 +20,13 @@ export function driveEndpoint(value, method = 'GET') {
 }
 
 // Tokens and account data live only in this closure. No background OAuth/refresh.
-export function createDriveSession({ load = loadGoogleIdentity, request = globalThis.fetch.bind(globalThis), online = () => navigator.onLine, supported = () => location.protocol === 'https:' || (location.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)), changed = () => {} } = {}) {
+export function createDriveSession({ load = loadGoogleIdentity, request = globalThis.fetch.bind(globalThis), online = () => navigator.onLine, supported = () => location.protocol === 'https:' || (location.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)), changed = () => {}, expectedId = null } = {}) {
   let clientId = '', oauth = null, token = null, expiresAt = 0;
   let state = { status: 'unconfigured', message: 'Не настроен Client ID.', account: '' };
   let generation = 0, deadline, expiry, abort;
   const operations = new Set();
   const busy = () => ['preparing', 'authorizing', 'checking'].includes(state.status);
-  const emit = (status, message, account = '') => { state = { status, message, account }; changed(view()); };
+  const emit = (status, message, account = '', accountId = '') => { state = { status, message, account, accountId }; changed(view()); };
   function clear() {
     generation++; clearTimeout(deadline); clearTimeout(expiry); abort?.abort(); abort = null;
     for (const controller of operations) controller.abort();
@@ -81,7 +81,7 @@ export function createDriveSession({ load = loadGoogleIdentity, request = global
     deadline = setTimeout(() => { if (run === generation) fail('Drive API не ответил вовремя. Проверь интернет и подключи повторно.'); }, 15000);
     emit('checking', 'Проверяем доступ к Google Drive API…');
     try {
-      const res = await request('https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)', {
+      const res = await request('https://www.googleapis.com/drive/v3/about?fields=user(permissionId,displayName,emailAddress)', {
         method: 'GET', headers: { Authorization: 'Bearer ' + token }, signal: abort.signal, cache: 'no-store', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer',
       });
       if (run !== generation) return;
@@ -100,8 +100,10 @@ export function createDriveSession({ load = loadGoogleIdentity, request = global
       if (!body || typeof body !== 'object' || Array.isArray(body)) throw Error('invalid_response');
       clearTimeout(deadline); abort = null;
       const user = body.user || {};
+      if (typeof user.permissionId !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/.test(user.permissionId)) { fail('Google не подтвердил устойчивый ID аккаунта. Подключи повторно.'); return; }
+      if (expectedId && user.permissionId !== expectedId) { fail('Выбран другой Google-аккаунт. Исходная запись сохранена. Выбери нужный аккаунт или добавь другой отдельно.'); return; }
       const account = typeof user.displayName === 'string' && user.displayName || typeof user.emailAddress === 'string' && user.emailAddress || '';
-      emit('connected', 'Google Drive подключён' + (account ? ' — ' + account : '') + '.', account);
+      emit('connected', 'Google Drive подключён' + (account ? ' — ' + account : '') + '.', account, user.permissionId);
     } catch { if (run === generation) fail(online() ? 'Ошибка сети при проверке Google Drive. Подключи повторно.' : 'Отсутствует интернет. Локальные проекты, JSON и ZIP доступны.', online() ? 'error' : 'offline'); }
   }
   function expire() { if (token) fail('Срок доступа истёк. Подключи Google Drive повторно.', 'expired'); }

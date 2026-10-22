@@ -43,6 +43,7 @@ on:
       - 'tests/google-drive.spec.js'
       - 'tests/google-drive.test.mjs'
       - 'tests/google-drive-backup.test.mjs'
+      - 'tests/google-drive-accounts.test.mjs'
       - 'playwright.netlify.config.js'
       - 'netlify.toml'
       - 'scripts/verify-build.mjs'
@@ -66,10 +67,10 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm ci
+      - run: npm run test:drive
       - run: npm run test:source
       - run: npm run test:unit
       - run: npm run test:pwa
-      - run: npm run test:drive
       - run: npm run build
       - run: npm run build:verify
       - run: node scripts/verify-reproducible.mjs

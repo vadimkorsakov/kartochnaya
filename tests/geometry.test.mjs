@@ -2,9 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 import * as geometry from '../src/core/geometry.mjs';
 
 const { toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint } = geometry;
+const functions = { toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint };
 const element = (overrides = {}) => ({ x:10, y:20, w:80, h:40, rotation:0, ...overrides });
 // Absolute 1e-10 px tolerance is only for independently expected irrational values
 // and trigonometric residue at cardinal angles. Historical comparisons are exact.
@@ -91,7 +94,7 @@ test('gradient transforms: round trips in both directions at multiple angles', (
   }
 });
 
-for (const [name, fn] of Object.entries(geometry)) test(name+': immutable inputs, independent fresh results and unusual values', () => {
+for (const [name, fn] of Object.entries(functions)) test(name+': immutable inputs, independent fresh results and unusual values', () => {
   const e=Object.freeze(element({rotation:37,extra:Object.freeze({keep:true})}));
   const p=Object.freeze({x:12.25,y:-1.5});
   const before=structuredClone([e,p]);
@@ -124,7 +127,7 @@ for (const [name, fn] of Object.entries(geometry)) test(name+': immutable inputs
 // The historical file itself is guarded by the immutable 19-file manifest test.
 const historicalHTML=await readFile(new URL('../kartochnaya v0.45/index.html',import.meta.url),'utf8');
 const historical={};
-for (const name of Object.keys(geometry)) {
+for (const name of Object.keys(functions)) {
   const declarations=[...historicalHTML.matchAll(new RegExp('^function '+name+'\\([^\\n]*','gm'))];
   assert.equal(declarations.length,1,name);
   historical[name]=vm.runInNewContext('('+declarations[0][0]+')',Object.create(null));
@@ -134,7 +137,7 @@ function observation(fn,args) {
   try { return {result:structuredClone(fn(...copy)),after:copy}; }
   catch (error) { return {error:{name:error.name,message:error.message},after:copy}; }
 }
-for (const [name, fn] of Object.entries(geometry)) test(name+': exact historical differential including special values and exceptions', () => {
+for (const [name, fn] of Object.entries(functions)) test(name+': exact historical differential including special values and exceptions', () => {
   let cases=0, exceptions=0;
   function compare(args) {
     const original=observation(historical[name],args);
@@ -154,13 +157,20 @@ for (const [name, fn] of Object.entries(geometry)) test(name+': exact historical
   assert.ok(exceptions>0,'Native exceptions were compared too');
 });
 
-test('geometry is a standalone leaf without DOM, app, global bridges or initialization calls', async () => {
-  const code=await readFile(new URL('../src/core/geometry.mjs',import.meta.url),'utf8');
-  assert.deepEqual(Object.keys(geometry).sort(),['toLocal','boundsOf','handleCoords','gradientLocalPoint','gradientDocPoint'].sort());
-  assert.doesNotMatch(code,/\b(?:import|app|document|window|globalThis|Canvas|indexedDB)\b/);
-  const declarations=code.replaceAll('export function','function');
-  const sandbox=Object.create(null);
-  for (const key of ['app','document','window','indexedDB']) Object.defineProperty(sandbox,key,{get(){throw new Error('Forbidden '+key);}});
-  vm.runInNewContext(declarations,sandbox);
-  for (const name of Object.keys(geometry)) assert.deepEqual(observation(sandbox[name],[element(),{x:30,y:40}]),observation(geometry[name],[element(),{x:30,y:40}]));
+test('geometry ESM imports and operations do not require browser or app state', async () => {
+  const result = await build({
+    entryPoints: [fileURLToPath(new URL('../src/core/geometry.mjs', import.meta.url))],
+    bundle: true, platform: 'browser', format: 'iife', globalName: 'geometryAPI',
+    write: false, logLevel: 'silent',
+  });
+  const sandbox = Object.create(null);
+  for (const key of ['app', 'document', 'window', 'indexedDB', 'Canvas']) {
+    Object.defineProperty(sandbox, key, { get() { throw new Error('Forbidden ' + key); } });
+  }
+  vm.runInNewContext(result.outputFiles[0].text, sandbox);
+  for (const name of Object.keys(functions)) {
+    assert.equal(typeof sandbox.geometryAPI[name], 'function', name);
+    assert.deepEqual(observation(sandbox.geometryAPI[name], [element(), {x:30,y:40}]),
+      observation(functions[name], [element(), {x:30,y:40}]));
+  }
 });

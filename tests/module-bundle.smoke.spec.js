@@ -9,6 +9,13 @@ test('module bundle smoke: color, modular gradient, PNG and IndexedDB reopening'
   const scriptRequests = [];
   page.on('request', r => { if (r.resourceType() === 'script') scriptRequests.push(r.url()); });
   await openHome(page);
+  const leaked = await page.evaluate(() => [
+    'app', 'uid', 'html', 'clamp', 'fmt', 'rgbHex', 'hexRgb', 'hsvRGB', 'rgbHSV',
+    'rgbHSL', 'hslRGB', 'normalizeHex', 'cpFormatValues', 'createGradientModel',
+    'validateShapeCatalog', 'toLocal', 'boundsOf', 'handleCoords',
+    'gradientLocalPoint', 'gradientDocPoint',
+  ].filter(name => Object.hasOwn(globalThis, name)));
+  expect(leaked, 'Internal editor state and APIs stay inside the standalone bundle').toEqual([]);
   const served = await page.request.get(page.url());
   expect(await served.body()).toEqual(await readFile(path.join(__dirname, '../dist/kartochnaya.html')));
   await expect(page.locator('script')).toHaveCount(1);

@@ -189,3 +189,52 @@ test('production imports normalize HEX, clamp values and interpolate RGB without
   assert.deepEqual(m.gradientSample(e,25), {color:'#808c99',alpha:25});
   assert.deepEqual(m.gradientSample(e,150), {color:'#000000',alpha:100});
 });
+
+// Canvas reads use the same effective defaults without normalizing stored records.
+for (const input of [
+  { w:100,h:50 },
+  { w:100,h:50,fill:'#ABC',fill2:'#123456',fillAlpha1:-10,fillAlpha2:150,gradientStart:{x:7,y:8} },
+  { w:100,h:50,gradientStops:[{pos:'100',color:'#fff',alpha:70},{pos:'0',color:'#000',alpha:20}],gradientStart:{x:0},gradientEnd:{x:1,y:.8} },
+]) test('pure gradient reads preserve frozen partial input: ' + JSON.stringify(input), async () => {
+  const { readGradientStops, readGradientGeometry } = await import('../src/core/gradient-model.mjs');
+  const freeze = value => { if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
+  const e=freeze(structuredClone(input)),before=JSON.stringify(e);
+  for(let i=0;i<10;i++) {
+    const stops=readGradientStops(e),g=readGradientGeometry(e);
+    assert.equal(stops.length,2);assert.ok(stops[0].pos<=stops[1].pos);
+    assert.ok(stops.every(s=>s.alpha>=0&&s.alpha<=100&&!s.id));
+    assert.ok([g.a.x,g.a.y,g.b.x,g.b.y].every(Number.isFinite));
+    stops[0].color='#ff0000';g.a.x=200;
+  }
+  assert.equal(JSON.stringify(e),before);
+});
+
+test('pure gradient defaults, colors and alpha match legacy normalization without consuming IDs', async () => {
+  const { readGradientStops, readGradientGeometry } = await import('../src/core/gradient-model.mjs');
+  let serial=0;const m=createGradientModel(()=>`edit-${++serial}`);
+  for(const input of [
+    {w:100,h:50},
+    {w:0,h:0,fill:'#ABC',fillAlpha1:20,fillAlpha2:80},
+    {w:100,h:50,gradientAngle:45,gradientStart:{x:7,y:8}},
+    {w:100,h:50,gradientStart:{x:.1,y:.3},gradientEnd:{x:.8,y:.6},gradientStops:[{pos:100,color:'#ffffff',alpha:80},{pos:0,color:'#000000',alpha:20}]},
+  ]) {
+    const original=structuredClone(input),stops=readGradientStops(original),g=readGradientGeometry(original);
+    const before=serial;readGradientStops(original);readGradientGeometry(original);assert.equal(serial,before);
+    const edited=structuredClone(input);
+    assert.deepEqual(stops.map(({pos,color,alpha})=>({pos,color,alpha})),m.gradientStops(edited).map(({pos,color,alpha})=>({pos,color,alpha})));
+    assert.deepEqual(g,m.gradientGeometry(edited));assert.deepEqual(original,input);
+  }
+  const e={w:20,h:10};for(let i=0;i<10;i++){readGradientStops(e);readGradientGeometry(e);}
+  const before=serial;m.gradientStops(e);const added=m.addGradientStop(e,50);
+  assert.equal(serial,before+3);assert.equal(added.id,`edit-${serial}`);
+  assert.equal(new Set(e.gradientStops.map(s=>s.id)).size,3);
+  assert.deepEqual(e.gradientStops.map(s=>s.pos),[0,50,100]);
+});
+
+test('pure gradient stops sort a detached array and keep existing IDs and fractional alpha', async () => {
+  const { readGradientStops } = await import('../src/core/gradient-model.mjs');
+  const e={gradientStops:[{id:'last',pos:150,color:'#fff',alpha:80.5},{id:'first',pos:-1,color:'#000',alpha:20.5}]};
+  const before=structuredClone(e),stops=readGradientStops(e);
+  assert.notEqual(stops,e.gradientStops);assert.notEqual(stops[0],e.gradientStops[1]);
+  assert.deepEqual(stops,[{id:'first',pos:0,color:'#000000',alpha:20.5},{id:'last',pos:100,color:'#ffffff',alpha:80.5}]);assert.deepEqual(e,before);
+});

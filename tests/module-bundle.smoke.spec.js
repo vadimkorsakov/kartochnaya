@@ -7,8 +7,14 @@ const {
 
 test('module bundle smoke: color, modular gradient, PNG and IndexedDB reopening', async ({ page }) => {
   const scriptRequests = [];
+  const pngRequests = [];
   page.on('request', r => { if (r.resourceType() === 'script') scriptRequests.push(r.url()); });
+  page.on('request', r => { if (/^https?:.*\.png(?:$|[?#])/i.test(r.url())) pngRequests.push(r.url()); });
   await openHome(page);
+  const icons = page.locator('img.dock-image-icon');
+  await expect(icons).toHaveCount(19);
+  await expect.poll(() => icons.evaluateAll(images => images.every(image =>
+    image.src.startsWith('data:image/png;base64,') && image.complete && image.naturalWidth > 0))).toBe(true);
   const leaked = await page.evaluate(() => [
     'app', 'uid', 'html', 'clamp', 'fmt', 'rgbHex', 'hexRgb', 'hsvRGB', 'rgbHSV',
     'rgbHSL', 'hslRGB', 'normalizeHex', 'cpFormatValues', 'createGradientModel',
@@ -54,6 +60,7 @@ test('module bundle smoke: color, modular gradient, PNG and IndexedDB reopening'
   expect((await exportedDocument(page)).elements).toEqual(document.elements);
   expect((await exportPNG(page)).image.data).toEqual(png.image.data);
   expect(scriptRequests, 'No external JavaScript or ES module requests, including reload').toEqual([]);
+  expect(pngRequests, 'Inline icons require no PNG HTTP requests, including reload').toEqual([]);
 });
 
 test('gradient factory integration: unique stop ids, imported interpolation, radial PNG and persisted order', async ({ page }) => {

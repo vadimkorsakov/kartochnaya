@@ -14,22 +14,39 @@ export function installBackupUI({ snapshot, restore, download, replacement }) {
   style.textContent = '#zipBackupDialog{background:#261e30;color:#f4effb;border:1px solid #574661;border-radius:18px;padding:24px;width:min(640px,calc(100% - 24px));max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box}#zipBackupDialog::backdrop{background:#100b18bb}#zipBackupDialog h2{margin:0 0 16px}#zipBackupDialog p{line-height:1.55}#zipBackupDialog label{display:flex;gap:12px;align-items:center;padding:10px 0}#zipBackupDialog input[type=checkbox],#zipBackupDialog input[type=radio]{width:20px;height:20px;flex-shrink:0;accent-color:#aa83ed}.zip-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}#zipStatus{white-space:pre-wrap;overflow-wrap:anywhere;color:#d7c2ee;min-height:24px}#zipBackupDialog ul{padding-left:22px;overflow-wrap:anywhere}#zipOpen{margin-top:10px}#zipBackupDialog button:disabled{opacity:.55}';
   document.head.append(style);
   const find = id => dialog.querySelector('#' + id), body = find('zipBody'), status = find('zipStatus'), confirm = find('zipConfirm'), cancel = find('zipCancel');
-  let busy = false, verified = null, mode = null, restoreBytes = null, safetyVerified = false;
-  const safetyInput = document.createElement('input'); safetyInput.type = 'file'; safetyInput.accept = '.zip,application/zip'; safetyInput.hidden = true; safetyInput.id = 'zipSafetyInput'; document.body.append(safetyInput);
+  let busy = false, verified = null, mode = null, restoreBytes = null, prepared = false;
   const text = (tag, value, parent = body) => { const node = document.createElement(tag); node.textContent = value; parent.append(node); return node; };
-  function reset(title, action) { body.replaceChildren(); status.textContent = ''; verified = null; restoreBytes = null; safetyVerified = false; confirm.disabled = true; confirm.textContent = action; find('zipTitle').textContent = title; if (!dialog.open) dialog.showModal(); }
-  async function task(message, operation) {
+  function reset(title, action) { body.replaceChildren(); status.textContent = ''; verified = null; restoreBytes = null; prepared = false; confirm.disabled = true; confirm.textContent = action; find('zipTitle').textContent = title; if (!dialog.open) dialog.showModal(); }
+  async function task(message, operation, { optional = false } = {}) {
     if (busy) return;
     busy = true; confirm.disabled = true; cancel.disabled = true; status.textContent = message; dialog.setAttribute('aria-busy', 'true');
     const long = setTimeout(() => { status.textContent = message + '\nБольшой архив требует времени и свободной памяти. Операция продолжается; данные не удаляются.'; }, 8000);
     try { await new Promise(resolve => setTimeout(resolve, 0)); await operation(); }
-    catch (error) { await replacement.cancel(); safetyVerified = false; verified = null; status.textContent = replacement.committed() ? 'Транзакция IndexedDB уже подтверждена. Старое состояние остановлено. Перезагрузи приложение вручную. ' + (error.message || error) : 'Не удалось завершить: ' + (error.message || error) + (body.querySelector('[name=zipRestoreMode]:checked')?.value === 'replace' ? '\nЗамена не выполнена. Повторно открой исходный ZIP и создай новую страховочную копию.' : '\nМожно использовать прежний JSON-экспорт. Для больших копий выбери меньше проектов или освободи память.'); }
+    catch (error) {
+      if (optional) {
+        status.textContent = 'Не удалось скачать копию: ' + (error.message || error) + '\nКонтрольный снимок сохранён в памяти. Можно повторить скачивание, продолжить замену или отменить её.';
+        confirm.disabled = !prepared; return;
+      }
+      await replacement.cancel(); prepared = false; verified = restoreBytes = null;
+      if (find('zipReplaceReady')) find('zipReplaceReady').hidden = true;
+      if (find('zipReplacePrepare')) find('zipReplacePrepare').disabled = true;
+      status.textContent = replacement.committed() ? 'Транзакция IndexedDB уже подтверждена. Старое состояние остановлено. Перезагрузи приложение вручную. ' + (error.message || error) : 'Не удалось завершить: ' + (error.message || error) + (body.querySelector('[name=zipRestoreMode]:checked')?.value === 'replace' ? '\nЗамена не выполнена. Повторно открой исходный ZIP и подготовь замену заново.' : '\nМожно использовать прежний JSON-экспорт. Для больших копий выбери меньше проектов или освободи память.');
+    }
     finally { clearTimeout(long); busy = false; cancel.disabled = false; dialog.removeAttribute('aria-busy'); }
   }
-  cancel.onclick = async () => { if (!busy) { busy = true; try { await replacement.cancel(); verified = null; body.replaceChildren(); input.value = ''; dialog.close(); } finally { busy = false; } } };
+  cancel.onclick = async () => { if (!busy) { busy = true; try { await replacement.cancel(); prepared = false; verified = restoreBytes = null; body.replaceChildren(); input.value = ''; dialog.close(); } finally { busy = false; } } };
   dialog.addEventListener('cancel', event => { event.preventDefault(); if (!busy) void cancel.onclick(); });
+  // A disabled preparation button can leave keyboard focus on the page body.
+  // Handle Escape before the editor's capture guards, regardless of focus.
+  window.addEventListener('keydown', event => {
+    if (!dialog.open || event.key !== 'Escape') return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    if (!busy) void cancel.onclick();
+  }, true);
   document.querySelector('#zipCreate').onclick = async () => {
     if (busy) return;
+    busy = true;
+    try { await replacement.cancel(); } finally { busy = false; }
     mode = 'create'; reset('Создать ZIP-копию', 'Подготовить и скачать ZIP');
     await task('Подтверждаем сохранения и читаем проекты…', async () => {
       const data = await snapshot();
@@ -49,6 +66,8 @@ export function installBackupUI({ snapshot, restore, download, replacement }) {
   document.querySelector('#zipOpen').onclick = () => { if (!busy) { input.value = ''; input.click(); } };
   input.onchange = async () => {
     const file = input.files[0]; input.value = ''; if (!file || busy) return;
+    busy = true;
+    try { await replacement.cancel(); } finally { busy = false; }
     mode = 'restore'; reset('Проверка ZIP перед восстановлением', 'Восстановить копии проектов'); body.onchange = null;
     await task('Проверяем контейнер, JSON, размеры, SHA-256 и связи…', async () => {
       if (file.size > MAX_EXPANDED_BYTES + 1024 * 1024) throw new Error('Архив превышает безопасный бюджет памяти браузера (512 МиБ данных)');
@@ -76,37 +95,31 @@ export function installBackupUI({ snapshot, restore, download, replacement }) {
         comparison.replaceChildren(); const head = text('tr', '', comparison);
         for (const value of ['Количество', 'Текущие данные', 'Данные ZIP']) text('th', value, head);
         for (const [key, label] of [['projects', 'Проектов'], ['docs', 'Документов'], ['fonts', 'Шрифтов'], ['settings', 'Записей settings']]) {
-          const row = text('tr', '', comparison); for (const value of [label, current[key].length, data[key].length]) { const cell = text('td', value, row); cell.style.padding = '6px 12px'; }
+          const row = text('tr', '', comparison); for (const value of [label, Array.isArray(current[key]) ? current[key].length : current[key], data[key].length]) { const cell = text('td', value, row); cell.style.padding = '6px 12px'; }
         }
       };
-      const prepare = text('button', 'Создать и скачать страховочный ZIP', panel); prepare.type = 'button'; prepare.id = 'zipSafetyCreate'; prepare.className = 'btn btn-outline';
-      text('p', 'После скачивания выбери этот же файл повторно. Проверяются ZIP, SHA-256 его данных и совпадение SHA-256 всего файла. При ошибке начни заново.', panel);
-      const check = text('button', 'Выбрать скачанный страховочный ZIP', panel); check.type = 'button'; check.id = 'zipSafetyVerify'; check.disabled = true; check.className = 'btn btn-outline';
-      const phraseLabel = text('label', '', panel); text('span', 'Для финального подтверждения введи ЗАМЕНИТЬ', phraseLabel);
-      const phrase = document.createElement('input'); phrase.id = 'zipReplacePhrase'; phrase.autocomplete = 'off'; phraseLabel.append(phrase);
-      const update = () => { confirm.disabled = !verified || !safetyVerified || phrase.value !== 'ЗАМЕНИТЬ'; }; phrase.oninput = update;
-      prepare.onclick = () => task('Блокируем редактирование, подтверждаем сохранения и создаём страховочный ZIP…', async () => {
+      const prepare = text('button', 'Подготовить замену', panel); prepare.type = 'button'; prepare.id = 'zipReplacePrepare'; prepare.className = 'btn btn-outline';
+      const final = text('div', '', panel); final.id = 'zipReplaceReady'; final.hidden = true;
+      text('p', 'Текущие данные защищены контрольным снимком в памяти: проверка обнаруживает конкурентные изменения, а транзакция IndexedDB защищает от частичной записи. Редактирование заблокировано до отмены или перезагрузки.', final);
+      text('p', 'Снимок в памяти не является резервной копией для восстановления после успешной замены. Без скачанного страховочного ZIP прежние данные могут быть безвозвратно потеряны. Скачивание рекомендуется, но не обязательно. Проверь, что выбран нужный архив.', final);
+      const safety = text('button', 'Скачать копию текущих данных (рекомендуется)', final); safety.type = 'button'; safety.id = 'zipSafetyDownload'; safety.className = 'btn btn-outline';
+      const update = () => { confirm.disabled = !verified || !prepared; };
+      prepare.onclick = () => task('Блокируем редактирование и подтверждаем сохранения…', async () => {
         if (!verified) throw Error('Повторно открой исходный ZIP');
-        const current = await replacement.prepare(); compare(current); prepare.disabled = true; check.disabled = false;
-        status.textContent = 'Страховочный ZIP передан браузеру. Сохрани его и выбери скачанный файл повторно. Редактирование заблокировано до отмены или перезагрузки.';
+        const current = await replacement.prepare(); compare(current); prepared = true; prepare.disabled = true; final.hidden = false;
+        status.textContent = 'Замена подготовлена. Можно скачать копию текущих данных или перейти к финальному подтверждению.'; update();
       });
-      check.onclick = () => { if (!busy) { safetyInput.value = ''; safetyInput.click(); } };
-      safetyInput.onchange = () => {
-        const safetyFile = safetyInput.files[0]; safetyInput.value = ''; if (!safetyFile || busy) return;
-        safetyVerified = false;
-        void task('Повторно проверяем страховочный ZIP…', async () => {
-          if (safetyFile.size > MAX_EXPANDED_BYTES + 1024 * 1024) throw Error('Страховочный ZIP слишком большой');
-          await replacement.verify(new Uint8Array(await safetyFile.arrayBuffer())); safetyVerified = true; check.disabled = true;
-          status.textContent = 'Страховочный ZIP совпадает. Введи ЗАМЕНИТЬ и нажми кнопку полной замены.'; update();
-        });
-      };
+      safety.onclick = () => task('Упаковываем копию контрольного снимка…', async () => {
+        await replacement.downloadSafety();
+        status.textContent = 'ZIP подготовлен и передан браузеру для скачивания. Сохрани файл самостоятельно и проверь загрузки: браузер может отменить или заблокировать скачивание.'; update();
+      }, { optional: true });
       body.onchange = event => {
         if (event.target.name !== 'zipRestoreMode' || busy) return;
         void task('Читаем текущее состояние для сравнения…', async () => {
-          await replacement.cancel(); safetyVerified = false; phrase.value = ''; prepare.disabled = false; check.disabled = true;
+          await replacement.cancel(); prepared = false; prepare.disabled = false; final.hidden = true;
           const replace = event.target.value === 'replace'; panel.hidden = !replace; copyDescription.hidden = replace;
           confirm.textContent = replace ? 'Заменить рабочее пространство' : 'Восстановить копии проектов';
-          if (replace) { compare(await snapshot()); update(); status.textContent = 'Сравни данные и создай обязательный страховочный ZIP.'; }
+          if (replace) { compare(await snapshot()); update(); status.textContent = 'Сравни данные и нажми «Подготовить замену».'; }
           else { confirm.disabled = !verified; status.textContent = 'Будут добавлены копии проектов.'; }
         });
       };
@@ -125,8 +138,9 @@ export function installBackupUI({ snapshot, restore, download, replacement }) {
         status.textContent = 'ZIP подготовлен и передан браузеру для скачивания. Сохрани файл самостоятельно и проверь загрузки: браузер может отменить или заблокировать скачивание.';
       });
     } else if (mode === 'restore' && verified && body.querySelector('[name=zipRestoreMode]:checked')?.value === 'replace') {
-      if (!safetyVerified || find('zipReplacePhrase').value !== 'ЗАМЕНИТЬ') return;
-      const bytes = restoreBytes; verified = null; safetyVerified = false;
+      if (!prepared) return;
+      if (!window.confirm('Заменить рабочее пространство? Текущие документы, проекты, шрифты и настройки будут заменены содержимым ZIP. Без скачанного страховочного ZIP прежние данные могут быть безвозвратно потеряны.')) return;
+      const bytes = restoreBytes; verified = null; prepared = false;
       await task('Заменяем IndexedDB одной транзакцией. Затем приложение перезагрузится…', async () => {
         await replacement.commit(bytes);
         status.textContent = 'Транзакция IndexedDB подтверждена. Перезагрузка…';

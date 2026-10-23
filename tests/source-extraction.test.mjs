@@ -4,6 +4,7 @@ import { cp, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { PNG } from 'pngjs';
 import { compileHTML, compileJavaScript, sourceRoot, slots } from '../scripts/compile-html.mjs';
 import { bundleJavaScript, verifyClassicJavaScript } from '../scripts/compile-javascript.mjs';
 import { build, root, source, hash } from '../scripts/distribution.mjs';
@@ -123,13 +124,73 @@ async function assertHTMLContract(directory, js) {
     expected = expected.replace(marker, () => content);
     cursor = offset;
   }
+  for (const name of await readdir(resolve(directory, 'assets/inline-icons'))) {
+    const bytes = await readFile(resolve(directory, 'assets/inline-icons', name));
+    expected = expected.replaceAll(`__KARTOCHNAYA_ICON_${name.slice(0, -4).toUpperCase()}__`,
+      `data:image/png;base64,${bytes.toString('base64')}`);
+  }
   const html = (await compileHTML(directory)).toString();
-  assert.equal(html, expected, 'Current CSS and bundled JavaScript fill the template');
+  assert.equal(html, expected, 'Current PNGs, CSS and bundled JavaScript fill the template');
   assert.doesNotMatch(html, /\{\{KARTOCHNAYA:/);
   assert.equal((html.match(/<script\b/gi) || []).length, 1);
   assert.equal((html.match(/<\/script\s*>/gi) || []).length, 1);
   assert.doesNotMatch(html, /<script\b[^>]*(?:\bsrc\s*=|\btype\s*=\s*["']module)/i);
 }
+
+test('inline icons: all 19 occurrences embed the exact bytes of 12 shared source PNGs', async () => {
+  const template = await readFile(resolve(sourceRoot, 'index.template.html'), 'utf8');
+  const markers = [...template.matchAll(/__KARTOCHNAYA_ICON_([A-Z]+)__/g)];
+  assert.equal(markers.length, 19);
+  assert.equal(new Set(markers.map(m => m[1])).size, 12);
+  assert.doesNotMatch(template, /data:image\/png;base64,/);
+  const names = await readdir(resolve(sourceRoot, 'assets/inline-icons'));
+  assert.deepEqual(names.sort(), [...new Set(markers.map(m => `${m[1].toLowerCase()}.png`))].sort());
+  const html = (await compileHTML()).toString();
+  const urls = [...html.matchAll(/data:image\/png;base64,([A-Za-z0-9+/=]+)/g)];
+  assert.equal(urls.length, 19);
+  for (const [index, marker] of markers.entries()) {
+    const original = await readFile(resolve(sourceRoot, 'assets/inline-icons', `${marker[1].toLowerCase()}.png`));
+    assert.equal(original.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+    const decoded = PNG.sync.read(original, { checkCRC: true });
+    assert.ok(decoded.width > 0 && decoded.height > 0);
+    assert.deepEqual(Buffer.from(urls[index][1], 'base64'), original);
+  }
+  const sourceImages = [...template.matchAll(/<img\b[^>]*>/g)].map(m => m[0]);
+  const builtImages = [...html.split('<script>')[0].matchAll(/<img\b[^>]*>/g)].map(m => m[0]);
+  assert.deepEqual(builtImages.map(tag => tag.replace(/data:image\/png;base64,[A-Za-z0-9+/=]+/, '[ICON]')),
+    sourceImages.map(tag => tag.replace(/__KARTOCHNAYA_ICON_[A-Z]+__/, '[ICON]')),
+    'Image markup and attributes are preserved');
+  assert.doesNotMatch(html, /__KARTOCHNAYA_ICON|(?:src|href)=["'][^"']*assets\/inline-icons/);
+  for (const tag of builtImages.filter(tag => tag.includes('dock-image-icon'))) {
+    assert.match(tag, /src="data:image\/png;base64,/,'Icons require no HTTP requests');
+  }
+});
+
+test('inline icons: missing and corrupt PNGs reject the actual build in temporary sources', async () => {
+  await temporarySources(async (sources, outputDirectory) => {
+    const file = resolve(sources, 'assets/inline-icons/text.png'), original = await readFile(file);
+    await rm(file);
+    await assert.rejects(build('all', { sourceDirectory: sources, outputDirectory }), /Invalid inline icon text:.*ENOENT/);
+    const badSignature = Buffer.from(original); badSignature[0] = 0;
+    const badCRC = Buffer.from(original); badCRC[40] ^= 1;
+    for (const bytes of [Buffer.alloc(0), badSignature, original.subarray(0, 8), original.subarray(0, -1), badCRC]) {
+      await writeFile(file, bytes);
+      await assert.rejects(build('all', { sourceDirectory: sources, outputDirectory }), /Invalid inline icon text:/);
+      await assert.rejects(readFile(resolve(outputDirectory, 'kartochnaya.html')), /ENOENT/);
+    }
+  });
+});
+
+test('inline icons: unknown, malformed and unresolved markers reject compilation', async () => {
+  await temporarySources(async sources => {
+    const file = resolve(sources, 'index.template.html'), template = await readFile(file, 'utf8');
+    for (const marker of ['__KARTOCHNAYA_ICON_UNKNOWN__', '__KARTOCHNAYA_ICON_text__',
+      '__KARTOCHNAYA_ICON_TEXT_', '__KARTOCHNAYA_ICON_', '__KARTOCHNAYA_ICON_../TEXT__']) {
+      await writeFile(file, template.replace('__KARTOCHNAYA_ICON_TEXT__', marker));
+      await assert.rejects(compileHTML(sources), /inline icon marker/);
+    }
+  });
+});
 
 test('required APIs and subsystems survive in a standalone classic bundle with an acyclic ESM graph', async () => {
   await assertSourceContracts();

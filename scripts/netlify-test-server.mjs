@@ -14,7 +14,15 @@ const server = createServer(async (request, response) => {
     const filename = resolve(root, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
     if (!filename.startsWith(root + sep) || ['_headers'].includes(filename.slice(root.length + 1))) throw Error('Not public');
     const bytes = await readFile(filename);
-    response.writeHead(200, { 'Content-Type': mime[extname(filename)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    const headers = { 'Content-Type': mime[extname(filename)] || 'application/octet-stream', 'Cache-Control': 'no-cache' };
+    // Apply exact-path production headers, including the callback CSP, in tests.
+    const rules = (await readFile(resolve(root, '_headers'), 'utf8')).split('\n');
+    let applies = false;
+    for (const line of rules) {
+      if (line.startsWith('/')) applies = line === url.pathname;
+      else if (applies && line.startsWith('  ')) { const split = line.indexOf(':'); headers[line.slice(2, split)] = line.slice(split + 1).trim(); }
+    }
+    response.writeHead(200, headers);
     response.end(request.method === 'HEAD' ? undefined : bytes);
   } catch { response.writeHead(404).end(); }
 });

@@ -53,7 +53,7 @@ test('manifest, installability, exact resources and complete verified precache',
     const name = (await caches.keys()).find(x => x.startsWith('kartochnaya-netlify-'));
     return (await (await caches.open(name)).keys()).map(x => decodeURIComponent(new URL(x.url).pathname));
   });
-  for (const name of Object.keys(sums).filter(x => !['sw.js', '_headers'].includes(x))) expect(cached).toContain('/' + name);
+  for (const name of Object.keys(sums).filter(x => !['sw.js', '_headers', 'oauth/yandex-callback.html'].includes(x))) expect(cached).toContain('/' + name);
   // Installation is unavailable in incognito contexts: use a real persistent profile.
   const installed = await playwright.chromium.launchPersistentContext(test.info().outputPath('install-profile'), {
     headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,

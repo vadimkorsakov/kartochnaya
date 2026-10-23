@@ -41,7 +41,7 @@ module.exports = defineConfig({
     timeout: 15_000,
   },
   projects: [
-    { name: 'chromium', testIgnore: ['**/known-failures.spec.js', '**/netlify.spec.js', '**/google-drive.spec.js'], use: { browserName: 'chromium' } },
+    { name: 'chromium', testIgnore: ['**/known-failures.spec.js', '**/netlify.spec.js', '**/google-drive.spec.js', '**/yandex-disk.spec.js'], use: { browserName: 'chromium' } },
     { name: 'standalone', testMatch: /(?:smoke|visual)\.spec\.js$/, use: { browserName: 'chromium' } },
     { name: 'known-failures', testMatch: '**/known-failures.spec.js', use: { browserName: 'chromium' } },
   ],

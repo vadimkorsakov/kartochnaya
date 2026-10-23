@@ -63,6 +63,7 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm ci
+      - run: npm run test:yandex
       - run: npm run test:drive
       - run: npm run test:source
       - run: npm run test:unit

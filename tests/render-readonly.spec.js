@@ -182,15 +182,16 @@ for(const sourceId of ['missing-source',null]) test(`fallback boundary stays rea
   await savedElements(page,id,d.elements);
 });
 
-test('R7: previews, slide changes, geometry history and series PNG use each slide source', async ({page})=>{
+for(const defaults of [false,true]) test(`R7: previews, slide changes, history and series PNG preserve slide fields, defaults=${defaults}`, async ({page})=>{
   const d=documentFixture();d.type='card';d.title='Read-only series';d.hasCustomName=true;d.activeSlideIndex=0;
   Object.assign(d.elements[0],{fillType:'gradient',fill:'#ff0000',fill2:'#0000ff'});
   d.slides=[0,1].map(i=>({id:`slide-${i}`,width:320,height:240,background:'#ffffff',backgroundAlpha:100,rulers:[],palette:[],groups:[],elements:structuredClone(d.elements)}));
+  if(!defaults) for(const slide of d.slides){delete slide.rulers;delete slide.palette;delete slide.backgroundAlpha;}
   for(const e of d.slides[1].elements){e.x+=40;e.y+=40;e.id+='-second';}
   d.slides[1].elements[1].pathBoundary.sourceId='shape-original-second';
   Object.assign(d.slides[1].elements[0],{fill:'#00ff00',fill2:'#ffff00'});
   await openHome(page);const id=await importDocument(page,d);
-  let current=await exportedDocument(page);expect(current.slides.map(s=>s.elements)).toEqual(d.slides.map(s=>s.elements));
+  const current=await exportedDocument(page);expect(current.slides).toEqual(d.slides);
   await page.locator('#seriesSidebarList [data-side-slide="1"]').click();
   expect((await exportedDocument(page)).elements).toEqual(d.slides[1].elements);
   await page.locator('#layers [data-layer="shape-original-second"] .layer-name').click();
@@ -316,4 +317,39 @@ test('mobile gradient edits normalize stops and geometry before saving',async({p
   expect(await exportedDocument(page)).toEqual(before);
   await page.reload();await expect(page.locator('#homeScreen')).toBeVisible();await openLibraryDocument(page,id);
   expect((await exportedDocument(page)).elements).toEqual(before.elements);expect((await exportPNG(page)).image.data).toEqual(png.image.data);
+});
+
+test('switching the selected legacy gradient keeps its first stop drag functional',async({page})=>{
+  const d=documentFixture();d.elements=[d.elements[0]];
+  Object.assign(d.elements[0],{w:100,h:80,fillType:'gradient'});
+  d.elements.push({...structuredClone(d.elements[0]),id:'second-gradient',x:20,y:140,gradientStops:[{pos:100,color:'#ffffff'},{pos:50,color:'#000000'}]});
+  await openHome(page);await importDocument(page,d);
+  await page.locator('#layers [data-layer="shape-original"] .layer-name').click();
+  await page.locator('#inspector [data-fill-open="fill"]').click();
+  const center=await canvasPoint(page,70,180),to=await canvasPoint(page,80,180);
+  // Selecting another gradient on Canvas keeps the existing gradient editor open.
+  await page.mouse.click(center.x,center.y);
+  await expect(page.locator('#layers [data-layer="second-gradient"]')).toHaveClass(/selected/);
+  await page.mouse.move(center.x,center.y);await page.mouse.down();await page.mouse.move(to.x,to.y,{steps:3});await page.mouse.up();
+  const e=(await exportedDocument(page)).elements[1];
+  expect(e).toMatchObject({x:20,y:140,w:100,h:80});
+  expect(e.gradientStart).toBeTruthy();expect(e.gradientEnd).toBeTruthy();
+  expect(e.gradientStops.map(s=>s.pos)).toEqual([58,100]);expect(new Set(e.gradientStops.map(s=>s.id)).size).toBe(2);
+  expect(e.gradientStops.every(s=>!!s.id)).toBe(true);
+});
+
+test('absent slide defaults stay independent of the active slide through preview, switching and save',async({page})=>{
+  const d=documentFixture();Object.assign(d,{type:'card',hasCustomName:true,activeSlideIndex:0,elements:[]});
+  d.slides=[0,1].map(i=>({id:`alpha-${i}`,width:320,height:240,background:'#ffffff',elements:[],groups:[]}));
+  Object.assign(d.slides[0],{backgroundAlpha:40,rulers:[{axis:'x',pos:30}],palette:['#123456']});
+  await openHome(page);const id=await importDocument(page,d);
+  const preview=page.locator('.series-board[data-board-index="1"] canvas');
+  expect(await preview.evaluate(c=>[...c.getContext('2d').getImageData(0,0,1,1).data])).toEqual([255,255,255,255]);
+  await page.locator('#seriesSidebarList [data-side-slide="1"]').click();
+  const second=await exportedDocument(page);expect(second).toMatchObject({backgroundAlpha:100,rulers:[],palette:[]});
+  expect(second.slides).toEqual(d.slides);
+  await page.locator('#seriesSidebarList [data-side-slide="0"]').click();
+  const first=await exportedDocument(page);expect(first).toMatchObject({backgroundAlpha:40,rulers:[{axis:'x',pos:30}],palette:['#123456']});
+  expect(first.slides).toEqual(d.slides);
+  await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===id)?.slides).toEqual(d.slides);
 });

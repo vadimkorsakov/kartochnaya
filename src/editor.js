@@ -234,14 +234,15 @@ function makeSlideFromDoc(d){const s={id:uid(),label:'',createdAt:Date.now()};fo
 function ensureCardSlides(d){if(d?.type!=='card')return;
  if(!Array.isArray(d.slides)||!d.slides.length){d.slides=[makeSlideFromDoc(d)];d.activeSlideIndex=0}
  d.activeSlideIndex=Math.max(0,Math.min(d.slides.length-1,Number(d.activeSlideIndex)||0));
- for(const slide of d.slides){slide.id ||= uid();slide.elements ||= [];slide.groups ||= [];slide.rulers ||= [];slide.palette ||= [];slide.background ||= '#ffffff';slide.backgroundAlpha ??= 100;slide.width ||= d.width;slide.height ||= d.height}
+ for(const slide of d.slides){slide.id ||= uid();slide.elements ||= [];slide.groups ||= [];slide.background ||= '#ffffff';slide.width ||= d.width;slide.height ||= d.height}
 }
-function syncCurrentSlide(d=app.doc){if(d?.type!=='card')return;ensureCardSlides(d);const old=d.slides[d.activeSlideIndex];if(!old)return;for(const key of SLIDE_FIELDS)if(d[key]!==undefined)old[key]=clone(d[key])}
+// Keep absent optional defaults in old slides until their effective values change.
+function syncCurrentSlide(d=app.doc){if(d?.type!=='card')return;ensureCardSlides(d);const old=d.slides[d.activeSlideIndex];if(!old)return;for(const key of SLIDE_FIELDS)if(d[key]!==undefined){if(old[key]===undefined&&((key==='backgroundAlpha'&&d[key]===100)||(['rulers','palette'].includes(key)&&Array.isArray(d[key])&&!d[key].length)))continue;old[key]=clone(d[key])}}
 function slideAsDoc(d,index){if(d.type!=='card'||!d.slides?.length)return d;
- const i=Math.max(0,Math.min(d.slides.length-1,index));const item={...d};for(const key of SLIDE_FIELDS)if(d.slides[i]?.[key]!==undefined)item[key]=d.slides[i][key];return item;
+ const i=Math.max(0,Math.min(d.slides.length-1,index));const item={...d,rulers:[],palette:[],backgroundAlpha:100};for(const key of SLIDE_FIELDS)if(d.slides[i]?.[key]!==undefined)item[key]=d.slides[i][key];return item;
 }
 function applySlideToRoot(d,index){ensureCardSlides(d);if(d.type!=='card')return;
- const slide=d.slides[index];if(!slide)return;for(const key of SLIDE_FIELDS)if(slide[key]!==undefined)d[key]=clone(slide[key]);d.activeSlideIndex=index;boundaryRememberDoc(d);
+ const slide=d.slides[index];if(!slide)return;d.rulers=[];d.palette=[];d.backgroundAlpha=100;for(const key of SLIDE_FIELDS)if(slide[key]!==undefined)d[key]=clone(slide[key]);d.activeSlideIndex=index;boundaryRememberDoc(d);
 }
 function newDoc({title='Новый шаблон',width=1080,height=1350,type='template'}={}){return {id:uid(),projectId:app.currentProjectId,title,type,width,height,background:'#ffffff',backgroundAlpha:100,palette:[],rulers:[],elements:[],createdAt:Date.now(),updatedAt:Date.now()}}
 function defaultElement(type){const d=app.doc,W=d.width,H=d.height,base=Math.min(W,H),w=base*.65,h=base*.35;const common={id:uid(),type,name:types[type],x:Math.round((W-w)/2),y:Math.round((H-h)/2),w:Math.round(w),h:Math.round(h),rotation:0,opacity:100,visible:true,locked:false,fillType:'solid',fillOpacity:100,fill:'#ab92fb',fill2:'#fb8c67',gradientAngle:90,fillAlpha1:100,fillAlpha2:100,stroke:'#161926',strokeWidth:0,corner:0,imageSrc:'',cropX:0,cropY:0,cropZoom:1,cropRotation:0,imageFit:'fill'};if(type==='path')return {...common,name:'Контур Безье',pathNodes:[],pathClosed:true,strokeWidth:3};if(type==='text')return {...common,name:'Заголовок',text:'Ваш заголовок',w:Math.round(base*.8),h:Math.round(base*.22),x:Math.round(base*.1),fontSize:Math.round(base*.078),fontFamily:'Arial',fontWeight:'400',textColor:'#10121a',textAlign:'left',lineHeight:1.1,letterSpacing:0};if(type==='image')return {...common,name:'Фото',w:Math.round(base*.8),h:Math.round(base*.8),x:Math.round((W-base*.8)/2),y:Math.round((H-base*.8)/2),fillType:'image'};if(type==='circle')return {...common,w:Math.round(base*.48),h:Math.round(base*.48),x:Math.round((W-base*.48)/2),y:Math.round((H-base*.48)/2)};if(type==='star')return {...common,w:Math.round(base*.4),h:Math.round(base*.4),x:Math.round((W-base*.4)/2),y:Math.round((H-base*.4)/2)};return common}
@@ -775,8 +776,8 @@ function gradientHit(e,p){
  const pt=gradientLocalPoint(e,p),g=readGradientGeometry(e),tol=13/app.zoom;
  if(Math.hypot(pt.x-g.b.x,pt.y-g.b.y)<=tol)return {part:'end'};
  if(Math.hypot(pt.x-g.a.x,pt.y-g.a.y)<=tol)return {part:'start'};
- const chosen=$('#fillPopover').dataset.stopId,stops=readGradientStops(e).sort((a,b)=>Number(b.id===chosen)-Number(a.id===chosen));
- for(const st of stops){const sp=gradientScreenPosition(e,st);if(Math.hypot(pt.x-sp.x,pt.y-sp.y)<=tol)return {part:'stop',stopId:st.id}}
+ const chosen=$('#fillPopover').dataset.stopId,ordered=readGradientStops(e),stops=[...ordered].sort((a,b)=>Number(b.id===chosen)-Number(a.id===chosen));
+ for(const st of stops){const sp=gradientScreenPosition(e,st);if(Math.hypot(pt.x-sp.x,pt.y-sp.y)<=tol)return {part:'stop',stopId:st.id,stopIndex:ordered.indexOf(st)}}
  return null;
 }
 function gradientPositionOnLine(e,p){const pt=gradientLocalPoint(e,p),g=readGradientGeometry(e),vx=g.b.x-g.a.x,vy=g.b.y-g.a.y;return clamp(((pt.x-g.a.x)*vx+(pt.y-g.a.y)*vy)/Math.max(1,vx*vx+vy*vy)*100,0,100)}
@@ -1820,7 +1821,7 @@ if(app.insertTool==='text'){
  if(app.textToolMode==='path'){if(!app.textPathDraft)app.textPathDraft={nodes:[],cursor:p};const dr=app.textPathDraft;const n={x:p.x,y:p.y,inX:p.x,inY:p.y,outX:p.x,outY:p.y};dr.nodes.push(n);app.drag={type:'textPathCreate',index:dr.nodes.length-1,start:p,changed:false};canvas.setPointerCapture(ev.pointerId);paint();return}
  app.drag={type:'newText',start:p,current:p,mode:app.textToolMode};canvas.setPointerCapture(ev.pointerId);paint();return}if(app.insertTool){const type=app.insertTool==='text'?'text':app.insertShape;const e=createAt(type,p);activateMove();if(type==='text')openInlineText();return}
 const existingGuide=hitSavedGuide(p);if(existingGuide>=0&&!app.cropMode&&!ev.altKey){app.drag={type:'guideMove',index:existingGuide,start:p,changed:false};canvas.setPointerCapture(ev.pointerId);return}if(app.cropMode&&current){const kind=cropHit(current,p);app.drag={type:kind,id:current.id,start:p,startClient:{x:ev.clientX,y:ev.clientY},orig:clone(current),changed:false,altCenter:ev.altKey};canvas.setPointerCapture(ev.pointerId);return}
-if(current&&!isLayerLocked(current)&&!ev.shiftKey&&selectedGradientVisible()){const gh=gradientHit(current,p);if(gh){if(gh.part==='stop')$('#fillPopover').dataset.stopId=gh.stopId;app.drag={type:'gradient',id:current.id,part:gh.part,stopId:gh.stopId,start:p,changed:false};canvas.setPointerCapture(ev.pointerId);refreshPickerVisual();paint();return}}
+if(current&&!isLayerLocked(current)&&!ev.shiftKey&&selectedGradientVisible()){const gh=gradientHit(current,p);if(gh){const stops=gradientStops(current);gradientGeometry(current);if(gh.part==='stop'){gh.stopId=stops[gh.stopIndex].id;$('#fillPopover').dataset.stopId=gh.stopId;}app.drag={type:'gradient',id:current.id,part:gh.part,stopId:gh.stopId,start:p,changed:false};canvas.setPointerCapture(ev.pointerId);refreshPickerVisual();paint();return}}
 if(current?.type==='text'&&current.textMode==='path'&&!isLayerLocked(current)&&!ev.shiftKey){const nodeHit=textPathHit(current,p);if(nodeHit){current.textPathPoints=textPathAnchors(current).map(n=>({...n}));app.drag={type:'textPathEdit',index:nodeHit.index,key:nodeHit.key,start:p,changed:false};canvas.setPointerCapture(ev.pointerId);return}}if(current&&!isLayerLocked(current)&&!ev.shiftKey){const handle=hitHandle(current,p);if(handle){app.drag={type:handle==='rotate'?'rotate':'resize',id:current.id,start:p,handle,orig:clone(current),changed:false};canvas.setPointerCapture(ev.pointerId);return}}
 const e=hitElement(p);if(!e){const already=ev.shiftKey||app.multiMode?[...app.selectedIds]:[];if(!ev.shiftKey&&!app.multiMode)setSelected([]);app.drag={type:'marquee',start:p,current:p,baseIds:already,changed:false};canvas.setPointerCapture(ev.pointerId);return}
 if(app.multiMode||(ev.shiftKey&&!app.selectedIds.includes(e.id))){select(e.id,true);return}if(ev.ctrlKey||ev.metaKey)select(e.id,false,true);else if(!app.selectedIds.includes(e.id))select(e.id);if(ev.altKey&&!picked().some(o=>isLayerLocked(o))){const originals=picked(),ids=[],gm=new Map();for(const item of originals){const cp=clone(item);cp.id=uid();cp.name=item.name+' копия';if(cp.groupId){if(!gm.has(cp.groupId))gm.set(cp.groupId,uid());cp.groupId=gm.get(cp.groupId)}app.doc.elements.push(cp);ids.push(cp.id)}setSelected(ids)}const originals=picked().filter(e=>!isLayerLocked(e)).map(e=>clone(e));if(!originals.length){app.drag=null;paint();return;}app.drag={type:'move',start:p,originals,changed:false,duplicated:ev.altKey};canvas.setPointerCapture(ev.pointerId)});
@@ -3026,7 +3027,7 @@ function mobileV36ApplyColor(c,final=true){if(!/^#[0-9a-fA-F]{6}$/.test(c))retur
  if(mobileV36State.fxColor){const target=mobileV36State.fxColor;const f=e.effects?.find(x=>x.type===target.type);if(!f)return;f[target.key]=c;if(final)mobileV36Commit();else{paint();saveSoon()}}
  else if(mobileV36State.sub==='colorEdit'&&mobileV36State.colorTab==='gradient'){
   e.fillType='gradient';e.gradientMode=e.gradientMode||'linear';e.gradientStops||=[{pos:0,color:e.fill||c,alpha:100},{pos:100,color:e.fill2||c,alpha:100}];gradientStops(e);gradientGeometry(e);
-  const at=Math.min(e.gradientStops.length-1,mobileV36State.activeStop);e.gradientStops[at].color=c;if(at===0)e.fill=c;if(at===e.gradientStops.length-1)e.fill2=c;
+  const at=Math.min(e.gradientStops.length-1,mobileV36State.activeStop);e.gradientStops[at].color=normalizeHex(c);if(at===0)e.fill=c;if(at===e.gradientStops.length-1)e.fill2=c;
   if(final)mobileV36Commit();else{paint();saveSoon()}
  }else{e.fillType='solid';if(e.type==='text')e.fill=c;mobileV36Property(mobileV36ColorKey(),c,final)}
  mobileV36State.hue=mobileV36HexToHSV(c)[0];
@@ -3156,7 +3157,7 @@ mobileV36.addEventListener('click',ev=>{
   if(action==='fontImport'){$('#fontInput').click();return}
   if(action==='colorEdit'){mobileV36State.sub='colorEdit';mobileV36State.expanded=true;mobileV36InitColor();mobileV36Render();return}
   if(action==='aspect'){mobileV36State.aspectLock=!mobileV36State.aspectLock;mobileV36Render();return}
-  if(action==='addStop'){const e=active();e.gradientStops||=[{pos:0,color:e.fill||'#7857de',alpha:100},{pos:100,color:e.fill2||'#ffffff',alpha:100}];gradientStops(e);gradientGeometry(e);if(e.gradientStops.length>=12){toast('Максимум 12 точек');return};const stop={id:uid(),pos:50,color:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value),alpha:100};e.gradientStops.push(stop);e.gradientStops.sort((a,b)=>a.pos-b.pos);mobileV36State.activeStop=e.gradientStops.indexOf(stop);mobileV36Commit();mobileV36Render();return}
+  if(action==='addStop'){const e=active();e.gradientStops||=[{pos:0,color:e.fill||'#7857de',alpha:100},{pos:100,color:e.fill2||'#ffffff',alpha:100}];gradientStops(e);gradientGeometry(e);if(e.gradientStops.length>=12){toast('Максимум 12 точек');return};const stop={id:uid(),pos:50,color:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value),alpha:100};e.gradientStops.push(stop);gradientStops(e);mobileV36State.activeStop=e.gradientStops.indexOf(stop);mobileV36Commit();mobileV36Render();return}
   if(action==='eyedropper'){mobileV36State.picking=true;mobileV36.className='';mobileV36.innerHTML='';mobileV36ResetView();toast('Пипетка: коснись нужного цвета на холсте');return}
  }
  if(b.dataset.mpFontCategory){mobileV36State.fontCategory=b.dataset.mpFontCategory;mobileV36Render();return}

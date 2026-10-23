@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Яндекс OAuth</title>
+<script>
+'use strict';
+(() => {
+  const params = new URLSearchParams(location.search);
+  history.replaceState(null, '', location.pathname);
+  const response = { type: 'kartochnaya-yandex-callback', state: params.get('state'), code: params.get('code'), error: params.get('error') };
+  const invalid = [...params.keys()].some(k => !['code', 'state', 'error', 'error_description'].includes(k)) || ['code', 'state', 'error'].some(k => params.getAll(k).length > 1) || !response.state || (!!response.code === !!response.error);
+  params.forEach((_, key) => params.delete(key));
+  if (!window.opener) {
+    document.addEventListener('DOMContentLoaded', () => { document.getElementById('status').textContent = 'Исходное окно недоступно (мобильный браузер/COOP). Закрой эту страницу и повтори подключение из исходного окна. Секреты не сохранены.'; });
+    return;
+  }
+  window.opener.postMessage(invalid ? { type: 'kartochnaya-yandex-invalid-callback' } : response, location.origin);
+  // The initiator closes an accepted popup. An unknown attempt cannot connect.
+})();
+</script></head><body><p id="status">Ответ передан исходному окну. Если подключения нет, закрой эту страницу и повтори попытку. Код не используется без активной попытки.</p></body></html>

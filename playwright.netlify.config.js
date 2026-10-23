@@ -2,7 +2,7 @@ const { defineConfig } = require('@playwright/test');
 const base = require('./playwright.config');
 module.exports = defineConfig({
   ...base,
-  testMatch: ['**/netlify.spec.js', '**/google-drive.spec.js'],
+  testMatch: ['**/netlify.spec.js', '**/google-drive.spec.js', '**/yandex-disk.spec.js'],
   fullyParallel: false, workers: 1, timeout: 60_000,
   outputDir: 'test-results/netlify',
   reporter: [['list'], ['json', { outputFile: 'test-results/netlify-results.json' }]],

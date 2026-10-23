@@ -1915,7 +1915,7 @@ async function exportProjectBackup(){
 // One editor instance serializes project operations; the UI cannot change context mid-commit.
 let projectOperation=false,deletingProjectId=null;
 const deletedProjectIds=new Set();
-function blockProjectInteraction(event){if(!workspaceInstances.writable()||(replacementFrozen&&!event.target.closest?.('#zipBackupDialog,#zipSafetyInput'))||projectOperation||zipWorkspaceBusy){event.preventDefault();event.stopImmediatePropagation()}}
+function blockProjectInteraction(event){if(!workspaceInstances.writable()||(replacementFrozen&&!event.target.closest?.('#zipBackupDialog,#zipInput'))||projectOperation||zipWorkspaceBusy){event.preventDefault();event.stopImmediatePropagation()}}
 for(const name of ['click','keydown','pointerdown','input','change','drop'])document.addEventListener(name,blockProjectInteraction,true);
 async function importProjectBackup(payload){return importProjectSet(payload,[{project:payload.project,documents:payload.documents}],2000)}
 async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null){
@@ -3663,7 +3663,7 @@ const workspaceReplacement=createReplacementSession({
   location.reload();
  }
 });
-function workspaceRestoreMessage(result){return result.failures.length?'IndexedDB восстановлена. Частичное восстановление настроек: localStorage недоступен для '+result.failures.join(', ')+'. Страховочный ZIP пригоден для повторного восстановления.':'Рабочее пространство восстановлено: транзакция IndexedDB подтверждена.'}
+function workspaceRestoreMessage(result){return result.failures.length?'IndexedDB восстановлена. Частичное восстановление настроек: localStorage недоступен для '+result.failures.join(', ')+'. Проверь настройки после перезагрузки.':'Рабочее пространство восстановлено: транзакция IndexedDB подтверждена.'}
 function showWorkspaceRestoreResult(){
  try{
   const raw=sessionStorage.getItem('kartochnaya-workspace-restored');sessionStorage.removeItem('kartochnaya-workspace-restored');

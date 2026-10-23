@@ -1,15 +1,16 @@
-import { createBackup, readBackup, readPreferences, PREFERENCE_KEYS, sha256, STORES } from './archive.mjs';
+import { createBackup, readBackup, readPreferences, PREFERENCE_KEYS, STORES } from './archive.mjs';
 import { runStoreTransaction } from '../storage/indexeddb.mjs';
 
 const encode = value => JSON.stringify(value);
 
 // Validation finishes before opening the destructive transaction. The four reads
 // and all clears/puts share its lock: another writer cannot enter the check/clear gap.
-export async function replaceWorkspace(db, bytes, expected) {
+export async function replaceWorkspace(db, bytes, expected, checkPreferences = () => {}) {
   const { manifest, data } = await readBackup(bytes);
   if (manifest.scope !== 'workspace') throw Error('Для замены нужен полный архив workspace');
   if (!expected || STORES.some(name => !Array.isArray(expected[name]))) throw Error('Нет страховочного снимка');
   await runStoreTransaction(db, STORES, 'readwrite', store => {
+    checkPreferences();
     let remaining = STORES.length;
     for (const name of STORES) {
       const request = store(name).getAll();
@@ -40,48 +41,60 @@ export function applyWorkspacePreferences(storage, preferences) {
   return failures;
 }
 
-// A session owns the safety proof; neither a checkbox nor an arbitrary caller's
-// "verified" flag can authorize replacement. Any pre-commit error invalidates it.
+// Only this session's protected snapshot authorizes replacement. Packaging an
+// optional recovery file neither grants nor invalidates that authority.
 export function createReplacementSession({ begin, end, db, storage, download, stop, reload }) {
-  let state = 'idle', expected, preferences, safetyHash;
+  let state = 'idle', expected, preferences, preparing, releasing;
+  const release = () => releasing ||= (async () => {
+    state = 'cancelling'; expected = preferences = null;
+    try { await end(); } finally { state = 'idle'; releasing = null; }
+  })();
   const cancel = async () => {
     if (state === 'committed') return;
-    state = 'idle'; expected = preferences = safetyHash = null;
-    await end();
+    if (state === 'committing' || state === 'packaging') throw Error('Дождись завершения операции');
+    if (state === 'preparing' || state === 'cancelling') {
+      state = 'cancelling';
+      await preparing?.catch(() => {});
+    }
+    if (state !== 'idle') await release();
   };
   return {
     committed: () => state === 'committed',
-    async prepare() {
-      if (state !== 'idle') throw Error('Операция уже начата');
+    prepare() {
+      if (state !== 'idle') return Promise.reject(Error('Операция уже начата'));
       state = 'preparing';
-      try {
+      preparing = (async () => { try {
         expected = await begin(); preferences = readPreferences(storage);
-        const safety = await createBackup(expected, { preferences });
-        await readBackup(safety.bytes);
-        safetyHash = await sha256(safety.bytes);
-        download(new Blob([safety.bytes], { type: 'application/zip' }), safety.filename);
-        state = 'waiting';
-        return expected;
-      } catch (error) { await cancel(); throw error; }
+        if (state !== 'preparing') throw Error('Подготовка отменена');
+        if (!expected || STORES.some(name => !Array.isArray(expected[name]))) throw Error('Контрольный снимок не подтверждён');
+        state = 'ready';
+        // Do not expose mutable references to the session's comparison proof.
+        return Object.fromEntries(STORES.map(name => [name, expected[name].length]));
+      } catch (error) { await release(); throw error; } })();
+      return preparing;
     },
-    async verify(bytes) {
-      if (state !== 'waiting' && state !== 'verified') throw Error('Сначала создай страховочный ZIP');
-      state = 'waiting';
+    async downloadSafety() {
+      if (state !== 'ready') throw Error('Сначала подготовь замену');
+      state = 'packaging';
       try {
-        const result = await readBackup(bytes);
-        if (result.manifest.scope !== 'workspace' || await sha256(bytes) !== safetyHash) throw Error('Выбранный страховочный ZIP не совпадает с только что созданным');
-        state = 'verified';
-      } catch (error) { await cancel(); throw error; }
+        const safety = await createBackup(expected, { preferences });
+        await download(new Blob([safety.bytes], { type: 'application/zip' }), safety.filename);
+      } finally { state = 'ready'; }
     },
     async commit(bytes) {
-      if (state !== 'verified') throw Error('Страховочный ZIP не проверен');
+      if (state !== 'ready') throw Error('Замена не подготовлена');
       state = 'committing';
       let restored;
       try {
-        if (encode(readPreferences(storage)) !== encode(preferences)) throw Error('Настройки изменились. Создай новую страховочную копию');
-        restored = await replaceWorkspace(db(), bytes, expected);
-      } catch (error) { await cancel(); throw error; }
+        const checkPreferences = () => {
+          if (encode(readPreferences(storage)) !== encode(preferences)) throw Error('Настройки изменились. Подготовь замену заново');
+        };
+        checkPreferences();
+        // Recheck after asynchronous ZIP validation, before queuing any writes.
+        restored = await replaceWorkspace(db(), bytes, expected, checkPreferences);
+      } catch (error) { await release(); throw error; }
       state = 'committed';
+      expected = preferences = null;
       // From here no recovery write to IndexedDB is permitted, even if storage
       // or navigation fails. The stopped editor remains locked until reload.
       stop();

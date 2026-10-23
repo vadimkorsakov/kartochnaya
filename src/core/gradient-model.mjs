@@ -1,6 +1,27 @@
 import { clamp } from './primitives.mjs';
 import { normalizeHex, hexRgb, rgbHex } from './colors.mjs';
 
+// Effective Canvas values are detached from the stored model and never allocate IDs.
+export function readGradientStops(e) {
+ const number=(v,fallback)=>Number.isFinite(Number(v))?Number(v):fallback;
+ const stops=Array.isArray(e.gradientStops)&&e.gradientStops.length>=2?e.gradientStops:[
+  {pos:0,color:normalizeHex(e.fill)||'#ab92fb',alpha:e.fillAlpha1??100},
+  {pos:100,color:normalizeHex(e.fill2)||'#fb8c67',alpha:e.fillAlpha2??100}
+ ];
+ return stops.map(st=>({...st,pos:clamp(number(st?.pos??0,0),0,100),color:normalizeHex(st?.color)||'#ffffff',alpha:clamp(number(st?.alpha??100,100),0,100)})).sort((a,b)=>a.pos-b.pos);
+}
+export function readGradientGeometry(e) {
+ const angle=Number(e.gradientAngle??90),rad=(Number.isFinite(angle)?angle:90)*Math.PI/180;
+ const L=Math.hypot(e.w,e.h)/2,dx=Math.sin(rad)*L,dy=Math.cos(rad)*L;
+ const start={x:.5-dx/Math.max(e.w,1),y:.5-dy/Math.max(e.h,1)},end={x:.5+dx/Math.max(e.w,1),y:.5+dy/Math.max(e.h,1)};
+ // A missing endpoint uses the legacy angle for both ends. Partial points keep
+ // their supplied coordinates and use angle defaults for the missing axes.
+ const point=(value,fallback)=>({x:Number.isFinite(Number(value?.x))?Number(value.x):fallback.x,y:Number.isFinite(Number(value?.y))?Number(value.y):fallback.y});
+ const a=e.gradientStart&&e.gradientEnd?point(e.gradientStart,start):start;
+ const b=e.gradientStart&&e.gradientEnd?point(e.gradientEnd,end):end;
+ return {a:{x:a.x*e.w,y:a.y*e.h},b:{x:b.x*e.w,y:b.y*e.h}};
+}
+
 export function createGradientModel(uid) {
 function gradientStops(e){
  if(!Array.isArray(e.gradientStops)||e.gradientStops.length<2){

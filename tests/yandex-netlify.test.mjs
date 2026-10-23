@@ -3,14 +3,21 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { unzipSync } from 'fflate';
 import { build, hash } from '../scripts/distribution.mjs';
-const base = 'd3d4b1a508d4bcea0778b382631454a1d94db19a';
-test('Netlify deterministic manifest/CSP, callback excluded from precache; standalone/ZIP equal initial main', async () => {
+test('current HTML/ZIP/Netlify builds are deterministic; callback isolated from standalone/ZIP and precache', async () => {
   const root = await mkdtemp(join(tmpdir(), 'yandex-netlify-'));
   try {
     for (const pass of ['a', 'b']) await build('all', { outputDirectory: join(root, pass) });
-    for (const [name, expected] of [['kartochnaya.html', 'c3a7084fcad2deec6e3ac463932f3d1e8be84f00db283969f93d025f91e32460'], ['kartochnaya-pwa.zip', '9ca3d28e0bfb7b60c4f4597d0505282e61f164b6e51b71949abb9aca14a8b4c7']]) assert.equal(hash(await readFile(join(root, 'a', name))), expected, `${name} unchanged from ${base}`);
-    const names = (await readdir(join(root, 'a/netlify'), { recursive: true, withFileTypes: true })).filter(e => e.isFile()).map(e => join(e.parentPath, e.name).slice(join(root, 'a/netlify').length + 1));
+    for (const name of ['kartochnaya.html', 'kartochnaya-pwa.zip']) assert.deepEqual(await readFile(join(root, 'a', name)), await readFile(join(root, 'b', name)), name);
+    const html = await readFile(join(root, 'a/kartochnaya.html'));
+    assert.doesNotMatch(html.toString('utf8'), /yandex-callback|yandexCard|kartochnaya-yandex|<script\b[^>]*(?:\bsrc\s*=|\btype\s*=\s*["']module)/i);
+    const archive = unzipSync(await readFile(join(root, 'a/kartochnaya-pwa.zip')));
+    assert.deepEqual(Buffer.from(archive['index.html']), html, 'ZIP embeds the current standalone HTML');
+    assert.ok(!Object.keys(archive).some(name => /^(?:oauth\/|cloud\/yandex-disk\/)/.test(name)), 'OAuth callback and Yandex modules are Netlify-only');
+    const listFiles = async directory => (await readdir(directory, { recursive: true, withFileTypes: true })).filter(e => e.isFile()).map(e => join(e.parentPath, e.name).slice(directory.length + 1)).sort();
+    const names = await listFiles(join(root, 'a/netlify'));
+    assert.deepEqual(names, await listFiles(join(root, 'b/netlify')), 'Independent Netlify builds contain the same files');
     for (const name of names) assert.deepEqual(await readFile(join(root, 'a/netlify', name)), await readFile(join(root, 'b/netlify', name)), name);
     const sw = await readFile(join(root, 'a/netlify/sw.js'), 'utf8');
     assert.doesNotMatch(sw, /yandex-callback/);

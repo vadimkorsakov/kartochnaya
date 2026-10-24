@@ -203,7 +203,7 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1366, height: 76
     const geometry = await modal.evaluate(node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, horizontal: node.scrollWidth > node.clientWidth, vertical: node.scrollHeight > node.clientHeight }; });
     expect(geometry.left).toBeGreaterThanOrEqual(0); expect(geometry.top).toBeGreaterThanOrEqual(0);
     expect(geometry.right).toBeLessThanOrEqual(viewport.width); expect(geometry.bottom).toBeLessThanOrEqual(viewport.height);
-    expect(geometry.horizontal).toBe(false); expect(geometry.vertical).toBe(false);
+    expect(geometry.horizontal, dialog).toBe(false); expect(geometry.vertical, dialog).toBe(false);
     await page.keyboard.press('Escape'); await expect(modal).toBeHidden(); await expect(row).toBeFocused();
     await row.click(); await expect(modal).toBeVisible();
     if (dialog === 'zipBackupDialog') await expect(page.locator('#zipConfirm')).toBeEnabled();

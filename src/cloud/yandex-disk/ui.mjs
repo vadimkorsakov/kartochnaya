@@ -23,6 +23,9 @@ export function installYandexUI({ snapshot } = {}) {
     </div>
     <footer class="backup-actions"><button type="button" class="btn btn-outline" id="yandexDisconnect">Отключить / отменить</button><button type="button" class="btn btn-outline" id="yandexApi" hidden>Проверить API</button><button type="button" class="btn btn-primary" id="yandexTransfer" hidden>Тест загрузки и скачивания</button><button type="button" class="btn btn-outline" id="yandexRemove" hidden>Удалить только созданный тестовый файл</button></footer>
     <p id="yandexStatus" class="backup-status" role="status" aria-live="polite"></p>`;
+  // Four tabs wrap as a pair of rows on narrow screens, including wider fallback fonts.
+  mainDialog.querySelector('.backup-tabs').style.flexWrap = 'wrap';
+  for (const button of mainDialog.querySelectorAll('[data-backup-tab]')) button.style.flexBasis = '120px';
   document.body.append(mainDialog);
   const find = id => document.getElementById(id), dialog = find('yandexSettings');
   const shell = modal(mainDialog, { opener: card }); card.onclick = () => shell.open(card);

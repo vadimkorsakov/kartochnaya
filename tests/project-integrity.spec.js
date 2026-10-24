@@ -293,7 +293,8 @@ test.describe('large native ZIP round trips', () => {
     await page.locator('#zipConfirm').click();
     await expect(page.locator('#zipStatus')).toContainText('Транзакция завершена', { timeout: 60_000 });
     await page.locator('#zipCancel').click();
-    await expect(page.locator('#homeProjectBadge')).toHaveText('Large native (импорт) (импорт)', { timeout: 60_000 });
+    // ZIP uses the committed IndexedDB order; UUID ordering can put the empty project first.
+    await expect(page.locator('#homeProjectBadge')).toHaveText(verified.data.projects[0].name + ' (импорт)');
     await page.reload(); await expect(page.locator('#homeScreen')).toBeVisible({ timeout: 60_000 });
     const summary = await page.evaluate(async () => {
       const db = await new Promise(r => { const q = indexedDB.open('kartochnaya_local_v1'); q.onsuccess = () => r(q.result); });

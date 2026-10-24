@@ -210,7 +210,7 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1366, height: 76
     await modal.locator('[data-backup-close]').click(); await expect(row).toBeFocused();
   }
   expect(await rows.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height))).toEqual(initial.map(row => row.height));
-  await expect(page.locator('#yandexCard')).toContainText('Экспериментально');
+  await expect(page.locator('#yandexCard')).toContainText('Резервные ZIP-копии в папке приложения');
   await expect(page.locator('button:visible').filter({ hasText: /JSON/i })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   for (const store of Object.keys(before)) expect(await records(page, store)).toEqual(before[store]);

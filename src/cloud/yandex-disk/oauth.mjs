@@ -15,21 +15,35 @@ const errors = {
 };
 export const oauthError = value => errors[value] || 'Яндекс отклонил OAuth-запрос. Проверь Client ID и точный Redirect URI в настройках.';
 export const networkError = step => `${step}: ответ недоступен JavaScript (CORS, сеть или запрещённый редирект). Проверь Network/Console браузера; это не доказательство неверного OAuth-кода.`;
+export const validBackupName = value => typeof value === 'string' && /^kartochnaya-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.zip$/.test(value);
 export function authorizedEndpoint(value, method = 'GET') {
   const u = new URL(value);
   if (u.username || u.password || u.hash) throw Error('Недоверенный endpoint.');
   if (u.href === 'https://login.yandex.ru/info' && method === 'GET') return u.href;
   if (u.origin !== 'https://cloud-api.yandex.net' || !['/v1/disk/resources', '/v1/disk/resources/upload', '/v1/disk/resources/download'].includes(u.pathname)) throw Error('Недоверенный endpoint.');
   const path = u.searchParams.get('path');
-  if (!(path === 'app:/' || /^app:\/kartochnaya-probe-[A-Za-z0-9_-]{43}\.txt$/.test(path || '')) || [...u.searchParams.keys()].some(k => !['path', 'overwrite', 'permanently'].includes(k))) throw Error('Недопустимый путь API.');
-  if (!(method === 'GET' || (method === 'DELETE' && u.pathname === '/v1/disk/resources' && path !== 'app:/'))) throw Error('Недопустимая операция API.');
+  const keys = [...u.searchParams.keys()];
+  if (new Set(keys).size !== keys.length) throw Error('Повторный параметр API.');
+  const only = allowed => keys.every(k => allowed.includes(k));
+  const resource = u.pathname === '/v1/disk/resources';
+  const probe = /^app:\/kartochnaya-probe-[A-Za-z0-9_-]{43}\.txt$/.test(path || '');
+  const archive = path?.startsWith('app:/') && validBackupName(path.slice(5));
+  const pagination = ['limit', 'offset'].every(k => !u.searchParams.has(k) || (/^(0|[1-9]\d*)$/.test(u.searchParams.get(k)) && Number(u.searchParams.get(k)) <= (k === 'limit' ? 100 : 10000) && (k !== 'limit' || Number(u.searchParams.get(k)) > 0)));
+  const permitted = method === 'GET' && resource && path === 'app:/' && only(['path', 'limit', 'offset']) && pagination
+    || method === 'GET' && resource && archive && only(['path'])
+    || method === 'GET' && u.pathname.endsWith('/upload') && archive && only(['path', 'overwrite']) && u.searchParams.get('overwrite') === 'false'
+    || probe && (method === 'GET' && resource && only(['path'])
+      || method === 'GET' && u.pathname.endsWith('/upload') && only(['path', 'overwrite']) && u.searchParams.get('overwrite') === 'false'
+      || method === 'GET' && u.pathname.endsWith('/download') && only(['path'])
+      || method === 'DELETE' && resource && only(['path', 'permanently']) && u.searchParams.get('permanently') === 'true');
+  if (!permitted) throw Error('Недопустимый путь или операция API.');
   return u.href;
 }
 export function createOAuth({ win = window, request = globalThis.fetch.bind(globalThis), changed = () => {}, timeoutMs = 120000, closePollMs = 500 } = {}) {
   let clientId = '', attempt = null, token = '', expires = 0, expiry, generation = 0;
   let status = 'disconnected', message = 'Требуется подключение.', results = {};
   const operations = new Set();
-  const view = () => ({ clientId, status, message, results: { ...results }, connected: !!token, busy: !!attempt, redirectUri: win.location.origin + CALLBACK });
+  const view = () => ({ clientId, status, message, results: { ...results }, connected: !!token, generation, busy: !!attempt, redirectUri: win.location.origin + CALLBACK });
   const emit = () => changed(view());
   function stopAttempt() {
     const old = attempt; attempt = null;
@@ -102,19 +116,25 @@ export function createOAuth({ win = window, request = globalThis.fetch.bind(glob
       if (attempt === a) { results.oauth = 'Не проверено: ' + networkError('OAuth POST /token'); fail(results.oauth); }
     } finally { a.verifier = ''; code = ''; }
   }
-  async function operation(action) {
+  async function operation(action, { signal: externalSignal, timeoutMs: operationMs = 30000 } = {}) {
+    if (!Number.isFinite(operationMs) || operationMs <= 0 || operationMs > 900000) throw Error('Недопустимый таймаут операции.');
     if (!token || Date.now() >= expires) { disconnect('Подключи Яндекс повторно.'); throw Error('Нет действующей сессии Яндекса.'); }
     const run = generation, c = new AbortController(); operations.add(c);
-    const signal = AbortSignal.any([c.signal, AbortSignal.timeout(30000)]);
+    const signal = AbortSignal.any([c.signal, AbortSignal.timeout(operationMs), ...(externalSignal ? [externalSignal] : [])]);
     const check = () => { if (run !== generation || !token || signal.aborted || Date.now() >= expires) throw Error('Операция отменена или срок доступа истёк.'); };
     try {
       return await action({ signal, check, request: async (url, options = {}, authorized = true) => {
         check(); const method = options.method || 'GET';
         if (authorized) url = authorizedEndpoint(url, method);
-        else url = signedEndpoint(url);
+        else {
+          if (!['GET', 'PUT'].includes(method)) throw Error('Недопустимый метод передачи.');
+          url = signedEndpoint(url);
+          if (new Headers(options.headers).has('Authorization')) throw Error('Авторизация на подписанном URL запрещена.');
+        }
+        const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(!authorized && method === 'PUT' && operationMs > 30000 ? 600000 : 30000)]);
         const signedGet = !authorized && method === 'GET';
         let res;
-        try { res = await request(url, { ...options, method, headers: authorized ? { Authorization: 'OAuth ' + token } : options.headers, signal, credentials: 'omit', cache: 'no-store', redirect: signedGet ? 'follow' : 'error', referrerPolicy: 'no-referrer', mode: 'cors' }); }
+        try { res = await request(url, { ...options, method, headers: authorized ? { Authorization: 'OAuth ' + token } : options.headers, signal: requestSignal, credentials: 'omit', cache: 'no-store', redirect: signedGet ? 'follow' : 'error', referrerPolicy: 'no-referrer', mode: 'cors' }); }
         catch { check(); throw Error(networkError('Запрос')); }
         check();
         // Fetch has already followed redirects; this validates only the final URL.

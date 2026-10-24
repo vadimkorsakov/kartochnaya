@@ -26,7 +26,7 @@
     "test:build": "npm run build && playwright test --project=chromium tests/build.spec.js",
     "test:bundle-smoke": "playwright test --project=standalone tests/module-bundle.smoke.spec.js",
     "build:netlify": "node scripts/build.mjs netlify",
-    "test:netlify": "npm run build:netlify && playwright test --config=playwright.netlify.config.js",
+    "test:netlify": "node --test tests/netlify-deploy.test.mjs && npm run build:netlify && playwright test --config=playwright.netlify.config.js",
     "test:drive": "node --test tests/google-drive.test.mjs tests/google-drive-backup.test.mjs tests/google-drive-accounts.test.mjs",
     "test:yandex": "node --test tests/yandex-disk.test.mjs tests/yandex-netlify.test.mjs"
   },

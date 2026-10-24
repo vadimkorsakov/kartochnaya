@@ -1,0 +1,38 @@
+name: Deploy Netlify
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != 'refs/heads/main' ]]; then
+            echo '::error::Production deploys must be requested from main.'
+            exit 1
+          fi
+      - name: Request production deploy
+        shell: bash
+        env:
+          NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
+        run: |
+          if [[ -z "$NETLIFY_BUILD_HOOK_URL" ]]; then
+            echo '::error::Set the NETLIFY_BUILD_HOOK_URL Actions secret to a Netlify build hook for main.'
+            exit 1
+          fi
+          if ! status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --connect-timeout 10 --max-time 30 --request POST --data '{}' \
+            --url "$NETLIFY_BUILD_HOOK_URL" 2>/dev/null); then
+            echo '::error::Netlify build hook request failed. Check Netlify before retrying.'
+            exit 1
+          fi
+          if [[ "$status" != 2?? ]]; then
+            echo '::error::Netlify build hook returned an unsuccessful HTTP status.'
+            exit 1
+          fi
+          echo 'Deploy requested. Check the Netlify deploy log for the publication result.'

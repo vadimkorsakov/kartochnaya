@@ -1,4 +1,5 @@
 [build]
+  ignore = "node ./scripts/netlify-ignore.cjs"
   command = "npm run build:netlify"
   publish = "dist/netlify"
 

@@ -38,7 +38,7 @@ test('RFC 7636 S256 vector; independent verifier/state; synchronous popup; exact
 test('origin and source rejected, exact state checked, callback consumed only once', async () => {
   const h = harness(); h.session.connect(); await h.ready;
   h.send({}, { origin: 'https://evil.example' }); h.send({}, { source: {} }); assert.equal(h.calls.length, 0);
-  h.send({ state: 'wrong' }); assert.equal(h.session.view().connected, false); assert.match(h.session.view().message, /state/);
+  h.send({ state: 'wrong' }); assert.equal(h.session.view().connected, false); assert.match(h.session.view().message, /state/); assert.equal(h.calls.length, 0);
   h.session.connect(); await h.ready; const state = h.url.searchParams.get('state'); h.send(); h.send(); await tick();
   assert.equal(h.calls.length, 1); h.send({ state }); assert.equal(h.calls.length, 1); h.session.disconnect();
 });
@@ -122,12 +122,25 @@ test('oversized or different downloaded bytes fail comparison; 401 clears token'
 test('callback scrubs query before messaging; exact targetOrigin; opener-null, duplicate and unknown callbacks fail safely', async () => {
   const html = await readFile(new URL('../src/oauth/yandex-callback.html', import.meta.url), 'utf8');
   assert.doesNotMatch(html, /indexedDB|serviceWorker|google-drive|editor\.js|src=/);
-  for (const query of ['?code=123&state=xyz', '?code=a&code=b&state=xyz', '?access_token=secret', '']) {
+  for (const [query, accepted] of [
+    ['?code=test&state=valid&cid=123', true],
+    ['?code=test&state=valid', true],
+    ['?code=test&state=valid&unexpected=123', false],
+    ['?code=test&cid=123', false],
+    ['?code=a&code=b&state=valid', false],
+    ['?code=test&state=valid&state=other', false],
+    ['?error=access_denied&error=other&state=valid', false],
+    ['?code=test&error=access_denied&state=valid', false],
+    ['?access_token=secret', false],
+    ['', false]
+  ]) {
     const events = []; const location = new URL('https://test.example/oauth/yandex-callback.html' + query);
     const context = { URLSearchParams, location, history: { replaceState(...args) { events.push(['scrub', ...args]); } }, window: { opener: { postMessage(...args) { events.push(['message', ...args]); } } } };
     vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], context);
     assert.equal(events[0][0], 'scrub'); assert.equal(events[0][3], '/oauth/yandex-callback.html'); assert.equal(events[1][2], 'https://test.example');
-    assert.equal(events[1][1].type, query.startsWith('?code=123') ? 'kartochnaya-yandex-callback' : 'kartochnaya-yandex-invalid-callback');
+    assert.equal(events[1][1].type, accepted ? 'kartochnaya-yandex-callback' : 'kartochnaya-yandex-invalid-callback');
+    assert.equal(Object.hasOwn(events[1][1], 'cid'), false);
+    if (accepted) assert.deepEqual({ ...events[1][1] }, { type: 'kartochnaya-yandex-callback', state: 'valid', code: 'test', error: null });
   }
   let listener; const node = {};
   vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], { URLSearchParams, location: new URL('https://test.example/oauth/yandex-callback.html?code=secret&state=x'), history: { replaceState() {} }, window: { opener: null }, document: { addEventListener(_, fn) { listener = fn; }, getElementById() { return node; } } });

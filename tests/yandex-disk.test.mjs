@@ -9,6 +9,11 @@ afterEach(() => { for (const s of sessions.splice(0)) s.disconnect(); });
 const tick = () => new Promise(r => setTimeout(r, 5));
 const token = 'memory-only-test-token';
 const response = body => Response.json(body);
+function downloaded(body, url = 'https://storage.yandex.net/test') {
+  const res = new Response(body);
+  Object.defineProperty(res, 'url', { value: url });
+  return res;
+}
 function harness(request = async () => response({ access_token: token, token_type: 'bearer', expires_in: 3600 }), options = {}) {
   let listener, url, popup, navigation, navigated, opens = 0; const calls = [];
   const win = { location: new URL('https://test.example/'), open() { opens++; navigation = new Promise(resolve => { navigated = resolve; }); popup = { closed: false, close() { this.closed = true; }, location: { replace(value) { url = new URL(value); navigated(); } } }; return popup; }, addEventListener(_, fn) { listener = fn; }, removeEventListener(_, fn) { if (listener === fn) listener = null; } };
@@ -84,7 +89,7 @@ test('transfer reads actual bytes, no bearer on signed URLs; explicit delete onl
     if (url.includes('/resources/upload')) return response({ href: 'https://uploader.storage.yandex.net/test?signature=hidden', method: 'PUT' });
     if (url.includes('/resources/download')) return response({ href: 'https://downloader.disk.yandex.ru/test?signature=hidden', method: 'GET' });
     if (opts.method === 'PUT') { content = opts.body; assert.equal(opts.headers.Authorization, undefined); return new Response('', { status: 201 }); }
-    if (url.includes('downloader')) { assert.equal(opts.headers, undefined); return new Response(content); }
+    if (url.includes('downloader')) { assert.equal(opts.headers, undefined); return downloaded(content); }
     if (opts.method === 'DELETE') return new Response(null, { status: 204 });
     throw Error('unexpected');
   });
@@ -94,6 +99,48 @@ test('transfer reads actual bytes, no bearer on signed URLs; explicit delete onl
   await d.transfer(); assert.equal(h.calls.length, 5); await d.remove(); assert.equal(d.view().path, '');
   assert.equal(h.calls.at(-1)[1].headers.Authorization, 'OAuth ' + token); h.session.disconnect();
 });
+
+test('only signed GET follows redirects; callers cannot override policy or transfer credentials', async () => {
+  const h = await connected(async url => url.includes('/token') ? goodToken() : downloaded('bytes'));
+  await h.session.operation(async op => {
+    await op.request('https://cloud-api.yandex.net/v1/disk/resources?path=app:/', { redirect: 'follow' });
+    await op.request('https://uploader.storage.yandex.net/test', { method: 'PUT', redirect: 'follow' }, false);
+    await op.request('https://downloader.disk.yandex.ru/test', { redirect: 'error' }, false);
+  });
+  assert.deepEqual(h.calls.map(([, o]) => o.redirect), ['error', 'error', 'error', 'follow']);
+  for (const [, opts] of h.calls) {
+    for (const [key, value] of Object.entries({ credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', mode: 'cors' })) assert.equal(opts[key], value);
+    assert.ok(opts.signal instanceof AbortSignal);
+  }
+  assert.equal(h.calls[1][1].headers.Authorization, 'OAuth ' + token);
+  for (const [, opts] of h.calls.slice(2)) assert.equal(new Headers(opts.headers).has('Authorization'), false);
+});
+test('signed GET validates final HTTPS transfer host and does not expose signed URLs', async () => {
+  for (const final of ['https://storage.yandex.net/test', 'https://s1.storage.yandex.net/test', 'https://downloader.disk.yandex.ru/test']) {
+    const h = await connected(async url => url.includes('/token') ? goodToken() : downloaded('bytes', final));
+    const res = await h.session.operation(op => op.request('https://downloader.disk.yandex.ru/test', {}, false));
+    assert.equal(await res.text(), 'bytes');
+  }
+  for (const final of ['', 'http://storage.yandex.net/test', 'https://evil.example/test?signature=secret', 'https://storage.yandex.net.evil.example/test']) {
+    const h = await connected(async url => url.includes('/token') ? goodToken() : downloaded('bytes', final));
+    await assert.rejects(h.session.operation(op => op.request('https://downloader.disk.yandex.ru/test', {}, false)), error => {
+      assert.doesNotMatch(error.message, /secret|https?:/); return true;
+    });
+  }
+});
+test('signed GET network/CORS failure cannot report successful download', async () => {
+  const h = await connected(async (url, opts) => {
+    if (url.includes('/token')) return goodToken();
+    if (url.includes('/resources/upload')) return response({ href: 'https://uploader.storage.yandex.net/test', method: 'PUT' });
+    if (url.includes('/resources/download')) return response({ href: 'https://downloader.disk.yandex.ru/test', method: 'GET' });
+    if (opts.method === 'PUT') return new Response('', { status: 201 });
+    throw TypeError('https://storage.yandex.net/test?signature=secret');
+  });
+  const d = createDiagnostics(h.session); await d.transfer();
+  assert.match(d.view().results.get, /Заблокировано:.*CORS/);
+  assert.doesNotMatch(d.view().results.get, /Подтверждено|совпадает|signature|secret/);
+});
+
 test('failed transfer preserves safe orphan path; failed deletion does not erase it; disconnect forbids deletion with another account', async () => {
   const h = await connected(async (url, opts) => {
     if (url.includes('/token')) return goodToken();
@@ -112,7 +159,7 @@ test('oversized or different downloaded bytes fail comparison; 401 clears token'
       if (url.includes('/resources/upload')) return response({ href: 'https://uploader.storage.yandex.net/test', method: 'PUT' });
       if (url.includes('/resources/download')) return response({ href: 'https://downloader.disk.yandex.ru/test', method: 'GET' });
       if (opts.method === 'PUT') return new Response('', { status: 201 });
-      return new Response(content);
+      return downloaded(content);
     });
     const d = createDiagnostics(h.session); await d.transfer(); assert.match(d.view().results.get, /не совпадает|1024/); h.session.disconnect();
   }

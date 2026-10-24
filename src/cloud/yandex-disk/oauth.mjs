@@ -112,10 +112,13 @@ export function createOAuth({ win = window, request = globalThis.fetch.bind(glob
         check(); const method = options.method || 'GET';
         if (authorized) url = authorizedEndpoint(url, method);
         else url = signedEndpoint(url);
+        const signedGet = !authorized && method === 'GET';
         let res;
-        try { res = await request(url, { ...options, method, headers: authorized ? { Authorization: 'OAuth ' + token } : options.headers, signal, credentials: 'omit', cache: 'no-store', redirect: 'error', referrerPolicy: 'no-referrer', mode: 'cors' }); }
+        try { res = await request(url, { ...options, method, headers: authorized ? { Authorization: 'OAuth ' + token } : options.headers, signal, credentials: 'omit', cache: 'no-store', redirect: signedGet ? 'follow' : 'error', referrerPolicy: 'no-referrer', mode: 'cors' }); }
         catch { check(); throw Error(networkError('Запрос')); }
         check();
+        // Fetch has already followed redirects; this validates only the final URL.
+        if (signedGet) signedEndpoint(res.url);
         if (authorized && res.status === 401) { disconnect('HTTP 401: подключи Яндекс повторно.'); throw Error('HTTP 401: токен отклонён.'); }
         return res;
       } });

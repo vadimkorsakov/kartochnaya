@@ -132,11 +132,16 @@ async function savedCatalog(page) {
 test('shape catalog module: real file import, export, IndexedDB, reload and canvas insertion', async ({ page }) => {
   await importCatalogDocument(page);
   await expect.poll(() => savedCatalog(page)).toEqual(catalogExpected);
+  await page.locator('#backupsBtn').click();
+  await page.locator('#zipCreate').click();
+  await expect(page.locator('#zipConfirm')).toBeEnabled();
   const download = page.waitForEvent('download');
-  await page.locator('#jsonExportBtn').click();
+  await page.locator('#zipConfirm').click();
   const file = await download;
-  const payload = JSON.parse(await readFile(await file.path(), 'utf8'));
-  expect(payload.shapeCatalog).toEqual(catalogExpected);
+  const payload = await (await import('../src/backup/archive.mjs')).readBackup(await readFile(await file.path()));
+  expect(payload.data.settings.find(row => row.key === 'shapes-v1').sections).toEqual(catalogExpected);
+  await page.locator('#zipCancel').click();
+  await page.locator('#homeEditorBtn').click();
   await page.locator('#dockShapes').click();
   await expect(page.locator('#shapeSections .shape-category-name').first()).toContainText('Синтетические контуры');
   await expect(page.locator('[data-tray-shape="stage8-triangle"]')).toBeVisible();

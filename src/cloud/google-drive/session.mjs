@@ -35,7 +35,7 @@ export function createDriveSession({ load = loadGoogleIdentity, request = global
   function fail(message, status = 'error') { clear(); emit(status, message); }
   function available() {
     if (!supported()) { fail('Авторизация недоступна в file://. Открой КАРТОЧНУЮ на HTTPS-сайте.'); return false; }
-    if (!online()) { fail('Отсутствует интернет. Локальные проекты, JSON и ZIP доступны.', 'offline'); return false; }
+    if (!online()) { fail('Отсутствует интернет. Локальные проекты и ZIP доступны.', 'offline'); return false; }
     return true;
   }
   function view() { return { ...state, clientId, ready: !!oauth, busy: busy(), supported: supported(), online: online() }; }
@@ -104,11 +104,11 @@ export function createDriveSession({ load = loadGoogleIdentity, request = global
       if (expectedId && user.permissionId !== expectedId) { fail('Выбран другой Google-аккаунт. Исходная запись сохранена. Выбери нужный аккаунт или добавь другой отдельно.'); return; }
       const account = typeof user.displayName === 'string' && user.displayName || typeof user.emailAddress === 'string' && user.emailAddress || '';
       emit('connected', 'Google Drive подключён' + (account ? ' — ' + account : '') + '.', account, user.permissionId);
-    } catch { if (run === generation) fail(online() ? 'Ошибка сети при проверке Google Drive. Подключи повторно.' : 'Отсутствует интернет. Локальные проекты, JSON и ZIP доступны.', online() ? 'error' : 'offline'); }
+    } catch { if (run === generation) fail(online() ? 'Ошибка сети при проверке Google Drive. Подключи повторно.' : 'Отсутствует интернет. Локальные проекты и ZIP доступны.', online() ? 'error' : 'offline'); }
   }
   function expire() { if (token) fail('Срок доступа истёк. Подключи Google Drive повторно.', 'expired'); }
   function networkChanged() {
-    if (!online()) { fail('Отсутствует интернет. Локальные проекты, JSON и ZIP доступны.', 'offline'); }
+    if (!online()) { fail('Отсутствует интернет. Локальные проекты и ZIP доступны.', 'offline'); }
     else if (token && Date.now() >= expiresAt) expire();
     else if (state.status === 'offline') emit(clientId ? 'disconnected' : 'unconfigured', clientId ? 'Не подключён. Интернет доступен, можно подключиться.' : 'Не настроен Client ID.');
   }

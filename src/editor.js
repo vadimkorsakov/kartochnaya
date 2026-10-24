@@ -91,7 +91,7 @@ function shapeSectionsHtml(query=''){
 // v0.26: persisted mutable shape library. Built-in shapes are used only for first-run initialization.
 function shapeCatalogSnapshot(){return JSON.parse(JSON.stringify(SHAPE_SECTIONS))}
 function applyShapeCatalog(data){const newCatalog=validateShapeCatalog(data);SHAPE_SECTIONS=newCatalog;SHAPE_INDEX.clear();for(const group of SHAPE_SECTIONS)for(const s of group.shapes)SHAPE_INDEX.set(s.id,s);if(!$('#shapeTray').classList.contains('hidden'))refreshShapeTray();}
-async function persistShapeCatalog(){const sections=shapeCatalogSnapshot();try{if(app.db)await dbOp('settings','readwrite',s=>s.put({key:'shapes-v1',sections}));else {localStorage.setItem('kartochnaya-shapes-v1',JSON.stringify(sections));toast('Фигуры сохранены в localStorage; документы — только в памяти')}}catch(err){console.warn(err);toast('Ошибка сохранения фигур · экспортируй JSON');throw err}}
+async function persistShapeCatalog(){const sections=shapeCatalogSnapshot();try{if(app.db)await dbOp('settings','readwrite',s=>s.put({key:'shapes-v1',sections}));else {localStorage.setItem('kartochnaya-shapes-v1',JSON.stringify(sections));toast('Фигуры сохранены в localStorage; документы — только в памяти')}}catch(err){console.warn(err);toast('Ошибка сохранения фигур · сохранение не подтверждено');throw err}}
 async function loadShapeCatalog(){let data=null;try{const r=await dbOp('settings','readonly',s=>s.get('shapes-v1'));data=r?.sections;if(!data){const local=localStorage.getItem('kartochnaya-shapes-v1');if(local)data=JSON.parse(local)}}catch(err){console.warn('Каталог из памяти не прочитан',err)}if(data)try{applyShapeCatalog(data)}catch(err){console.warn('Используется базовый каталог',err)}}
 function refreshShapeTray(){if($('#shapeSections'))$('#shapeSections').innerHTML=shapeSectionsHtml($('#shapeSearch')?.value||'');}
 function shapeCategoryOptions(){return SHAPE_SECTIONS.map((g,i)=>`<option value="${i}">${html(g.name)}</option>`).join('')+'<option value="new">＋ Создать новую категорию…</option>'}
@@ -142,12 +142,12 @@ const canvas=$('#canvas'),ctx=canvas.getContext('2d'),imgCache=new Map();
 const rasterCache=new Map(); // data URL -> live offscreen canvas for immediate rendering of strokes
 function rememberRaster(src,cv){rasterCache.set(src,cv);if(rasterCache.size>24)rasterCache.delete(rasterCache.keys().next().value)}
 function toast(msg){const n=$('#toast');n.textContent=msg;n.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>n.classList.remove('show'),2900)}
-function storageWarning(error){console.warn('Локальное хранилище:',error);$('#saveStatus').textContent='Хранение недоступно · экспортируй JSON';toast('Локальное хранилище недоступно: сохраняй проект в JSON')}
+function storageWarning(error){console.warn('Локальное хранилище:',error);$('#saveStatus').textContent='Хранение недоступно · сохранение не подтверждено';toast('Локальное хранилище недоступно: невозможно подтвердить сохранение. Не закрывай приложение')}
 async function openDB(){try{return await openDatabase({onVersionChange:()=>{app.db=null;storageWarning('Соединение закрыто: база обновляется в другой вкладке')},onClose:()=>{app.db=null;storageWarning('Соединение закрыто браузером')}})}catch(error){storageWarning(error);return null}}
 const workspaceBarrier=createWorkspaceBarrier();
 let zipWorkspaceBusy=false,replacementFrozen=false,replacementSealed=false,replacementStopped=false;
 const workspaceInstances=createInstanceGuard();
-async function dbOp(store,mode,fn){try{if(!workspaceInstances.writable()||(mode==='readwrite'&&replacementSealed))throw Error('Записи остановлены для замены рабочего пространства');return await workspaceBarrier.track(runStoreRequest(app.db,store,mode,fn),{store,write:mode==='readwrite'})}catch(error){if(mode==='readwrite'){console.warn('Запись не подтверждена:',error);toast('Не сохранилось. Экспортируй JSON!')}throw error}}
+async function dbOp(store,mode,fn){try{if(!workspaceInstances.writable()||(mode==='readwrite'&&replacementSealed))throw Error('Записи остановлены для замены рабочего пространства');return await workspaceBarrier.track(runStoreRequest(app.db,store,mode,fn),{store,write:mode==='readwrite'})}catch(error){if(mode==='readwrite'){console.warn('Запись не подтверждена:',error);toast('Сохранение не подтверждено. Не закрывай приложение')}throw error}}
 function startupReadFailure(error){app.db?.close();app.db=null;storageWarning(error)}
 async function startupWrite(store,record){try{await dbOp(store,'readwrite',s=>s.put(record));return true}catch(error){storageWarning(error);return false}}
 async function loadAll(){
@@ -490,7 +490,7 @@ function updateHistoryButtons(){const draft=app.penDraft;$('#undoBtn').disabled=
 // Revisions describe edits; snapshots describe writes; app.docs contains confirmed records.
 const documentSaves=new Map();
 function saveState(id){if(!documentSaves.has(id))documentSaves.set(id,{revision:0,sequence:0,confirmed:0,pending:null,saved:null,error:null});return documentSaves.get(id)}
-function refreshSaveStatus(){if(!app.doc)return;if(app.historyPreviewOriginal){$('#saveStatus').textContent='Исходное состояние · предпросмотр';return}const state=saveState(app.doc.id);$('#saveStatus').textContent=state.error?'Ошибка сохранения · экспортируй JSON':!app.db?'Хранение недоступно · экспортируй JSON':state.saved===JSON.stringify(app.doc)?'Сохранено на этом устройстве':'Сохраняем…'}
+function refreshSaveStatus(){if(!app.doc)return;if(app.historyPreviewOriginal){$('#saveStatus').textContent='Исходное состояние · предпросмотр';return}const state=saveState(app.doc.id);$('#saveStatus').textContent=state.error?'Ошибка сохранения · не закрывай приложение':!app.db?'Хранение недоступно · сохранение не подтверждено':state.saved===JSON.stringify(app.doc)?'Сохранено на этом устройстве':'Сохраняем…'}
 function confirmDocument(rec){const i=app.docs.findIndex(x=>x.id===rec.id);if(i<0)app.docs.push(rec);else app.docs[i]=rec}
 async function saveDocumentSnapshot(rec){
  if(replacementSealed||rec.projectId===deletingProjectId||deletedProjectIds.has(rec.projectId))return false;
@@ -1925,7 +1925,7 @@ async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null){
   const context={projectId:app.currentProjectId,doc:app.doc,tab:documentTabSession.activeId,home:homeVisible()};
   const plan=prepareProjectImport(items,{generateId:uid,now:Date.now(),existingProjectIds:(zipSnapshot?.projects||app.projects).map(p=>p.id),existingDocumentIds:(zipSnapshot?.docs||app.docs).map(d=>d.id),maxDocuments,maxProjects:zipSnapshot?Number.MAX_SAFE_INTEGER:500});
   const sections=payload.shapeCatalog?validateShapeCatalog(clone(payload.shapeCatalog)):null;
-  if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');
+  if(!await flushSave())throw Error('Сохранение не подтверждено. Не закрывай приложение');
   const fonts=[],faces=[],diagnostics=plan.diagnostics;
   if(payload.fonts!=null&&!Array.isArray(payload.fonts))throw Error('Некорректный список шрифтов');
   const accepted=(zipSnapshot?.fonts||app.fonts).map(f=>normaliseFont(clone(f)));
@@ -1961,7 +1961,7 @@ async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null){
   return diagnostics;
  }finally{projectOperation=false}
 }
-async function zipOriginal_importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}if(projectOperation)throw Error('Дождись завершения операции с проектами');if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено; экспортируй JSON');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
+async function zipOriginal_importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}if(projectOperation)throw Error('Дождись завершения операции с проектами');if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=clone(d);imp.id=uid();imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();{const map=new Map();imp.elements=imp.elements.map(e=>{const x={...e,id:uid()};if(x.groupId){if(!map.has(x.groupId))map.set(x.groupId,uid());x.groupId=map.get(x.groupId)}return x})}const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено. Не закрывай приложение');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
 async function storeNewDocument(doc){try{await dbOp('docs','readwrite',s=>s.put(clone(doc)))}catch(error){return false}app.docs.push(clone(doc));app.filter=doc.type;renderLibrary();toast(doc.type==='card'?'Карточка добавлена в список':'Копия добавлена в список');return true}
 async function makeCardFrom(template){if(!await flushSave())return;const doc=clone(template);doc.id=uid();doc.projectId=template.projectId||app.currentProjectId;doc.type='card';doc.hasCustomName=false;doc.title=template.title+' · карточка';doc.createdAt=doc.updatedAt=Date.now();
  const groupMap=new Map();doc.elements.forEach(e=>{e.id=uid();if(e.groupId){if(!groupMap.has(e.groupId))groupMap.set(e.groupId,uid());e.groupId=groupMap.get(e.groupId)}});
@@ -1978,11 +1978,14 @@ function showHome(section='workspace'){
  $$('.home-nav-item').forEach(b=>{const match=b.dataset.homeNav===section;b.classList.toggle('active',match);b.setAttribute('aria-current',match?'page':'false')});
  $('#homeWorkspacePane').classList.toggle('hidden',section!=='workspace');$('#fontDialog').classList.toggle('hidden',section!=='fonts');$('#homeDataPane').classList.toggle('hidden',section!=='data');
  $('#homeProjectBadge').textContent=currentProject()?.name||'Проекты';
- if(section==='workspace')renderLibrary();if(section==='fonts')renderFonts();if(section==='data')renderHomeData();
+ if(section==='workspace')renderLibrary();if(section==='fonts')renderFonts();
  $('#homeMain').scrollTop=0;
 }
+async function openBackupsHome(){
+ if(!await flushSave()){toast('Сохранение не подтверждено. Раздел резервных копий не открыт');return}
+ $('#editorProjectMenu').classList.add('hidden');showHome('data');
+}
 function openEditor(){closeDialogs();$('#homeScreen').classList.add('hidden');$('#app').classList.remove('hidden');requestAnimationFrame(()=>{if(!app.doc)return;applyZoom();paint();refreshLayers();refreshInspector();renderDocumentTabs()})}
-function renderHomeData(){const p=currentProject();const docs=projectDocs();$('#homeBackupInfo').textContent=(p?.name||'Проект')+' · '+docs.length+' документов · '+(p?.resources?.length||0)+' ресурсов';$('#homeDocumentInfo').textContent=app.doc?.title||'Нет открытого документа'}
 function showDialog(id){if(id==='libraryDialog'){showHome('workspace');return}if(id==='fontDialog'){showHome('fonts');return}if(id==='layersDialog')renderMobileLayers();$$('.dialog').forEach(x=>x.classList.add('hidden'));$('#shade').classList.remove('hidden');$('#'+id).classList.remove('hidden')}
 function closeDialogs(){$$('.dialog').forEach(x=>x.classList.add('hidden'));$('#shade').classList.add('hidden')}
 const libraryViews={template:'grid',card:'grid'};
@@ -2146,8 +2149,10 @@ $('#fontInput').addEventListener('change',async ev=>{const files=[...ev.target.f
 $('#fontFolderInput').addEventListener('change',async ev=>{const files=[...ev.target.files];ev.target.value='';await importFontFiles(files,true)});
 // Global actions
 $$('[data-add]').forEach(b=>b.addEventListener('click',()=>add(b.dataset.add)));
+$('#backupsBtn').onclick=()=>openBackupsHome();
 $('#exportBtn').onclick=exportPNG;$('#jsonExportBtn').onclick=exportJSON;
-$('#jsonImportBtn').onclick=$('#importLibraryBtn').onclick=()=>$('#jsonInput').click();$('#jsonInput').onchange=e=>{const f=e.target.files[0];e.target.value='';if(f)importJSON(f)};
+// Temporary hidden compatibility hooks for browser test fixtures.
+$('#jsonInput').onchange=e=>{const f=e.target.files[0];e.target.value='';if(f)importJSON(f)};
 $('#fontsBtn').onclick=()=>showDialog('fontDialog');
 const fontZone=$('#uploadFontBtn');
 fontZone.onclick=e=>{if(e.shiftKey)$('#fontFolderInput').click();else $('#fontInput').click()};
@@ -2165,7 +2170,7 @@ fontZone.addEventListener('drop',async ev=>{ev.preventDefault();fontZone.classLi
 
 $('#libraryBtn').onclick=()=>{$('#editorProjectMenu').classList.toggle('hidden')};$('#editorProjectMenu').onclick=ev=>{const button=ev.target.closest('[data-editor-nav]');if(!button)return;$('#editorProjectMenu').classList.add('hidden');flushSave().then(ok=>{if(ok)showHome(button.dataset.editorNav)})};document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#libraryBtn,#editorProjectMenu'))$('#editorProjectMenu').classList.add('hidden')});$('#brandHomeBtn').onclick=()=>{flushSave().then(ok=>{if(ok)showHome('workspace')})};$('#homeEditorBtn').onclick=()=>{const tab=documentTabSession.tabs.find(t=>t.id===documentTabSession.lastDocumentId)||documentTabSession.tabs.at(-1);if(tab)activateDocumentTab(tab.id);else if(app.doc)openDocumentTab(app.doc);else openDocumentTab(projectDocs()[0]||newDoc())};$('#homeBrandBtn').onclick=()=>showHome('workspace');
 $$('[data-home-nav]').forEach(b=>b.onclick=()=>showHome(b.dataset.homeNav));
-$('#homeScreen').addEventListener('click',ev=>{const b=ev.target.closest('[data-home-action]');if(!b)return;const action=b.dataset.homeAction;if(action==='import-json')$('#jsonInput').click();if(action==='export-document')exportJSON();if(action==='export-backup')openProjectExportDialog()});$('#dockAssets').onclick=showAssets;$('#assetsBtn').onclick=showAssets;$('#newCardBtn').onclick=()=>makeCardFrom(app.doc);
+$('#homeScreen').addEventListener('click',ev=>{const b=ev.target.closest('[data-home-action]');if(!b)return;const action=b.dataset.homeAction;if(action==='export-backup')$('#zipCreate').click()});$('#dockAssets').onclick=showAssets;$('#assetsBtn').onclick=showAssets;$('#newCardBtn').onclick=()=>makeCardFrom(app.doc);
 $('#createProjectBtn').onclick=createProject;
 $('#newProjectName').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();createProject()}});
 $('#projectChooser').addEventListener('click',ev=>{const remove=ev.target.closest('[data-delete-project]');if(remove){ev.stopPropagation();deleteProject(remove.dataset.deleteProject);return}const b=ev.target.closest('[data-switch-project]');if(b)switchProject(b.dataset.switchProject)});$('#projectChooser').addEventListener('keydown',ev=>{if((ev.key==='Enter'||ev.key===' ')&&ev.target.matches('[data-delete-project]')){ev.preventDefault();ev.stopPropagation();deleteProject(ev.target.dataset.deleteProject)}});$('#projectDeleteBtn').onclick=()=>deleteProject(app.currentProjectId);
@@ -2323,7 +2328,7 @@ $('#shapeTray').addEventListener('click',async ev=>{
  const move=ev.target.closest('[data-cat-move]');if(move){const i=Number(move.dataset.catMove),j=i+Number(move.dataset.dir);if(j<0||j>=SHAPE_SECTIONS.length)return;[SHAPE_SECTIONS[i],SHAPE_SECTIONS[j]]=[SHAPE_SECTIONS[j],SHAPE_SECTIONS[i]];await persistShapeCatalog();refreshShapeTray();return}
  const group=ev.target.closest('[data-cat-remove]');if(group){const i=Number(group.dataset.catRemove),g=SHAPE_SECTIONS[i];if(!confirm(`Удалить категорию «${g.name}» и её ${g.shapes.length} фигур?`))return;SHAPE_SECTIONS.splice(i,1);SHAPE_INDEX.clear();SHAPE_SECTIONS.forEach(g=>g.shapes.forEach(s=>SHAPE_INDEX.set(s.id,s)));await persistShapeCatalog();refreshShapeTray();return}
  const del=ev.target.closest('[data-shape-remove]');if(del){const id=del.dataset.shapeRemove,group=SHAPE_SECTIONS.find(g=>g.shapes.some(s=>s.id===id)),shape=group?.shapes.find(s=>s.id===id);if(!shape||!confirm('Удалить фигуру «'+shape.name+'» из библиотеки?'))return;group.shapes=group.shapes.filter(s=>s.id!==id);SHAPE_INDEX.delete(id);await persistShapeCatalog();refreshShapeTray();return}
- }catch(err){console.warn('Изменения каталога не сохранены:',err);refreshShapeTray();toast('Изменения фигур только в памяти · экспортируй JSON');return}
+ }catch(err){console.warn('Изменения каталога не сохранены:',err);refreshShapeTray();toast('Изменения фигур только в памяти · сохранение не подтверждено');return}
  const b=ev.target.closest('[data-tray-shape]');if(!b)return;makeVectorShape(b.dataset.trayShape);$('#shapeTray').classList.add('hidden');$('#dockShapes').setAttribute('aria-expanded','false')
 });
 $('#shapeSvgInput').onchange=async ev=>{const files=[...ev.target.files];ev.target.value='';await svgFilesToShapes(files)};
@@ -2544,15 +2549,14 @@ $('#artboardSiblings').addEventListener('pointerdown',ev=>{const b=ev.target.clo
 document.body.appendChild($('#editorProjectMenu'));
 let compactMenuPage='root',compactBrowseProjectId=null;
 function compactMenuPosition(){const r=$('#libraryBtn').getBoundingClientRect(),menu=$('#editorProjectMenu');menu.style.left=Math.max(8,Math.min(innerWidth-390,r.left))+'px';menu.style.top=Math.min(innerHeight-56,r.bottom+7)+'px';}
-function compactMenuShow(page='root'){compactMenuPage=page;const menu=$('#editorProjectMenu');menu.classList.remove('hidden');compactMenuPosition();const body=$('#compactMenuContent'),title=$('#compactMenuTitle');$('#compactMenuBack').classList.toggle('hidden',page==='root');title.textContent={root:'Быстрый доступ',workspace:'Рабочее пространство',fonts:'Мои шрифты',data:'JSON и копии'}[page]||'Быстрый доступ';
- if(page==='root'){body.innerHTML=`<button class="compact-menu-item" data-compact-page="workspace"><span>▦</span> Рабочее пространство <b style="margin-left:auto">›</b></button><button class="compact-menu-item" data-compact-page="fonts"><span>Аа</span> Мои шрифты <b style="margin-left:auto">›</b></button><button class="compact-menu-item" data-compact-page="data"><span>⇩</span> JSON и копии <b style="margin-left:auto">›</b></button>`}
+function compactMenuShow(page='root'){compactMenuPage=page;const menu=$('#editorProjectMenu');menu.classList.remove('hidden');compactMenuPosition();const body=$('#compactMenuContent'),title=$('#compactMenuTitle');$('#compactMenuBack').classList.toggle('hidden',page==='root');title.textContent={root:'Быстрый доступ',workspace:'Рабочее пространство',fonts:'Мои шрифты',data:'Резервные копии'}[page]||'Быстрый доступ';
+ if(page==='root'){body.innerHTML=`<button class="compact-menu-item" data-compact-page="workspace"><span>▦</span> Рабочее пространство <b style="margin-left:auto">›</b></button><button class="compact-menu-item" data-compact-page="fonts"><span>Аа</span> Мои шрифты <b style="margin-left:auto">›</b></button><button class="compact-menu-item" data-compact-full="data"><span>⇩</span> Резервные копии</button>`}
  else if(page==='workspace'){const selectedId=compactBrowseProjectId||app.currentProjectId,project=app.projects.find(p=>p.id===selectedId)||currentProject(),docs=projectDocs(project.id);
  const projects=app.projects.map(p=>`<button class="compact-menu-item ${p.id===project.id?'active':''}" data-compact-project="${p.id}">${p.cover?.startsWith('data:image/')?`<img src="${p.cover}" style="width:34px;height:34px;object-fit:contain;border-radius:7px;background:#40354d">`:'<span>▦</span>'}<strong>${html(p.name)}</strong>${p.id===project.id?' ✓':''}</button>`).join('');
  body.innerHTML=`<div class="compact-section-name">Проекты</div>${projects}<div class="compact-section-name">${html(project?.name||'Проект')}</div><div class="compact-info">${docs.filter(d=>d.type==='template').length} шаблонов · ${docs.filter(d=>d.type==='card').length} карточек · ${(project?.resources||[]).length} ресурсов</div><div class="compact-section-name">Последние документы</div>`+docs.slice().sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,9).map(d=>`<button class="compact-menu-item" data-compact-doc="${d.id}"><span>${d.type==='card'?'▤':'▧'}</span><div>${html(d.title)}<small style="display:block;color:#bdb0d2">${d.type==='card'?'Карточка':'Шаблон'}</small></div></button>`).join('');}
- else if(page==='fonts'){const fams=typeof fontFamilies==='function'?fontFamilies():[];body.innerHTML='<div class="compact-info">Загруженные семейства шрифтов доступны во всех документах.</div><div class="compact-button-row"><button data-compact-font-import="files">＋ Добавить шрифты</button></div><div class="compact-section-name">Семейства</div>'+fams.slice(0,40).map(name=>`<div class="compact-tile">${html(name)}</div>`).join('')}
- else if(page==='data'){body.innerHTML='<div class="compact-info">Быстро экспортируй документ или проект, не покидая редактор.</div><div class="compact-button-row"><button data-compact-json="document">Экспорт документа JSON</button><button data-compact-json="backup">Копия проекта JSON</button><button data-compact-json="import">Импорт JSON</button></div>'}}
+ else if(page==='fonts'){const fams=typeof fontFamilies==='function'?fontFamilies():[];body.innerHTML='<div class="compact-info">Загруженные семейства шрифтов доступны во всех документах.</div><div class="compact-button-row"><button data-compact-font-import="files">＋ Добавить шрифты</button></div><div class="compact-section-name">Семейства</div>'+fams.slice(0,40).map(name=>`<div class="compact-tile">${html(name)}</div>`).join('')}}
 $('#libraryBtn').onclick=ev=>{ev.stopPropagation();const m=$('#editorProjectMenu');if(!m.classList.contains('hidden'))m.classList.add('hidden');else compactMenuShow('root')};
-$('#editorProjectMenu').onclick=ev=>{ev.stopPropagation();const b=ev.target.closest('[data-compact-page],[data-compact-project],[data-compact-doc],[data-compact-font-import],[data-compact-json]');if(!b)return;if(b.dataset.compactPage)compactMenuShow(b.dataset.compactPage);if(b.dataset.compactProject){compactBrowseProjectId=b.dataset.compactProject;compactMenuShow('workspace')};if(b.dataset.compactDoc){const doc=app.docs.find(x=>x.id===b.dataset.compactDoc);if(doc){openDocumentTab(doc);$('#editorProjectMenu').classList.add('hidden')}}if(b.dataset.compactFull){$('#editorProjectMenu').classList.add('hidden');flushSave().then(ok=>{if(ok)showHome(b.dataset.compactFull)})}if(b.dataset.compactJson){const type=b.dataset.compactJson;if(type==='document')exportJSON();else if(type==='backup')openProjectExportDialog();else $('#jsonInput').click()}if(b.dataset.compactFontImport){$('#fontInput')?.click()}};
+$('#editorProjectMenu').onclick=ev=>{ev.stopPropagation();const b=ev.target.closest('[data-compact-page],[data-compact-project],[data-compact-doc],[data-compact-font-import],[data-compact-full]');if(!b)return;if(b.dataset.compactPage)compactMenuShow(b.dataset.compactPage);if(b.dataset.compactProject){compactBrowseProjectId=b.dataset.compactProject;compactMenuShow('workspace')};if(b.dataset.compactDoc){const doc=app.docs.find(x=>x.id===b.dataset.compactDoc);if(doc){openDocumentTab(doc);$('#editorProjectMenu').classList.add('hidden')}}if(b.dataset.compactFull)void openBackupsHome();if(b.dataset.compactFontImport){$('#fontInput')?.click()}};
 $('#compactMenuBack').onclick=()=>compactMenuShow('root');$('#compactMenuClose').onclick=()=>$('#editorProjectMenu').classList.add('hidden');
 window.addEventListener('resize',()=>{if(!$('#editorProjectMenu').classList.contains('hidden'))compactMenuPosition()});
 
@@ -2796,7 +2800,7 @@ $('#tabPickerCreateRow').onclick=async ev=>{
  await tabPickerLaunch(doc);
 };
 
-async function init(){await workspaceInstances.ready;app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;await startupWrite('docs',sample);app.docs.push(sample);setDoc(sample)}else {const docs=projectDocs().sort((a,b)=>b.updatedAt-a.updatedAt);setDoc(clone(docs[0]||newDoc()))};if(!app.db)toast('Локальное хранилище недоступно: сохраняй проект в JSON');showHome('workspace');showWorkspaceRestoreResult()}
+async function init(){await workspaceInstances.ready;app.db=await openDB();await loadAll();if(app.docs.length===0){const sample=exampleDoc();sample.projectId=app.currentProjectId;await startupWrite('docs',sample);app.docs.push(sample);setDoc(sample)}else {const docs=projectDocs().sort((a,b)=>b.updatedAt-a.updatedAt);setDoc(clone(docs[0]||newDoc()))};if(!app.db)toast('Локальное хранилище недоступно: невозможно подтвердить сохранение. Не закрывай приложение');showHome('workspace');showWorkspaceRestoreResult()}
 $$('.tool[data-add]').forEach(t=>{const ico=t.querySelector('.tool-ico');if(ico)ico.innerHTML=uiIcon(t.dataset.add)});
 init();
 // Browser/OS may reserve BrowserBack/BrowserForward before dispatching events to a page.
@@ -2840,7 +2844,7 @@ rearmBackGuard();
 async function deleteProject(id){
  if(projectOperation)return;
  const project=app.projects.find(p=>p.id===id);if(!project)return;
- if(!confirm(`Удалить проект «${project.name}» и все его ${projectDocs(id).length} документов, ресурсы и настройки?\n\nЭто действие нельзя отменить. Рекомендуется предварительно экспортировать JSON.`))return;
+ if(!confirm(`Удалить проект «${project.name}» и все его ${projectDocs(id).length} документов, ресурсы и настройки?\n\nЭто действие нельзя отменить. Рекомендуется предварительно создать ZIP-копию.`))return;
  projectOperation=true;
  try{
   if(!await flushSave())return;
@@ -2871,17 +2875,6 @@ async function deleteProject(id){
  }catch(error){console.error(error);toast('Не удалось удалить проект; данные сохранены')}
  finally{deletingProjectId=null;projectOperation=false}
 }
-function openProjectExportDialog(){const box=$('#projectExportList');box.replaceChildren();for(const p of app.projects){const row=document.createElement('label');row.className='project-export-row';const count=projectDocs(p.id).length;row.innerHTML=`<input type="checkbox" data-export-project="${p.id}" checked>${p.cover?`<img src="${p.cover}" alt="">`:`<span class="export-project-initial">${html(p.name.charAt(0))}</span>`}<span><strong>${html(p.name)}</strong><small>${count} документов · ${(p.resources||[]).length} ресурсов</small></span>`;box.append(row)}$('#projectExportShade').classList.remove('hidden');updateExportSelectState()}
-function updateExportSelectState(){const checks=[...document.querySelectorAll('[data-export-project]')];const count=checks.filter(x=>x.checked).length;$('#projectExportConfirm').disabled=count===0;$('#projectExportConfirm').textContent=`Экспортировать (${count})`}
-function closeProjectExportDialog(){$('#projectExportShade').classList.add('hidden')}
-async function exportSelectedProjects(){const ids=[...document.querySelectorAll('[data-export-project]:checked')].map(x=>x.dataset.exportProject);if(!ids.length)return;try{await flushSave();if(ids.length===1){const p=app.projects.find(x=>x.id===ids[0]);if(!p)return;const archive={format:'kartochnaya-project-v1',version:'0.21',exportedAt:new Date().toISOString(),project:clone(p),documents:exportProjectDocuments(p.id),shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(p.name)+' - проект Карточной.json')}
- else {const projects=ids.map(id=>{const p=app.projects.find(x=>x.id===id);return {project:clone(p),documents:exportProjectDocuments(id)}}).filter(x=>x.project);const archive={format:'kartochnaya-workspace-v1',version:'0.21',exportedAt:new Date().toISOString(),projects,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(clone)};downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),ids.length===app.projects.length?'Все проекты Карточной.json':'Выбранные проекты Карточной.json')}
- closeProjectExportDialog();toast('Файл JSON подготовлен')}catch(err){console.error(err);toast('Не удалось экспортировать проекты')}}
-$('#projectExportClose').onclick=closeProjectExportDialog;
-$('#projectExportShade').addEventListener('click',ev=>{if(ev.target.id==='projectExportShade')closeProjectExportDialog()});
-$('#projectExportList').addEventListener('change',updateExportSelectState);
-$('#projectExportSelectAll').onclick=()=>{const boxes=[...document.querySelectorAll('[data-export-project]')],areAll=boxes.every(b=>b.checked);for(const box of boxes)box.checked=!areAll;$('#projectExportSelectAll').textContent=areAll?'Выбрать все':'Снять все';updateExportSelectState()};
-$('#projectExportConfirm').onclick=exportSelectedProjects;
 async function importWorkspaceBackup(payload){return importProjectSet(payload,payload.projects,5000)}
 
 
@@ -3613,16 +3606,16 @@ async function zipSavedSnapshot(){
    ensureActive();
    // Finish text/raster input exactly as a normal tab switch does.
    captureDocumentTab();
-   if(!await flushSave())throw Error('Сохранение активного документа не подтверждено; экспортируй JSON');
+   if(!await flushSave())throw Error('Сохранение активного документа не подтверждено. Не закрывай приложение');
    for(const tab of documentTabSession.tabs){
     ensureActive();
     if(tab.view.historyPreviewOriginal)throw Error('Выйди из предпросмотра истории во всех вкладках');
     const rec=clone(tab.doc);
-    if(!await saveDocumentSnapshot(rec)||JSON.stringify(rec)!==JSON.stringify(tab.doc))throw Error('Сохранение вкладки не подтверждено; экспортируй JSON');
+    if(!await saveDocumentSnapshot(rec)||JSON.stringify(rec)!==JSON.stringify(tab.doc))throw Error('Сохранение вкладки не подтверждено. Не закрывай приложение');
    }
    await workspaceBarrier.drain();
   })();
-  await Promise.race([barrier,new Promise((_,reject)=>{timer=setTimeout(()=>{cancelled=true;reject(Error('Сохранения не завершены за 30 секунд. Дождись хранилища и повтори; используй JSON при сбое'))},30000)})]);
+  await Promise.race([barrier,new Promise((_,reject)=>{timer=setTimeout(()=>{cancelled=true;reject(Error('Сохранения не завершены за 30 секунд. Дождись хранилища и повтори. Сохранение не подтверждено'))},30000)})]);
   return await readWorkspaceSnapshot(app.db);
  }finally{cancelled=true;clearTimeout(timer);zipWorkspaceBusy=false}
 }

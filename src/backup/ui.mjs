@@ -30,7 +30,7 @@ export function installBackupUI({ snapshot, restore, download, replacement }) {
       await replacement.cancel(); prepared = false; verified = restoreBytes = null;
       if (find('zipReplaceReady')) find('zipReplaceReady').hidden = true;
       if (find('zipReplacePrepare')) find('zipReplacePrepare').disabled = true;
-      status.textContent = replacement.committed() ? 'Транзакция IndexedDB уже подтверждена. Старое состояние остановлено. Перезагрузи приложение вручную. ' + (error.message || error) : 'Не удалось завершить: ' + (error.message || error) + (body.querySelector('[name=zipRestoreMode]:checked')?.value === 'replace' ? '\nЗамена не выполнена. Повторно открой исходный ZIP и подготовь замену заново.' : '\nМожно использовать прежний JSON-экспорт. Для больших копий выбери меньше проектов или освободи память.');
+      status.textContent = replacement.committed() ? 'Транзакция IndexedDB уже подтверждена. Старое состояние остановлено. Перезагрузи приложение вручную. ' + (error.message || error) : 'Не удалось завершить: ' + (error.message || error) + (body.querySelector('[name=zipRestoreMode]:checked')?.value === 'replace' ? '\nЗамена не выполнена. Повторно открой исходный ZIP и подготовь замену заново.' : '\nСохранение и создание копии не подтверждены. Для больших копий выбери меньше проектов или освободи память.');
     }
     finally { clearTimeout(long); busy = false; cancel.disabled = false; dialog.removeAttribute('aria-busy'); }
   }

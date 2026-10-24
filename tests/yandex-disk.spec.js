@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { openHome, createDocument, addShape, savedDocument } = require('./helpers');
+const { openHome, createDocument, addShape, savedDocument, records } = require('./helpers');
 const ID = 'a'.repeat(32), TOKEN = 'yandex-memory-only-test-token', CODE = 'yandex-one-use-test-code';
 const KEY = 'kartochnaya-yandex-public-client-id';
 async function home(page) { await openHome(page); await page.locator('[data-home-nav=data]').click(); await page.locator('#yandexCard').click(); }
@@ -7,8 +7,8 @@ async function configure(page) {
   await page.locator('#yandexConfigure').click(); await page.locator('#yandexClientId').fill(ID);
   await page.locator('#yandexSettings button[type=submit]').click();
 }
-async function mock(context, { network = false, identity = 200, badDownload = false } = {}) {
-  const seen = { token: 0, api: 0, put: 0, get: 0, deletes: [] }; let bytes;
+async function mock(context, { network = false, identity = 200, badDownload = false, backup = false, putFailure = false, metadataMismatch = false, listFailure = false } = {}) {
+  const seen = { token: 0, api: 0, put: 0, get: 0, deletes: [], files: [], zipBytes: null, snapshotCommits: 0, uploadLinks: 0 }; let bytes, backupName;
   await context.route('https://oauth.yandex.ru/authorize?*', route => route.fulfill({ contentType: 'text/html', body: '<p>Mock Яндекс OAuth</p>' }));
   await context.route('https://oauth.yandex.ru/token', async route => {
     seen.token++; const req = route.request(), p = new URLSearchParams(req.postData());
@@ -22,11 +22,31 @@ async function mock(context, { network = false, identity = 200, badDownload = fa
   await context.route('https://cloud-api.yandex.net/v1/disk/resources**', async route => {
     seen.api++; const req = route.request(), u = new URL(req.url()); expect(req.headers().authorization).toBe('OAuth ' + TOKEN); expect(u.searchParams.get('path')).toMatch(/^app:\//);
     if (req.method() === 'DELETE') { seen.deletes.push(u.searchParams.get('path')); return route.fulfill({ status: 204 }); }
+    if (u.pathname.endsWith('/upload')) {
+      seen.uploadLinks++;
+      if (backup) expect(await context.pages()[0].evaluate(() => window.yandexSnapshotCommits || 0)).toBeGreaterThan(0);
+      backupName = u.searchParams.get('path').slice(5); expect(u.searchParams.get('overwrite')).toBe('false'); }
     if (u.pathname.endsWith('/upload')) return route.fulfill({ json: { method: 'PUT', templated: false, href: 'https://uploader1d.dst.yandex.net/upload-target/test?signature=mock-only' } });
     if (u.pathname.endsWith('/download')) return route.fulfill({ json: { method: 'GET', templated: false, href: 'https://downloader.dst.yandex.ru/disk/test?signature=mock-only' } });
-    await route.fulfill({ json: { path: 'app:/' } });
+    if (backup && u.searchParams.get('path') !== 'app:/') {
+      const file = seen.files.find(f => f.name === u.searchParams.get('path').slice(5));
+      return route.fulfill({ json: metadataMismatch ? { ...file, size: 1 } : file });
+    }
+    if (backup && listFailure && u.searchParams.has('offset')) return route.fulfill({ status: 403, json: {} });
+    const offset = Number(u.searchParams.get('offset') || 0), limit = Number(u.searchParams.get('limit') || 100);
+    await route.fulfill({ json: { path: 'app:/', type: 'dir', _embedded: { items: seen.files.slice(offset, offset + limit), total: seen.files.length, offset, limit } } });
   });
-  await context.route('https://uploader1d.dst.yandex.net/upload-target/**', async route => { seen.put++; expect(route.request().headers().authorization).toBeUndefined(); bytes = route.request().postDataBuffer(); expect(bytes.length).toBeLessThan(1024); await route.fulfill({ status: 201 }); });
+  await context.route('https://uploader1d.dst.yandex.net/upload-target/**', async route => { seen.put++; expect(route.request().headers().authorization).toBeUndefined(); bytes = route.request().postDataBuffer(); if (backup) {
+      expect(route.request().headers()['content-type']).toBe('application/zip');
+      expect(bytes.subarray(0, 2).toString()).toBe('PK');
+      const { readBackup } = await import('../src/backup/archive.mjs');
+      const archive = await readBackup(new Uint8Array(bytes)); expect(archive.manifest.scope).toBe('workspace');
+      expect(backupName).toContain(archive.manifest.backupId); seen.zipBytes = bytes;
+      seen.snapshotCommits = await context.pages()[0].evaluate(() => window.yandexSnapshotCommits || 0); expect(seen.snapshotCommits).toBeGreaterThan(0);
+      seen.files.push({ name: backupName, path: 'app:/' + backupName, type: 'file', size: bytes.length, created: archive.manifest.createdAt, sha256: require('node:crypto').createHash('sha256').update(bytes).digest('hex') });
+    } else expect(bytes.length).toBeLessThan(1024);
+    if (putFailure) return route.abort('failed');
+    await route.fulfill({ status: 201 }); });
   await context.route('https://downloader.dst.yandex.ru/disk/**', async route => { seen.get++; expect(route.request().headers().authorization).toBeUndefined(); await route.fulfill({ body: badDownload ? 'different' : bytes }); });
   return seen;
 }
@@ -114,4 +134,83 @@ test('callback alone: no editor, IndexedDB, SW or external resources; query remo
   await expect(page.locator('#status')).toContainText('Исходное окно недоступно'); expect(page.url()).toBe('http://127.0.0.1:4174/oauth/yandex-callback.html');
   expect(await page.locator('#homeScreen').count()).toBe(0); expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations().then(x => x.length))).toBe(0);
   expect(requests.filter(u => !u.includes('/oauth/yandex-callback.html'))).toEqual([]);
+});
+
+async function snapshotProbe(page) {
+  await page.addInitScript(() => {
+    window.yandexSnapshotCommits = 0; window.yandexFailSnapshot = false;
+    const transaction = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function(stores, mode, ...args) {
+      const snapshot = Array.isArray(stores) && stores.length === 4 && mode === 'readonly';
+      if (snapshot && window.yandexFailSnapshot) throw new DOMException('Snapshot refused', 'InvalidStateError');
+      const tx = transaction.call(this, stores, mode, ...args);
+      if (snapshot) tx.addEventListener('complete', () => { window.yandexSnapshotCommits++; });
+      return tx;
+    };
+  });
+}
+for (const mobile of [false, true]) test(`Yandex real workspace ZIP, confirmed metadata, list and session reset (${mobile ? 'mobile' : 'desktop'})`, async ({ page, context }) => {
+  if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+  await snapshotProbe(page); const seen = await mock(context, { backup: true });
+  await openHome(page); await createDocument(page, 'Cloud ZIP preserved');
+  if (mobile) { await page.locator('[data-mobile=shapes]').click(); await page.locator('[data-tray-shape=basic0]').click(); } else await addShape(page); await savedDocument(page, 'Cloud ZIP preserved', 1);
+  const before = {}; for (const store of ['projects', 'docs', 'fonts', 'settings']) before[store] = await records(page, store);
+  await home(page);
+  await page.locator('#yandexCreateTab').click(); await expect(page.locator('#yandexCreate')).toBeDisabled();
+  await page.locator('#yandexCopiesTab').click(); await expect(page.locator('#yandexRefresh')).toBeDisabled();
+  await page.locator('#yandexDiagnosticsTab').click(); await expect(page.locator('#yandexTransfer')).toBeDisabled();
+  await page.locator('#yandexConnectionTab').click(); await configure(page); await connect(page);
+  await page.locator('#yandexCreateTab').click(); await page.locator('#yandexCreate').click();
+  await expect(page.locator('#yandexStatus')).toContainText('Копия создана'); await expect(page.locator('#yandexStatus')).toContainText('SHA-256 подтверждены'); expect(seen.put).toBe(1);
+  const { readBackup } = await import('../src/backup/archive.mjs');
+  const archive = await readBackup(new Uint8Array(seen.zipBytes));
+  expect(archive.data.docs).toEqual(before.docs); expect(archive.data.projects).toEqual(before.projects);
+  expect(JSON.stringify(archive.data)).not.toMatch(/yandex-memory|yandex-refresh|yandex-one-use/);
+  await page.locator('#yandexCopiesTab').click(); await page.locator('#yandexRefresh').click();
+  await expect(page.locator('#yandexCopies')).toContainText(seen.files[0].name); await expect(page.locator('#yandexCopies')).toContainText('файл · доступен');
+  const original = seen.files[0];
+  seen.files = Array.from({ length: 105 }, (_, i) => ({ ...original, name: original.name.replace(/-[a-f0-9]{8}-/, '-' + String(i).padStart(8, '0') + '-'), created: new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString() })).map(f => ({ ...f, path: 'app:/' + f.name }));
+  seen.files.push({ ...original, name: 'foreign.zip' }, { ...original, type: 'dir' });
+  await page.locator('#yandexRefresh').click(); await expect(page.locator('#yandexCopies article')).toHaveCount(105);
+  await expect(page.locator('#yandexCopies article:visible').first()).toContainText(seen.files[104].name);
+  const nav = page.getByRole('navigation', { name: 'Резервные копии Яндекса', exact: true }); await expect(nav).toContainText('1 / 27');
+  await nav.getByRole('button', { name: 'Следующая страница' }).click(); await expect(nav).toContainText('2 / 27');
+  expect(await page.locator('#yandexDialog').evaluate(n => n.scrollWidth <= n.clientWidth)).toBe(true);
+  await page.locator('#yandexDialog [data-backup-close]').click(); await page.locator('#yandexCard').click(); await expect(nav).toContainText('2 / 27');
+  await page.locator('#yandexDisconnect').click(); await expect(page.locator('#yandexCopies article')).toHaveCount(0); await expect(page.locator('#yandexRefresh')).toBeDisabled();
+  for (const store of Object.keys(before)) expect(await records(page, store)).toEqual(before[store]);
+  const persisted = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } })); expect(persisted).not.toMatch(/yandex-memory|yandex-refresh|yandex-one-use/);
+});
+test('Yandex refuses failed IndexedDB snapshot before any ZIP transfer; error survives tab changes and reopening', async ({ page, context }) => {
+  await snapshotProbe(page); const seen = await mock(context, { backup: true });
+  await home(page); await configure(page); await connect(page); await page.evaluate(() => { window.yandexFailSnapshot = true; });
+  await page.locator('#yandexCreateTab').click(); await page.locator('#yandexCreate').click();
+  await expect(page.locator('#yandexStatus')).toContainText('Snapshot refused'); expect(seen.put).toBe(0); expect(seen.uploadLinks).toBe(0);
+  await page.locator('#yandexCopiesTab').click(); await expect(page.locator('#yandexStatus')).toContainText('Snapshot refused');
+  await page.locator('#yandexDialog [data-backup-close]').click(); await page.locator('#yandexCard').click(); await expect(page.locator('#yandexStatus')).toContainText('Snapshot refused');
+});
+for (const issue of ['putFailure', 'metadataMismatch', 'listFailure']) test('Yandex backup error: ' + issue, async ({ page, context }) => {
+  await snapshotProbe(page); const seen = await mock(context, { backup: true, [issue]: true });
+  await home(page); await configure(page); await connect(page);
+  if (issue === 'listFailure') {
+    await page.locator('#yandexCopiesTab').click(); await page.locator('#yandexRefresh').click(); await expect(page.locator('#yandexListStatus')).toContainText('403'); await expect(page.locator('#yandexListStatus')).not.toContainText('Резервных копий пока нет');
+  } else {
+    await page.locator('#yandexCreateTab').click(); await page.locator('#yandexCreate').click();
+    await expect(page.locator('#yandexStatus')).toContainText('Загрузка не подтверждена'); await expect(page.locator('#yandexStatus')).not.toContainText('Копия создана');
+    await page.locator('#yandexCopiesTab').click(); await expect(page.locator('#yandexStatus')).toContainText('Файл мог сохраниться');
+    expect(seen.put).toBe(1); expect(seen.deletes).toEqual([]);
+    await page.locator('#yandexRefresh').click(); await expect(page.locator('#yandexCopies article')).toHaveCount(1); expect(seen.put).toBe(1);
+  }
+});
+test('Yandex cancels active ZIP PUT, prevents double start and keeps uncertain result without resend', async ({ page, context }) => {
+  await snapshotProbe(page); const seen = await mock(context, { backup: true });
+  let release, started; const began = new Promise(r => { started = r; }), gate = new Promise(r => { release = r; }); let puts = 0;
+  await context.route('https://uploader1d.dst.yandex.net/upload-target/**', async route => {
+    puts++; expect(route.request().headers().authorization).toBeUndefined(); started(); await gate;
+    await route.fulfill({ status: 201 }).catch(() => {});
+  });
+  await home(page); await configure(page); await connect(page); await page.locator('#yandexCreateTab').click(); await page.locator('#yandexCreate').click(); await began;
+  await expect(page.locator('#yandexCreate')).toBeDisabled(); await expect(page.locator('#yandexAbort')).toBeEnabled();
+  await page.locator('#yandexAbort').click(); await expect(page.locator('#yandexStatus')).toContainText('Загрузка не подтверждена'); release();
+  await page.locator('#yandexCopiesTab').click(); await expect(page.locator('#yandexStatus')).toContainText('Файл мог сохраниться'); expect(puts).toBe(1); expect(seen.deletes).toEqual([]);
 });

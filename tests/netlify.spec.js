@@ -74,7 +74,7 @@ test('offline reload, editing, IndexedDB, JSON/ZIP export/import and reopening a
   const doc = await savedDocument(page, 'Offline document', 1);
   expect((await exportedDocument(page)).elements).toHaveLength(1);
   const pending = page.waitForEvent('download'); await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click();
-  await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await page.locator('#zipStorage').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
   await page.locator('#zipConfirm').click(); const zip = await readFile(await (await pending).path());
   expect(zip.readUInt32LE()).toBe(0x04034b50);
   await page.locator('#zipCancel').click();
@@ -167,16 +167,52 @@ test('stalled registration stops preparation after deadline and offers retry', a
   await expect(page.locator('#pwaRetry')).toBeEnabled();
 });
 
-// Cloud cards are installed only in the Netlify distribution.
-test('UI-1: backup section retains local ZIP, Google Drive and Yandex cards', async ({ page }) => {
+// Cloud integrations are installed only in the Netlify distribution.
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 390, height: 844 }, { width: 360, height: 640 }]) test(`UI-2: three compact rows, dialogs and viewport bounds ${viewport.width}x${viewport.height}`, async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await openHome(page);
-  const before = await records(page, 'docs');
-  await page.locator('[data-home-nav="data"]').click();
+  await page.setViewportSize(viewport); await openHome(page);
+  await page.locator('#homeEditorBtn').click(); await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click();
+  const before = {};
+  for (const store of ['projects', 'docs', 'fonts', 'settings']) before[store] = await records(page, store);
   await expect(page.locator('#homeDataPane h1')).toHaveText('Резервные копии');
-  await expect(page.locator('#homeDataPane .home-data-card')).toHaveCount(3);
-  for (const id of ['zipCreate', 'zipOpen', 'driveAdd', 'yandexConnect']) await expect(page.locator('#' + id)).toBeVisible();
+  const rows = page.locator('#homeDataPane .home-data-card'); await expect(rows).toHaveCount(3);
+  await page.screenshot({ path: test.info().outputPath('backup-list.png') });
+  const initial = await rows.evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return { height: r.height, top: r.top, bottom: r.bottom }; }));
+  for (const row of initial) { expect(row.height).toBeGreaterThanOrEqual(88); expect(row.height).toBeLessThanOrEqual(104); }
+  expect(initial[1].top).toBeGreaterThan(initial[0].bottom); expect(initial[2].top).toBeGreaterThan(initial[1].bottom);
+  for (const [opener, dialog, status] of [['zipStorage', 'zipBackupDialog', 'zipStatus'], ['googleDriveCard', 'googleDriveDialog', 'driveStatus'], ['yandexCard', 'yandexDialog', 'yandexStatus']]) {
+    const row = page.locator('#' + opener), modal = page.locator('#' + dialog);
+    await row.focus(); await page.keyboard.press('Enter'); await expect(modal).toBeVisible();
+    if (dialog === 'zipBackupDialog') await expect(page.locator('#zipConfirm')).toBeEnabled();
+    await page.screenshot({ path: test.info().outputPath(dialog + '.png') });
+    if (dialog === 'googleDriveDialog') {
+      await page.locator('#driveCreateTab').click(); await expect(page.locator('#driveCreateSelected')).toBeVisible();
+      const bottom = await page.locator('#driveCreateSelected').evaluate(node => node.getBoundingClientRect().bottom); expect(bottom).toBeLessThanOrEqual(viewport.height);
+      await page.locator('#driveCopiesTab').click(); await page.locator('#driveAccountsTab').click();
+      await page.locator('#driveConfigure').click(); await page.locator('#driveClientId').fill('invalid'); await page.locator('#driveSave').click();
+      await expect(page.locator('#driveSettingsError')).toBeVisible(); await page.locator('#driveCancel').click();
+    }
+    if (dialog === 'yandexDialog') {
+      await page.locator('#yandexDiagnosticsTab').click(); await expect(page.locator('#yandexTransfer')).toBeVisible();
+      const bottom = await page.locator('#yandexTransfer').evaluate(node => node.getBoundingClientRect().bottom); expect(bottom).toBeLessThanOrEqual(viewport.height);
+      await page.locator('#yandexConnectionTab').click(); await page.locator('#yandexConfigure').click();
+      await page.locator('#yandexClientId').fill('invalid'); await page.locator('#yandexSettings button[type=submit]').click();
+      await expect(page.locator('#yandexSettingsError')).toBeVisible(); await page.locator('#yandexCancel').click();
+    }
+    await page.locator('#' + status).evaluate(node => { node.textContent = 'Ошибка: длинный ответ сервера '.repeat(100); });
+    const geometry = await modal.evaluate(node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, horizontal: node.scrollWidth > node.clientWidth, vertical: node.scrollHeight > node.clientHeight }; });
+    expect(geometry.left).toBeGreaterThanOrEqual(0); expect(geometry.top).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(viewport.width); expect(geometry.bottom).toBeLessThanOrEqual(viewport.height);
+    expect(geometry.horizontal).toBe(false); expect(geometry.vertical).toBe(false);
+    await page.keyboard.press('Escape'); await expect(modal).toBeHidden(); await expect(row).toBeFocused();
+    await row.click(); await expect(modal).toBeVisible();
+    if (dialog === 'zipBackupDialog') await expect(page.locator('#zipConfirm')).toBeEnabled();
+    await modal.locator('[data-backup-close]').click(); await expect(row).toBeFocused();
+  }
+  expect(await rows.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height))).toEqual(initial.map(row => row.height));
+  await expect(page.locator('#yandexCard')).toContainText('Экспериментально');
   await expect(page.locator('button:visible').filter({ hasText: /JSON/i })).toHaveCount(0);
-  expect(await records(page, 'docs')).toEqual(before);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  for (const store of Object.keys(before)) expect(await records(page, store)).toEqual(before[store]);
   expect(errors).toEqual([]);
 });

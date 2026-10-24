@@ -4,8 +4,10 @@ const { unzipSync, strFromU8 } = require('fflate');
 const { openHome, createDocument, addShape, exportedDocument, savedDocument } = require('./helpers');
 const ID = 'test.apps.googleusercontent.com', KEY = 'kartochnaya-google-drive-client-id';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file', TOKEN = 'memory-only-oauth-test-token';
-async function home(page) { await openHome(page); await page.locator('[data-home-nav=data]').click(); }
+async function home(page) { await openHome(page); await page.locator('[data-home-nav=data]').click(); await page.locator('#googleDriveCard').click(); }
 async function configure(page, value = ID) {
+  if (!await page.locator('#googleDriveDialog').isVisible()) await page.locator('#googleDriveCard').click();
+  await page.locator('#driveAccountsTab').click();
   await page.locator('#driveConfigure').click(); await page.locator('#driveClientId').fill(value); await page.locator('#driveSave').click();
 }
 async function mock(page, { scope = SCOPE, error, popup, status = 200, body = { user: { permissionId: 'permission-test', displayName: 'Тестовый аккаунт', emailAddress: 'test@example.invalid' } }, network = false, expires = 3600 } = {}) {
@@ -39,8 +41,8 @@ test('Drive: no Google on startup, Client ID validation and deferred popup, acco
   await connect(page); await expect(page.locator('#driveAccounts')).toContainText('Тестовый аккаунт');
   expect(seen.gis).toBe(1); expect(seen.drive).toBe(1);
   expect(await page.evaluate(() => ({ active: window.__testActive, scope: window.__testConfig.scope, include: window.__testConfig.include_granted_scopes }))).toEqual({ active: true, scope: SCOPE, include: false });
-  await page.locator('#driveDisconnect').click(); await expect(page.locator('#driveAccounts')).toContainText('Требуется подключение');
-  await page.reload(); await page.locator('[data-home-nav=data]').click(); await expect(page.locator('#driveAccounts')).toContainText('Требуется подключение'); expect(seen.gis).toBe(1);
+  await page.locator('#driveCopiesTab').click(); await page.locator('#driveDisconnect').click(); await page.locator('#driveAccountsTab').click(); await expect(page.locator('#driveAccounts')).toContainText('Требуется подключение');
+  await page.reload(); await page.locator('[data-home-nav=data]').click(); await page.locator('#googleDriveCard').click(); await expect(page.locator('#driveAccounts')).toContainText('Требуется подключение'); expect(seen.gis).toBe(1);
 });
 for (const [name, options, message] of [
   ['popup close', { popup: 'popup_closed' }, 'закрыто'],
@@ -75,7 +77,8 @@ test('Drive: registry metadata persists, tokens stay in memory and cloud setting
     db.close(); return JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage }, all });
   });
   expect(durable).not.toContain(TOKEN); expect(durable).toContain('Тестовый аккаунт'); expect(durable).toContain('permission-test');
-  await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await page.locator('#googleDriveDialog [data-backup-close]').click();
+  await page.locator('#zipStorage').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
   const pending = page.waitForEvent('download'); await page.locator('#zipConfirm').click(); const bytes = await readFile(await (await pending).path());
   const files = unzipSync(bytes); const all = Object.values(files).map(strFromU8).join('\n');
   for (const value of [TOKEN, ID, KEY, 'test@example.invalid', 'Тестовый аккаунт']) expect(all).not.toContain(value);
@@ -94,8 +97,9 @@ test('Drive: offline editor remains independent with configured Client ID and no
   const seen = await mock(page); await home(page); await configure(page);
   await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
   await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state)).toBe('activated');
-  await context.setOffline(true); await page.reload(); await page.locator('[data-home-nav=data]').click();
+  await context.setOffline(true); await page.reload(); await page.locator('[data-home-nav=data]').click(); await page.locator('#googleDriveCard').click();
   await expect(page.locator('#driveStatus')).toContainText('Отсутствует интернет'); await expect(page.locator('#driveAdd')).toBeDisabled();
+  await page.locator('#googleDriveDialog [data-backup-close]').click();
   await page.locator('[data-home-nav=workspace]').click();
   await createDocument(page, 'Drive offline document'); await addShape(page); await savedDocument(page, 'Drive offline document', 1);
   expect((await exportedDocument(page)).elements).toHaveLength(1); expect(seen.gis).toBe(0); expect(seen.drive).toBe(0);
@@ -112,7 +116,7 @@ test('Drive: file mode explains unsupported OAuth without loading Google', async
     await testInfo.attach('file-mode-environment', { body: 'ENV-001: managed Chromium blocks file://; no application assertion ran.', contentType: 'text/plain' });
     test.skip(true, 'ENV-001: administrator policy blocks file://');
   }
-  await page.locator('[data-home-nav=data]').click();
+  await page.locator('[data-home-nav=data]').click(); await page.locator('#googleDriveCard').click();
   await expect(page.locator('#driveStatus')).toContainText('Авторизация недоступна в file://');
   await configure(page); await expect(page.locator('#driveAdd')).toBeDisabled();
   expect(seen.gis).toBe(0); expect(seen.drive).toBe(0);
@@ -166,8 +170,8 @@ async function backupDriveMock(page, { hold = false } = {}) {
 test('Drive backups: create separate complete ZIPs, list safe text, download exact bytes, then restore through local ZIP UI', async ({ page }) => {
   const state = await backupDriveMock(page); await openHome(page); await createDocument(page, 'Облачный проект'); await addShape(page);
   await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click(); await configure(page); await connect(page);
-  expect(state.folderCreates).toBe(0); await page.locator('#driveRefresh').click(); await expect(page.locator('#driveProgress')).toContainText('пока нет'); expect(state.folderCreates).toBe(0);
-  for (let i = 0; i < 2; i++) { await page.locator('#driveCreate').click(); await expect(page.locator('#driveProgress')).toContainText('Резервная копия сохранена в Google Drive'); }
+  expect(state.folderCreates).toBe(0); await page.locator('#driveCopiesTab').click(); await page.locator('#driveRefresh').click(); await expect(page.locator('#driveProgress')).toContainText('пока нет'); expect(state.folderCreates).toBe(0);
+  for (let i = 0; i < 2; i++) { await page.locator('#driveCopiesTab').click(); await page.locator('#driveCreate').click(); await expect(page.locator('#driveProgress')).toContainText('Резервная копия сохранена в Google Drive'); }
   expect(state.folderCreates).toBe(1); expect(state.uploads).toBe(2); expect(state.files[0].name).not.toBe(state.files[1].name);
   const before = await driveStorage(page); const { readBackup, sha256 } = await import('../src/backup/archive.mjs');
   const uploaded = state.bytes.get('cloud-1'), parsed = await readBackup(uploaded);
@@ -175,31 +179,35 @@ test('Drive backups: create separate complete ZIPs, list safe text, download exa
   expect(state.files[0].appProperties.sha256).toBe(await sha256(uploaded));
   expect(Object.values(unzipSync(uploaded)).map(strFromU8).join('')).not.toContain(TOKEN);
   state.files[0].name = '<img src=x onerror=alert(1)>../опасный.zip';
-  await page.locator('#driveRefresh').click(); await expect(page.locator('#driveList button')).toHaveCount(2); await expect(page.locator('#driveList')).toContainText(state.files[0].name); await expect(page.locator('#driveList img')).toHaveCount(0);
+  await page.locator('#driveCopiesTab').click(); await page.locator('#driveRefresh').click(); await expect(page.locator('#driveList button')).toHaveCount(2); await expect(page.locator('#driveList')).toContainText(state.files[0].name); await expect(page.locator('#driveList img')).toHaveCount(0);
   await page.locator('#driveList button').first().click(); await expect(page.locator('#driveProgress')).toContainText('ZIP проверен');
   expect(await driveStorage(page)).toEqual(before);
+  await page.locator('#googleDriveDialog [data-backup-close]').click(); await expect(page.locator('#googleDriveCard')).toBeFocused();
+  await page.locator('#googleDriveCard').click(); await expect(page.locator('#driveSaveZip')).toBeVisible();
   const pending = page.waitForEvent('download'); await page.locator('#driveSaveZip').click(); const downloaded = await pending;
   expect(downloaded.suggestedFilename()).not.toMatch(/[<>/\\]/); expect(await readFile(await downloaded.path())).toEqual(uploaded);
+  await page.locator('#googleDriveDialog [data-backup-close]').click();
   await page.locator('#zipInput').setInputFiles({ name: 'cloud.zip', mimeType: 'application/zip', buffer: uploaded }); await expect(page.locator('#zipConfirm')).toBeEnabled();
   await page.locator('#zipConfirm').click(); await expect(page.locator('#zipStatus')).toContainText('Транзакция завершена');
   expect((await driveStorage(page)).projects.length).toBeGreaterThan(before.projects.length);
 });
 test('Drive backups: corrupted download never enables save and leaves all stores unchanged', async ({ page }) => {
   const state = await backupDriveMock(page); await home(page); await configure(page); await connect(page);
-  await page.locator('#driveCreate').click(); await expect(page.locator('#driveProgress')).toContainText('Резервная копия сохранена');
+  await page.locator('#driveCopiesTab').click(); await page.locator('#driveCreate').click(); await expect(page.locator('#driveProgress')).toContainText('Резервная копия сохранена');
   const before = await driveStorage(page); state.broken = true;
-  await page.locator('#driveRefresh').click(); await expect(page.locator('#driveList button')).toHaveCount(1); await page.locator('#driveList button').click();
+  await page.locator('#driveCopiesTab').click(); await page.locator('#driveRefresh').click(); await expect(page.locator('#driveList button')).toHaveCount(1); await page.locator('#driveList button').click();
   await expect(page.locator('#driveProgress')).toContainText('SHA-256'); await expect(page.locator('#driveSaveZip')).toBeHidden(); expect(await driveStorage(page)).toEqual(before);
 });
 test('Drive backups: editing is unlocked during upload; disconnect terminates it, then local ZIP works offline', async ({ page, context }) => {
   const state = await backupDriveMock(page, { hold: true }); await openHome(page); await createDocument(page, 'Редактор во время загрузки');
   await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click(); await configure(page); await connect(page);
-  const before = await driveStorage(page); await page.locator('#driveCreate').click(); await expect.poll(() => state.chunks).toBe(1);
+  const before = await driveStorage(page); await page.locator('#driveCopiesTab').click(); await page.locator('#driveCreate').click(); await expect.poll(() => state.chunks).toBe(1);
+  await page.locator('#googleDriveDialog [data-backup-close]').click();
   await page.locator('[data-tab-id]').first().click(); await addShape(page); await savedDocument(page, 'Редактор во время загрузки', 1);
-  await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click(); await page.locator('#driveDisconnect').click();
+  await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click(); await page.locator('#googleDriveCard').click(); await page.locator('#driveCopiesTab').click(); await page.locator('#driveDisconnect').click();
   await expect(page.locator('#driveBackups')).toBeHidden(); await expect(page.locator('#driveProgress')).toContainText('прервана');
   const after = await driveStorage(page); expect(after.projects).toEqual(before.projects); expect(after.fonts).toEqual(before.fonts); expect(after.settings).toEqual(before.settings);
-  await context.setOffline(true); await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await context.setOffline(true); await page.locator('#googleDriveDialog [data-backup-close]').click(); await page.locator('#zipStorage').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
   const pending = page.waitForEvent('download'); await page.locator('#zipConfirm').click(); const bytes = await readFile(await (await pending).path());
   expect((await (await import('../src/backup/archive.mjs')).readBackup(bytes)).data.docs.some(d => d.elements.length)).toBe(true);
 });
@@ -237,19 +245,29 @@ test('Drive accounts: three rows, shared ZIP, partial failure, isolated lists/do
   const row = id => rows.filter({ has: page.locator('label', { hasText: 'Google ' + id }) });
   for (chosen of ['A', 'B', 'C']) { await page.evaluate(id => { window.__pick = id; }, chosen); await connect(page); await expect(row(chosen)).toContainText('Подключён'); }
   await page.evaluate(() => { window.__pick = 'A'; }); await connect(page); await expect(rows).toHaveCount(3);
-  for (const id of ['A', 'B', 'C']) await row(id).locator('input').check();
+  await page.locator('#driveCreateTab').click();
+  for (const id of ['A', 'B', 'C']) {
+    if (id === 'C') await page.getByRole('navigation', { name: 'Google-аккаунты', exact: true }).getByRole('button', { name: 'Следующая страница' }).click();
+    await row(id).locator('input').check();
+  }
+  await page.evaluate(() => { window.__accountInputs = [...document.querySelectorAll('#driveAccounts input')]; });
+  await page.locator('#driveAccountsTab').click(); await page.locator('#driveCreateTab').click();
+  for (const id of ['A', 'B', 'C']) await expect(row(id).locator('input')).toBeChecked();
   await page.locator('#driveCreateSelected').click();
   await expect(row('A')).toContainText('Резервная копия сохранена'); await expect(row('B')).toContainText('403'); await expect(row('C')).toContainText('Резервная копия сохранена');
+  expect(await page.evaluate(() => window.__accountInputs.every((input, index) => input === document.querySelectorAll('#driveAccounts input')[index]))).toBe(true);
   await expect(page.locator('#driveStatus')).toContainText('неподтверждённые'); expect(states.get('A').bytes).toEqual(states.get('C').bytes);
+  await page.locator('#driveCopiesTab').click();
   for (const id of ['A', 'B', 'C']) {
-    await row(id).getByRole('button', { name: 'Просмотр копий', exact: true }).click();
+    await page.locator('#driveActiveAccount').selectOption(id);
+    await page.locator('#driveRefresh').click();
     await expect(page.locator('#driveAccountTitle')).toHaveText('Копии: Google ' + id);
     await expect(page.locator('#driveList button')).toHaveCount(id === 'B' ? 0 : 1);
   }
-  await row('A').getByRole('button', { name: 'Просмотр копий', exact: true }).click(); await page.locator('#driveList button').click(); await expect(page.locator('#driveProgress')).toContainText('ZIP проверен');
+  await page.locator('#driveActiveAccount').selectOption('A'); await page.locator('#driveRefresh').click(); await page.locator('#driveList button').click(); await expect(page.locator('#driveProgress')).toContainText('ZIP проверен');
   const pending = page.waitForEvent('download'); await page.locator('#driveSaveZip').click(); expect(await readFile(await (await pending).path())).toEqual(states.get('A').bytes);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.reload(); await page.locator('[data-home-nav=data]').click(); await expect(rows).toHaveCount(3);
+  await page.reload(); await page.locator('[data-home-nav=data]').click(); await page.locator('#googleDriveCard').click(); await expect(rows).toHaveCount(3);
   for (const id of ['A', 'B', 'C']) await expect(row(id)).toContainText('Требуется подключение');
   await page.evaluate(() => { window.__pick = 'C'; }); await row('A').getByRole('button', { name: 'Подключить', exact: true }).click(); await page.locator('#driveConnect').click();
   await expect(page.locator('#driveStatus')).toContainText('другой Google-аккаунт'); await expect(row('A')).toContainText('Требуется подключение'); await expect(rows).toHaveCount(3);

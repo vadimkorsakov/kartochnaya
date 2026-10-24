@@ -11,13 +11,13 @@ const model = () => import('../src/backup/archive.mjs');
 async function all(page) { const out = {}; for (const name of ['projects', 'docs', 'fonts', 'settings']) out[name] = await records(page, name); return out; }
 async function dataPane(page) { await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click(); }
 async function createZIP(page, ids = null) {
-  await dataPane(page); await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await dataPane(page); await page.locator('#zipStorage').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
   if (ids) { await page.locator('[name=zipScope][value=selected]').check(); for (const box of await page.locator('[data-zip-project]').all()) await box.setChecked(ids.includes(await box.getAttribute('data-zip-project'))); }
   const pending = page.waitForEvent('download'); await page.locator('#zipConfirm').click(); const download = await pending;
   const bytes = await readFile(await download.path()); await expect(page.locator('#zipStatus')).toContainText('передан браузеру');
   await page.locator('#zipCancel').click(); return bytes;
 }
-async function settled(page) { await dataPane(page); await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled(); await page.locator('#zipCancel').click(); }
+async function settled(page) { await dataPane(page); await page.locator('#zipStorage').click(); await expect(page.locator('#zipConfirm')).toBeEnabled(); await page.locator('#zipCancel').click(); }
 async function preview(page, bytes) {
   if (bytes.length > 50 * 1024 * 1024) { const path = test.info().outputPath('large-input.zip'); await mkdir(dirname(path), {recursive:true}); await writeFile(path, bytes); await page.locator('#zipInput').setInputFiles(path); }
   else await page.locator('#zipInput').setInputFiles({ name: 'copy.zip', mimeType: 'application/zip', buffer: Buffer.from(bytes) });
@@ -104,7 +104,7 @@ test('active and inactive tabs, debounce and held genuine transactions are drain
   await page.locator(`[data-tab-id="${a.id}"]`).click(); await page.evaluate(() => { zipFault.holdDocs = true; }); await addShape(page);
   await expect.poll(() => page.evaluate(() => zipFault.release.length)).toBeGreaterThan(0);
   await page.locator(`[data-tab-id="${b.id}"]`).click(); await addShape(page); await dataPane(page);
-  await page.locator('#zipCreate').click(); await expect(page.locator('#zipStatus')).toContainText('Подтверждаем'); await expect(page.locator('#zipConfirm')).toBeDisabled();
+  await page.locator('#zipStorage').click(); await expect(page.locator('#zipStatus')).toContainText('Подтверждаем'); await expect(page.locator('#zipConfirm')).toBeDisabled();
   expect(await page.evaluate(() => zipFault.reads)).toBe(0);
   await page.evaluate(() => { zipFault.holdDocs = false; zipFault.release.splice(0).forEach(f => f()); });
   await expect(page.locator('#zipConfirm')).toBeEnabled(); const downloadPromise = page.waitForEvent('download'); await page.locator('#zipConfirm').click(); const bytes = await readFile(await (await downloadPromise).path());
@@ -113,7 +113,7 @@ test('active and inactive tabs, debounce and held genuine transactions are drain
 });
 test('snapshot refusal preserves data and produces no backup download', async ({ page }) => {
   await fault(page); await openHome(page); await dataPane(page); let downloads = 0; page.on('download', () => { downloads++; });
-  await page.evaluate(() => { zipFault.failRead = true; }); await page.locator('#zipCreate').click(); await expect(page.locator('#zipStatus')).toContainText('Snapshot refused'); await expect(page.locator('#zipConfirm')).toBeDisabled(); expect(downloads).toBe(0);
+  await page.evaluate(() => { zipFault.failRead = true; }); await page.locator('#zipStorage').click(); await expect(page.locator('#zipStatus')).toContainText('Snapshot refused'); await expect(page.locator('#zipConfirm')).toBeDisabled(); expect(downloads).toBe(0);
   await page.locator('#zipCancel').click(); await expect(page.locator('#zipCreate')).toBeEnabled();
 });
 test('restore abort after first successful request rolls back all additions and keeps globals', async ({ page }) => {
@@ -184,4 +184,24 @@ test.describe('standalone offline without optional service worker', () => {
 test('PWA ZIP works after the browser goes offline', async ({ page, context }) => {
   await openHome(page); await page.evaluate(() => navigator.serviceWorker.ready); await context.setOffline(true);
   const bytes = await createZIP(page); await preview(page, bytes); await expect(page.locator('#zipConfirm')).toBeEnabled(); await page.locator('#zipConfirm').click(); await expect(page.locator('#zipStatus')).toContainText('Транзакция завершена');
+});
+
+test('UI-2: paged project selection survives tabs and produces only the chosen projects', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 }); await openHome(page);
+  const m = await model();
+  const incoming = await m.createBackup({ projects: Array.from({ length: 9 }, (_, n) => ({ id: 'paged-' + n, name: 'Длинное название проекта '.repeat(6) + n })), docs: [], fonts: [], settings: [] });
+  await preview(page, incoming.bytes); await page.locator('#zipConfirm').click(); await expect(page.locator('#zipStatus')).toContainText('Транзакция завершена'); await page.locator('#zipCancel').click();
+  await dataPane(page); await page.locator('#zipStorage').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await page.locator('[name=zipScope][value=selected]').check();
+  await expect(page.locator('#zipProjects label:visible')).toHaveCount(3);
+  const omitted = [];
+  for (const box of await page.locator('#zipProjects label:visible input').all()) { omitted.push(await box.getAttribute('data-zip-project')); await box.uncheck(); }
+  await page.locator('#zipRestore').click(); await page.locator('#zipCreate').click();
+  for (const box of await page.locator('#zipProjects label:visible input').all()) await expect(box).not.toBeChecked();
+  const next = page.getByRole('navigation', { name: 'Проекты ZIP', exact: true }).getByRole('button', { name: 'Следующая страница' });
+  await next.click(); await next.click(); await next.click(); await expect(page.locator('#zipProjects label:visible')).toHaveCount(1);
+  expect(await page.locator('#zipBackupDialog').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  const pending = page.waitForEvent('download'); await page.locator('#zipConfirm').click(); const parsed = await m.readBackup(await readFile(await (await pending).path()));
+  expect(parsed.manifest.scope).toBe('selected-projects'); expect(parsed.data.projects).toHaveLength(7);
+  expect(parsed.data.projects.every(project => !omitted.includes(project.id))).toBe(true);
 });

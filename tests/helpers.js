@@ -49,7 +49,8 @@ async function createDocument(page, title = 'Baseline smoke', width = 320, heigh
 
 async function downloadBytes(page, selector) {
   const pending = page.waitForEvent('download');
-  await page.locator(selector).click();
+  if (selector === '#jsonExportBtn') await page.locator(selector).evaluate(button => button.click());
+  else await page.locator(selector).click();
   const download = await pending;
   expect(await download.failure()).toBeNull();
   const filename = await download.path();

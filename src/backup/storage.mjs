@@ -28,7 +28,7 @@ export function createWorkspaceBarrier() {
   }
   async function drain() {
     while (pending.size) await Promise.allSettled([...pending]);
-    if (writeFailure) throw new Error('Есть неподтверждённая запись. Экспортируй JSON и проверь хранилище: ' + writeFailure.message);
+    if (writeFailure) throw new Error('Есть неподтверждённая запись. Невозможно подтвердить сохранение. Не закрывай приложение; проверь хранилище: ' + writeFailure.message);
   }
   return { track, drain };
 }

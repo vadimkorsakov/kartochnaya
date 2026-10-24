@@ -111,10 +111,10 @@ test('active and inactive tabs, debounce and held genuine transactions are drain
   const data = (await (await model()).readBackup(bytes)).data; expect(data.docs.find(d => d.id === a.id).elements).toHaveLength(1); expect(data.docs.find(d => d.id === b.id).elements).toHaveLength(1);
   expect(await page.evaluate(() => zipFault.commits)).toBe(2);
 });
-test('snapshot refusal leaves JSON available and produces no backup download', async ({ page }) => {
+test('snapshot refusal preserves data and produces no backup download', async ({ page }) => {
   await fault(page); await openHome(page); await dataPane(page); let downloads = 0; page.on('download', () => { downloads++; });
   await page.evaluate(() => { zipFault.failRead = true; }); await page.locator('#zipCreate').click(); await expect(page.locator('#zipStatus')).toContainText('Snapshot refused'); await expect(page.locator('#zipConfirm')).toBeDisabled(); expect(downloads).toBe(0);
-  await page.locator('#zipCancel').click(); await expect(page.locator('[data-home-action=export-backup]').last()).toBeEnabled();
+  await page.locator('#zipCancel').click(); await expect(page.locator('#zipCreate')).toBeEnabled();
 });
 test('restore abort after first successful request rolls back all additions and keeps globals', async ({ page }) => {
   await fault(page); await openHome(page); await settled(page); const before = await all(page);

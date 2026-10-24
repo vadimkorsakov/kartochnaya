@@ -113,7 +113,7 @@ test('C: delayed old document cannot mark the new document saved; both tabs pers
   expect((await exportedDocument(page)).elements).toEqual(saved.find(d => d.id === second.id).elements);
 });
 
-test('D: aborted autosave keeps active and dormant tabs; document and project JSON rescue current memory', async ({ page }) => {
+test('D: aborted autosave keeps active and dormant tabs; ZIP refuses unconfirmed memory without losing tabs', async ({ page }) => {
   await instrument(page); await openHome(page); await createDocument(page, 'Storage D');
   await expect(page.locator('#saveStatus')).toHaveText('Сохранено на этом устройстве');
   const original = await exportedDocument(page);
@@ -125,26 +125,28 @@ test('D: aborted autosave keeps active and dormant tabs; document and project JS
   expect((await exportedDocument(page)).elements).toHaveLength(1);
   expect((await records(page, 'docs')).find(d => d.id === original.id).elements).toHaveLength(0);
   await page.locator('#documentTabsHome').click();
-  // Close a dormant failed tab, then export the whole project while it remains in memory.
+  // ZIP must refuse an unconfirmed dormant tab and preserve the in-memory edit.
   await page.locator(`[data-tab-id="${original.id}"] .document-tab-close`).click();
   await expect(page.locator(`[data-tab-id="${original.id}"]`)).toBeVisible();
   await page.locator('[data-home-nav="data"]').click();
-  await page.locator('#homeDataPane [data-home-action="export-backup"]').click();
-  const pending = page.waitForEvent('download'); await page.locator('#projectExportConfirm').click();
-  const download = await pending;
-  const payload = JSON.parse(await readFile(await download.path(), 'utf8'));
-  expect(payload.documents.find(d => d.id === original.id).elements).toHaveLength(1);
+  let downloads = 0; page.on('download', () => downloads++);
+  await page.locator('#zipCreate').click();
+  await expect(page.locator('#zipStatus')).toContainText('не подтверждено');
+  await expect(page.locator('#zipConfirm')).toBeDisabled();
+  expect(downloads).toBe(0);
+  await page.locator('#zipCancel').click();
   await page.locator(`[data-tab-id="${original.id}"]`).click();
+  expect((await exportedDocument(page)).elements).toHaveLength(1);
   await expect(page.locator('#saveStatus')).toContainText('Ошибка сохранения');
   await page.evaluate(() => { idbControl.abort = false; });
   await addShape(page); await expect(page.locator('#saveStatus')).toHaveText('Сохранено на этом устройстве');
   await savedDocument(page, original.title, 2);
 });
 
-test('unavailable IndexedDB: first launch remains editable, JSON export works, close retains unsaved tab', async ({ page }) => {
+test('unavailable IndexedDB: first launch remains editable, fixture observation works, close retains unsaved tab', async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(window, 'indexedDB', { get() { throw new DOMException('Synthetic denial', 'SecurityError'); } }));
   await openHome(page); await createDocument(page, 'Только память'); await createText(page, 'Спасти в JSON');
-  await expect(page.locator('#saveStatus')).toContainText('JSON');
+  await expect(page.locator('#saveStatus')).toContainText('сохранение не подтверждено');
   expect(await page.locator('#saveStatus').textContent()).not.toContain('Сохранено');
   const document = await exportedDocument(page); expect(document.elements[0].text).toBe('Спасти в JSON');
   await page.locator(`[data-tab-id="${document.id}"] .document-tab-close`).click();
@@ -261,7 +263,7 @@ test('startup read failure does not overwrite an existing database with defaults
   expect(persisted.elements).toEqual(doc.elements); expect(persisted.projectId).toBe(doc.projectId);
   await openLibraryDocument(page, doc.id);
   expect((await exportedDocument(page)).elements).toEqual(doc.elements);
-  await expect(page.locator('#saveStatus')).toContainText('JSON');
+  await expect(page.locator('#saveStatus')).toContainText('сохранение не подтверждено');
 });
 
 test('failed project writes preserve resource folders, assets and the old project name in memory', async ({ page }) => {
@@ -275,7 +277,7 @@ test('failed project writes preserve resource folders, assets and the old projec
   await page.locator('[data-filter="resource"]').click();
   page.once('dialog', dialog => dialog.accept());
   await page.locator(`[data-folder-delete="${project.resourceFolders[0].id}"]`).click();
-  await expect(page.locator('#toast')).toContainText('Не сохранилось');
+  await expect(page.locator('#toast')).toContainText('Сохранение не подтверждено');
   await expect(page.locator(`[data-folder-card="${project.resourceFolders[0].id}"]`)).toBeVisible();
   await page.locator(`[data-folder-open="${project.resourceFolders[0].id}"]`).first().click();
   const assetId = project.resources[0].id;
@@ -286,11 +288,20 @@ test('failed project writes preserve resource folders, assets and the old projec
   await page.locator('.rename-project').press('Enter');
   await expect(page.locator('#activeProjectName')).toHaveText(project.name);
   await page.locator('[data-home-nav="data"]').click();
-  await page.locator('#homeDataPane [data-home-action="export-backup"]').click();
-  const pending = page.waitForEvent('download'); await page.locator('#projectExportConfirm').click();
+  await page.locator('#zipCreate').click();
+  await expect(page.locator('#zipStatus')).toContainText('Есть неподтверждённая запись');
+  await expect(page.locator('#zipConfirm')).toBeDisabled();
+  expect((await records(page, 'projects')).find(p => p.id === project.id)).toEqual(project);
+  await page.locator('#zipCancel').click();
+  // Reload reconciles memory with committed storage; the rejected mutations stay rejected.
+  await page.reload(); await expect(page.locator('#homeScreen')).toBeVisible();
+  await page.locator('[data-home-nav="data"]').click();
+  await page.locator('#zipCreate').click();
+  await expect(page.locator('#zipConfirm')).toBeEnabled();
+  const pending = page.waitForEvent('download'); await page.locator('#zipConfirm').click();
   const download = await pending;
-  const payload = JSON.parse(await readFile(await download.path(), 'utf8'));
-  const exported = payload.projects.find(p => p.project.id === project.id).project;
+  const payload = await (await import('../src/backup/archive.mjs')).readBackup(await readFile(await download.path()));
+  const exported = payload.data.projects.find(p => p.id === project.id);
   expect(exported.name).toBe(project.name);
   expect(exported.resources).toEqual(project.resources);
   expect(exported.resourceFolders).toEqual(project.resourceFolders);
@@ -344,7 +355,7 @@ for (const action of ['move category', 'delete category', 'delete custom shape']
       page.once('dialog', dialog => dialog.accept());
       await page.locator('[data-shape-remove="custom-a1"]').click();
     }
-    await expect(page.locator('#toast')).toHaveText('Изменения фигур только в памяти · экспортируй JSON');
+    await expect(page.locator('#toast')).toHaveText('Изменения фигур только в памяти · сохранение не подтверждено');
     await expect.poll(() => page.evaluate(() => idbControl.successes.length)).toBe(1);
     expect(await page.evaluate(() => idbControl.completes)).toBe(0);
     expect(await catalogInDB()).toEqual(sections); // Request success was rolled back by the real transaction.
@@ -353,7 +364,7 @@ for (const action of ['move category', 'delete category', 'delete custom shape']
     expect(await trayNames()).toEqual(expected.map(group => group.name));
     expect(await trayIds()).toEqual(expected.flatMap(group => group.shapes.map(shape => shape.id)));
     await page.locator('#dockShapes').click();
-    const downloadPromise = page.waitForEvent('download'); await page.locator('#jsonExportBtn').click();
+    const downloadPromise = page.waitForEvent('download'); await page.locator('#jsonExportBtn').evaluate(button => button.click());
     const download = await downloadPromise;
     const payload = JSON.parse(await readFile(await download.path(), 'utf8'));
     expect(payload.shapeCatalog).toEqual(expected); // Unsaved catalog can be rescued from memory.

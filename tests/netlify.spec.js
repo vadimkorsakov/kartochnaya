@@ -166,3 +166,17 @@ test('stalled registration stops preparation after deadline and offers retry', a
   await expect(page.locator('#pwaStatus')).toContainText('30 секунд');
   await expect(page.locator('#pwaRetry')).toBeEnabled();
 });
+
+// Cloud cards are installed only in the Netlify distribution.
+test('UI-1: backup section retains local ZIP, Google Drive and Yandex cards', async ({ page }) => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await openHome(page);
+  const before = await records(page, 'docs');
+  await page.locator('[data-home-nav="data"]').click();
+  await expect(page.locator('#homeDataPane h1')).toHaveText('Резервные копии');
+  await expect(page.locator('#homeDataPane .home-data-card')).toHaveCount(3);
+  for (const id of ['zipCreate', 'zipOpen', 'driveAdd', 'yandexConnect']) await expect(page.locator('#' + id)).toBeVisible();
+  await expect(page.locator('button:visible').filter({ hasText: /JSON/i })).toHaveCount(0);
+  expect(await records(page, 'docs')).toEqual(before);
+  expect(errors).toEqual([]);
+});

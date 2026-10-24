@@ -133,7 +133,7 @@ test('shape catalog module: real file import, export, IndexedDB, reload and canv
   await importCatalogDocument(page);
   await expect.poll(() => savedCatalog(page)).toEqual(catalogExpected);
   await page.locator('#backupsBtn').click();
-  await page.locator('#zipCreate').click();
+  await page.locator('#zipStorage').click();
   await expect(page.locator('#zipConfirm')).toBeEnabled();
   const download = page.waitForEvent('download');
   await page.locator('#zipConfirm').click();

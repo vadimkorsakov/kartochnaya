@@ -130,7 +130,7 @@ test('D: aborted autosave keeps active and dormant tabs; ZIP refuses unconfirmed
   await expect(page.locator(`[data-tab-id="${original.id}"]`)).toBeVisible();
   await page.locator('[data-home-nav="data"]').click();
   let downloads = 0; page.on('download', () => downloads++);
-  await page.locator('#zipCreate').click();
+  await page.locator('#zipStorage').click();
   await expect(page.locator('#zipStatus')).toContainText('не подтверждено');
   await expect(page.locator('#zipConfirm')).toBeDisabled();
   expect(downloads).toBe(0);
@@ -288,7 +288,7 @@ test('failed project writes preserve resource folders, assets and the old projec
   await page.locator('.rename-project').press('Enter');
   await expect(page.locator('#activeProjectName')).toHaveText(project.name);
   await page.locator('[data-home-nav="data"]').click();
-  await page.locator('#zipCreate').click();
+  await page.locator('#zipStorage').click();
   await expect(page.locator('#zipStatus')).toContainText('Есть неподтверждённая запись');
   await expect(page.locator('#zipConfirm')).toBeDisabled();
   expect((await records(page, 'projects')).find(p => p.id === project.id)).toEqual(project);
@@ -296,7 +296,7 @@ test('failed project writes preserve resource folders, assets and the old projec
   // Reload reconciles memory with committed storage; the rejected mutations stay rejected.
   await page.reload(); await expect(page.locator('#homeScreen')).toBeVisible();
   await page.locator('[data-home-nav="data"]').click();
-  await page.locator('#zipCreate').click();
+  await page.locator('#zipStorage').click();
   await expect(page.locator('#zipConfirm')).toBeEnabled();
   const pending = page.waitForEvent('download'); await page.locator('#zipConfirm').click();
   const download = await pending;

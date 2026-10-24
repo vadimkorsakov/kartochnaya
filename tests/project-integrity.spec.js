@@ -273,7 +273,7 @@ test.describe('large native ZIP round trips', () => {
     expect((await stat(seedPath)).size).toBeGreaterThan(50 * 1024 * 1024);
     await openHome(page); await page.locator('#jsonInput').setInputFiles(seedPath);
     await expect(page.locator('#toast')).toContainText('Импортировано проектов', { timeout: 60_000 });
-    await page.locator('[data-home-nav="data"]').click(); await page.locator('#zipCreate').click();
+    await page.locator('[data-home-nav="data"]').click(); await page.locator('#zipStorage').click();
     await expect(page.locator('#zipConfirm')).toBeEnabled();
     await page.locator('[name=zipScope][value=selected]').check();
     const boxes = page.locator('[data-zip-project]');

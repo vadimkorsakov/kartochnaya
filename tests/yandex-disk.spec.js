@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { openHome, createDocument, addShape, savedDocument } = require('./helpers');
 const ID = 'a'.repeat(32), TOKEN = 'yandex-memory-only-test-token', CODE = 'yandex-one-use-test-code';
 const KEY = 'kartochnaya-yandex-public-client-id';
-async function home(page) { await openHome(page); await page.locator('[data-home-nav=data]').click(); }
+async function home(page) { await openHome(page); await page.locator('[data-home-nav=data]').click(); await page.locator('#yandexCard').click(); }
 async function configure(page) {
   await page.locator('#yandexConfigure').click(); await page.locator('#yandexClientId').fill(ID);
   await page.locator('#yandexSettings button[type=submit]').click();
@@ -55,8 +55,13 @@ test('Yandex mock browser: real popup/callback, memory-only session, explicit tr
   });
   await home(page); expect(seen.token).toBe(0); expect(seen.api).toBe(0); await configure(page); await connect(page);
   expect(await page.evaluate(() => window.yandexActivation)).toBe(true);
-  await page.locator('#yandexApi').click(); await expect(page.locator('#yandexResults')).toContainText('Папка app:/: Подтверждено'); expect(seen.put).toBe(0);
+  await page.locator('#yandexDialog [data-backup-close]').click(); await expect(page.locator('#yandexCard')).toBeFocused();
+  await expect(page.locator('#yandexCard')).toContainText('подключён'); await page.locator('#yandexCard').click();
+  await page.locator('#yandexDiagnosticsTab').click(); await page.locator('#yandexApi').click(); await expect(page.locator('#yandexResults')).toContainText('Папка app:/: Подтверждено'); expect(seen.put).toBe(0);
   await page.locator('#yandexTransfer').click(); await expect(page.locator('#yandexResults')).toContainText('содержимое совпадает');
+  await page.locator('#yandexConnectionTab').click(); await page.locator('#yandexDiagnosticsTab').click();
+  await page.getByRole('navigation', { name: 'Шаги диагностики Яндекса', exact: true }).getByRole('button', { name: 'Следующая страница' }).click();
+  await expect(page.locator('#yandexResults p:visible').filter({ hasText: 'содержимое совпадает' })).toHaveCount(1);
   expect(seen.put).toBe(1); expect(seen.get).toBe(1); expect(seen.deletes).toHaveLength(0);
   const path = (await page.locator('#yandexPath').textContent()).match(/app:\/kartochnaya-probe-[\w-]+\.txt/)[0];
   await page.locator('#yandexRemove').click(); await expect(page.locator('#yandexPath')).toHaveText(''); expect(seen.deletes).toEqual([path]);
@@ -67,7 +72,7 @@ test('Yandex mock browser: real popup/callback, memory-only session, explicit tr
   expect(cached.join('\n')).not.toMatch(/yandex-callback|code=|state=|oauth.yandex/);
   await page.locator('#yandexDisconnect').click(); await expect(page.locator('#yandexApi')).toBeDisabled();
   await expect(page.locator('#yandexResults')).toContainText('Папка app:/: Не проверено');
-  await page.reload(); await page.locator('[data-home-nav=data]').click(); await expect(page.locator('#yandexApi')).toBeDisabled(); expect(seen.token).toBe(1);
+  await page.reload(); await page.locator('[data-home-nav=data]').click(); await page.locator('#yandexCard').click(); await expect(page.locator('#yandexApi')).toBeDisabled(); expect(seen.token).toBe(1);
 });
 test('Yandex mock browser: forged source ignored, wrong state cancels, unknown callback refused', async ({ page, context }) => {
   const seen = await mock(context); await home(page); await configure(page);
@@ -89,11 +94,12 @@ test('Yandex mock browser: close, cancel and denied callback remain retryable', 
 test('Yandex mock browser: token network failure identifies OAuth step and local editor still saves', async ({ page, context }) => {
   const seen = await mock(context, { network: true }); await home(page); await configure(page);
   const p = await popup(page); await callback(p); await expect(page.locator('#yandexStatus')).toContainText('OAuth POST /token'); await expect(page.locator('#yandexStatus')).toContainText('CORS'); expect(seen.token).toBe(1);
+  await page.locator('#yandexDialog [data-backup-close]').click();
   await page.locator('[data-home-nav=workspace]').click(); await createDocument(page, 'After Yandex failure'); await addShape(page); await savedDocument(page, 'After Yandex failure', 1);
 });
 test('Yandex mock browser: identification 403 independent, wrong downloaded content visible', async ({ page, context }) => {
   await mock(context, { identity: 403, badDownload: true }); await home(page); await configure(page); await connect(page);
-  await page.locator('#yandexApi').click(); await expect(page.locator('#yandexResults')).toContainText('HTTP 403'); await expect(page.locator('#yandexResults')).toContainText('Папка app:/: Подтверждено');
+  await page.locator('#yandexDiagnosticsTab').click(); await page.locator('#yandexApi').click(); await expect(page.locator('#yandexResults')).toContainText('HTTP 403'); await expect(page.locator('#yandexResults')).toContainText('Папка app:/: Подтверждено');
   await page.locator('#yandexTransfer').click(); await expect(page.locator('#yandexResults')).toContainText('не совпадает'); await expect(page.locator('#yandexRemove')).toBeEnabled();
 });
 test('callback alone: no editor, IndexedDB, SW or external resources; query removed; opener-null explanation', async ({ page }) => {

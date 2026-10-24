@@ -232,9 +232,11 @@ for (const failure of ['failPackaging', 'failDownload']) test(`optional ZIP ${fa
   await page.evaluate(key => { replaceFault[key] = false; }, failure); await commit(page);
   expect((await all(page)).projects).toEqual(archive.data.projects);
 });
-for (const escape of [false, true]) test(`cancel prepared replacement using ${escape ? 'Escape' : 'button'} releases lock and allows editing and re-preparation`, async ({ page }) => {
+for (const close of ['button', 'Escape', '×']) test(`cancel prepared replacement using ${close} releases lock and allows editing and re-preparation`, async ({ page }) => {
   await openHome(page); const archive = await incoming(); await replaceMode(page, archive.bytes); await prepare(page);
-  if (escape) await page.keyboard.press('Escape'); else await page.locator('#zipCancel').click();
+  if (close === 'Escape') await page.keyboard.press('Escape');
+  else if (close === '×') await page.locator('#zipBackupDialog [data-backup-close]').click();
+  else await page.locator('#zipCancel').click();
   await expect(page.locator('#zipBackupDialog')).not.toBeVisible();
   const locks = await page.evaluate(() => navigator.locks.query()); expect(locks.held.some(x => x.mode === 'exclusive')).toBe(false);
   await createDocument(page, 'After cancel'); await addShape(page); await page.locator('#documentTabsHome').click();
@@ -259,4 +261,36 @@ test('reopening a valid ZIP after preparation releases the prior session and req
   await replaceMode(page, archive.bytes); await expect(page.locator('#zipConfirm')).toBeDisabled();
   const locks = await page.evaluate(() => navigator.locks.query()); expect(locks.held.some(x => x.mode === 'exclusive')).toBe(false);
   await prepare(page); await commit(page); expect((await all(page)).projects).toEqual(archive.data.projects);
+});
+
+test('UI-2: prepared replacement blocks backdrop/navigation and a mode change cancels its lock', async ({ page }) => {
+  await openHome(page); await page.locator('[data-home-nav=data]').click(); await page.locator('#zipStorage').click();
+  await expect(page.locator('#zipConfirm')).toBeEnabled(); await replaceMode(page, (await incoming()).bytes); await prepare(page);
+  const before = await all(page);
+  await page.mouse.click(1, 1); await expect(page.locator('#zipBackupDialog')).toBeVisible();
+  expect((await page.evaluate(() => navigator.locks.query())).held.some(lock => lock.mode === 'exclusive')).toBe(true);
+  await page.locator('[data-home-nav=workspace]').evaluate(button => button.click());
+  await expect(page.locator('#homeDataPane')).toBeVisible();
+  await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  expect((await page.evaluate(() => navigator.locks.query())).held.some(lock => lock.mode === 'exclusive')).toBe(false);
+  await page.locator('#zipRestore').click(); await expect(page.locator('#zipReplacePrepare')).toBeEnabled(); await expect(page.locator('#zipConfirm')).toBeDisabled();
+  expect(await all(page)).toEqual(before); await page.locator('#zipCancel').click();
+  await expect(page.locator('#zipStorage')).toBeFocused();
+});
+
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 390, height: 844 }, { width: 360, height: 640 }]) test(`UI-2 replacement stages keep actions in the viewport ${viewport.width}x${viewport.height}`, async ({ page }) => {
+  await page.setViewportSize(viewport); await openHome(page); await replaceMode(page, (await incoming()).bytes);
+  for (const stage of ['review', 'prepared']) {
+    if (stage === 'prepared') await prepare(page);
+    const geometry = await page.locator('#zipBackupDialog').evaluate(node => {
+      const r = node.getBoundingClientRect(), content = node.querySelector('.backup-content'), action = node.querySelector('#zipReplacePrepare:not([hidden]), #zipConfirm:not([hidden])').getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, right: r.right, actionBottom: action.bottom, horizontal: node.scrollWidth > node.clientWidth, wholeScroll: node.scrollHeight > node.clientHeight, contentScroll: content.scrollHeight > content.clientHeight };
+    });
+    expect(geometry.top).toBeGreaterThanOrEqual(0); expect(geometry.bottom).toBeLessThanOrEqual(viewport.height); expect(geometry.right).toBeLessThanOrEqual(viewport.width);
+    expect(geometry.actionBottom).toBeLessThanOrEqual(viewport.height); expect(geometry.horizontal).toBe(false); expect(geometry.wholeScroll).toBe(false);
+    if (viewport.width >= 760) expect(geometry.contentScroll).toBe(false);
+    await page.screenshot({ path: test.info().outputPath(stage + '.png') });
+  }
+  await page.keyboard.press('Escape');
+  expect((await page.evaluate(() => navigator.locks.query())).held.some(lock => lock.mode === 'exclusive')).toBe(false);
 });

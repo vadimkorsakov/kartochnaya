@@ -7,6 +7,7 @@ export const ANDROID_CLOUD_BYTES = 128 * 1024 * 1024;
 export const MAX_LIST_ITEMS = 1000;
 export const UNCERTAIN = 'Загрузка не подтверждена. Файл мог сохраниться на Диске. Обнови список копий';
 const endpoint = (path, suffix = '', params = {}) => 'https://cloud-api.yandex.net/v1/disk/resources' + suffix + '?' + new URLSearchParams({ path, ...params });
+const reconnect = message => Object.assign(Error(message), { code: 'reconnect' });
 async function json(res) {
   if (!res.ok) throw Error(res.status === 403 ? 'HTTP 403: недостаточно прав Яндекс Диска.' : res.status === 404 ? 'HTTP 404: файл отсутствует или удалён.' : `Яндекс Диск: HTTP ${res.status}. Операция отклонена.`);
   try { const body = await res.json(); if (!body || typeof body !== 'object' || Array.isArray(body)) throw Error(); return body; }
@@ -34,9 +35,16 @@ function delay(ms, signal) {
 // No database/global editor access; snapshot and preference readers are injected.
 export function createYandexClient(oauth) {
   let generation = -1, accountId = null;
-  const attempted = new WeakSet(), selections = new WeakMap(), uploadOwners = new WeakMap();
+  const attempted = new WeakSet(), selections = new WeakMap();
+  let uploadOwners = new WeakMap();
   let downloading = false;
-  function reset() { generation = -1; accountId = null; }
+  function reset() { generation = -1; accountId = null; uploadOwners = new WeakMap(); }
+  function sessionFailure(error, expectedGeneration) {
+    const current = oauth.view();
+    // Once PUT may have happened, uncertainty takes precedence over reconnect.
+    if (!error.message.startsWith(UNCERTAIN) && (!current.connected || current.generation !== expectedGeneration)) error.code = 'reconnect';
+    throw error;
+  }
   async function identity(op) {
     op.check();
     const current = oauth.view().generation;
@@ -47,9 +55,14 @@ export function createYandexClient(oauth) {
       if (typeof body.id === 'string' && body.id.length > 0 && body.id.length <= 200) id = body.id;
     } catch { op.check(); }
     op.check();
-    if (accountId !== null && id !== accountId) {
+    if (id === null && accountId !== null) {
+      // A failed lookup is neither a new confirmation nor proof of a switch.
+      // Keep the trusted ID in this generation, but fail this operation closed.
+      throw Error('Аккаунт Яндекса не подтверждён: не удалось проверить личность. Дождись восстановления связи; сеанс сохранён.');
+    }
+    if (id !== null && accountId !== null && id !== accountId) {
       reset(); oauth.disconnect('Аккаунт не подтверждён. Подключи Яндекс повторно.');
-      throw Error('Аккаунт изменился или не подтверждён. Подключи Яндекс повторно.');
+      throw reconnect('Аккаунт изменился. Подключи Яндекс повторно.');
     }
     accountId = id; // Unknown identity is never replaced with a previous session's ID.
   }
@@ -149,15 +162,17 @@ export function createYandexClient(oauth) {
     }, { signal, timeoutMs: 900000 }); }
     finally { downloading = false; }
   }
-  async function upload(op, backup, rootPath, progress) {
-    op.check();
+  async function upload(op, backup, rootPath, progress, checkOwner = () => {}) {
+    op.check(); checkOwner();
     if (attempted.has(backup)) throw Error('Этот архив уже отправлялся. Обнови список; новая загрузка требует нового явного действия.');
     const digest = preparedDigest(backup) || await sha256(backup.bytes); op.check();
     const path = 'app:/' + backup.filename;
     const link = await json(await op.request(endpoint(path, '/upload', { overwrite: 'false' }))); op.check();
     if (link.method !== 'PUT' || link.templated !== undefined && link.templated !== false) throw Error('Ошибка контракта ссылки загрузки.');
     const href = signedEndpoint(link.href);
-    attempted.add(backup); progress('Загружаем ZIP… Можно отменить передачу.');
+    progress('Загружаем ZIP… Можно отменить передачу.');
+    // Recheck after all awaits and progress callbacks, directly before signed PUT.
+    op.check(); checkOwner(); attempted.add(backup);
     try {
       const res = await op.request(href, { method: 'PUT', headers: { 'Content-Type': 'application/zip' }, body: backup.bytes }, false);
       if (![201, 202].includes(res.status)) throw Error();
@@ -171,7 +186,7 @@ export function createYandexClient(oauth) {
         const file = fileMetadata(await json(response), rootPath); op.check();
         if (!file || file.name !== backup.filename || file.size !== backup.bytes.byteLength) throw Error('Размер, имя или тип файла не совпадает.');
         if (file.sha256 && file.sha256 !== digest) throw Error('SHA-256 файла не совпадает.');
-        await identity(op); op.check();
+        await identity(op); op.check(); checkOwner();
         return { file, verification: file.sha256 ? 'sha256' : 'size' };
       }
     } catch (error) { throw Error(UNCERTAIN + '. ' + error.message); }
@@ -180,28 +195,33 @@ export function createYandexClient(oauth) {
   // Provenance capability stays inside this client and is tied to one OAuth generation.
   async function reserveUpload({ signal } = {}) {
     const initial = oauth.view();
-    if (!initial.connected || initial.busy) throw Error('Подключи Яндекс повторно.');
+    if (!initial.connected || initial.busy) throw reconnect('Подключи Яндекс повторно.');
     const owner = {};
     await oauth.operation(async op => {
       await identity(op);
       await root(op); op.check();
       if (oauth.view().generation !== initial.generation) throw Error('Исходный сеанс Яндекса изменился.');
       uploadOwners.set(owner, { generation: initial.generation, accountId });
-    }, { signal });
+    }, { signal }).catch(error => sessionFailure(error, initial.generation));
     return owner;
   }
+  function checkUpload(owner) {
+    const selected = uploadOwners.get(owner), current = oauth.view();
+    if (!selected || !current.connected || selected.generation !== current.generation || generation !== current.generation || selected.accountId !== accountId) throw reconnect('Исходный сеанс Яндекса изменился. Аккаунт не подтверждён; подключи повторно.');
+  }
+  function releaseUpload(owner) { uploadOwners.delete(owner); }
   async function uploadPrepared(backup, { owner, signal, maxBytes = MAX_CLOUD_BYTES, progress = () => {} } = {}) {
-    const selected = uploadOwners.get(owner);
-    if (!selected || !oauth.view().connected || selected.generation !== oauth.view().generation) throw Error('Исходный сеанс Яндекса изменился. Подключи повторно.');
+    checkUpload(owner);
+    const expectedGeneration = oauth.view().generation;
     if (!preparedDigest(backup) || !validBackupName(backup.filename) || backup.manifest.scope !== 'workspace') throw Error('Нужен заранее проверенный полный ZIP.');
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > MAX_CLOUD_BYTES || backup.bytes.byteLength > maxBytes) throw Error('ZIP превышает предел облачной загрузки.');
     return oauth.operation(async op => {
       await identity(op); op.check();
-      if (selected.generation !== oauth.view().generation || selected.accountId !== accountId) throw Error('Аккаунт Яндекса изменился или не подтверждён.');
+      checkUpload(owner);
       const rootPath = await root(op);
-      const result = await upload(op, backup, rootPath, progress);
+      const result = await upload(op, backup, rootPath, progress, () => checkUpload(owner));
       return { ...result, confirmed: true };
-    }, { signal, timeoutMs: 900000 });
+    }, { signal, timeoutMs: 900000 }).catch(error => sessionFailure(error, expectedGeneration));
   }
   async function create({ snapshot, preferences, progress = () => {}, signal, maxBytes = MAX_CLOUD_BYTES }) {
     return oauth.operation(async op => {
@@ -215,5 +235,5 @@ export function createYandexClient(oauth) {
       return upload(op, backup, rootPath, progress);
     }, { signal, timeoutMs: 900000 });
   }
-  return { list, create, download, reset, reserveUpload, uploadPrepared };
+  return { list, create, download, reset, reserveUpload, checkUpload, releaseUpload, uploadPrepared };
 }

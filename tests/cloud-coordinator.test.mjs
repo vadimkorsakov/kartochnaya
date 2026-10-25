@@ -159,3 +159,32 @@ test('failed recipient retains its size budget in common preflight', async () =>
   const v = await h.coordinator.run(selected);
   assert.match(v.message, /Исключи/); assert.ok(!h.calls.some(c => c[0] === 'upload')); assert.equal(h.reserved.size, 0);
 });
+
+test('global workspace invalidation after ZIP blocks every recipient', async () => {
+  const selected = ['google:A', 'google:B', 'yandex']; let available = true;
+  const h = harness({ selected, assertAvailable: () => { if (!available) throw Error('workspace replacement'); }, snapshot: () => { available = false; return snapshot(); } });
+  const v = await h.coordinator.run(selected);
+  assert.match(v.message, /workspace replacement/); assert.ok(!h.calls.some(c => c[0] === 'upload')); assert.equal(h.reserved.size, 0);
+});
+test('global workspace invalidation between transfers preserves confirmed destination', async () => {
+  const selected = ['google:A', 'google:B', 'yandex']; let available = true;
+  const h = harness({ selected, assertAvailable: () => { if (!available) throw Error('Web Locks lost'); }, upload: () => { available = false; return { confirmed: true }; } });
+  const v = await h.coordinator.run(selected);
+  assert.deepEqual(v.results.map(r => r.state), ['confirmed', 'unconfirmed', 'unconfirmed']);
+  assert.deepEqual(h.calls.filter(c => c[0] === 'upload').map(c => c[1]), ['google:A']); assert.equal(h.reserved.size, 0);
+});
+test('known recipient unavailable at start is isolated, malformed set stays global', async () => {
+  const selected = ['google:A', 'google:B', 'yandex']; const h = harness({ selected, expectedReserved: 3 });
+  h.reserved.add('google:A'); // Simulate a separately owned operation; never claim/release it.
+  const v = await h.coordinator.run(selected);
+  assert.deepEqual(v.results.map(r => r.state), ['reconnect', 'confirmed', 'confirmed']);
+  assert.deepEqual([...h.reserved], ['google:A']);
+  h.coordinator.finish();
+  for (const ids of [null, {}, [''], [5], ['missing']]) await assert.rejects(h.coordinator.run(ids));
+});
+test('abort rejecting an in-flight reservation releases every earlier lease', async () => {
+  const entered = deferred(), selected = ['google:A', 'google:B', 'yandex'];
+  const h = harness({ selected, reserve: async (id, signal) => { if (id === 'google:B') { entered.resolve(); await new Promise(r => signal.addEventListener('abort', r, { once: true })); signal.throwIfAborted(); } } });
+  const pending = h.coordinator.run(selected); await entered.promise; h.coordinator.cancel(); const v = await pending;
+  assert.deepEqual(v.results.map(r => r.state), ['cancelled', 'cancelled', 'cancelled']); assert.equal(h.counts.snapshots, 0); assert.equal(h.reserved.size, 0);
+});

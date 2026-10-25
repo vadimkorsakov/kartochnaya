@@ -426,3 +426,38 @@ for (const point of ['before ZIP', 'during ZIP', 'upload link']) test('real OAut
   const backup = await prepareWorkspaceBackup({ snapshot: async () => { if (point === 'during ZIP') { h.oauth.disconnect(); await h.connect(); } return snapshot(); }, preferences: () => ({}) });
   await assert.rejects(h.client.uploadPrepared(backup, { owner })); assert.equal(h.state.puts, 0);
 });
+
+for (const point of ['after reserve', 'upload link', 'PUT progress', 'reset']) test('revoked owner capability cannot pass signed PUT: ' + point, async () => {
+  let h, owner;
+  h = await harness({ intercept: u => { if (point === 'upload link' && u.pathname.endsWith('/upload')) h.client.releaseUpload(owner); } });
+  owner = await h.client.reserveUpload(); h.client.checkUpload(owner);
+  if (point === 'after reserve') h.client.releaseUpload(owner);
+  if (point === 'reset') { h.client.reset(); await h.client.reserveUpload(); }
+  const backup = await prepareWorkspaceBackup({ snapshot, preferences: () => ({}) });
+  await assert.rejects(h.client.uploadPrepared(backup, { owner, progress: () => { if (point === 'PUT progress') h.client.releaseUpload(owner); } }), /сеанс/);
+  assert.equal(h.state.puts, 0); assert.equal(h.oauth.view().connected, true);
+  await assert.rejects(h.client.uploadPrepared(backup, { owner: {} }), /сеанс/);
+});
+test('real app_folder-only new generation uploads only through its own unknown capability', async () => {
+  let down = false;
+  const h = await harness({ intercept: u => u.pathname === '/info' && down ? Response.json({}, { status: 403 }) : null });
+  const old = await h.client.reserveUpload(); h.oauth.disconnect(); await h.connect(); down = true;
+  const owner = await h.client.reserveUpload(); const backup = await prepareWorkspaceBackup({ snapshot, preferences: () => ({}) });
+  await assert.rejects(h.client.uploadPrepared(backup, { owner: old }), /сеанс/);
+  assert.equal((await h.client.uploadPrepared(backup, { owner })).confirmed, true); assert.equal(h.state.puts, 1);
+  const put = h.state.calls.find(c => c.method === 'PUT'); assert.equal(new Headers(put.headers).has('Authorization'), false);
+  h.client.releaseUpload(owner); assert.throws(() => h.client.checkUpload(owner), /сеанс/);
+});
+
+for (const phase of ['reserve', 'link', 'metadata']) test('HTTP 401 reconnect is distinguished from uncertain completed PUT: ' + phase, async () => {
+  let reject = phase === 'reserve';
+  const h = await harness({ intercept: (u, _, state) => {
+    if (reject && (phase === 'reserve' && u.pathname === '/info' || phase === 'link' && u.pathname.endsWith('/upload') || phase === 'metadata' && state.puts > 0)) return Response.json({}, { status: 401 });
+  } });
+  if (phase === 'reserve') { await assert.rejects(h.client.reserveUpload(), e => e.code === 'reconnect'); assert.equal(h.state.puts, 0); return; }
+  const owner = await h.client.reserveUpload(); reject = true;
+  const backup = await prepareWorkspaceBackup({ snapshot, preferences: () => ({}) });
+  await assert.rejects(h.client.uploadPrepared(backup, { owner }), e => phase === 'metadata' ? e.message.startsWith(UNCERTAIN) && e.code !== 'reconnect' : e.code === 'reconnect');
+  assert.equal(h.state.puts, phase === 'metadata' ? 1 : 0);
+  await assert.rejects(h.client.uploadPrepared(backup, { owner })); assert.equal(h.state.puts, phase === 'metadata' ? 1 : 0);
+});

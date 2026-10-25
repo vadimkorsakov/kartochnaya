@@ -117,6 +117,7 @@ test('cancel uncertain active Yandex PUT preserves confirmed Google copies and n
 });
 
 async function saveBatch(page) {
+  await expect(page.locator('#cloudSave')).toBeVisible();
   const pending = page.waitForEvent('download'); await page.locator('#cloudSave').click();
   const file = await pending; return readFile(await file.path());
 }
@@ -150,7 +151,7 @@ for (const identity of ['temporary', 'changed']) test('known Yandex identity dur
   expect(seen.puts).toBe(0); expect(seen.uploads.map(u => u.id)).toEqual(['A', 'B']);
   await expect(page.locator('#cloudResultRows')).toContainText(identity === 'temporary' ? 'Не подтверждено' : 'Требуется повторное подключение');
   await page.locator('#cloudFinish').click(); await page.locator('#yandexCard').click();
-  await expect(page.locator('#yandexStatus')).toContainText(identity === 'temporary' ? 'Подключено в памяти' : 'Подключи Яндекс повторно');
+  await expect(page.locator('#yandexConnectionStatus')).toContainText(identity === 'temporary' ? 'Подключено в памяти' : 'Подключи Яндекс повторно');
 });
 test('cancel during real Yandex reserve prevents ZIP and releases earlier Google leases', async ({ page, context }) => {
   const seen = await setup(page, context); let release;
@@ -167,4 +168,23 @@ test('real OAuth generation change at signed upload link blocks Yandex PUT and k
   await page.locator('#createBackups').click(); await page.locator('#cloudStart').click(); await expect(page.locator('#cloudFinish')).toBeEnabled();
   await expect(page.locator('#cloudStatus')).toContainText('Подтверждено 2 из 3'); expect(seen.puts).toBe(0); expect(seen.links).toBe(1);
   const bytes = await saveBatch(page); expect(seen.uploads.every(u => u.bytes.equals(bytes))).toBe(true);
+});
+
+for (const outcome of ['temporary', 'changed']) test('identity recheck after ZIP keeps other confirmations: ' + outcome, async ({ page, context }) => {
+  const seen = await setup(page, context);
+  await page.exposeFunction('changeYandexIdentity', () => { if (outcome === 'temporary') seen.infoDown = true; else seen.current = 'B'; });
+  await page.evaluate(() => {
+    const transaction = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function(stores, mode, ...args) {
+      if (mode === 'readonly' && Array.isArray(stores) && stores.length === 4) void window.changeYandexIdentity();
+      return transaction.call(this, stores, mode, ...args);
+    };
+  });
+  await page.locator('#createBackups').click(); await page.locator('#cloudStart').click(); await expect(page.locator('#cloudFinish')).toBeEnabled();
+  await expect(page.locator('#cloudStatus')).toContainText('Подтверждено 2 из 3'); expect(seen.puts).toBe(0); expect(seen.links).toBe(0);
+  await expect(page.locator('#cloudResultRows')).toContainText(outcome === 'temporary' ? 'Не подтверждено' : 'Требуется повторное подключение');
+  const bytes = await saveBatch(page); expect(seen.uploads.map(u => u.id)).toEqual(['A', 'B']); expect(seen.uploads.every(u => u.bytes.equals(bytes))).toBe(true);
+  expect(await page.evaluate(() => window.batchSnapshots)).toBe(1);
+  await page.locator('#cloudFinish').click(); await page.locator('#yandexCard').click();
+  await expect(page.locator('#yandexConnectionStatus')).toContainText(outcome === 'temporary' ? 'Подключено в памяти' : 'Подключи Яндекс повторно');
 });

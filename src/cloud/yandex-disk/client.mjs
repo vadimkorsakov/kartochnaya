@@ -1,3 +1,4 @@
+import { preparedDigest } from '../../backup/prepared.mjs';
 import { createBackup, readBackup, inspectContainer, sha256 } from '../../backup/archive.mjs';
 import { validBackupName, signedEndpoint } from './oauth.mjs';
 
@@ -33,7 +34,7 @@ function delay(ms, signal) {
 // No database/global editor access; snapshot and preference readers are injected.
 export function createYandexClient(oauth) {
   let generation = -1, accountId = null;
-  const attempted = new WeakSet(), selections = new WeakMap();
+  const attempted = new WeakSet(), selections = new WeakMap(), uploadOwners = new WeakMap();
   let downloading = false;
   function reset() { generation = -1; accountId = null; }
   async function identity(op) {
@@ -151,7 +152,7 @@ export function createYandexClient(oauth) {
   async function upload(op, backup, rootPath, progress) {
     op.check();
     if (attempted.has(backup)) throw Error('Этот архив уже отправлялся. Обнови список; новая загрузка требует нового явного действия.');
-    const digest = await sha256(backup.bytes); op.check();
+    const digest = preparedDigest(backup) || await sha256(backup.bytes); op.check();
     const path = 'app:/' + backup.filename;
     const link = await json(await op.request(endpoint(path, '/upload', { overwrite: 'false' }))); op.check();
     if (link.method !== 'PUT' || link.templated !== undefined && link.templated !== false) throw Error('Ошибка контракта ссылки загрузки.');
@@ -176,6 +177,32 @@ export function createYandexClient(oauth) {
     } catch (error) { throw Error(UNCERTAIN + '. ' + error.message); }
     throw Error(UNCERTAIN);
   }
+  // Provenance capability stays inside this client and is tied to one OAuth generation.
+  async function reserveUpload({ signal } = {}) {
+    const initial = oauth.view();
+    if (!initial.connected || initial.busy) throw Error('Подключи Яндекс повторно.');
+    const owner = {};
+    await oauth.operation(async op => {
+      await identity(op);
+      await root(op); op.check();
+      if (oauth.view().generation !== initial.generation) throw Error('Исходный сеанс Яндекса изменился.');
+      uploadOwners.set(owner, { generation: initial.generation, accountId });
+    }, { signal });
+    return owner;
+  }
+  async function uploadPrepared(backup, { owner, signal, maxBytes = MAX_CLOUD_BYTES, progress = () => {} } = {}) {
+    const selected = uploadOwners.get(owner);
+    if (!selected || !oauth.view().connected || selected.generation !== oauth.view().generation) throw Error('Исходный сеанс Яндекса изменился. Подключи повторно.');
+    if (!preparedDigest(backup) || !validBackupName(backup.filename) || backup.manifest.scope !== 'workspace') throw Error('Нужен заранее проверенный полный ZIP.');
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > MAX_CLOUD_BYTES || backup.bytes.byteLength > maxBytes) throw Error('ZIP превышает предел облачной загрузки.');
+    return oauth.operation(async op => {
+      await identity(op); op.check();
+      if (selected.generation !== oauth.view().generation || selected.accountId !== accountId) throw Error('Аккаунт Яндекса изменился или не подтверждён.');
+      const rootPath = await root(op);
+      const result = await upload(op, backup, rootPath, progress);
+      return { ...result, confirmed: true };
+    }, { signal, timeoutMs: 900000 });
+  }
   async function create({ snapshot, preferences, progress = () => {}, signal, maxBytes = MAX_CLOUD_BYTES }) {
     return oauth.operation(async op => {
       await identity(op); const rootPath = await root(op);
@@ -188,5 +215,5 @@ export function createYandexClient(oauth) {
       return upload(op, backup, rootPath, progress);
     }, { signal, timeoutMs: 900000 });
   }
-  return { list, create, download, reset };
+  return { list, create, download, reset, reserveUpload, uploadPrepared };
 }

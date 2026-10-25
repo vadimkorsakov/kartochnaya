@@ -1,3 +1,4 @@
+import { installCloudBackupUI } from './cloud-ui.mjs';
 import { storageRow, modal, pager } from './dialog.mjs';
 import { createBackup, readBackup, projectItems, readPreferences, MAX_EXPANDED_BYTES } from './archive.mjs';
 
@@ -19,7 +20,7 @@ export function installBackupUI({ snapshot, restore, download, replacement }) {
   }
   function releaseArchive() {
     archiveOwner?.signal?.removeEventListener('abort', archiveOwner.abort);
-    archiveOwner = null; verified = restoreBytes = null; views.delete('restore'); body.onchange = null;
+    const owner = archiveOwner; archiveOwner = null; owner?.release?.(); verified = restoreBytes = null; views.delete('restore'); body.onchange = null;
     for (const extra of dialog.querySelectorAll('[data-zip-extra-action]')) extra.remove();
   }
   const text = (tag, value, parent = body) => { const node = document.createElement(tag); node.textContent = value; parent.append(node); return node; };
@@ -235,7 +236,10 @@ export function installBackupUI({ snapshot, restore, download, replacement }) {
   };
   // An explicit, module-local bridge. Both entry routes run loadArchive/readBackup
   // and use the same restore/prepare/commit handlers. Ownership transfers here.
-  return Object.freeze({ openArchive(bytes, metadata = {}) {
+  const cloud = installCloudBackupUI({ snapshot, download, assertAvailable() {
+    if (busy || prepared || archiveOwner || restoreBytes || replacement.committed()) throw Error('Сначала заверши или отмени подготовленное восстановление ZIP.');
+  } });
+  return Object.freeze({ registerProvider: cloud.registerProvider, openArchive(bytes, metadata = {}) {
     if (!(bytes instanceof Uint8Array)) throw Error('Ожидаются байты ZIP.');
     return loadArchive(() => bytes, bytes.byteLength, metadata);
   } });

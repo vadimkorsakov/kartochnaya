@@ -187,12 +187,12 @@ export function installGoogleDriveUI({ snapshot, download, backupUI }) {
   find('driveRestore').onclick = async event => {
     if (!event.isTrusted || !mainDialog.open || !backupUI) return;
     try {
-      const { bytes, signal, check } = manager.takeArchive(active);
+      const { bytes, signal, check, release } = manager.takeArchive(active);
       render();
       // The modal helper returns focus in its earlier close listener.
       await new Promise(resolve => { mainDialog.addEventListener('close', resolve, { once: true }); mainDialog.close(); });
       check();
-      await backupUI.openArchive(bytes, { signal, check, opener: card });
+      await backupUI.openArchive(bytes, { signal, check, release, opener: card });
     } catch (error) { manager.clearArchive(); notice = error.message; render(); }
   };
   find('driveConfigure').onclick = () => { find('driveClientId').value = manager.view().clientId; find('driveSettingsError').textContent = ''; for (const panel of mainDialog.querySelectorAll('[data-backup-panel]')) panel.hidden = true; dialog.hidden = false; render(); find('driveClientId').focus(); };
@@ -205,5 +205,10 @@ export function installGoogleDriveUI({ snapshot, download, backupUI }) {
   find('driveCancel').onclick = () => { showTab('accounts'); find('driveConfigure').focus(); };
   window.addEventListener('storage', event => { if ([CLIENT_ID_KEY, ACCOUNTS_KEY, null].includes(event.key)) { try { manager.reload(); } catch { notice = 'Не удалось обновить список аккаунтов.'; render(); } } });
   window.addEventListener('online', () => manager.networkChanged()); window.addEventListener('offline', () => manager.networkChanged());
+  backupUI?.registerProvider({ recipients: () => manager.list().map(a => ({
+    id: 'google:' + a.id, name: 'Google Drive · ' + a.name,
+    available: a.session.view().status === 'connected' && !a.operation && !manager.view().batch, maxBytes: MAX_CLOUD_BYTES,
+    reserve: signal => manager.reserveUpload(a.id, signal),
+  })) });
   document.addEventListener('visibilitychange', () => manager.checkExpiry()); window.addEventListener('pagehide', () => manager.close());
 }

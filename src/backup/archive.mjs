@@ -85,7 +85,7 @@ export async function createBackup(snapshot, { selectedIds = null, preferences =
   for (const path of DATA_PATHS) {
     const name = path.slice(5, -5), bytes = encoder.encode(JSON.stringify(data[name]));
     total += bytes.length;
-    if (total > MAX_EXPANDED_BYTES) fail('Для ZIP требуется слишком много памяти (свыше 512 МиБ данных). Создай выборочные копии или используй JSON');
+    if (total > MAX_EXPANDED_BYTES) fail('Для ZIP требуется слишком много памяти (свыше 512 МиБ данных). Уменьши объём ресурсов и шрифтов или создай несколько выборочных ZIP-копий');
     files.push({ path, bytes: bytes.length, sha256: await sha256(bytes) }); entries[path] = bytes;
   }
   const manifest = {

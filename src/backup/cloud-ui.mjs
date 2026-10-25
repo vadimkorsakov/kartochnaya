@@ -31,7 +31,7 @@ export function installCloudBackupUI({ snapshot, download, assertAvailable }) {
     v.results.forEach((r, index) => { rows.children[index].querySelector('strong').textContent = r.name + ' — ' + STATES[r.state]; rows.children[index].querySelector('p').textContent = r.detail; });
     resultPages.update();
     const count = v.results.filter(r => r.state === 'confirmed').length;
-    const summary = !v.busy && started ? (v.results.length ? `Подтверждено ${count} из ${v.results.length} облачных загрузок.` + (count < v.results.length ? ' Проверь остальные направления перед повтором.' : '') : 'ZIP подготовлен для локального сохранения.') : '';
+    const summary = !v.busy && started ? (v.results.length ? `Подтверждено ${count} из ${v.results.length} облачных загрузок.` + (count === 0 ? ' Ни одна облачная копия не подтверждена.' : '') + (count < v.results.length ? ' Смотри причину для каждого направления. Неподтверждённую передачу не повторяй без проверки списка копий.' : '') : 'ZIP подготовлен для локального сохранения.') : '';
     find('cloudStatus').textContent = [summary, v.message, saveNotice].filter(Boolean).join(' ');
     if (closing && !v.busy) finish();
   }

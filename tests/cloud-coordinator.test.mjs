@@ -12,10 +12,11 @@ function harness(options = {}) {
   const calls = [], reserved = new Set(), counts = { snapshots: 0, creates: 0, reads: 0 }, generations = new Map();
   const names = ['google:A', 'google:B', 'yandex'];
   const provider = { recipients: () => names.map(id => ({ id, name: id, available: !reserved.has(id), maxBytes: options.limit?.[id] || 256 * 1024 * 1024,
-    reserve(signal) {
+    async reserve(signal) {
+      if (options.reserve) await options.reserve(id, signal);
       const generation = generations.get(id); reserved.add(id); calls.push(['reserve', id]);
       const check = () => { if (generation !== generations.get(id)) throw Error('Сеанс изменился'); signal.throwIfAborted(); };
-      return { check, release: () => reserved.delete(id), async upload(backup, progress) {
+      return { check, release: () => { calls.push(['release', id]); reserved.delete(id); }, async upload(backup, progress) {
         check(); calls.push(['upload', id, backup]); progress({ phase: 'verify', message: 'metadata' });
         if (options.upload) return options.upload(id, backup, signal);
         return { confirmed: true };
@@ -23,7 +24,7 @@ function harness(options = {}) {
     },
   })) };
   const coordinator = createCloudCoordinator({ providers: options.noClouds ? [] : [provider], preferences: () => ({ 'kartochnaya-ink-v1': 'test' }),
-    snapshot: async () => { counts.snapshots++; assert.equal(reserved.size, options.selected?.length ?? 0); if (options.snapshot) return options.snapshot(); return snapshot(); },
+    snapshot: async () => { counts.snapshots++; assert.equal(reserved.size, options.expectedReserved ?? options.selected?.length ?? 0); if (options.snapshot) return options.snapshot(); return snapshot(); },
     prepare: opts => prepareWorkspaceBackup({ ...opts, create: async (...args) => { counts.creates++; const backup = await createBackup(...args); if (options.corrupt) backup.bytes[40] ^= 1; return backup; }, read: bytes => { counts.reads++; return readBackup(bytes); } }),
     assertAvailable: options.assertAvailable,
   });
@@ -120,4 +121,70 @@ test('initially unknown Yandex identity is confined to the original OAuth genera
   const backup = await prepareWorkspaceBackup({ snapshot, preferences: () => ({}) });
   assert.equal((await h.client.uploadPrepared(backup, { owner, signal })).confirmed, true);
   h.changeSession(); await assert.rejects(h.client.uploadPrepared(backup, { owner, signal }), /сеанс/); assert.equal(h.puts(), 1);
+});
+
+for (const failed of ['yandex', 'google:A', 'google:B', 'all']) test('reserve isolation, one ZIP and release of every acquired lease: ' + failed, async () => {
+  const selected = ['google:A', 'google:B', 'yandex'];
+  const failures = failed === 'all' ? selected : [failed];
+  const h = harness({ selected, expectedReserved: 3 - failures.length, reserve: id => { if (failures.includes(id)) throw Error('network reserve ' + id); } });
+  const v = await h.coordinator.run(selected);
+  assert.deepEqual(v.results.map(r => r.state), selected.map(id => failures.includes(id) ? 'unconfirmed' : 'confirmed'));
+  assert.deepEqual(h.counts, { snapshots: 1, creates: 1, reads: 1 });
+  assert.deepEqual(h.calls.filter(c => c[0] === 'release').map(c => c[1]), selected.filter(id => !failures.includes(id)));
+  assert.equal(h.reserved.size, 0); assert.equal(v.busy, false);
+  const uploads = h.calls.filter(c => c[0] === 'upload');
+  assert.deepEqual(uploads.map(c => c[1]), selected.filter(id => !failures.includes(id)));
+  let local; await h.coordinator.save(async blob => { local = new Uint8Array(await blob.arrayBuffer()); });
+  for (const [, , backup] of uploads) { assert.deepEqual(backup.bytes, local); assert.equal(preparedDigest(backup), await sha256(local)); }
+  h.coordinator.finish(); assert.deepEqual(h.coordinator.view().results, []);
+});
+test('lease invalidated while reserving next recipient fails independently before ZIP', async () => {
+  const selected = ['google:A', 'google:B', 'yandex']; let h;
+  h = harness({ selected, reserve: id => { if (id === 'yandex') h.generations.set('google:A', 2); } });
+  const v = await h.coordinator.run(selected);
+  assert.deepEqual(v.results.map(r => r.state), ['reconnect', 'confirmed', 'confirmed']);
+  assert.deepEqual(h.counts, { snapshots: 1, creates: 1, reads: 1 }); assert.equal(h.reserved.size, 0);
+});
+test('cancel during reserve releases previous and late returned leases, no snapshot or uploads', async () => {
+  const gate = deferred(), entered = deferred(), selected = ['google:A', 'google:B', 'yandex'];
+  const h = harness({ selected, reserve: async id => { if (id === 'google:B') { entered.resolve(); await gate.promise; } } });
+  const run = h.coordinator.run(selected); await entered.promise; h.coordinator.cancel(); gate.resolve(); const v = await run;
+  assert.deepEqual(v.results.map(r => r.state), ['cancelled', 'cancelled', 'cancelled']);
+  assert.deepEqual(h.calls.filter(c => c[0] === 'release').map(c => c[1]), ['google:A', 'google:B']);
+  assert.equal(h.reserved.size, 0); assert.equal(h.counts.snapshots, 0); assert.ok(!h.calls.some(c => c[0] === 'upload'));
+});
+test('failed recipient retains its size budget in common preflight', async () => {
+  const selected = ['google:A', 'yandex'];
+  const h = harness({ selected, expectedReserved: 1, limit: { yandex: 1 }, reserve: id => { if (id === 'yandex') throw Error('network'); } });
+  const v = await h.coordinator.run(selected);
+  assert.match(v.message, /Исключи/); assert.ok(!h.calls.some(c => c[0] === 'upload')); assert.equal(h.reserved.size, 0);
+});
+
+test('global workspace invalidation after ZIP blocks every recipient', async () => {
+  const selected = ['google:A', 'google:B', 'yandex']; let available = true;
+  const h = harness({ selected, assertAvailable: () => { if (!available) throw Error('workspace replacement'); }, snapshot: () => { available = false; return snapshot(); } });
+  const v = await h.coordinator.run(selected);
+  assert.match(v.message, /workspace replacement/); assert.ok(!h.calls.some(c => c[0] === 'upload')); assert.equal(h.reserved.size, 0);
+});
+test('global workspace invalidation between transfers preserves confirmed destination', async () => {
+  const selected = ['google:A', 'google:B', 'yandex']; let available = true;
+  const h = harness({ selected, assertAvailable: () => { if (!available) throw Error('Web Locks lost'); }, upload: () => { available = false; return { confirmed: true }; } });
+  const v = await h.coordinator.run(selected);
+  assert.deepEqual(v.results.map(r => r.state), ['confirmed', 'unconfirmed', 'unconfirmed']);
+  assert.deepEqual(h.calls.filter(c => c[0] === 'upload').map(c => c[1]), ['google:A']); assert.equal(h.reserved.size, 0);
+});
+test('known recipient unavailable at start is isolated, malformed set stays global', async () => {
+  const selected = ['google:A', 'google:B', 'yandex']; const h = harness({ selected, expectedReserved: 3 });
+  h.reserved.add('google:A'); // Simulate a separately owned operation; never claim/release it.
+  const v = await h.coordinator.run(selected);
+  assert.deepEqual(v.results.map(r => r.state), ['reconnect', 'confirmed', 'confirmed']);
+  assert.deepEqual([...h.reserved], ['google:A']);
+  h.coordinator.finish();
+  for (const ids of [null, {}, [''], [5], ['missing']]) await assert.rejects(h.coordinator.run(ids));
+});
+test('abort rejecting an in-flight reservation releases every earlier lease', async () => {
+  const entered = deferred(), selected = ['google:A', 'google:B', 'yandex'];
+  const h = harness({ selected, reserve: async (id, signal) => { if (id === 'google:B') { entered.resolve(); await new Promise(r => signal.addEventListener('abort', r, { once: true })); signal.throwIfAborted(); } } });
+  const pending = h.coordinator.run(selected); await entered.promise; h.coordinator.cancel(); const v = await pending;
+  assert.deepEqual(v.results.map(r => r.state), ['cancelled', 'cancelled', 'cancelled']); assert.equal(h.counts.snapshots, 0); assert.equal(h.reserved.size, 0);
 });

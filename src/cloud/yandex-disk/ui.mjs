@@ -183,22 +183,24 @@ export function installYandexUI({ snapshot, download, backupUI } = {}) {
     async reserve(signal) {
       if (operation || diagnostics.view().busy || !oauth.view().connected || transferred) throw Error('Сначала заверши операцию или восстановление из Яндекса.');
       const controller = new AbortController(), generation = oauth.view().generation;
+      let owner;
       const abort = () => controller.abort(); signal.addEventListener('abort', abort, { once: true });
       if (signal.aborted) controller.abort();
       clearArchive();
       operation = controller; operationStatus = 'Ожидаем общий ZIP…'; render();
-      const release = () => { signal.removeEventListener('abort', abort); controller.abort(); if (operation === controller) operation = null; render(); };
+      const release = () => { client.releaseUpload(owner); signal.removeEventListener('abort', abort); controller.abort(); if (operation === controller) operation = null; render(); };
       const check = () => {
-        if (controller.signal.aborted || operation !== controller || !oauth.view().connected || oauth.view().generation !== generation) throw Error('Исходный сеанс Яндекса изменился. Подключи повторно и начни новую операцию.');
+        if (controller.signal.aborted || operation !== controller || !oauth.view().connected || oauth.view().generation !== generation) throw Object.assign(Error('Исходный сеанс Яндекса изменился. Подключи повторно и начни новую операцию.'), { code: 'reconnect' });
+        client.checkUpload(owner);
       };
       try {
-        const owner = await client.reserveUpload({ signal: controller.signal }); check();
+        owner = await client.reserveUpload({ signal: controller.signal }); check();
         return { check, release, upload: (backup, progress) => {
           check();
           return client.uploadPrepared(backup, { owner, signal: controller.signal, maxBytes: /Android/i.test(navigator.userAgent) ? ANDROID_CLOUD_BYTES : MAX_CLOUD_BYTES,
             progress: value => { operationStatus = value; render(); progress({ phase: value.startsWith('Проверяем') ? 'verify' : 'upload', message: value }); } });
         } };
-      } catch (error) { release(); throw error; }
+      } catch (error) { if (operation === controller) operationStatus = error.message; release(); throw error; }
     },
   }] });
   window.addEventListener('pagehide', () => oauth.disconnect());

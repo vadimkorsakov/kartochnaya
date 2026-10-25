@@ -5,8 +5,8 @@ const { unzipSync, strFromU8 } = require('fflate');
 const { openHome, records } = require('./helpers');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 async function mock(context, options = {}) {
-  const seen = { uploads: [], google: new Map(), yandex: [], current: 'A', links: 0, puts: 0 };
-  await context.route('https://accounts.google.com/gsi/client', route => route.fulfill({ contentType: 'text/javascript', body: `window.google={accounts:{oauth2:{initTokenClient(c){return {requestAccessToken(){c.callback({access_token:'google-secret-'+(window.googlePicked||'A'),expires_in:3600,scope:'https://www.googleapis.com/auth/drive.file'})}}}}}};` }));
+  const seen = { uploads: [], google: new Map(), yandex: [], current: 'A', links: 0, puts: 0, infoDown: false, rootDown: false, roots: 0 };
+  await context.route('https://accounts.google.com/gsi/client', route => route.fulfill({ contentType: 'text/javascript', body: `window.google={accounts:{oauth2:{initTokenClient(c){return {requestAccessToken(){c.callback({access_token:'google-secret-'+(window.googlePicked||'A'),expires_in:${JSON.stringify(options.shortGoogle || [])}.includes(window.googlePicked)?1800:3600,scope:'https://www.googleapis.com/auth/drive.file'})}}}}}};` }));
   await context.route('https://www.googleapis.com/**', async route => {
     const req = route.request(), u = new URL(req.url()), id = req.headers().authorization.replace('Bearer google-secret-', '');
     if (u.pathname.endsWith('/about')) return route.fulfill({ json: { user: { permissionId: id, displayName: 'Google ' + id } } });
@@ -28,11 +28,11 @@ async function mock(context, options = {}) {
   });
   await context.route('https://oauth.yandex.ru/authorize?*', route => route.fulfill({ contentType: 'text/html', body: '<p>Mock OAuth</p>' }));
   await context.route('https://oauth.yandex.ru/token', route => route.fulfill({ json: { access_token: 'yandex-secret', token_type: 'bearer', expires_in: 3600 } }));
-  await context.route('https://login.yandex.ru/info', route => route.fulfill({ json: { id: seen.current } }));
+  await context.route('https://login.yandex.ru/info', route => seen.infoDown ? route.abort('failed') : route.fulfill({ json: { id: seen.current } }));
   await context.route('https://cloud-api.yandex.net/v1/disk/resources**', async route => {
     const u = new URL(route.request().url()); expect(route.request().headers().authorization).toBe('OAuth yandex-secret');
-    if (u.pathname.endsWith('/upload')) { seen.links++; seen.filename = u.searchParams.get('path').slice(5); expect(u.searchParams.get('overwrite')).toBe('false'); return route.fulfill({ json: { method: 'PUT', href: 'https://uploader1d.dst.yandex.net/batch' } }); }
-    if (u.searchParams.get('path') === 'app:/') return route.fulfill({ json: { type: 'dir', path: 'app:/', _embedded: { items: seen.yandex, total: seen.yandex.length, offset: 0, limit: 100 } } });
+    if (u.pathname.endsWith('/upload')) { seen.links++; if (seen.onLink) await seen.onLink(); seen.filename = u.searchParams.get('path').slice(5); expect(u.searchParams.get('overwrite')).toBe('false'); return route.fulfill({ json: { method: 'PUT', href: 'https://uploader1d.dst.yandex.net/batch' } }); }
+    if (u.searchParams.get('path') === 'app:/') { seen.roots++; if (seen.onRoot) await seen.onRoot(); if (seen.rootDown) return route.abort('failed'); return route.fulfill({ json: { type: 'dir', path: 'app:/', _embedded: { items: seen.yandex, total: seen.yandex.length, offset: 0, limit: 100 } } }); }
     return route.fulfill({ json: seen.yandex[0] });
   });
   await context.route('https://uploader1d.dst.yandex.net/batch', async route => {
@@ -114,4 +114,77 @@ test('cancel uncertain active Yandex PUT preserves confirmed Google copies and n
   await expect(page.locator('#cloudFinish')).toBeEnabled(); await expect(page.locator('#cloudStatus')).toContainText('Подтверждено 2 из 3'); await expect(page.locator('#cloudResultRows')).toContainText('Файл мог сохраниться');
   expect(seen.uploads.filter(u => u.id !== 'yandex')).toHaveLength(2); expect(seen.links).toBe(1); release(); await page.locator('#cloudFinish').click();
   await page.locator('#createBackups').click(); await expect(page.locator('#cloudStart')).toBeVisible(); expect(seen.puts).toBe(1);
+});
+
+async function saveBatch(page) {
+  await expect(page.locator('#cloudSave')).toBeVisible();
+  const pending = page.waitForEvent('download'); await page.locator('#cloudSave').click();
+  const file = await pending; return readFile(await file.path());
+}
+for (const failure of ['yandex', 'google:A', 'all']) test('reserve failure through real adapters: ' + failure, async ({ page, context }) => {
+  const seen = await setup(page, context, { shortGoogle: failure === 'all' ? ['A', 'B'] : failure === 'google:A' ? ['A'] : [] });
+  await page.locator('#createBackups').click();
+  seen.rootDown = failure !== 'google:A';
+  if (failure !== 'yandex') await page.evaluate(() => { const now = Date.now; Date.now = () => now() + 1900 * 1000; });
+  await page.locator('#cloudStart').click(); await expect(page.locator('#cloudFinish')).toBeEnabled();
+  const expected = failure === 'all' ? [] : failure === 'yandex' ? ['A', 'B'] : ['B', 'yandex'];
+  await expect(page.locator('#cloudStatus')).toContainText(`Подтверждено ${expected.length} из 3`);
+  expect(seen.uploads.map(u => u.id)).toEqual(expected);
+  const bytes = await saveBatch(page);
+  for (const upload of seen.uploads) { expect(upload.bytes.equals(bytes)).toBe(true); expect(hash(upload.bytes)).toBe(hash(bytes)); }
+  expect(await page.evaluate(() => window.batchSnapshots)).toBe(1);
+  if (failure !== 'google:A') { expect(seen.puts).toBe(0); expect(seen.links).toBe(0); }
+  await page.locator('#cloudFinish').click(); await page.locator('#createBackups').click();
+  await expect(page.locator('#cloudStart')).toBeVisible(); await expect(page.locator('#cloudSave')).toBeHidden(); await expect(page.locator('#cloudResultRows article')).toHaveCount(0);
+  await page.locator('#cloudFinish').click();
+  // The failed Yandex reservation and successful Google leases must all release.
+  await page.locator('#googleDriveCard').click(); await expect(page.locator('#driveAdd')).toBeEnabled(); await page.locator('#googleDriveDialog [data-backup-close]').click();
+  await page.locator('#yandexCard').click(); await page.locator('#yandexCopiesTab').click(); await expect(page.locator('#yandexRefresh')).toBeEnabled();
+});
+for (const identity of ['temporary', 'changed']) test('known Yandex identity during reserve: ' + identity, async ({ page, context }) => {
+  const seen = await setup(page, context);
+  await page.locator('#yandexCard').click(); await page.locator('#yandexCopiesTab').click(); await page.locator('#yandexRefresh').click(); await expect(page.locator('#yandexRefresh')).toBeEnabled();
+  await expect.poll(() => seen.roots).toBeGreaterThan(0); await page.locator('#yandexDialog [data-backup-close]').click();
+  if (identity === 'temporary') seen.infoDown = true; else seen.current = 'B';
+  await page.locator('#createBackups').click(); await page.locator('#cloudStart').click();
+  await expect(page.locator('#cloudFinish')).toBeEnabled(); await expect(page.locator('#cloudStatus')).toContainText('Подтверждено 2 из 3');
+  expect(seen.puts).toBe(0); expect(seen.uploads.map(u => u.id)).toEqual(['A', 'B']);
+  await expect(page.locator('#cloudResultRows')).toContainText(identity === 'temporary' ? 'Не подтверждено' : 'Требуется повторное подключение');
+  await page.locator('#cloudFinish').click(); await page.locator('#yandexCard').click();
+  await expect(page.locator('#yandexConnectionStatus')).toContainText(identity === 'temporary' ? 'Подключено в памяти' : 'Подключи Яндекс повторно');
+});
+test('cancel during real Yandex reserve prevents ZIP and releases earlier Google leases', async ({ page, context }) => {
+  const seen = await setup(page, context); let release;
+  const gate = new Promise(r => { release = r; }); seen.onRoot = () => gate;
+  await page.locator('#createBackups').click(); await page.locator('#cloudStart').click(); await expect.poll(() => seen.roots).toBe(1);
+  await page.locator('#cloudCancel').click(); await expect(page.locator('#cloudFinish')).toBeEnabled(); release();
+  expect(await page.evaluate(() => window.batchSnapshots)).toBe(0); expect(seen.uploads).toHaveLength(0);
+  await expect(page.locator('#cloudSave')).toBeHidden(); await expect(page.locator('#cloudResultRows')).toContainText('Отменено');
+  await page.locator('#cloudFinish').click(); await page.locator('#googleDriveCard').click(); await expect(page.locator('#driveCreate')).toBeEnabled();
+});
+test('real OAuth generation change at signed upload link blocks Yandex PUT and keeps Google confirmations', async ({ page, context }) => {
+  const seen = await setup(page, context);
+  seen.onLink = () => page.evaluate(() => document.getElementById('yandexDisconnect').onclick());
+  await page.locator('#createBackups').click(); await page.locator('#cloudStart').click(); await expect(page.locator('#cloudFinish')).toBeEnabled();
+  await expect(page.locator('#cloudStatus')).toContainText('Подтверждено 2 из 3'); expect(seen.puts).toBe(0); expect(seen.links).toBe(1);
+  const bytes = await saveBatch(page); expect(seen.uploads.every(u => u.bytes.equals(bytes))).toBe(true);
+});
+
+for (const outcome of ['temporary', 'changed']) test('identity recheck after ZIP keeps other confirmations: ' + outcome, async ({ page, context }) => {
+  const seen = await setup(page, context);
+  await page.exposeFunction('changeYandexIdentity', () => { if (outcome === 'temporary') seen.infoDown = true; else seen.current = 'B'; });
+  await page.evaluate(() => {
+    const transaction = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function(stores, mode, ...args) {
+      if (mode === 'readonly' && Array.isArray(stores) && stores.length === 4) void window.changeYandexIdentity();
+      return transaction.call(this, stores, mode, ...args);
+    };
+  });
+  await page.locator('#createBackups').click(); await page.locator('#cloudStart').click(); await expect(page.locator('#cloudFinish')).toBeEnabled();
+  await expect(page.locator('#cloudStatus')).toContainText('Подтверждено 2 из 3'); expect(seen.puts).toBe(0); expect(seen.links).toBe(0);
+  await expect(page.locator('#cloudResultRows')).toContainText(outcome === 'temporary' ? 'Не подтверждено' : 'Требуется повторное подключение');
+  const bytes = await saveBatch(page); expect(seen.uploads.map(u => u.id)).toEqual(['A', 'B']); expect(seen.uploads.every(u => u.bytes.equals(bytes))).toBe(true);
+  expect(await page.evaluate(() => window.batchSnapshots)).toBe(1);
+  await page.locator('#cloudFinish').click(); await page.locator('#yandexCard').click();
+  await expect(page.locator('#yandexConnectionStatus')).toContainText(outcome === 'temporary' ? 'Подключено в памяти' : 'Подключи Яндекс повторно');
 });

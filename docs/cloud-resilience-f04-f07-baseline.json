@@ -1,0 +1,351 @@
+{
+  "baseSha": "e8165c91d47bbcf0815467fbd5364321120a1fa5",
+  "implementationUnchanged": true,
+  "unitCommand": "node --test --test-reporter=tap tests/cloud-coordinator.test.mjs tests/yandex-disk-backup.test.mjs",
+  "unit": {
+    "passed": 55,
+    "failed": 11,
+    "tests": [
+      {
+        "name": "one verified ZIP, identical references and digest: google:A,google:B,yandex",
+        "status": "passed"
+      },
+      {
+        "name": "one verified ZIP, identical references and digest: google:A",
+        "status": "passed"
+      },
+      {
+        "name": "one verified ZIP, identical references and digest: yandex",
+        "status": "passed"
+      },
+      {
+        "name": "one verified ZIP, identical references and digest: ",
+        "status": "passed"
+      },
+      {
+        "name": "no accounts and local only never invoke provider or network",
+        "status": "passed"
+      },
+      {
+        "name": "preparation failure prevents every cloud upload: IndexedDB",
+        "status": "passed"
+      },
+      {
+        "name": "preparation failure prevents every cloud upload: CRC",
+        "status": "passed"
+      },
+      {
+        "name": "preparation failure prevents every cloud upload: size",
+        "status": "passed"
+      },
+      {
+        "name": "Android limit blocks Google too before first transfer",
+        "status": "passed"
+      },
+      {
+        "name": "partial failure remains independent and never retries: google:A",
+        "status": "passed"
+      },
+      {
+        "name": "partial failure remains independent and never retries: yandex",
+        "status": "passed"
+      },
+      {
+        "name": "disconnect or replacement session during preparation cannot substitute selected recipient: google:A",
+        "status": "passed"
+      },
+      {
+        "name": "disconnect or replacement session during preparation cannot substitute selected recipient: yandex",
+        "status": "passed"
+      },
+      {
+        "name": "cancel aborts active upload, preserves confirmation and stops all unstarted destinations",
+        "status": "passed"
+      },
+      {
+        "name": "cancel preparation releases all leases and a new explicit run creates new backupId",
+        "status": "passed"
+      },
+      {
+        "name": "prepared restore guard runs before reservation and snapshot",
+        "status": "passed"
+      },
+      {
+        "name": "invalid destinations and competing runs cannot bypass preflight",
+        "status": "passed"
+      },
+      {
+        "name": "real Google manager reservation pins record, account ID, generation and expiry without invalidating restore lease",
+        "status": "passed"
+      },
+      {
+        "name": "Yandex prepared interface confirms metadata, accepts only verified objects and never retries uncertain PUT",
+        "status": "passed"
+      },
+      {
+        "name": "Yandex prepared interface refuses changed owner: changeSession",
+        "status": "passed"
+      },
+      {
+        "name": "Yandex prepared interface refuses changed owner: changeAccount",
+        "status": "passed"
+      },
+      {
+        "name": "initially unknown Yandex identity is confined to the original OAuth generation",
+        "status": "passed"
+      },
+      {
+        "name": "reserve isolation, one ZIP and release of every acquired lease: yandex",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 1.391596\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/cloud-coordinator.test.mjs:126:65'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly deep-equal:\n    + actual - expected\n    \n      [\n    -   'confirmed',\n    -   'confirmed',\n        'unconfirmed',\n    +   'unconfirmed',\n    +   'unconfirmed'\n      ]\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    0: 'confirmed'\n    1: 'confirmed'\n    2: 'unconfirmed'\n  actual:\n    0: 'unconfirmed'\n    1: 'unconfirmed'\n    2: 'unconfirmed'\n  operator: 'deepStrictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/cloud-coordinator.test.mjs:131:10)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "reserve isolation, one ZIP and release of every acquired lease: google:A",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 0.4049\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/cloud-coordinator.test.mjs:126:65'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly deep-equal:\n    + actual - expected\n    \n      [\n        'unconfirmed',\n    +   'unconfirmed',\n    +   'unconfirmed'\n    -   'confirmed',\n    -   'confirmed'\n      ]\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    0: 'unconfirmed'\n    1: 'confirmed'\n    2: 'confirmed'\n  actual:\n    0: 'unconfirmed'\n    1: 'unconfirmed'\n    2: 'unconfirmed'\n  operator: 'deepStrictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/cloud-coordinator.test.mjs:131:10)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "reserve isolation, one ZIP and release of every acquired lease: google:B",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 0.219691\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/cloud-coordinator.test.mjs:126:65'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly deep-equal:\n    + actual - expected\n    \n      [\n    -   'confirmed',\n        'unconfirmed',\n    +   'unconfirmed',\n    +   'unconfirmed'\n    -   'confirmed'\n      ]\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    0: 'confirmed'\n    1: 'unconfirmed'\n    2: 'confirmed'\n  actual:\n    0: 'unconfirmed'\n    1: 'unconfirmed'\n    2: 'unconfirmed'\n  operator: 'deepStrictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/cloud-coordinator.test.mjs:131:10)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "reserve isolation, one ZIP and release of every acquired lease: all",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 0.267683\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/cloud-coordinator.test.mjs:126:65'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly deep-equal:\n    + actual - expected\n    \n      {\n    +   creates: 0,\n    +   reads: 0,\n    +   snapshots: 0\n    -   creates: 1,\n    -   reads: 1,\n    -   snapshots: 1\n      }\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    snapshots: 1\n    creates: 1\n    reads: 1\n  actual:\n    snapshots: 0\n    creates: 0\n    reads: 0\n  operator: 'deepStrictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/cloud-coordinator.test.mjs:132:10)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "lease invalidated while reserving next recipient fails independently before ZIP",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 0.451801\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/cloud-coordinator.test.mjs:141:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly deep-equal:\n    + actual - expected\n    \n      [\n    +   'unconfirmed',\n    +   'unconfirmed',\n    +   'unconfirmed'\n    -   'reconnect',\n    -   'confirmed',\n    -   'confirmed'\n      ]\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    0: 'reconnect'\n    1: 'confirmed'\n    2: 'confirmed'\n  actual:\n    0: 'unconfirmed'\n    1: 'unconfirmed'\n    2: 'unconfirmed'\n  operator: 'deepStrictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/cloud-coordinator.test.mjs:145:10)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "cancel during reserve releases previous and late returned leases, no snapshot or uploads",
+        "status": "passed"
+      },
+      {
+        "name": "failed recipient retains its size budget in common preflight",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 0.211749\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/cloud-coordinator.test.mjs:156:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    The input did not match the regular expression /Исключи/. Input:\n    \n    'network'\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n  actual: 'network'\n  operator: 'match'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/cloud-coordinator.test.mjs:160:10)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "strict ZIP endpoint grammar, duplicate/encoded/traversal paths, methods and pagination",
+        "status": "passed"
+      },
+      {
+        "name": "real complete workspace ZIP, unique names, no bearer/cookies/redirect on PUT; server SHA-256 confirmation",
+        "status": "passed"
+      },
+      {
+        "name": "save failure and cloud memory budget stop before upload-link and PUT",
+        "status": "passed"
+      },
+      {
+        "name": "upload link rejects wrong method, templating, untrusted hosts and bad HTTP",
+        "status": "passed"
+      },
+      {
+        "name": "metadata size/SHA/name/type mismatch cannot confirm; size-only result is explicit",
+        "status": "passed"
+      },
+      {
+        "name": "unknown or partial PUT never retries or deletes; only new explicit create uploads a new filename",
+        "status": "passed"
+      },
+      {
+        "name": "metadata eventually available; bounded retries only GET, not PUT",
+        "status": "passed"
+      },
+      {
+        "name": "empty list, API failures, multiple pages, foreign files and sort order",
+        "status": "passed"
+      },
+      {
+        "name": "bounded list reports truncation and malformed pagination fails",
+        "status": "passed"
+      },
+      {
+        "name": "cancellation of PUT yields uncertain result without retry",
+        "status": "passed"
+      },
+      {
+        "name": "separate bounded transfer timeout keeps normal API at 30s",
+        "status": "passed"
+      },
+      {
+        "name": "operation deadline aborts request; expired session stops ZIP preparation",
+        "status": "passed"
+      },
+      {
+        "name": "account switch disconnects; unavailable known identity rejects without erasing session",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 23.400299\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:147:1'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    false !== true\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: true\n  actual: false\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:151:43)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "new authorization during snapshot cannot upload to the new account; unknown identity has no old cache",
+        "status": "passed"
+      },
+      {
+        "name": "canonical server folder path is accepted only for a direct child of app folder",
+        "status": "passed"
+      },
+      {
+        "name": "ZIP PUT deadline actually aborts a stalled transfer and never retries it",
+        "status": "passed"
+      },
+      {
+        "name": "unavailable /info uses only current session; malformed server hashes and exhausted confirmation fail",
+        "status": "passed"
+      },
+      {
+        "name": "download-link is GET-only, exact app ZIP path, with no duplicate/additional parameters or forbidden APIs",
+        "status": "passed"
+      },
+      {
+        "name": "bounded real chunk sequence, canonical direct-child metadata, signed GET redirect policy and actual byte progress",
+        "status": "passed"
+      },
+      {
+        "name": "Content-Length absent or exact accepted; malformed/mismatched values cancel before allocation/reading",
+        "status": "passed"
+      },
+      {
+        "name": "empty, truncated, oversized, broken streams never return partial ZIP, retry or leak the lock",
+        "status": "passed"
+      },
+      {
+        "name": "invalid link, HTTP, untrusted final host and private network failures cannot report success",
+        "status": "passed"
+      },
+      {
+        "name": "fresh metadata, session provenance and strict selection reject forged/changed archives before signed link",
+        "status": "passed"
+      },
+      {
+        "name": "desktop/Android size budgets reject before download-link; parser reserves expanded memory",
+        "status": "passed"
+      },
+      {
+        "name": "server SHA mismatch, malformed ZIP, manifest/name/scope and structural links are never accepted",
+        "status": "passed"
+      },
+      {
+        "name": "cancel during pending read cancels reader, releases lock and blocks concurrent downloads",
+        "status": "passed"
+      },
+      {
+        "name": "expiry/disconnect during stream and account change at final identity discard all bytes",
+        "status": "passed"
+      },
+      {
+        "name": "long signed GET deadline also cancels its body; normal API still uses 30 seconds",
+        "status": "passed"
+      },
+      {
+        "name": "allocation failure and expanded JSON budget stop verification and cancel stream",
+        "status": "passed"
+      },
+      {
+        "name": "F-07 known identity survives temporary /info failure: network",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 13.787328\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:380:55'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    false !== true\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: true\n  actual: false\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:391:10)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "F-07 known identity survives temporary /info failure: 403",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 11.722949\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:380:55'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    false !== true\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: true\n  actual: false\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:391:10)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "F-07 known identity survives temporary /info failure: malformed",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 11.787551\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:380:55'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    false !== true\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: true\n  actual: false\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:391:10)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "F-07 recovery of /info validates the original owner without reconnect",
+        "status": "failed",
+        "evidence": "---\n  duration_ms: 11.985419\n  type: 'test'\n  location: '/workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:397:1'\n  failureType: 'testCodeFailure'\n  error: 'Исходный сеанс Яндекса изменился. Подключи повторно.'\n  code: 'ERR_TEST_FAILURE'\n  stack: |-\n    Object.uploadPrepared (file:///workspace/kartochnaya/src/cloud/yandex-disk/client.mjs:195:104)\n    TestContext.<anonymous> (file:///workspace/kartochnaya/tests/yandex-disk-backup.test.mjs:403:32)\n    async Test.run (node:internal/test_runner/test:1389:7)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ..."
+      },
+      {
+        "name": "F-07 new generation with unavailable /info never inherits old identity or owner",
+        "status": "passed"
+      },
+      {
+        "name": "real OAuth generation change blocks original prepared owner: before ZIP",
+        "status": "passed"
+      },
+      {
+        "name": "real OAuth generation change blocks original prepared owner: during ZIP",
+        "status": "passed"
+      },
+      {
+        "name": "real OAuth generation change blocks original prepared owner: upload link",
+        "status": "passed"
+      }
+    ]
+  },
+  "browserCommand": "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npx playwright test --config=playwright.netlify.config.js tests/cloud-backup.spec.js --grep 'reserve|signed upload link'",
+  "browser": {
+    "passed": 3,
+    "failed": 5,
+    "tests": [
+      {
+        "name": "cancel uncertain active Yandex PUT preserves confirmed Google copies and never retries",
+        "status": "passed",
+        "errors": []
+      },
+      {
+        "name": "reserve failure through real adapters: yandex",
+        "status": "failed",
+        "errors": [
+          "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#cloudStatus')\nExpected substring: \u001b[32m\"Подтверждено \u001b[7m2\u001b[27m из 3\"\u001b[39m\nReceived string:    \u001b[31m\"Подтверждено \u001b[7m0\u001b[27m из 3\u001b[7m облачных загрузок. Проверь остальные направления перед повтором. Запрос: ответ недоступен JavaScript (CORS, сеть или запрещённый редирект). Проверь Network/Console браузера; это не доказательство неверного OAuth-кода.\u001b[27m\"\u001b[39m\nTimeout: 7000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#cloudStatus') with timeout 7000ms\u001b[22m\n\u001b[2m  - waiting for locator('#cloudStatus')\u001b[22m\n\u001b[2m    18 × locator resolved to <p role=\"status\" id=\"cloudStatus\" aria-live=\"polite\" class=\"backup-status\">Подтверждено 0 из 3 облачных загрузок. Проверь ос…</p>\u001b[22m\n\u001b[2m       - unexpected value \"Подтверждено 0 из 3 облачных загрузок. Проверь остальные направления перед повтором. Запрос: ответ недоступен JavaScript (CORS, сеть или запрещённый редирект). Проверь Network/Console браузера; это не доказательство неверного OAuth-кода.\"\u001b[22m\n\n\n  128 |   await page.locator('#cloudStart').click(); await expect(page.locator('#cloudFinish')).toBeEnabled();\n  129 |   const expected = failure === 'all' ? [] : failure === 'yandex' ? ['A', 'B'] : ['B', 'yandex'];\n> 130 |   await expect(page.locator('#cloudStatus')).toContainText(`Подтверждено ${expected.length} из 3`);\n      |                                              ^\n  131 |   expect(seen.uploads.map(u => u.id)).toEqual(expected);\n  132 |   const bytes = await saveBatch(page);\n  133 |   for (const upload of seen.uploads) { expect(upload.bytes.equals(bytes)).toBe(true); expect(hash(upload.bytes)).toBe(hash(bytes)); }\n    at /workspace/kartochnaya/tests/cloud-backup.spec.js:130:46"
+        ]
+      },
+      {
+        "name": "reserve failure through real adapters: google:A",
+        "status": "failed",
+        "errors": [
+          "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#cloudStatus')\nExpected substring: \u001b[32m\"Подтверждено \u001b[7m2\u001b[27m из 3\"\u001b[39m\nReceived string:    \u001b[31m\"Подтверждено \u001b[7m0\u001b[27m из 3\u001b[7m облачных загрузок. Проверь остальные направления перед повтором. Подключи Google-аккаунт и дождись завершения операции.\u001b[27m\"\u001b[39m\nTimeout: 7000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#cloudStatus') with timeout 7000ms\u001b[22m\n\u001b[2m  - waiting for locator('#cloudStatus')\u001b[22m\n\u001b[2m    18 × locator resolved to <p role=\"status\" id=\"cloudStatus\" aria-live=\"polite\" class=\"backup-status\">Подтверждено 0 из 3 облачных загрузок. Проверь ос…</p>\u001b[22m\n\u001b[2m       - unexpected value \"Подтверждено 0 из 3 облачных загрузок. Проверь остальные направления перед повтором. Подключи Google-аккаунт и дождись завершения операции.\"\u001b[22m\n\n\n  128 |   await page.locator('#cloudStart').click(); await expect(page.locator('#cloudFinish')).toBeEnabled();\n  129 |   const expected = failure === 'all' ? [] : failure === 'yandex' ? ['A', 'B'] : ['B', 'yandex'];\n> 130 |   await expect(page.locator('#cloudStatus')).toContainText(`Подтверждено ${expected.length} из 3`);\n      |                                              ^\n  131 |   expect(seen.uploads.map(u => u.id)).toEqual(expected);\n  132 |   const bytes = await saveBatch(page);\n  133 |   for (const upload of seen.uploads) { expect(upload.bytes.equals(bytes)).toBe(true); expect(hash(upload.bytes)).toBe(hash(bytes)); }\n    at /workspace/kartochnaya/tests/cloud-backup.spec.js:130:46"
+        ]
+      },
+      {
+        "name": "reserve failure through real adapters: all",
+        "status": "timedOut",
+        "errors": [
+          "\u001b[31mTest timeout of 60000ms exceeded.\u001b[39m",
+          "Error: page.waitForEvent: Test timeout of 60000ms exceeded.\n=========================== logs ===========================\nwaiting for event \"download\"\n============================================================\n\n  118 |\n  119 | async function saveBatch(page) {\n> 120 |   const pending = page.waitForEvent('download'); await page.locator('#cloudSave').click();\n      |                        ^\n  121 |   const file = await pending; return readFile(await file.path());\n  122 | }\n  123 | for (const failure of ['yandex', 'google:A', 'all']) test('reserve failure through real adapters: ' + failure, async ({ page, context }) => {\n    at saveBatch (/workspace/kartochnaya/tests/cloud-backup.spec.js:120:24)\n    at /workspace/kartochnaya/tests/cloud-backup.spec.js:132:23",
+          "Error: locator.click: Test timeout of 60000ms exceeded.\nBrowser logs:\n\n<launching> /usr/bin/chromium --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,AvoidCorsURLLoaderRestartOnRedirect,Translate,AutoDeElevate,OptimizationHints,NetworkTimeServiceQuerying,AimEnabled,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=/tmp/playwright_chromiumdev_profile-cvaGsk --remote-debugging-pipe --no-startup-window\n<launched> pid=1350\n[pid=1350][err] [1350:1350:1025/194413.111714:ERROR:third_party/crashpad/crashpad/util/file/filesystem_posix.cc:63] mkdir : No such file or directory (2)\n[pid=1350][err] chrome_crashpad_handler: --database is required\n[pid=1350][err] Try 'chrome_crashpad_handler --help' for more information.\n[pid=1350][err] [1350:1374:1025/194413.148179:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory\n[pid=1350][err] [1350:1374:1025/194413.148206:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[pid=1350][err] [1350:1374:1025/194413.151025:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory\n[pid=1350][err] [1350:1374:1025/194413.151062:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory\n[pid=1350][err] [1350:1374:1025/194413.151067:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[pid=1350][err] [1350:1386:1025/194413.153822:ERROR:content/browser/zygote_host/zygote_host_impl_linux.cc:300] Failed to adjust OOM score of renderer with pid 1388: Read-only file system (30)\n[pid=1350][err] Fontconfig error: No writable cache directories\n[pid=1350][err] [1350:1374:1025/194413.200992:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[pid=1350][err] [1350:1386:1025/194413.203512:ERROR:content/browser/zygote_host/zygote_host_impl_linux.cc:300] Failed to adjust OOM score of renderer with pid 1411: Read-only file system (30)\n[pid=1350][err] [1350:1350:1025/194413.215754:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[pid=1350][err] [1350:1374:1025/194413.215860:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[pid=1350][err] [1350:1350:1025/194413.215935:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[pid=1350][err] [1350:1374:1025/194413.215981:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[pid=1350][err] [1350:1350:1025/194413.221879:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[pid=1350][err] [1350:1374:1025/194413.221975:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[pid=1350][err] [1350:1350:1025/194413.223603:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[pid=1350][err] [1350:1350:1025/194413.223698:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[pid=1350][err] [1350:1374:1025/194413.223891:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory\n[pid=1350][err] [1350:1374:1025/194413.223903:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory\n[pid=1350][err] [1350:1374:1025/194413.223909:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[pid=1350][err] [1350:1350:1025/194413.224341:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[pid=1350][err] [1350:1350:1025/194413.224741:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.Properties.GetAll: object_path= /org/freedesktop/UPower/devices/DisplayDevice: unknown error type: \n[pid=1350][err] [1350:1350:1025/194413.224753:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[pid=1350][err] [1350:1374:1025/194413.226052:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[pid=1350][err] [1350:1350:1025/194413.226450:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[pid=1350][err] [1350:1374:1025/194413.226985:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[pid=1350][err] [1350:1350:1025/194413.227727:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[pid=1350][err] \n[pid=1350][err] (process:1350): dconf-CRITICAL **: 19:44:13.254: unable to create directory '/home/agent/.cache/dconf': Read-only file system.  dconf will not work properly.\n[pid=1350][err] \n[pid=1350][err] (process:1350): dconf-CRITICAL **: 19:44:13.254: unable to create directory '/home/agent/.cache/dconf': Read-only file system.  dconf will not work properly.\n[pid=1350][err] \n[pid=1350][err] (process:1350): dconf-CRITICAL **: 19:44:13.254: unable to create directory '/home/agent/.cache/dconf': Read-only file system.  dconf will not work properly.\n[pid=1350][err] [1350:1386:1025/194413.279935:ERROR:content/browser/zygote_host/zygote_host_impl_linux.cc:300] Failed to adjust OOM score of renderer with pid 1428: Read-only file system (30)\n[pid=1350][err] [1350:1386:1025/194413.303203:ERROR:content/browser/zygote_host/zygote_host_impl_linux.cc:300] Failed to adjust OOM score of renderer with pid 1437: Read-only file system (30)\n[pid=1350][err] [1350:1386:1025/194413.305052:ERROR:content/browser/zygote_host/zygote_host_impl_linux.cc:300] Failed to adjust OOM score of renderer with pid 1438: Read-only file system (30)\n[pid=1350][err] [1350:1386:1025/194415.023759:ERROR:content/browser/zygote_host/zygote_host_impl_linux.cc:300] Failed to adjust OOM score of renderer with pid 1471: Read-only file system (30)\n[pid=1350] <gracefully close start>\nCall log:\n\u001b[2m  - waiting for locator('#cloudSave')\u001b[22m\n\u001b[2m    - locator resolved to <button hidden=\"\" type=\"button\" id=\"cloudSave\" class=\"btn btn-outline\">Сохранить ZIP на устройство</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not visible\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    112 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m        - element is not visible\u001b[22m\n\u001b[2m      - retrying click action\u001b[22m\n\u001b[2m        - waiting 500ms\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\n\n  118 |\n  119 | async function saveBatch(page) {\n> 120 |   const pending = page.waitForEvent('download'); await page.locator('#cloudSave').click();\n      |                                                                                   ^\n  121 |   const file = await pending; return readFile(await file.path());\n  122 | }\n  123 | for (const failure of ['yandex', 'google:A', 'all']) test('reserve failure through real adapters: ' + failure, async ({ page, context }) => {\n    at saveBatch (/workspace/kartochnaya/tests/cloud-backup.spec.js:120:83)\n    at /workspace/kartochnaya/tests/cloud-backup.spec.js:132:23"
+        ]
+      },
+      {
+        "name": "known Yandex identity during reserve: temporary",
+        "status": "failed",
+        "errors": [
+          "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#cloudStatus')\nExpected substring: \u001b[32m\"Подтверждено \u001b[7m2\u001b[27m из 3\"\u001b[39m\nReceived string:    \u001b[31m\"Подтверждено \u001b[7m0\u001b[27m из 3\u001b[7m облачных загрузок. Проверь остальные направления перед повтором. Аккаунт изменился или не подтверждён. Подключи Яндекс повторно.\u001b[27m\"\u001b[39m\nTimeout: 7000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#cloudStatus') with timeout 7000ms\u001b[22m\n\u001b[2m  - waiting for locator('#cloudStatus')\u001b[22m\n\u001b[2m    18 × locator resolved to <p role=\"status\" id=\"cloudStatus\" aria-live=\"polite\" class=\"backup-status\">Подтверждено 0 из 3 облачных загрузок. Проверь ос…</p>\u001b[22m\n\u001b[2m       - unexpected value \"Подтверждено 0 из 3 облачных загрузок. Проверь остальные направления перед повтором. Аккаунт изменился или не подтверждён. Подключи Яндекс повторно.\"\u001b[22m\n\n\n  147 |   if (identity === 'temporary') seen.infoDown = true; else seen.current = 'B';\n  148 |   await page.locator('#createBackups').click(); await page.locator('#cloudStart').click();\n> 149 |   await expect(page.locator('#cloudFinish')).toBeEnabled(); await expect(page.locator('#cloudStatus')).toContainText('Подтверждено 2 из 3');\n      |                                                                                                        ^\n  150 |   expect(seen.puts).toBe(0); expect(seen.uploads.map(u => u.id)).toEqual(['A', 'B']);\n  151 |   await expect(page.locator('#cloudResultRows')).toContainText(identity === 'temporary' ? 'Не подтверждено' : 'Требуется повторное подключение');\n  152 |   await page.locator('#cloudFinish').click(); await page.locator('#yandexCard').click();\n    at /workspace/kartochnaya/tests/cloud-backup.spec.js:149:104"
+        ]
+      },
+      {
+        "name": "known Yandex identity during reserve: changed",
+        "status": "failed",
+        "errors": [
+          "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#cloudStatus')\nExpected substring: \u001b[32m\"Подтверждено \u001b[7m2\u001b[27m из 3\"\u001b[39m\nReceived string:    \u001b[31m\"Подтверждено \u001b[7m0\u001b[27m из 3\u001b[7m облачных загрузок. Проверь остальные направления перед повтором. Аккаунт изменился или не подтверждён. Подключи Яндекс повторно.\u001b[27m\"\u001b[39m\nTimeout: 7000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#cloudStatus') with timeout 7000ms\u001b[22m\n\u001b[2m  - waiting for locator('#cloudStatus')\u001b[22m\n\u001b[2m    18 × locator resolved to <p role=\"status\" id=\"cloudStatus\" aria-live=\"polite\" class=\"backup-status\">Подтверждено 0 из 3 облачных загрузок. Проверь ос…</p>\u001b[22m\n\u001b[2m       - unexpected value \"Подтверждено 0 из 3 облачных загрузок. Проверь остальные направления перед повтором. Аккаунт изменился или не подтверждён. Подключи Яндекс повторно.\"\u001b[22m\n\n\n  147 |   if (identity === 'temporary') seen.infoDown = true; else seen.current = 'B';\n  148 |   await page.locator('#createBackups').click(); await page.locator('#cloudStart').click();\n> 149 |   await expect(page.locator('#cloudFinish')).toBeEnabled(); await expect(page.locator('#cloudStatus')).toContainText('Подтверждено 2 из 3');\n      |                                                                                                        ^\n  150 |   expect(seen.puts).toBe(0); expect(seen.uploads.map(u => u.id)).toEqual(['A', 'B']);\n  151 |   await expect(page.locator('#cloudResultRows')).toContainText(identity === 'temporary' ? 'Не подтверждено' : 'Требуется повторное подключение');\n  152 |   await page.locator('#cloudFinish').click(); await page.locator('#yandexCard').click();\n    at /workspace/kartochnaya/tests/cloud-backup.spec.js:149:104"
+        ]
+      },
+      {
+        "name": "cancel during real Yandex reserve prevents ZIP and releases earlier Google leases",
+        "status": "passed",
+        "errors": []
+      },
+      {
+        "name": "real OAuth generation change at signed upload link blocks Yandex PUT and keeps Google confirmations",
+        "status": "passed",
+        "errors": []
+      }
+    ]
+  },
+  "notes": [
+    "Network-enabled Cloud Environment execution was required for test child-process reporting and loopback servers. Preliminary sandbox failures are environment failures, not application evidence.",
+    "All recipients failing already produced zero confirmations on main. Its failing test concerns the missing verified local ZIP, not false cloud success.",
+    "Real account mismatch already blocked PUT on main; its browser failure concerns lost Google confirmations and reconnect UI classification.",
+    "Generation changes, cancellation during reserve, ambiguous PUT no-retry controls already passed on main."
+  ]
+}

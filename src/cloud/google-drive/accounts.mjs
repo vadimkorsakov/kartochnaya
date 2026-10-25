@@ -139,7 +139,7 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
   function reserveUpload(id, signal) {
     const a = accounts.get(id), session = a?.session, initial = session?.view();
     if (archive?.transferred) throw Error('Сначала заверши или отмени восстановление из Google Drive.');
-    if (!a || batch || a.operation || initial.status !== 'connected' || initial.accountId !== id || Date.now() >= initial.expiresAt || typeof a.client.upload !== 'function') throw Error('Подключи Google-аккаунт и дождись завершения операции.');
+    if (!a || batch || a.operation || initial.status !== 'connected' || initial.accountId !== id || Date.now() >= initial.expiresAt || typeof a.client.upload !== 'function') throw Object.assign(Error('Подключи Google-аккаунт и дождись завершения операции.'), { code: 'reconnect' });
     const controller = new AbortController();
     const abort = () => controller.abort(); signal.addEventListener('abort', abort, { once: true });
     if (signal.aborted) controller.abort();

@@ -7,7 +7,49 @@ const validId = id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(id
 export function createDriveAccounts({ storage, sessionFactory = createDriveSession, clientFactory = createDriveClient, prepareBackup = prepareDriveBackup, changed = () => {} } = {}) {
   const accounts = new Map();
   let clientId = '', candidate = null, targetId = null, batch = false, message = '';
-  const notify = () => changed();
+  let archive = null, archiveVersion = 0, invalidationMessage = '';
+  const staleArchive = () => Error('Сеанс исходного Google-аккаунта или выбранный ZIP изменился. Скачай и проверь архив заново.');
+  function clearArchive(reason = staleArchive()) {
+    archiveVersion++;
+    const previous = archive; archive = null;
+    if (previous) {
+      previous.result = previous.account.verified = null;
+      if (previous.transferred) invalidationMessage = reason.message;
+      previous.controller.abort(reason);
+    }
+  }
+  function checkArchive(lease = archive) {
+    const a = lease?.account, state = a?.session.view();
+    if (!lease || archive !== lease || lease.controller.signal.aborted || accounts.get(a.id) !== a || a.session !== lease.session ||
+        state.status !== 'connected' || state.generation !== lease.generation || state.accountId !== lease.accountId ||
+        a.id !== lease.accountId || Date.now() >= state.expiresAt || (!lease.transferred && a.verified !== lease.result)) throw staleArchive();
+  }
+  const notify = () => {
+    if (archive) { try { checkArchive(); } catch (error) { clearArchive(error); } }
+    changed();
+  };
+  // A single memory owner across all accounts. After handoff the lease retains
+  // identity only; the local ZIP UI owns and releases the large buffer.
+  async function downloadArchive(id, fileId, maxBytes) {
+    return task(id, async (op, a) => {
+      const version = archiveVersion, session = a.session, state = session.view();
+      a.result = 'Скачиваем ZIP и проверяем SHA-256…'; notify();
+      const result = await a.client.download(op, fileId, maxBytes); op.check();
+      if (version !== archiveVersion || accounts.get(id) !== a || a.session !== session || session.view().generation !== state.generation) throw staleArchive();
+      a.verified = result;
+      archive = { account: a, session, generation: state.generation, accountId: state.accountId, result, controller: new AbortController(), transferred: false };
+      checkArchive();
+      a.result = 'ZIP проверен. Можно сохранить его на устройство или открыть восстановление.';
+    });
+  }
+  function takeArchive(id) {
+    checkArchive();
+    const lease = archive;
+    if (lease.account.id !== id || lease.account.operation || lease.transferred) throw staleArchive();
+    const bytes = lease.result.bytes;
+    lease.result = lease.account.verified = null; lease.transferred = true;
+    return { bytes, signal: lease.controller.signal, check: () => checkArchive(lease) };
+  }
   function persist() {
     storage.setItem(ACCOUNTS_KEY, JSON.stringify([...accounts.values()].map(a => ({ provider: 'google-drive', id: a.id, name: a.name, clientId }))));
   }
@@ -50,6 +92,7 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
     message = '';
     if (id && accounts.get(id)?.operation) throw Error('Дождись завершения операции аккаунта.');
     if (id && !accounts.has(id)) throw Error('Аккаунт удалён из списка.');
+    if (id && archive?.account === accounts.get(id)) clearArchive();
     if (!candidate || targetId !== id) {
       cancelAuthorization(); targetId = id;
       let owner = null, pending;
@@ -58,7 +101,7 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
         if (candidate === pending && pending?.view().status === 'connected') {
           const session = candidate, view = session.view(), existing = accounts.get(view.accountId);
           // Duplicate additions leave the existing live session and operations intact.
-          if (existing && !id) { cancelAuthorization(); existing.result = 'Этот аккаунт уже добавлен. Используй его строку для подключения.'; notify(); return; }
+          if (existing && !id) { if (archive?.account === existing) clearArchive(); cancelAuthorization(); existing.result = 'Этот аккаунт уже добавлен. Используй его строку для подключения.'; notify(); return; }
           const a = existing || record(view.accountId, view.account);
           const previous = a.session, previousName = a.name;
           a.name = view.account; a.session = session; accounts.set(a.id, a);
@@ -75,6 +118,7 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
   function disconnect(id) {
     const a = accounts.get(id); if (!a) return;
     if (candidate && targetId === id) cancelAuthorization();
+    if (archive?.account === a) clearArchive();
     a.operation?.abort(); a.session.disconnect(); a.client.reset(); a.verified = null; notify();
   }
   function remove(id) {
@@ -86,6 +130,7 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
   async function task(id, action) {
     const a = accounts.get(id);
     if (!a || a.operation || a.session.view().status !== 'connected') throw Error('Подключи аккаунт и дождись завершения его операции.');
+    clearArchive(); invalidationMessage = ''; message = '';
     const controller = new AbortController(); a.operation = controller; a.verified = null; a.result = 'Обращаемся к Google Drive…'; notify();
     try { return await a.session.withDriveOperation(op => action(op, a), { signal: controller.signal }); }
     catch (error) { a.result = error instanceof RangeError ? 'Недостаточно памяти для ZIP. Используй компьютер.' : error.message; a.folderUnavailable = error.code === 'folder_unavailable'; throw error; }
@@ -95,10 +140,11 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
     if (batch) throw Error('Создание общей копии уже выполняется.');
     const selected = [...new Set(ids)].map(id => accounts.get(id));
     if (!selected.length || selected.some(a => !a || a.operation || a.session.view().status !== 'connected')) throw Error('Подключи все выбранные аккаунты.');
-    batch = true;
+    batch = true; clearArchive();
     let backup;
     // Reserve all recipients before snapshot creation, so another operation cannot intervene.
-    const reservations = selected.map(a => { const controller = new AbortController(); a.operation = controller; a.verified = null; a.result = 'Ожидаем общий ZIP…'; return { a, controller, session: a.session }; });
+    const reservations = selected.map(a => { clearArchive(); invalidationMessage = ''; message = '';
+    const controller = new AbortController(); a.operation = controller; a.verified = null; a.result = 'Ожидаем общий ZIP…'; return { a, controller, session: a.session }; });
     notify();
     try {
       backup = await prepareBackup({ ...options, preparing: message => { for (const { a } of reservations) a.result = message; notify(); } });
@@ -115,9 +161,9 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
     } catch (error) { for (const { a } of reservations) a.result = 'Общий ZIP не создан: ' + error.message; throw error; }
     finally { backup = null; for (const { a } of reservations) a.operation = null; batch = false; notify(); }
   }
-  return { reload, configure, authorize, cancelAuthorization, disconnect, remove, task, createCopies,
+  return { clearArchive, checkArchive, downloadArchive, takeArchive, reload, configure, authorize, cancelAuthorization, disconnect, remove, task, createCopies,
     list: () => [...accounts.values()], get: id => accounts.get(id),
-    view: () => ({ clientId, batch, message, authorization: candidate?.view() || null, targetId }),
+    view: () => ({ clientId, batch, message: message || invalidationMessage, authorization: candidate?.view() || null, targetId }),
     networkChanged() { candidate?.networkChanged(); for (const a of accounts.values()) a.session.networkChanged(); notify(); },
     checkExpiry() { candidate?.checkExpiry(); for (const a of accounts.values()) a.session.checkExpiry(); },
     close() { cancelAuthorization(); for (const a of accounts.values()) disconnect(a.id); },

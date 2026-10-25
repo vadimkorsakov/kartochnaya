@@ -127,8 +127,8 @@ async function driveStorage(page) {
   for (const store of ['projects', 'docs', 'fonts', 'settings']) result[store] = await require('./helpers').records(page, store);
   return result;
 }
-async function backupDriveMock(page, { hold = false } = {}) {
-  await mock(page);
+async function backupDriveMock(page, { hold = false, expires = 3600 } = {}) {
+  await mock(page, { expires });
   const state = { folder: null, files: [], bytes: new Map(), folderCreates: 0, uploads: 0, media: 0, chunks: 0, broken: false };
   const json = (route, body, status = 200, headers = {}) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body), headers });
   await page.route('https://www.googleapis.com/**/files**', async route => {
@@ -160,7 +160,7 @@ async function backupDriveMock(page, { hold = false } = {}) {
     if (id === 'app-folder') { await json(route, state.folder); return; }
     const file = state.files.find(f => f.id === id); expect(file).toBeTruthy();
     if (url.searchParams.get('alt') === 'media') {
-      state.media++; const data = Buffer.from(state.bytes.get(id)); if (state.broken) data[0] ^= 255;
+      state.media++; if (state.mediaGate) await state.mediaGate; const data = Buffer.from(state.bytes.get(id)); if (state.broken) data[0] ^= 255;
       await route.fulfill({ status: 200, contentType: 'application/zip', body: data, headers: { 'Content-Length': String(data.length) } }); return;
     }
     await json(route, file);
@@ -186,17 +186,26 @@ test('Drive backups: create separate complete ZIPs, list safe text, download exa
   await page.locator('#googleDriveCard').click(); await expect(page.locator('#driveSaveZip')).toBeVisible();
   const pending = page.waitForEvent('download'); await page.locator('#driveSaveZip').click(); const downloaded = await pending;
   expect(downloaded.suggestedFilename()).not.toMatch(/[<>/\\]/); expect(await readFile(await downloaded.path())).toEqual(uploaded);
-  await page.locator('#googleDriveDialog [data-backup-close]').click();
-  await page.locator('#zipInput').setInputFiles({ name: 'cloud.zip', mimeType: 'application/zip', buffer: uploaded }); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await expect(page.locator('#driveRestore')).toBeEnabled();
+  await page.locator('#driveRestore').click();
+  await expect(page.locator('#googleDriveDialog')).not.toBeVisible();
+  await expect(page.locator('#zipBackupDialog')).toBeVisible();
+  await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await expect(page.locator('[name=zipRestoreMode][value=copies]')).toBeChecked();
+  expect(await page.locator('.backup-dialog[open]').count()).toBe(1); expect(state.media).toBe(1);
   await page.locator('#zipConfirm').click(); await expect(page.locator('#zipStatus')).toContainText('Транзакция завершена');
-  expect((await driveStorage(page)).projects.length).toBeGreaterThan(before.projects.length);
+  const after = await driveStorage(page);
+  expect(after.projects.length).toBeGreaterThan(before.projects.length);
+  expect(after.projects).toEqual(expect.arrayContaining(before.projects)); expect(after.docs).toEqual(expect.arrayContaining(before.docs));
+  expect(after.settings).toEqual(before.settings);
+  await page.locator('#zipCancel').click(); await page.reload(); expect(await driveStorage(page)).toEqual(after);
 });
 test('Drive backups: corrupted download never enables save and leaves all stores unchanged', async ({ page }) => {
   const state = await backupDriveMock(page); await home(page); await configure(page); await connect(page);
   await page.locator('#driveCopiesTab').click(); await page.locator('#driveCreate').click(); await expect(page.locator('#driveProgress')).toContainText('Резервная копия сохранена');
   const before = await driveStorage(page); state.broken = true;
   await page.locator('#driveCopiesTab').click(); await page.locator('#driveRefresh').click(); await expect(page.locator('#driveList button')).toHaveCount(1); await page.locator('#driveList button').click();
-  await expect(page.locator('#driveProgress')).toContainText('SHA-256'); await expect(page.locator('#driveSaveZip')).toBeHidden(); expect(await driveStorage(page)).toEqual(before);
+  await expect(page.locator('#driveProgress')).toContainText('SHA-256'); await expect(page.locator('#driveSaveZip')).toBeHidden(); await expect(page.locator('#driveRestore')).toBeHidden(); expect(await driveStorage(page)).toEqual(before);
 });
 test('Drive backups: editing is unlocked during upload; disconnect terminates it, then local ZIP works offline', async ({ page, context }) => {
   const state = await backupDriveMock(page, { hold: true }); await openHome(page); await createDocument(page, 'Редактор во время загрузки');
@@ -237,7 +246,7 @@ test('Drive accounts: three rows, shared ZIP, partial failure, isolated lists/do
     }
     if (url.pathname.endsWith('/folder-' + id)) { await route.fulfill({ json: state.folder }); return; }
     expect(url.pathname).toBe('/drive/v3/files/file-' + id);
-    if (url.searchParams.get('alt') === 'media') await route.fulfill({ body: state.bytes, contentType: 'application/zip', headers: { 'Content-Length': String(state.bytes.length) } });
+    if (url.searchParams.get('alt') === 'media') { state.media = (state.media || 0) + 1; if (state.gate) await state.gate; await route.fulfill({ body: state.bytes, contentType: 'application/zip', headers: { 'Content-Length': String(state.bytes.length) } }); }
     else await route.fulfill({ json: state.files[0] });
   });
   await home(page); await configure(page);
@@ -265,11 +274,137 @@ test('Drive accounts: three rows, shared ZIP, partial failure, isolated lists/do
     await expect(page.locator('#driveList button')).toHaveCount(id === 'B' ? 0 : 1);
   }
   await page.locator('#driveActiveAccount').selectOption('A'); await page.locator('#driveRefresh').click(); await page.locator('#driveList button').click(); await expect(page.locator('#driveProgress')).toContainText('ZIP проверен');
+  const staleDownload = await page.locator('#driveList button').evaluateHandle(button => button.onclick);
   const pending = page.waitForEvent('download'); await page.locator('#driveSaveZip').click(); expect(await readFile(await (await pending).path())).toEqual(states.get('A').bytes);
+  await expect(page.locator('#driveRestore')).toBeEnabled();
+  await page.locator('#driveActiveAccount').selectOption('B'); await expect(page.locator('#driveVerified')).toBeHidden();
+  // Give C a different valid ZIP, then let A finish only after C is verified.
+  const { createBackup, sha256 } = await import('../src/backup/archive.mjs');
+  const other = await createBackup({ projects: [], docs: [], fonts: [], settings: [{ key: 'source-account', value: 'C' }] });
+  const c = states.get('C'); c.bytes = Buffer.from(other.bytes); c.files[0].size = String(c.bytes.length);
+  c.files[0].appProperties.sha256 = await sha256(other.bytes); c.files[0].appProperties.backupId = other.manifest.backupId;
+  let release; states.get('A').gate = new Promise(r => { release = r; });
+  await page.locator('#driveActiveAccount').selectOption('A'); await page.locator('#driveList button').click(); await expect.poll(() => states.get('A').media).toBe(2);
+  await page.locator('#driveActiveAccount').selectOption('C'); await page.locator('#driveList button').click(); await expect(page.locator('#driveRestore')).toBeEnabled();
+  release(); await expect(row('A')).toContainText('исходного Google-аккаунта');
+  await staleDownload.evaluate(handler => handler()); await staleDownload.dispose(); expect(states.get('A').media).toBe(2);
+  // Disconnecting A must preserve C's selected ZIP and actions.
+  await page.evaluate(() => document.querySelector('[data-account-id="A"] button:nth-child(4)')?.click());
+  await expect(page.locator('#driveAccountTitle')).toHaveText('Копии: Google C');
+  const savedC = page.waitForEvent('download'); await page.locator('#driveSaveZip').click(); expect(await readFile(await (await savedC).path())).toEqual(c.bytes);
+  await expect(page.locator('#driveRestore')).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.reload(); await page.locator('[data-home-nav=data]').click(); await page.locator('#googleDriveCard').click(); await expect(rows).toHaveCount(3);
   for (const id of ['A', 'B', 'C']) await expect(row(id)).toContainText('Требуется подключение');
   await page.evaluate(() => { window.__pick = 'C'; }); await row('A').getByRole('button', { name: 'Подключить', exact: true }).click(); await page.locator('#driveConnect').click();
   await expect(page.locator('#driveStatus')).toContainText('другой Google-аккаунт'); await expect(row('A')).toContainText('Требуется подключение'); await expect(rows).toHaveCount(3);
   await row('A').getByRole('button', { name: 'Удалить из списка', exact: true }).click(); await expect(rows).toHaveCount(2); expect(states.get('A').files).toHaveLength(1);
+});
+
+async function driveArchive(page, options) {
+  const state = await backupDriveMock(page, options);
+  await openHome(page); await createDocument(page, 'Исходный проект'); await addShape(page); await savedDocument(page, 'Исходный проект', 1);
+  await page.locator('#documentTabsHome').click(); await page.locator('[data-home-nav=data]').click(); await configure(page); await connect(page);
+  await page.locator('#driveCopiesTab').click(); await page.locator('#driveCreate').click(); await expect(page.locator('#driveProgress')).toContainText('Резервная копия сохранена');
+  await page.locator('#driveRefresh').click(); await expect(page.locator('#driveList button')).toHaveCount(1);
+  return state;
+}
+async function driveVerified(page) {
+  await page.locator('#driveList button').click(); await expect(page.locator('#driveRestore')).toBeEnabled();
+}
+async function driveHandoff(page) {
+  await driveVerified(page); await page.locator('#driveRestore').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await expect(page.locator('#googleDriveDialog')).not.toBeVisible(); expect(await page.locator('.backup-dialog[open]').count()).toBe(1);
+  await expect(page.locator('[name=zipRestoreMode][value=copies]')).toBeChecked();
+}
+async function driveReplacement(page) {
+  await page.locator('[name=zipRestoreMode][value=replace]').check(); await expect(page.locator('#zipReplacePrepare')).toBeEnabled();
+  await page.locator('#zipReplacePrepare').click(); await expect(page.locator('#zipReplaceReady')).toBeVisible(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  expect(await exclusiveDriveLock(page)).toBe(true);
+}
+async function exclusiveDriveLock(page) { return page.evaluate(async () => (await navigator.locks.query()).held.some(l => l.mode === 'exclusive')); }
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 390, height: 844 }, { width: 360, height: 640 }]) test(`Drive direct restore: save retains bytes, one GET and responsive actions ${viewport.width}`, async ({ page }) => {
+  const state = await driveArchive(page); await page.setViewportSize(viewport); await driveVerified(page);
+  await expect(page.locator('#driveArchiveSummary')).toContainText('проектов:'); await expect(page.locator('#driveArchiveSummary')).toContainText('.zip');
+  const download = page.waitForEvent('download'); await page.locator('#driveSaveZip').click(); const file = await download;
+  expect(await readFile(await file.path())).toEqual(state.bytes.get('cloud-1'));
+  await expect(page.locator('#driveRestore')).toBeEnabled(); await expect(page.locator('#driveProgress')).toContainText('браузер может отменить');
+  for (const id of ['googleDriveDialog', 'driveCopiesPanel', 'driveVerified']) expect(await page.locator('#' + id).evaluate(n => n.scrollWidth <= n.clientWidth)).toBe(true);
+  await page.locator('#driveRestore').scrollIntoViewIfNeeded(); await expect(page.locator('#driveRestore')).toBeInViewport();
+  await page.locator('#driveRestore').click(); await expect(page.locator('#zipConfirm')).toBeEnabled(); expect(state.media).toBe(1);
+  await page.locator('#zipCancel').click(); await expect(page.locator('#googleDriveCard')).toBeFocused(); await page.locator('#googleDriveCard').click();
+  await expect(page.locator('#driveVerified')).toBeHidden();
+});
+test('Drive direct full replacement: second ZIP validation, safety snapshot, final confirm and reload', async ({ page }) => {
+  const state = await driveArchive(page), before = await driveStorage(page);
+  // Count SHA validation work after the cloud download to prove local revalidation.
+  await page.evaluate(() => { window.zipDigests = 0; const digest = crypto.subtle.digest.bind(crypto.subtle); crypto.subtle.digest = (...args) => { window.zipDigests++; return digest(...args); }; });
+  await driveVerified(page); const hashes = await page.evaluate(() => window.zipDigests);
+  await page.locator('#driveRestore').click(); await expect(page.locator('#zipConfirm')).toBeEnabled(); expect(await page.evaluate(() => window.zipDigests)).toBeGreaterThan(hashes);
+  await driveReplacement(page);
+  const pending = page.waitForEvent('download'); await page.locator('#zipSafetyDownload').click(); const safety = await pending;
+  const { readBackup } = await import('../src/backup/archive.mjs');
+  const saved = await readBackup(new Uint8Array(await readFile(await safety.path()))); for (const key of Object.keys(before)) expect(saved.data[key]).toEqual(before[key]);
+  await expect(page.locator('#zipConfirm')).toBeEnabled();
+  page.once('dialog', d => { expect(d.type()).toBe('confirm'); return d.accept(); });
+  await Promise.all([page.waitForEvent('load'), page.locator('#zipConfirm').click()]); await expect(page.locator('#homeScreen')).toBeVisible();
+  const incoming = await readBackup(new Uint8Array(state.bytes.get('cloud-1'))); for (const key of Object.keys(before)) expect((await driveStorage(page))[key]).toEqual(incoming.data[key]);
+  expect(state.media).toBe(1); expect(await exclusiveDriveLock(page)).toBe(false);
+});
+for (const cancel of ['Escape', 'close', 'button', 'mode']) test('Drive prepared replacement cancellation releases Web Locks: ' + cancel, async ({ page }) => {
+  await driveArchive(page); const before = await driveStorage(page); await driveHandoff(page); await driveReplacement(page);
+  if (cancel === 'Escape') await page.keyboard.press('Escape');
+  if (cancel === 'close') await page.locator('#zipBackupDialog [data-backup-close]').click();
+  if (cancel === 'button') await page.locator('#zipCancel').click();
+  if (cancel === 'mode') await page.locator('[name=zipRestoreMode][value=copies]').check();
+  await expect.poll(() => exclusiveDriveLock(page)).toBe(false); expect(await driveStorage(page)).toEqual(before);
+});
+for (const reason of ['disconnect', 'remove', 'clientId', 'reauthorize', 'expire']) test('Drive source invalidation safely cancels prepared local replacement: ' + reason, async ({ page }) => {
+  if (reason === 'expire') await page.clock.install();
+  await driveArchive(page); const before = await driveStorage(page); await driveHandoff(page); await driveReplacement(page);
+  if (reason === 'expire') await page.clock.fastForward(3600001);
+  else if (reason === 'clientId' || reason === 'remove') await page.evaluate(reason => {
+    const key = reason === 'clientId' ? 'kartochnaya-google-drive-client-id' : 'kartochnaya-cloud-accounts-v1';
+    localStorage.setItem(key, reason === 'clientId' ? 'new.apps.googleusercontent.com' : '[]'); window.dispatchEvent(new StorageEvent('storage', { key }));
+  }, reason);
+  else {
+    // Exercise real handlers while the local modal owns focus, as an external
+    // account event can do. No application hooks or restore bypass are installed.
+    await page.evaluate(reason => {
+      if (reason === 'disconnect') document.querySelector('#driveDisconnect').onclick();
+      else { document.querySelector('#driveAccounts button').onclick(); document.querySelector('#driveConnect').onclick(); }
+    }, reason);
+  }
+  await expect(page.locator('#zipBackupDialog')).not.toBeVisible(); await expect.poll(() => exclusiveDriveLock(page)).toBe(false);
+  expect(await driveStorage(page)).toEqual(before); await expect(page.locator('#googleDriveCard')).toContainText('Сеанс исходного Google-аккаунта');
+});
+for (const mode of ['copies', 'replace']) test('Drive direct restore rolls back real IndexedDB write failure: ' + mode, async ({ page }) => {
+  await page.addInitScript(() => {
+    window.failDriveRestore = false; window.driveAborts = 0;
+    for (const method of ['put', 'add']) {
+      const original = IDBObjectStore.prototype[method];
+      IDBObjectStore.prototype[method] = function(...args) {
+        const request = original.apply(this, args), tx = this.transaction;
+        if (window.failDriveRestore && tx.mode === 'readwrite' && tx.objectStoreNames.contains('projects') && tx.objectStoreNames.contains('docs')) request.addEventListener('success', () => { if (!window.driveAborts++) tx.abort(); });
+        return request;
+      };
+    }
+  });
+  await driveArchive(page); const before = await driveStorage(page); await driveHandoff(page);
+  if (mode === 'replace') { await driveReplacement(page); page.once('dialog', d => d.accept()); }
+  await page.evaluate(() => { window.failDriveRestore = true; }); await page.locator('#zipConfirm').click();
+  await expect(page.locator('#zipStatus')).toContainText('Не удалось завершить'); expect(await driveStorage(page)).toEqual(before);
+  expect(await page.evaluate(() => window.driveAborts)).toBeGreaterThan(0); expect(await exclusiveDriveLock(page)).toBe(false);
+});
+for (const problem of ['badHash', 'corrupt']) test('Drive invalid archive blocks both actions: ' + problem, async ({ page }) => {
+  const state = await driveArchive(page), before = await driveStorage(page);
+  if (problem === 'badHash') state.files[0].appProperties.sha256 = '0'.repeat(64);
+  else { const bytes = Buffer.from(state.bytes.get('cloud-1')); bytes[0] ^= 255; state.bytes.set('cloud-1', bytes); const { sha256 } = await import('../src/backup/archive.mjs'); state.files[0].appProperties.sha256 = await sha256(bytes); }
+  await page.locator('#driveList button').click(); await expect(page.locator('#driveList button')).toBeEnabled();
+  await expect(page.locator('#driveRestore')).toBeHidden(); await expect(page.locator('#driveSaveZip')).toBeHidden(); expect(await driveStorage(page)).toEqual(before);
+});
+test('Drive disconnect during dialog close prevents handoff to the local modal', async ({ page }) => {
+  await driveArchive(page); await driveVerified(page); const before = await driveStorage(page);
+  await page.evaluate(() => document.querySelector('#googleDriveDialog').addEventListener('close', () => document.querySelector('#driveDisconnect').click(), { once: true }));
+  await page.locator('#driveRestore').click(); await expect(page.locator('#zipBackupDialog')).not.toBeVisible(); expect(await driveStorage(page)).toEqual(before);
 });

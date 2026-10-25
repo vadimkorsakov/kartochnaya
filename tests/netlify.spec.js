@@ -226,3 +226,9 @@ test('Netlify keeps ZIP restore bridge module-local and the local dialog availab
   await page.locator('#zipCancel').click(); await page.locator('#yandexCard').click(); await page.locator('#yandexCopiesTab').click();
   await expect(page.locator('#yandexSave')).toBeDisabled(); await expect(page.locator('#yandexRestore')).toBeDisabled(); expect(cloudRequests).toEqual([]);
 });
+
+test('Netlify Google restore bridge uses the local dialog without exposing a global capability', async ({ page }) => {
+  await openHome(page); await page.locator('[data-home-nav=data]').click(); await page.locator('#googleDriveCard').click();
+  await page.locator('#driveCopiesTab').click(); await expect(page.locator('#driveRestore')).toBeHidden();
+  expect(await page.evaluate(() => [typeof window.zipBackupUI, typeof window.openArchive])).toEqual(['undefined', 'undefined']);
+});

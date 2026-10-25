@@ -82,3 +82,15 @@ test('GIS preparation failure, unsupported file mode, popup and API deadlines', 
   assert.equal(h.session.view().busy, false); assert.ok(h.requested[1].signal.aborted);
   h.session.disconnect();
 });
+
+test('public authorization generation changes on disconnect and reconnect; state exposes no token', async () => {
+  const h = harness(), configured = h.session.view().generation;
+  await h.session.prepare(); const prepared = h.session.view().generation; assert.ok(prepared > configured);
+  h.session.connect(); const connecting = h.session.view().generation; assert.ok(connecting > prepared);
+  h.callbacks.callback(response()); await tick(); assert.equal(h.session.view().generation, connecting);
+  assert.ok(h.session.view().expiresAt > Date.now());
+  assert.ok(!JSON.stringify(h.session.view()).includes('memory-only-test-token'));
+  h.session.disconnect(); assert.ok(h.session.view().generation > connecting); assert.equal(h.session.view().expiresAt, 0);
+  const disconnected = h.session.view().generation;
+  h.session.connect(); assert.ok(h.session.view().generation > disconnected); h.session.disconnect();
+});

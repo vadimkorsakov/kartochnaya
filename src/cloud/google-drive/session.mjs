@@ -38,7 +38,7 @@ export function createDriveSession({ load = loadGoogleIdentity, request = global
     if (!online()) { fail('Отсутствует интернет. Локальные проекты и ZIP доступны.', 'offline'); return false; }
     return true;
   }
-  function view() { return { ...state, clientId, ready: !!oauth, busy: busy(), supported: supported(), online: online() }; }
+  function view() { return { ...state, clientId, generation, expiresAt, ready: !!oauth, busy: busy(), supported: supported(), online: online() }; }
   function configure(value) {
     clear(); clientId = value; oauth = null;
     emit(value ? 'disconnected' : 'unconfigured', value ? 'Не подключён.' : 'Не настроен Client ID.');

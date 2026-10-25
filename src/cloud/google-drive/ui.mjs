@@ -4,7 +4,7 @@ import { createDriveAccounts, ACCOUNTS_KEY } from './accounts.mjs';
 import { MAX_CLOUD_BYTES } from './client.mjs';
 import { readPreferences } from '../../backup/archive.mjs';
 
-export function installGoogleDriveUI({ snapshot, download }) {
+export function installGoogleDriveUI({ snapshot, download, backupUI }) {
   const grid = document.querySelector('#homeDataPane .home-data-grid');
   if (!grid) return;
   const card = storageRow({ id: 'googleDriveCard', title: 'Google Drive', description: 'Облачные ZIP-копии в нескольких аккаунтах', icon: '☁', status: 'Не настроен' });
@@ -34,14 +34,15 @@ export function installGoogleDriveUI({ snapshot, download }) {
           <div class="backup-toolbar"><button type="button" class="btn btn-primary" id="driveCreate">Создать облачную копию</button><button type="button" class="btn btn-outline" id="driveRefresh">Просмотр копий</button><button type="button" class="btn btn-outline" id="driveDisconnect">Отключить</button></div>
           <button type="button" class="btn btn-outline" id="driveNewFolder" hidden>Создать новую папку при следующей загрузке</button>
           <p id="driveProgress" role="status" aria-live="polite"></p><div id="driveList"></div>
-          <p class="home-data-footnote">Скачанный ZIP проверяется до сохранения. Для восстановления открой «Локальные ZIP-копии → Восстановить копию».</p>
+          <section id="driveVerified" hidden><h3>Проверенная копия</h3><p id="driveArchiveSummary" style="overflow-wrap:anywhere"></p><p>Внутренние SHA-256, CRC ZIP, manifest и связи проверены.</p><p id="driveWarnings"></p><div class="backup-toolbar"><button type="button" class="btn btn-outline" id="driveSaveZip">Сохранить ZIP на устройство</button><button type="button" class="btn btn-primary" id="driveRestore">Восстановить в КАРТОЧНОЙ</button></div></section>
+          <p class="home-data-footnote">После проверки копии можно сохранить ZIP на устройство или открыть восстановление прямо в КАРТОЧНОЙ.</p>
         </section>
       </section>
       <section id="driveSettings" hidden>
         <form><h3 id="driveSettingsTitle">Google OAuth Client ID</h3><p>Один публичный Web application Client ID для всех аккаунтов. Хранится в этом браузере и не включается в ZIP. Изменение отключит текущие сеансы.</p><label for="driveClientId">Client ID</label><input id="driveClientId" autocomplete="off" spellcheck="false" maxlength="512" placeholder="….apps.googleusercontent.com"><p id="driveSettingsError" role="alert"></p><div class="backup-toolbar"><button class="btn btn-outline" id="driveCancel" type="button">Отмена</button><button class="btn btn-primary" id="driveSave" type="submit">Сохранить</button></div></form>
       </section>
     </div>
-    <footer class="backup-actions"><button type="button" class="btn btn-outline" id="driveAbort" hidden>Отменить операцию</button><button type="button" class="btn btn-primary" id="driveCreateSelected" hidden>Создать ZIP в выбранных аккаунтах</button><button type="button" class="btn btn-primary" id="driveSaveZip" hidden>Сохранить ZIP на устройстве</button></footer>
+    <footer class="backup-actions"><button type="button" class="btn btn-outline" id="driveAbort" hidden>Отменить операцию</button><button type="button" class="btn btn-primary" id="driveCreateSelected" hidden>Создать ZIP в выбранных аккаунтах</button></footer>
     <p id="driveStatus" class="backup-status" role="status" aria-live="polite"></p>`;
   document.body.append(mainDialog);
   const shell = modal(mainDialog, { opener: card }); card.onclick = () => shell.open(card);
@@ -61,7 +62,7 @@ export function installGoogleDriveUI({ snapshot, download }) {
   for (const button of mainDialog.querySelectorAll('[data-backup-tab]')) button.addEventListener('click', () => render());
   mainDialog.querySelector('.backup-tabs').addEventListener('keydown', () => render());
   const showTab = value => { navigation.select(value); render(); };
-  const run = action => Promise.resolve().then(action).catch(error => { notice = error.message; render(); });
+  const run = (action, current = () => true) => Promise.resolve().then(action).catch(error => { if (current()) { notice = error.message; render(); } });
   function button(text, action, disabled = false) {
     const node = document.createElement('button'); node.type = 'button'; node.className = 'btn btn-outline'; node.textContent = text; node.disabled = disabled; node.onclick = action; return node;
   }
@@ -79,7 +80,7 @@ export function installGoogleDriveUI({ snapshot, download }) {
     render();
   }
   async function refresh(id) {
-    if (active !== id) { const previous = manager.get(active); if (previous) previous.verified = null; }
+    if (active !== id) manager.clearArchive();
     active = id; notice = ''; showTab('copies');
     await manager.task(id, async (op, a) => {
       const files = await a.client.list(op); op.check(); lists.set(id, files);
@@ -92,7 +93,7 @@ export function installGoogleDriveUI({ snapshot, download }) {
     const supported = location.protocol === 'https:' || (location.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname));
     const online = navigator.onLine;
     find('driveStatus').textContent = notice || view.message || (!supported ? 'Авторизация недоступна в file://. Открой КАРТОЧНУЮ на HTTPS-сайте.' : !online ? 'Отсутствует интернет. Локальные проекты и ZIP доступны.' : auth?.message || (!view.clientId ? 'Не настроен Client ID.' : !accounts.length ? 'Требуется повторное подключение. Нажми «Добавить Google-аккаунт».' : 'Аккаунтов: ' + accounts.length + '.'));
-    card.querySelector('.storage-status').textContent = view.batch || auth?.busy || accounts.some(a => a.operation) ? 'Выполняется операция' : !view.clientId ? 'Не настроен' : accounts.some(a => a.session.view().status === 'connected') ? 'Подключён' : 'Требуется подключение';
+    card.querySelector('.storage-status').textContent = view.message || (view.batch || auth?.busy || accounts.some(a => a.operation) ? 'Выполняется операция' : !view.clientId ? 'Не настроен' : accounts.some(a => a.session.view().status === 'connected') ? 'Подключён' : 'Требуется подключение');
     find('driveStatus').dataset.state = auth?.status || (accounts.some(a => a.session.view().status === 'connected') ? 'connected' : 'disconnected');
     find('driveAdd').disabled = !view.clientId || !online || !supported || !!auth?.busy;
     const connect = find('driveConnect'); connect.hidden = !auth;
@@ -143,12 +144,17 @@ export function installGoogleDriveUI({ snapshot, download }) {
     }
     picker.value = active || '';
     find('driveAbort').hidden = !accounts.some(account => account.operation);
-    find('driveSaveZip').hidden = tab !== 'copies' || !dialog.hidden || !a?.verified;
+    find('driveVerified').hidden = !a?.verified;
+    const verified = a?.verified;
+    find('driveArchiveSummary').textContent = verified ? `${verified.filename} · ${size(verified.bytes.length)} · ${Number.isFinite(Date.parse(verified.createdAt)) ? new Date(verified.createdAt).toLocaleString('ru-RU') : 'Дата неизвестна'} · проектов: ${verified.projects}` : '';
+    find('driveWarnings').textContent = verified?.warnings.length ? 'Предупреждения: ' + verified.warnings.join('; ') : '';
     find('driveBackups').hidden = !connected;
     if (!a) { find('driveList').replaceChildren(); filePages.update(true); return; }
     find('driveAccountTitle').textContent = 'Копии: ' + a.name;
     find('driveProgress').textContent = a.result;
-    for (const id of ['driveCreate', 'driveRefresh', 'driveNewFolder', 'driveSaveZip']) find(id).disabled = !connected || !!a.operation || (id === 'driveCreate' && view.batch);
+    for (const id of ['driveCreate', 'driveRefresh', 'driveNewFolder', 'driveSaveZip', 'driveRestore']) find(id).disabled = !connected || !!a.operation || (id === 'driveCreate' && view.batch);
+    find('driveRestore').disabled ||= !backupUI || !verified;
+    find('driveSaveZip').disabled ||= !verified;
     find('driveNewFolder').hidden = !a.folderUnavailable;
     const list = find('driveList');
     const files = connected ? lists.get(a.id) : null;
@@ -157,11 +163,7 @@ export function installGoogleDriveUI({ snapshot, download }) {
     for (const file of files || []) {
       const row = document.createElement('div'), name = document.createElement('p'), details = document.createElement('p'); name.textContent = file.name;
       details.textContent = `${Number.isFinite(Date.parse(file.createdTime)) ? new Date(file.createdTime).toLocaleString('ru-RU') : 'Дата неизвестна'} · ${size(Number(file.size))} · Всё рабочее пространство`;
-      row.append(name, details, button('Скачать', () => run(() => manager.task(a.id, async (op, account) => {
-        account.result = 'Скачиваем ZIP и проверяем SHA-256…'; render();
-        const result = await account.client.download(op, file.id, /Android/i.test(navigator.userAgent) ? 128 * 1024 * 1024 : MAX_CLOUD_BYTES); op.check(); account.verified = result;
-        account.result = `ZIP проверен: ${size(result.bytes.length)} · проектов: ${result.projects}. ` + result.warnings.join('; ') + ' Можно сохранить файл.';
-      })), !!a.operation)); list.append(row);
+      row.append(name, details, button('Скачать', () => run(() => { if (active === a.id) return manager.downloadArchive(a.id, file.id, /Android/i.test(navigator.userAgent) ? 128 * 1024 * 1024 : MAX_CLOUD_BYTES); }, () => active === a.id), !!a.operation)); list.append(row);
     }
     filePages.update(true);
   }
@@ -174,12 +176,24 @@ export function installGoogleDriveUI({ snapshot, download }) {
   find('driveRefresh').onclick = () => run(() => refresh(active));
   find('driveDisconnect').onclick = () => manager.disconnect(active);
   find('driveAbort').onclick = () => { for (const a of manager.list()) a.operation?.abort(); };
-  find('driveActiveAccount').onchange = event => { const previous = manager.get(active); if (previous) previous.verified = null; active = event.target.value; render(); };
+  find('driveActiveAccount').onchange = event => { manager.clearArchive(); active = event.target.value; render(); };
   find('driveNewFolder').onclick = () => { const a = manager.get(active); a.client.newFolder(); a.folderUnavailable = false; lists.delete(active); a.result = 'При следующей загрузке папка будет найдена или создана. Старые файлы не переносятся.'; render(); };
   find('driveSaveZip').onclick = () => {
-    const a = manager.get(active); if (!a?.verified || a.operation || a.session.view().status !== 'connected') return;
-    try { download(new Blob([a.verified.bytes], { type: 'application/zip' }), a.verified.filename); a.verified = null; a.result = 'Проверенный ZIP передан браузеру. Проверь загрузки: браузер может отменить сохранение.'; }
+    const a = manager.get(active); if (!a?.verified || a.operation) return;
+    try { manager.checkArchive(); } catch (error) { manager.clearArchive(); notice = error.message; render(); return; }
+    try { download(new Blob([a.verified.bytes], { type: 'application/zip' }), a.verified.filename); a.result = 'Проверенный ZIP передан браузеру. Проверь загрузки: браузер может отменить сохранение.'; }
     catch { a.result = 'Не удалось передать ZIP браузеру. Возможно, недостаточно памяти.'; } render();
+  };
+  find('driveRestore').onclick = async event => {
+    if (!event.isTrusted || !mainDialog.open || !backupUI) return;
+    try {
+      const { bytes, signal, check } = manager.takeArchive(active);
+      render();
+      // The modal helper returns focus in its earlier close listener.
+      await new Promise(resolve => { mainDialog.addEventListener('close', resolve, { once: true }); mainDialog.close(); });
+      check();
+      await backupUI.openArchive(bytes, { signal, check, opener: card });
+    } catch (error) { manager.clearArchive(); notice = error.message; render(); }
   };
   find('driveConfigure').onclick = () => { find('driveClientId').value = manager.view().clientId; find('driveSettingsError').textContent = ''; for (const panel of mainDialog.querySelectorAll('[data-backup-panel]')) panel.hidden = true; dialog.hidden = false; render(); find('driveClientId').focus(); };
   dialog.querySelector('form').onsubmit = event => {

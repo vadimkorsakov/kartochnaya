@@ -36,3 +36,23 @@ test('prepared replacement keeps its modal and lease until explicit cancellation
   await page.locator('#createBackups').evaluate(button => button.click()); await expect(page.locator('#cloudBackupDialog')).toBeHidden(); await expect(page.locator('#zipReplaceReady')).toBeVisible();
   await page.locator('#zipCancel').click(); await page.locator('#createBackups').click(); await page.locator('#cloudStart').click(); await expect(page.locator('#cloudSave')).toBeVisible();
 });
+
+for (const saves of [1, 2]) test(`download URLs survive immediate finish after ${saves} saves and expire normally`, async ({ page }) => {
+  await openHome(page); await page.clock.install();
+  await page.evaluate(() => {
+    window.zipURLs = []; window.zipRevoked = [];
+    const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = blob => { const url = create(blob); if (blob.type === 'application/zip') window.zipURLs.push(url); return url; };
+    URL.revokeObjectURL = url => { window.zipRevoked.push(url); revoke(url); };
+  });
+  await page.locator('[data-home-nav=data]').click(); await page.locator('#createBackups').click(); await page.locator('#cloudStart').click(); await expect(page.locator('#cloudSave')).toBeVisible();
+  const downloads = [];
+  for (let i = 0; i < saves; i++) { const pending = page.waitForEvent('download'); await page.locator('#cloudSave').click(); downloads.push(await pending); }
+  await page.locator('#cloudFinish').click();
+  expect(await page.evaluate(() => window.zipURLs.length)).toBe(saves);
+  expect(await page.evaluate(() => window.zipURLs.filter(url => window.zipRevoked.includes(url)))).toEqual([]);
+  for (const download of downloads) { expect(await download.failure()).toBeNull(); const { readBackup } = await import('../src/backup/archive.mjs'); await readBackup(await readFile(await download.path())); }
+  await page.locator('#createBackups').click(); await expect(page.locator('#cloudSave')).toBeHidden();
+  await page.clock.fastForward(30001);
+  expect(await page.evaluate(() => window.zipURLs.every(url => window.zipRevoked.includes(url)))).toBe(true);
+});

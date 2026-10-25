@@ -17,7 +17,7 @@ export function installCloudBackupUI({ snapshot, download, assertAvailable }) {
   const pageSize = matchMedia('(max-width:760px)').matches ? 1 : 3;
   const recipientPages = pager(find('cloudRecipients'), { size: pageSize, label: 'Получатели резервной копии' });
   const resultPages = pager(find('cloudResultRows'), { size: pageSize, label: 'Результаты загрузки' });
-  let releaseDownload = null, closing = false, saveNotice = '';
+  let closing = false, saveNotice = '';
   const coordinator = createCloudCoordinator({ snapshot, preferences: () => readPreferences(localStorage), providers, assertAvailable, changed: render });
   function render() {
     const v = coordinator.view(), started = v.busy || !!v.archive || v.results.length > 0;
@@ -37,7 +37,7 @@ export function installCloudBackupUI({ snapshot, download, assertAvailable }) {
   }
   function finish() {
     if (coordinator.view().busy) { closing = true; coordinator.cancel(); return; }
-    closing = false; releaseDownload?.(); releaseDownload = null; saveNotice = '';
+    closing = false; saveNotice = '';
     coordinator.finish(); dialog.close(); find('cloudRecipients').replaceChildren(); find('cloudResultRows').replaceChildren();
   }
   const shell = modal(dialog, { opener: button, close: finish });
@@ -58,7 +58,7 @@ export function installCloudBackupUI({ snapshot, download, assertAvailable }) {
     catch (error) { find('cloudStatus').textContent = error.message; }
   };
   find('cloudSave').onclick = () => {
-    try { releaseDownload?.(); releaseDownload = coordinator.save(download); saveNotice = 'ZIP передан браузеру. Проверь фактическое сохранение в загрузках браузера.'; }
+    try { coordinator.save(download); saveNotice = 'ZIP передан браузеру. Проверь фактическое сохранение в загрузках браузера.'; }
     catch (error) { saveNotice = error.message; } render();
   };
   find('cloudCancel').onclick = () => coordinator.cancel(); find('cloudFinish').onclick = finish;

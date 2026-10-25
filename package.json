@@ -17,7 +17,7 @@
     "build": "node scripts/build.mjs",
     "build:html": "node scripts/build.mjs html",
     "build:pwa": "node scripts/build.mjs pwa",
-    "test:unit": "node --test tests/layer-masks.test.mjs tests/canvas-graph.test.mjs tests/colors.test.mjs tests/gradient-model.test.mjs tests/shape-catalog.test.mjs tests/geometry.test.mjs tests/indexeddb.test.mjs tests/project-integrity.test.mjs tests/zip-backup.test.mjs tests/workspace-replace.test.mjs",
+    "test:unit": "node --test tests/export-resources.test.mjs tests/layer-masks.test.mjs tests/canvas-graph.test.mjs tests/colors.test.mjs tests/gradient-model.test.mjs tests/shape-catalog.test.mjs tests/geometry.test.mjs tests/indexeddb.test.mjs tests/project-integrity.test.mjs tests/zip-backup.test.mjs tests/workspace-replace.test.mjs",
     "test:source": "node --test tests/source-extraction.test.mjs",
     "test:pwa": "node --test tests/pwa-runtime.test.mjs",
     "build:verify": "node scripts/verify-build.mjs",

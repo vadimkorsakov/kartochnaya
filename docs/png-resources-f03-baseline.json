@@ -1,0 +1,353 @@
+{
+  "base": "da53aca8fbe5fd964240d7e18fd16bef9200ab56",
+  "stats": {
+    "startTime": "2026-10-25T15:44:34.081Z",
+    "duration": 40600.731,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 12,
+    "flaky": 0
+  },
+  "tests": [
+    {
+      "title": "delayed imageSrc: PNG pixels wait, then hot export agrees",
+      "status": "passed",
+      "errors": [],
+      "evidence": [
+        {
+          "name": "pixels-and-early-download",
+          "data": {
+            "early": 0,
+            "pixels": [
+              [
+                255,
+                0,
+                0,
+                255
+              ],
+              [
+                255,
+                0,
+                0,
+                255
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "title": "delayed rasterSrc: PNG pixels wait, then hot export agrees",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 2\u001b[39m\n\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    255,\u001b[22m\n\u001b[32m-   0,\u001b[39m\n\u001b[32m-   0,\u001b[39m\n\u001b[31m+   255,\u001b[39m\n\u001b[31m+   255,\u001b[39m\n\u001b[2m    255,\u001b[22m\n\u001b[2m  ]\u001b[22m\n\n  40 |   const first=await finish(downloads);await evidence(info,'pixels-and-early-download',{early,pixels:pixels(first)});\n  41 |   expect.soft(early,'no file while required resource is loading').toBe(0);\n> 42 |   const actual=pixels(first);expect.soft(actual[0]).toEqual(expected[0]);if(expected[1])expect.soft(actual[1]).toEqual(expected[1]);else expect.soft(actual[1]).not.toEqual(red);\n     |                                                     ^\n  43 |   const hot=await start(page);expect(pixels(await finish(hot))).toEqual(actual);\n  44 | });\n  45 |\n    at /workspace/kartochnaya/tests/png-resources.spec.js:42:53",
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 2\u001b[39m\n\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    255,\u001b[22m\n\u001b[32m-   0,\u001b[39m\n\u001b[32m-   0,\u001b[39m\n\u001b[31m+   255,\u001b[39m\n\u001b[31m+   255,\u001b[39m\n\u001b[2m    255,\u001b[22m\n\u001b[2m  ]\u001b[22m\n\n  40 |   const first=await finish(downloads);await evidence(info,'pixels-and-early-download',{early,pixels:pixels(first)});\n  41 |   expect.soft(early,'no file while required resource is loading').toBe(0);\n> 42 |   const actual=pixels(first);expect.soft(actual[0]).toEqual(expected[0]);if(expected[1])expect.soft(actual[1]).toEqual(expected[1]);else expect.soft(actual[1]).not.toEqual(red);\n     |                                                                                                                ^\n  43 |   const hot=await start(page);expect(pixels(await finish(hot))).toEqual(actual);\n  44 | });\n  45 |\n    at /workspace/kartochnaya/tests/png-resources.spec.js:42:112",
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 4\u001b[39m\n\u001b[31m+ Received  + 4\u001b[39m\n\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[2m      255,\u001b[22m\n\u001b[32m-     255,\u001b[39m\n\u001b[32m-     255,\u001b[39m\n\u001b[31m+     0,\u001b[39m\n\u001b[31m+     0,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[32m-     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[32m-     255,\u001b[39m\n\u001b[31m+     0,\u001b[39m\n\u001b[31m+     0,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m  ]\u001b[22m\n\n  41 |   expect.soft(early,'no file while required resource is loading').toBe(0);\n  42 |   const actual=pixels(first);expect.soft(actual[0]).toEqual(expected[0]);if(expected[1])expect.soft(actual[1]).toEqual(expected[1]);else expect.soft(actual[1]).not.toEqual(red);\n> 43 |   const hot=await start(page);expect(pixels(await finish(hot))).toEqual(actual);\n     |                                                                 ^\n  44 | });\n  45 |\n  46 | test('cold raster reload preserves geometry, alpha and clipping',async({page},info)=>{\n    at /workspace/kartochnaya/tests/png-resources.spec.js:43:65"
+      ],
+      "evidence": [
+        {
+          "name": "pixels-and-early-download",
+          "data": {
+            "early": 0,
+            "pixels": [
+              [
+                255,
+                255,
+                255,
+                255
+              ],
+              [
+                255,
+                255,
+                255,
+                255
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "title": "delayed effectMask: PNG pixels wait, then hot export agrees",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 2\u001b[39m\n\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    255,\u001b[22m\n\u001b[32m-   0,\u001b[39m\n\u001b[32m-   0,\u001b[39m\n\u001b[31m+   197,\u001b[39m\n\u001b[31m+   197,\u001b[39m\n\u001b[2m    255,\u001b[22m\n\u001b[2m  ]\u001b[22m\n\n  40 |   const first=await finish(downloads);await evidence(info,'pixels-and-early-download',{early,pixels:pixels(first)});\n  41 |   expect.soft(early,'no file while required resource is loading').toBe(0);\n> 42 |   const actual=pixels(first);expect.soft(actual[0]).toEqual(expected[0]);if(expected[1])expect.soft(actual[1]).toEqual(expected[1]);else expect.soft(actual[1]).not.toEqual(red);\n     |                                                     ^\n  43 |   const hot=await start(page);expect(pixels(await finish(hot))).toEqual(actual);\n  44 | });\n  45 |\n    at /workspace/kartochnaya/tests/png-resources.spec.js:42:53",
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 2\u001b[39m\n\n\u001b[33m@@ -1,10 +1,10 @@\u001b[39m\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[2m      255,\u001b[22m\n\u001b[32m-     197,\u001b[39m\n\u001b[32m-     197,\u001b[39m\n\u001b[31m+     0,\u001b[39m\n\u001b[31m+     0,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[2m      101,\u001b[22m\n\u001b[2m      0,\u001b[22m\n\n  41 |   expect.soft(early,'no file while required resource is loading').toBe(0);\n  42 |   const actual=pixels(first);expect.soft(actual[0]).toEqual(expected[0]);if(expected[1])expect.soft(actual[1]).toEqual(expected[1]);else expect.soft(actual[1]).not.toEqual(red);\n> 43 |   const hot=await start(page);expect(pixels(await finish(hot))).toEqual(actual);\n     |                                                                 ^\n  44 | });\n  45 |\n  46 | test('cold raster reload preserves geometry, alpha and clipping',async({page},info)=>{\n    at /workspace/kartochnaya/tests/png-resources.spec.js:43:65"
+      ],
+      "evidence": [
+        {
+          "name": "pixels-and-early-download",
+          "data": {
+            "early": 0,
+            "pixels": [
+              [
+                255,
+                197,
+                197,
+                255
+              ],
+              [
+                101,
+                0,
+                0,
+                255
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "title": "delayed combined: PNG pixels wait, then hot export agrees",
+      "status": "failed",
+      "errors": [
+        "Error: no file while required resource is loading\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n\n  39 |   const downloads=await start(page);await page.waitForTimeout(180);const early=downloads.length;g.release();\n  40 |   const first=await finish(downloads);await evidence(info,'pixels-and-early-download',{early,pixels:pixels(first)});\n> 41 |   expect.soft(early,'no file while required resource is loading').toBe(0);\n     |                                                                   ^\n  42 |   const actual=pixels(first);expect.soft(actual[0]).toEqual(expected[0]);if(expected[1])expect.soft(actual[1]).toEqual(expected[1]);else expect.soft(actual[1]).not.toEqual(red);\n  43 |   const hot=await start(page);expect(pixels(await finish(hot))).toEqual(actual);\n  44 | });\n    at /workspace/kartochnaya/tests/png-resources.spec.js:41:67"
+      ],
+      "evidence": [
+        {
+          "name": "pixels-and-early-download",
+          "data": {
+            "early": 1,
+            "pixels": [
+              [
+                255,
+                255,
+                255,
+                255
+              ],
+              [
+                101,
+                0,
+                0,
+                255
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "title": "cold raster reload preserves geometry, alpha and clipping",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 2\u001b[39m\n\n\u001b[33m@@ -10,13 +10,13 @@\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m      255,\u001b[22m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[32m-     128,\u001b[39m\n\u001b[2m      0,\u001b[22m\n\u001b[32m-     127,\u001b[39m\n\u001b[31m+     0,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[2m      0,\u001b[22m\n\u001b[2m      0,\u001b[22m\n\n  52 |   const downloads=await start(page);await page.waitForTimeout(180);delayed.release();const p=await finish(downloads);\n  53 |   const actual=pixels(p,[[40,120],[120,120],[200,120],[280,120]]);await evidence(info,'cold-raster-pixels',actual);\n> 54 |   expect(actual).toEqual([white,white,[128,0,127,255],[0,0,255,255]]);void g;\n     |                  ^\n  55 | });\n  56 |\n  57 | test('shared image source uses one Image request lifecycle',async({page},info)=>{\n    at /workspace/kartochnaya/tests/png-resources.spec.js:54:18"
+      ],
+      "evidence": [
+        {
+          "name": "cold-raster-pixels",
+          "data": [
+            [
+              255,
+              255,
+              255,
+              255
+            ],
+            [
+              255,
+              255,
+              255,
+              255
+            ],
+            [
+              0,
+              0,
+              255,
+              255
+            ],
+            [
+              0,
+              0,
+              255,
+              255
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "shared image source uses one Image request lifecycle",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\n  59 |   const g=await gate(page,'shared');const [saved]=await seed(page,[doc('Shared',[layer({fillType:'image',imageSrc:url('shared')}),layer({id:'second',x:160,w:160,fillType:'image',imageSrc:url('shared')})])]);\n  60 |   await openLibraryDocument(page,saved.id);await g.requested();const downloads=await start(page);await page.waitForTimeout(180);g.release();\n> 61 |   expect(pixels(await finish(downloads))).toEqual([red,red]);const starts=await page.evaluate(()=>pngImageStarts.length);await evidence(info,'image-instances',{starts,requests:g.count()});expect(starts).toBe(1);\n     |                                                                                                                                                                                                            ^\n  62 | });\n  63 |\n  64 | for(const field of ['imageSrc','rasterSrc','effectMask']) test(`broken ${field} refuses PNG without advancing numbering`,async({page},info)=>{\n    at /workspace/kartochnaya/tests/png-resources.spec.js:61:204"
+      ],
+      "evidence": [
+        {
+          "name": "image-instances",
+          "data": {
+            "starts": 2,
+            "requests": 1
+          }
+        }
+      ]
+    },
+    {
+      "title": "broken imageSrc refuses PNG without advancing numbering",
+      "status": "passed",
+      "errors": [],
+      "evidence": [
+        {
+          "name": "failure-downloads",
+          "data": 0
+        }
+      ]
+    },
+    {
+      "title": "broken rasterSrc refuses PNG without advancing numbering",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoHaveLength\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected length: \u001b[32m0\u001b[39m\nReceived length: \u001b[31m1\u001b[39m\nReceived array:  \u001b[31m[{\"_artifact\": {\"_guid\": \"artifact@3717a2ce917dd06f1fca9d54f355dc2c\", \"_type\": \"Artifact\"}, \"_page\": {\"_guid\": \"page@6de1149a0ffedd32d2787ba824e91727\", \"_type\": \"Page\"}, \"_suggestedFilename\": \"Broken rasterSrc (PNG resources (импорт)).png\", \"_url\": \"blob:http://127.0.0.1:4173/375715c7-74ca-4797-a3f8-8868cfa245c9\"}]\u001b[39m\n\n  68 |   const [saved]=await seed(page,[doc('Broken '+field,[e])]);await openLibraryDocument(page,saved.id);await g.requested();\n  69 |   const before=await records(page,'projects');const downloads=await start(page);await page.waitForTimeout(250);\n> 70 |   await evidence(info,'failure-downloads',downloads.length);expect.soft(downloads).toHaveLength(0);expect.soft(await records(page,'projects')).toEqual(before);\n     |                                                                                    ^\n  71 |   await expect(page.locator('#toast')).toContainText(/Не удалось|Ошибка/);\n  72 | });\n  73 |\n    at /workspace/kartochnaya/tests/png-resources.spec.js:70:84",
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 4\u001b[39m\n\n\u001b[33m@@ -1,14 +1,16 @@\u001b[39m\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    Object {\u001b[22m\n\u001b[2m      \"createdAt\": 1792943087132,\u001b[22m\n\u001b[32m-     \"exportCounters\": Object {},\u001b[39m\n\u001b[31m+     \"exportCounters\": Object {\u001b[39m\n\u001b[31m+       \"Broken rasterSrc (PNG resources (импорт))\": 1,\u001b[39m\n\u001b[31m+     },\u001b[39m\n\u001b[2m      \"id\": \"80813159-f11b-4da5-99d5-a419b51ea41f\",\u001b[22m\n\u001b[2m      \"name\": \"PNG resources (импорт)\",\u001b[22m\n\u001b[2m      \"resourceFolders\": Array [],\u001b[22m\n\u001b[2m      \"resources\": Array [],\u001b[22m\n\u001b[32m-     \"updatedAt\": 1792943087132,\u001b[39m\n\u001b[31m+     \"updatedAt\": 1792943087498,\u001b[39m\n\u001b[2m    },\u001b[22m\n\u001b[2m    Object {\u001b[22m\n\u001b[2m      \"cover\": \"\",\u001b[22m\n\u001b[2m      \"createdAt\": 1792943086756,\u001b[22m\n\u001b[2m      \"exportCounters\": Object {},\u001b[22m\n\n  68 |   const [saved]=await seed(page,[doc('Broken '+field,[e])]);await openLibraryDocument(page,saved.id);await g.requested();\n  69 |   const before=await records(page,'projects');const downloads=await start(page);await page.waitForTimeout(250);\n> 70 |   await evidence(info,'failure-downloads',downloads.length);expect.soft(downloads).toHaveLength(0);expect.soft(await records(page,'projects')).toEqual(before);\n     |                                                                                                                                                ^\n  71 |   await expect(page.locator('#toast')).toContainText(/Не удалось|Ошибка/);\n  72 | });\n  73 |\n    at /workspace/kartochnaya/tests/png-resources.spec.js:70:144",
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#toast')\nExpected pattern: \u001b[32m/Не удалось|Ошибка/\u001b[39m\nReceived string:  \u001b[31m\"Импортировано проектов: 1\"\u001b[39m\nTimeout: 7000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#toast') with timeout 7000ms\u001b[22m\n\u001b[2m  - waiting for locator('#toast')\u001b[22m\n\u001b[2m    8 × locator resolved to <div id=\"toast\" class=\"toast show\">Импортировано проектов: 1</div>\u001b[22m\n\u001b[2m      - unexpected value \"Импортировано проектов: 1\"\u001b[22m\n\u001b[2m    10 × locator resolved to <div id=\"toast\" class=\"toast\">Импортировано проектов: 1</div>\u001b[22m\n\u001b[2m       - unexpected value \"Импортировано проектов: 1\"\u001b[22m\n\n\n  69 |   const before=await records(page,'projects');const downloads=await start(page);await page.waitForTimeout(250);\n  70 |   await evidence(info,'failure-downloads',downloads.length);expect.soft(downloads).toHaveLength(0);expect.soft(await records(page,'projects')).toEqual(before);\n> 71 |   await expect(page.locator('#toast')).toContainText(/Не удалось|Ошибка/);\n     |                                        ^\n  72 | });\n  73 |\n  74 | test('hidden groups, disabled effects and unused sources do not block PNG',async({page})=>{\n    at /workspace/kartochnaya/tests/png-resources.spec.js:71:40"
+      ],
+      "evidence": [
+        {
+          "name": "failure-downloads",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "title": "broken effectMask refuses PNG without advancing numbering",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoHaveLength\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected length: \u001b[32m0\u001b[39m\nReceived length: \u001b[31m1\u001b[39m\nReceived array:  \u001b[31m[{\"_artifact\": {\"_guid\": \"artifact@e666062296fd96b79f5c1a18b70b275a\", \"_type\": \"Artifact\"}, \"_page\": {\"_guid\": \"page@ca180007e041eb5f9cff65b5be45079e\", \"_type\": \"Page\"}, \"_suggestedFilename\": \"Broken effectMask (PNG resources (импорт)).png\", \"_url\": \"blob:http://127.0.0.1:4173/c309ee2f-3d96-4108-b0c7-4246b98d9a7e\"}]\u001b[39m\n\n  68 |   const [saved]=await seed(page,[doc('Broken '+field,[e])]);await openLibraryDocument(page,saved.id);await g.requested();\n  69 |   const before=await records(page,'projects');const downloads=await start(page);await page.waitForTimeout(250);\n> 70 |   await evidence(info,'failure-downloads',downloads.length);expect.soft(downloads).toHaveLength(0);expect.soft(await records(page,'projects')).toEqual(before);\n     |                                                                                    ^\n  71 |   await expect(page.locator('#toast')).toContainText(/Не удалось|Ошибка/);\n  72 | });\n  73 |\n    at /workspace/kartochnaya/tests/png-resources.spec.js:70:84",
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 4\u001b[39m\n\n\u001b[33m@@ -8,13 +8,15 @@\u001b[39m\n\u001b[2m      \"resources\": Array [],\u001b[22m\n\u001b[2m      \"updatedAt\": 1792943087173,\u001b[22m\n\u001b[2m    },\u001b[22m\n\u001b[2m    Object {\u001b[22m\n\u001b[2m      \"createdAt\": 1792943087426,\u001b[22m\n\u001b[32m-     \"exportCounters\": Object {},\u001b[39m\n\u001b[31m+     \"exportCounters\": Object {\u001b[39m\n\u001b[31m+       \"Broken effectMask (PNG resources (импорт))\": 1,\u001b[39m\n\u001b[31m+     },\u001b[39m\n\u001b[2m      \"id\": \"a94d4799-cdfc-4f40-8ab9-ced88f0452d9\",\u001b[22m\n\u001b[2m      \"name\": \"PNG resources (импорт)\",\u001b[22m\n\u001b[2m      \"resourceFolders\": Array [],\u001b[22m\n\u001b[2m      \"resources\": Array [],\u001b[22m\n\u001b[32m-     \"updatedAt\": 1792943087426,\u001b[39m\n\u001b[31m+     \"updatedAt\": 1792943087667,\u001b[39m\n\u001b[2m    },\u001b[22m\n\u001b[2m  ]\u001b[22m\n\n  68 |   const [saved]=await seed(page,[doc('Broken '+field,[e])]);await openLibraryDocument(page,saved.id);await g.requested();\n  69 |   const before=await records(page,'projects');const downloads=await start(page);await page.waitForTimeout(250);\n> 70 |   await evidence(info,'failure-downloads',downloads.length);expect.soft(downloads).toHaveLength(0);expect.soft(await records(page,'projects')).toEqual(before);\n     |                                                                                                                                                ^\n  71 |   await expect(page.locator('#toast')).toContainText(/Не удалось|Ошибка/);\n  72 | });\n  73 |\n    at /workspace/kartochnaya/tests/png-resources.spec.js:70:144",
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoContainText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator: locator('#toast')\nExpected pattern: \u001b[32m/Не удалось|Ошибка/\u001b[39m\nReceived string:  \u001b[31m\"Импортировано проектов: 1\"\u001b[39m\nTimeout: 7000ms\n\nCall log:\n\u001b[2m  - Expect \"toContainText\" locator('#toast') with timeout 7000ms\u001b[22m\n\u001b[2m  - waiting for locator('#toast')\u001b[22m\n\u001b[2m    9 × locator resolved to <div id=\"toast\" class=\"toast show\">Импортировано проектов: 1</div>\u001b[22m\n\u001b[2m      - unexpected value \"Импортировано проектов: 1\"\u001b[22m\n\u001b[2m    9 × locator resolved to <div id=\"toast\" class=\"toast\">Импортировано проектов: 1</div>\u001b[22m\n\u001b[2m      - unexpected value \"Импортировано проектов: 1\"\u001b[22m\n\n\n  69 |   const before=await records(page,'projects');const downloads=await start(page);await page.waitForTimeout(250);\n  70 |   await evidence(info,'failure-downloads',downloads.length);expect.soft(downloads).toHaveLength(0);expect.soft(await records(page,'projects')).toEqual(before);\n> 71 |   await expect(page.locator('#toast')).toContainText(/Не удалось|Ошибка/);\n     |                                        ^\n  72 | });\n  73 |\n  74 | test('hidden groups, disabled effects and unused sources do not block PNG',async({page})=>{\n    at /workspace/kartochnaya/tests/png-resources.spec.js:71:40"
+      ],
+      "evidence": [
+        {
+          "name": "failure-downloads",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "title": "hidden groups, disabled effects and unused sources do not block PNG",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m\n\nCall Log:\n- Timeout 7000ms exceeded while waiting on the predicate\n\n  25 | function pixels(p,points=[[80,120],[240,120]]) {return points.map(([x,y])=>[...p.data.subarray((y*p.width+x)*4,(y*p.width+x)*4+4)]);}\n  26 | async function start(page,selector='#exportBtn') {const downloads=[];page.on('download',d=>downloads.push(d));await page.locator(selector).click();return downloads;}\n> 27 | async function finish(downloads,n=1) {await expect.poll(()=>downloads.length).toBe(n);return image(downloads[n-1]);}\n     |                                                                               ^\n  28 | async function evidence(info,name,value){await info.attach(name,{body:JSON.stringify(value),contentType:'application/json'});}\n  29 |\n  30 | for(const kind of ['imageSrc','rasterSrc','effectMask','combined']) test(`delayed ${kind}: PNG pixels wait, then hot export agrees`,async({page},info)=>{\n    at finish (/workspace/kartochnaya/tests/png-resources.spec.js:27:79)\n    at /workspace/kartochnaya/tests/png-resources.spec.js:77:99"
+      ],
+      "evidence": []
+    },
+    {
+      "title": "custom face: exact family, weight, style and legacy alias render real glyphs after cold start",
+      "status": "passed",
+      "errors": [],
+      "evidence": [
+        {
+          "name": "font-evidence",
+          "data": {
+            "width": 199.5625,
+            "fallbackWidth": 191.90625,
+            "faces": [
+              {
+                "weight": "700",
+                "style": "italic",
+                "status": "loaded"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "title": "known failed custom font cannot silently export fallback glyphs",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoHaveLength\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected length: \u001b[32m0\u001b[39m\nReceived length: \u001b[31m1\u001b[39m\nReceived array:  \u001b[31m[{\"_artifact\": {\"_guid\": \"artifact@fa87c333a8d19239b4b1a52d1bc000ea\", \"_type\": \"Artifact\"}, \"_page\": {\"_guid\": \"page@70c5d09ba7a7427b13e011cd95dfb61d\", \"_type\": \"Page\"}, \"_suggestedFilename\": \"Failed font (импорт) (Мой проект).png\", \"_url\": \"blob:http://127.0.0.1:4173/09370c87-5942-4f62-8ab9-986b8ba75c9c\"}]\u001b[39m\n\n   97 |   await openHome(page);await importPayload(page,{format:'kartochnaya-v1',document:doc('Failed font',[text()]),fonts:[{id:'bad',name:'PNG Custom',family:'PNG Custom',weight:700,style:'italic',data:'data:font/ttf;base64,YmFk'}]});\n   98 |   await expect(page.locator('#toast')).toContainText('Документ импортирован');const saved=(await records(page,'docs')).find(d=>d.title.startsWith('Failed font'));await openLibraryDocument(page,saved.id);\n>  99 |   const downloads=await start(page);await page.waitForTimeout(250);await evidence(info,'failed-font-downloads',downloads.length);expect(downloads).toHaveLength(0);await expect(page.locator('#toast')).toContainText(/шрифт/i);\n      |                                                                                                                                                    ^\n  100 | });\n  101 |\n  102 | test('document switch and layer deletion during preparation keep the original PNG snapshot',async({page},info)=>{\n    at /workspace/kartochnaya/tests/png-resources.spec.js:99:148"
+      ],
+      "evidence": [
+        {
+          "name": "failed-font-downloads",
+          "data": 1
+        }
+      ]
+    },
+    {
+      "title": "document switch and layer deletion during preparation keep the original PNG snapshot",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 4\u001b[39m\n\u001b[31m+ Received  + 4\u001b[39m\n\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[2m      255,\u001b[22m\n\u001b[32m-     0,\u001b[39m\n\u001b[32m-     0,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[32m-     0,\u001b[39m\n\u001b[32m-     0,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m  ]\u001b[22m\n\n  105 |   await page.locator('#layers [data-select-layer-thumb]').first().click();await page.keyboard.press('Delete');\n  106 |   await page.locator('#documentTabsHome').click();await openLibraryDocument(page,docs.find(d=>d.title==='Other').id);g.release();\n> 107 |   const actual=pixels(await finish(downloads));await evidence(info,'snapshot-pixels',actual);expect(actual).toEqual([red,red]);\n      |                                                                                                             ^\n  108 | });\n  109 |\n  110 | test('preparation and repeated exports preserve model, docs, history and PNG numbering',async({page})=>{\n    at /workspace/kartochnaya/tests/png-resources.spec.js:107:109"
+      ],
+      "evidence": [
+        {
+          "name": "snapshot-pixels",
+          "data": [
+            [
+              255,
+              255,
+              255,
+              255
+            ],
+            [
+              255,
+              255,
+              255,
+              255
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "title": "preparation and repeated exports preserve model, docs, history and PNG numbering",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 4\u001b[39m\n\u001b[31m+ Received  + 4\u001b[39m\n\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[2m      255,\u001b[22m\n\u001b[32m-     0,\u001b[39m\n\u001b[32m-     0,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[32m-     0,\u001b[39m\n\u001b[32m-     0,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m  ]\u001b[22m\n\n  111 |   const g=await gate(page,'readonly');const [saved]=await seed(page,[doc('Readonly',[layer({type:'raster',rasterSrc:url('readonly'),fillType:'none'})])]);await openLibraryDocument(page,saved.id);\n  112 |   await expect(page.locator('#saveStatus')).toHaveText('Сохранено на этом устройстве');const before=await exportedDocument(page),stored=await records(page,'docs'),history=await page.locator('#historyEntries').innerHTML();\n> 113 |   const downloads=await start(page);await page.waitForTimeout(120);g.release();expect(pixels(await finish(downloads))).toEqual([red,red]);\n      |                                                                                                                        ^\n  114 |   await page.locator('#exportBtn').click();await finish(downloads,2);await page.locator('#exportBtn').click();await finish(downloads,3);\n  115 |   expect(downloads.map(d=>d.suggestedFilename())).toEqual(['Readonly (PNG resources (импорт)).png','Readonly (PNG resources (импорт)) 1.png','Readonly (PNG resources (импорт)) 2.png']);\n  116 |   expect(await exportedDocument(page)).toEqual(before);expect(await records(page,'docs')).toEqual(stored);expect(await page.locator('#historyEntries').innerHTML()).toBe(history);\n    at /workspace/kartochnaya/tests/png-resources.spec.js:113:120"
+      ],
+      "evidence": []
+    },
+    {
+      "title": "series prepares each slide sequentially; failure retains successful count and numbering",
+      "status": "failed",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\nCall Log:\n- Timeout 7000ms exceeded while waiting on the predicate\n\n  25 | function pixels(p,points=[[80,120],[240,120]]) {return points.map(([x,y])=>[...p.data.subarray((y*p.width+x)*4,(y*p.width+x)*4+4)]);}\n  26 | async function start(page,selector='#exportBtn') {const downloads=[];page.on('download',d=>downloads.push(d));await page.locator(selector).click();return downloads;}\n> 27 | async function finish(downloads,n=1) {await expect.poll(()=>downloads.length).toBe(n);return image(downloads[n-1]);}\n     |                                                                               ^\n  28 | async function evidence(info,name,value){await info.attach(name,{body:JSON.stringify(value),contentType:'application/json'});}\n  29 |\n  30 | for(const kind of ['imageSrc','rasterSrc','effectMask','combined']) test(`delayed ${kind}: PNG pixels wait, then hot export agrees`,async({page},info)=>{\n    at finish (/workspace/kartochnaya/tests/png-resources.spec.js:27:79)\n    at /workspace/kartochnaya/tests/png-resources.spec.js:123:99"
+      ],
+      "evidence": []
+    }
+  ],
+  "snapshotFollowup": {
+    "title": "document switch and layer deletion during preparation keep the original PNG snapshot",
+    "status": "failed",
+    "errors": [
+      "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 4\u001b[39m\n\u001b[31m+ Received  + 4\u001b[39m\n\n\u001b[2m  Array [\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[2m      255,\u001b[22m\n\u001b[32m-     0,\u001b[39m\n\u001b[32m-     0,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m    Array [\u001b[22m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[32m-     0,\u001b[39m\n\u001b[32m-     0,\u001b[39m\n\u001b[31m+     255,\u001b[39m\n\u001b[2m      255,\u001b[22m\n\u001b[2m    ],\u001b[22m\n\u001b[2m  ]\u001b[22m\n\n  105 |   await page.locator('#layers [data-select-layer-thumb]').first().click();await page.keyboard.press('Delete');\n  106 |   await page.locator('#documentTabsHome').click();await openLibraryDocument(page,docs.find(d=>d.title==='Other').id);g.release();\n> 107 |   const actual=pixels(await finish(downloads));await evidence(info,'snapshot-pixels',actual);expect(actual).toEqual([red,red]);\n      |                                                                                                             ^\n  108 | });\n  109 |\n  110 | test('preparation and repeated exports preserve model, docs, history and PNG numbering',async({page})=>{\n    at /workspace/kartochnaya/tests/png-resources.spec.js:107:109"
+    ],
+    "evidence": [
+      {
+        "name": "snapshot-pixels",
+        "data": [
+          [
+            255,
+            255,
+            255,
+            255
+          ],
+          [
+            255,
+            255,
+            255,
+            255
+          ]
+        ]
+      }
+    ]
+  },
+  "fontPixelFollowup": {
+    "base": "da53aca8fbe5fd964240d7e18fd16bef9200ab56",
+    "title": "known failed custom font cannot silently export fallback glyphs",
+    "status": "failed",
+    "evidence": [
+      {
+        "name": "failed-font-fallback-pixels",
+        "data": {
+          "matchesFallback": true,
+          "inkPixels": 3120
+        }
+      },
+      {
+        "name": "failed-font-downloads",
+        "data": 1
+      }
+    ]
+  }
+}

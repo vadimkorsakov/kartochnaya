@@ -22,8 +22,6 @@ test('KF-001: document import should preserve boundary and group references', as
     layerGroupsExist: imported.elements.every(element => imported.groups.some(group => group.id === element.groupId)),
   };
   await testInfo.attach('imported-reference-diagnostics', { body: JSON.stringify({ references, imported }, null, 2), contentType: 'application/json' });
-  // Mark only the intended contract assertion as expected to fail: setup must succeed.
-  test.fail(true, 'KF-001: importJSON remaps element/groupId but not sourceId/groups[].id; see docs/known-issues.md');
   expect(references).toEqual({ boundarySourceExists: true, layerGroupsExist: true });
 });
 

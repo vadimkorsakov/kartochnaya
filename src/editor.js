@@ -9,6 +9,8 @@ import { toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint }
 import { validateShapeCatalog } from './core/shape-catalog.mjs';
 import { html, clamp, fmt } from './core/primitives.mjs';
 import { rgbHex, hexRgb, hsvRGB, rgbHSV, rgbHSL, hslRGB, normalizeHex, cpFormatValues } from './core/colors.mjs';
+import { readImageResource, prepareImage } from './render/image-resource.mjs';
+import { createLayerMasks } from './render/layer-masks.mjs';
 import { createGradientModel, readGradientStops, readGradientGeometry } from './core/gradient-model.mjs';
 
 (()=>{'use strict';
@@ -764,7 +766,13 @@ layerResize.addEventListener('pointerup',ev=>{layerResize.classList.remove('resi
 
 
 // Canvas painting and selection
-function getImage(src){if(!src)return null;if(!imgCache.has(src)){const image=new Image();const rec={image,ready:false};imgCache.set(src,rec);image.onload=()=>{rec.ready=true;paint();if(isArtboardSeries())requestAnimationFrame(()=>renderSlideStrip())};image.onerror=()=>{rec.failed=true;paint()};image.src=src}const r=imgCache.get(src);return r.ready?r.image:null}
+let imageRefreshPending=false;
+function imageSettled(){
+ if(imageRefreshPending)return;imageRefreshPending=true;
+ requestAnimationFrame(()=>{imageRefreshPending=false;paint();if(isArtboardSeries())renderSlideStrip();if(homeVisible())renderLibrary();if(!$('#tabPickerDialog').classList.contains('hidden'))renderTabPicker()});
+}
+function imageResource(src){return readImageResource(imgCache,src,()=>new Image(),imageSettled)}
+function getImage(src){return imageResource(src).image}
 function pathFor(c,e,begin=true){const {w,h}=e;if(begin)c.beginPath();switch(e.type){case'path':{const nodes=e.pathNodes||[];if(nodes.length){const xy=n=>({x:n.x*w,y:n.y*h});const first=xy(nodes[0]);c.moveTo(first.x,first.y);for(let i=1;i<nodes.length;i++){const prev=nodes[i-1],cur=nodes[i];c.bezierCurveTo((prev.outX??prev.x)*w,(prev.outY??prev.y)*h,(cur.inX??cur.x)*w,(cur.inY??cur.y)*h,cur.x*w,cur.y*h)}if(e.pathClosed&&nodes.length>2){const last=nodes[nodes.length-1],cur=nodes[0];c.bezierCurveTo((last.outX??last.x)*w,(last.outY??last.y)*h,(cur.inX??cur.x)*w,(cur.inY??cur.y)*h,cur.x*w,cur.y*h);c.closePath()}}break}case'circle':c.ellipse(w/2,h/2,Math.max(1,w/2),Math.max(1,h/2),0,0,2*Math.PI);break;case'triangle':c.moveTo(w/2,0);c.lineTo(w,h);c.lineTo(0,h);c.closePath();break;case'star':{const cx=w/2,cy=h/2;for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,r=i%2?0.40:1,px=cx+Math.cos(a)*w*.5*r,py=cy+Math.sin(a)*h*.5*r;if(i===0)c.moveTo(px,py);else c.lineTo(px,py)}c.closePath();break}case'hexagon':{const pts=[[.25,0],[.75,0],[1,.5],[.75,1],[.25,1],[0,.5]];pts.forEach(([x,y],i)=>i?c.lineTo(x*w,y*h):c.moveTo(x*w,y*h));c.closePath();break}case'diamond':c.moveTo(w/2,0);c.lineTo(w,h/2);c.lineTo(w/2,h);c.lineTo(0,h/2);c.closePath();break;
 case'pentagon':case'octagon':{const sides=e.type==='pentagon'?5:8;for(let i=0;i<sides;i++){const a=-Math.PI/2+i*Math.PI*2/sides,x=w/2+Math.cos(a)*w/2,y=h/2+Math.sin(a)*h/2;if(i)c.lineTo(x,y);else c.moveTo(x,y)}c.closePath();break}
 case'chevron':c.moveTo(0,0);c.lineTo(w*.6,0);c.lineTo(w,h/2);c.lineTo(w*.6,h);c.lineTo(0,h);c.lineTo(w*.4,h/2);c.closePath();break;
@@ -1014,28 +1022,23 @@ const BLEND_OPTIONS=[['normal','Обычное'],['multiply','Умножение
 // v0.32 — Layer masks are opaque GRAYSCALE data, never transparency erasers.
 // Storage: layerMaskSrc is a grayscale PNG of the entire document. Black -> alpha 0,
 // white -> alpha 255. Old transparent mask pixels map to zero for compatibility.
-const maskCanvasCache=new Map();
-const maskAlphaCache=new Map();
-function maskCanvasForLayer(e){
- const d=app.doc;if(!e||!d)return null;
- const key=e.id+':'+(e.layerMaskSrc||'')+':'+d.width+'x'+d.height;
- if(maskCanvasCache.has(key))return maskCanvasCache.get(key);
- const cv=document.createElement('canvas');cv.width=d.width;cv.height=d.height;
- const c=cv.getContext('2d',{willReadFrequently:true});c.fillStyle='#ffffff';c.fillRect(0,0,cv.width,cv.height);
- if(e.layerMaskSrc){const img=getImage(e.layerMaskSrc);if(!img)return cv; c.clearRect(0,0,cv.width,cv.height);c.drawImage(img,0,0,cv.width,cv.height)}
- maskCanvasCache.clear();maskCanvasCache.set(key,cv);return cv;
-}
+const maskRenderDocuments=new WeakMap();
+const layerMasks=createLayerMasks({
+ createCanvas:(width,height)=>{const c=document.createElement('canvas');c.width=width;c.height=height;return c},
+ readImage:imageResource
+});
+function maskCanvasForLayer(e,d){return e&&d?layerMasks.editable(e.layerMaskSrc,d):null}
 function maskCommitCanvas(e,cv,label='Изменение маски слоя'){
  if(!e||!cv)return;
- e.layerMaskSrc=cv.toDataURL('image/png');maskCanvasCache.clear();maskCanvasCache.set(e.id+':'+e.layerMaskSrc+':'+app.doc.width+'x'+app.doc.height,cv);maskAlphaCache.clear();
+ e.layerMaskSrc=cv.toDataURL('image/png');layerMasks.remember(e.layerMaskSrc,app.doc,cv);
  getImage(e.layerMaskSrc);commit(label);refreshLayers();refreshInspector();paint();
 }
 function addLayerMask(id){const e=app.doc?.elements.find(x=>x.id===id);if(!e)return;
- if(!e.layerMaskSrc){const cv=document.createElement('canvas');cv.width=app.doc.width;cv.height=app.doc.height;const c=cv.getContext('2d');c.fillStyle='#ffffff';c.fillRect(0,0,cv.width,cv.height);e.layerMaskSrc=cv.toDataURL('image/png');maskCanvasCache.clear();maskCanvasCache.set(e.id+':'+e.layerMaskSrc+':'+app.doc.width+'x'+app.doc.height,cv);getImage(e.layerMaskSrc);commit('Добавление маски слоя')}
+ if(!e.layerMaskSrc){const cv=document.createElement('canvas');cv.width=app.doc.width;cv.height=app.doc.height;const c=cv.getContext('2d');c.fillStyle='#ffffff';c.fillRect(0,0,cv.width,cv.height);e.layerMaskSrc=cv.toDataURL('image/png');layerMasks.remember(e.layerMaskSrc,app.doc,cv);getImage(e.layerMaskSrc);commit('Добавление маски слоя')}
  app.maskEditId=e.id;setSelected([e.id],true);inkRefreshColor();refreshLayers();refreshInspector();paint();
 }
 function removeLayerMask(id){const e=app.doc?.elements.find(x=>x.id===id);if(!e||!e.layerMaskSrc)return;
- delete e.layerMaskSrc;maskCanvasCache.clear();maskAlphaCache.clear();
+ delete e.layerMaskSrc;
  if(app.maskEditId===id)app.maskEditId=null;if(app.maskDraft?.id===id)app.maskDraft=null;
  commit('Удаление маски слоя');refreshLayers();refreshInspector();inkRefreshColor();paint();
 }
@@ -1045,7 +1048,7 @@ function selectionClippedMask(cv){
  out.getContext('2d').drawImage(sel,0,0,cv.width,cv.height);return out;
 }
 function maskFill(color){const e=app.doc?.elements.find(x=>x.id===app.maskEditId);if(!e)return;
- const cv=maskCanvasForLayer(e);if(!cv)return;const c=cv.getContext('2d');
+ const cv=maskCanvasForLayer(e,app.doc);if(!cv)return;const c=cv.getContext('2d');
  const gray=(color||'#000000')==='#ffffff'?'#ffffff':'#000000';
  const sel=selectionClippedMask(cv);
  if(sel){const tmp=document.createElement('canvas');tmp.width=cv.width;tmp.height=cv.height;const t=tmp.getContext('2d');t.fillStyle=gray;t.fillRect(0,0,cv.width,cv.height);t.globalCompositeOperation='destination-in';t.drawImage(sel,0,0);c.drawImage(tmp,0,0)}
@@ -1059,25 +1062,21 @@ function maskBrushDot(c,x,y,s){
  else{const grad=c.createRadialGradient(x,y,r*hard,x,y,r);grad.addColorStop(0,app.maskPaintColor);grad.addColorStop(1,app.maskPaintColor+'00');c.fillStyle=grad;c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()}
 }
 function maskPaintBegin(ev,p){const e=app.doc?.elements.find(x=>x.id===app.maskEditId);if(!e||isLayerLocked(e))return false;
- const cv=maskCanvasForLayer(e);if(!cv)return false;
- app.maskDraft={id:e.id,canvas:cv,last:p,version:0};maskPaintSegment(p,p);
+ const cv=maskCanvasForLayer(e,app.doc);if(!cv)return false;
+ app.maskDraft={id:e.id,element:e,canvas:cv,last:p,version:0};maskPaintSegment(p,p);
  canvas.setPointerCapture(ev.pointerId);paint();return true;
 }
 function maskPaintSegment(a,b){const m=app.maskDraft;if(!m)return;const s=app.inkSettings,c=m.canvas.getContext('2d');
  const dist=Math.hypot(b.x-a.x,b.y-a.y),spacing=Math.max(.8,s.size*.13),count=Math.max(1,Math.ceil(dist/spacing));
  c.save();for(let i=0;i<=count;i++){const t=i/count;maskBrushDot(c,a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,s)}c.restore();
- m.last=b;m.version++;maskAlphaCache.clear();
+ m.last=b;m.version++;
 }
-function maskPaintEnd(){const m=app.maskDraft;if(!m)return;app.maskDraft=null;const e=app.doc?.elements.find(x=>x.id===m.id);maskCommitCanvas(e,m.canvas,'Рисование по маске')}
+function maskPaintEnd(){const m=app.maskDraft;if(!m)return;app.maskDraft=null;if(!app.doc?.elements.includes(m.element))return;maskCommitCanvas(m.element,m.canvas,'Рисование по маске')}
 function maskAlphaCanvas(e,d){
- const src=app.maskDraft?.id===e.id?app.maskDraft.canvas:maskCanvasForLayer(e);if(!src)return null;
- const cacheKey=app.maskDraft?.id===e.id?'draft:'+e.id+':'+app.maskDraft.version:e.id+':'+(e.layerMaskSrc||'');
- if(maskAlphaCache.has(cacheKey))return maskAlphaCache.get(cacheKey);
- const cv=document.createElement('canvas');cv.width=d.width;cv.height=d.height;
- const c=cv.getContext('2d',{willReadFrequently:true}),srcData=src.getContext('2d',{willReadFrequently:true}).getImageData(0,0,d.width,d.height);
- const pixels=srcData.data;
- for(let i=0;i<pixels.length;i+=4){const brightness=Math.round(.2126*pixels[i]+.7152*pixels[i+1]+.0722*pixels[i+2]);pixels[i]=pixels[i+1]=pixels[i+2]=255;pixels[i+3]=Math.round(brightness*pixels[i+3]/255)}
- c.putImageData(srcData,0,0);maskAlphaCache.clear();maskAlphaCache.set(cacheKey,cv);return cv;
+ const draft=app.maskDraft,model=maskRenderDocuments.get(d)||d;
+ // Identity of the actual layer, not a historical ID shared by other slides.
+ if(draft&&draft.id===e.id&&model.elements.includes(draft.element))return layerMasks.draft(draft.canvas,draft.version,d);
+ return layerMasks.alpha(e.layerMaskSrc,d);
 }
 function paintMaskedBase(c,e,d){
  if(e.inkTool==='brush'&&Number(e.inkHardness??100)<100&&!e._softDone){
@@ -1088,7 +1087,7 @@ function paintMaskedBase(c,e,d){
  if(e.erasePaths?.length||e.inkProfile==='chalk'){const off=document.createElement('canvas');off.width=d.width;off.height=d.height;const o=off.getContext('2d');
   const without={...e,erasePaths:null,inkProfile:e.inkProfile==='chalk'?'chalk-isolated':e.inkProfile};if(e.inkProfile==='chalk'){paintElement(o,e)}else paintMaskedBase(o,without,d);applyLayerEraseMask(o,e,d);c.drawImage(off,0,0);return}
  if(!e.layerMaskSrc){paintElement(c,e);return}
- const alpha=maskAlphaCanvas(e,d);if(!alpha){paintElement(c,e);return}
+ const alpha=maskAlphaCanvas(e,d);if(!alpha)return;
  const off=document.createElement('canvas');off.width=d.width;off.height=d.height;const p=off.getContext('2d');paintElement(p,e);
  p.globalCompositeOperation='destination-in';p.drawImage(alpha,0,0);p.globalCompositeOperation='source-over';c.drawImage(off,0,0);
 }
@@ -1159,7 +1158,7 @@ function fxUpdateField(field,done=false){if(!field?.dataset?.fxField)return fals
  return true;
 }
 function fxSelectionMask(f,d){if(!f.maskSrc)return null;return getImage(f.maskSrc)}
-function fxRegionMask(raw,e,d){if(!e.isFxRegion)return raw;const c=fxCanvas(d),g=c.getContext('2d');const m=getImage(e.layerMaskSrc);if(m)g.drawImage(m,0,0,d.width,d.height);return c}
+function fxRegionMask(raw,e,d){if(!e.isFxRegion)return raw;const c=fxCanvas(d),g=c.getContext('2d');const m=layerMasks.read(e.layerMaskSrc,d).canvas;if(m)g.drawImage(m,0,0,d.width,d.height);return c}
 function fxLimitMask(p,src,f,d){const m=fxSelectionMask(f,d);if(!m)return;const old=p.globalCompositeOperation;p.globalCompositeOperation='destination-in';p.drawImage(m,0,0,d.width,d.height);p.globalCompositeOperation=old}
 function fxClipLayer(p,src){p.globalCompositeOperation='destination-in';p.drawImage(src,0,0);p.globalCompositeOperation='source-over'}
 const fxPatternCache=new Map();
@@ -1350,9 +1349,9 @@ function fxBackgroundEffect(c,raw,e,d){
  }
  return f;
 }
-function paintWithEffects(c,e,d,backdropContext){const list=(e.effects||[]).filter(f=>f.enabled!==false&&FX_TYPES[f.type]);if(!list.length){paintMaskedBase(c,e,d);return}
+function paintWithEffects(c,e,d,backdropContext){if(e.layerMaskSrc&&!maskAlphaCanvas(e,d))return;const list=(e.effects||[]).filter(f=>f.enabled!==false&&FX_TYPES[f.type]);if(!list.length){paintMaskedBase(c,e,d);return}
  const raw=fxCanvas(d),p=raw.getContext('2d');
- if(e.isFxRegion){p.drawImage(c.canvas,0,0,d.width,d.height);const area=getImage(e.layerMaskSrc);if(area){p.globalCompositeOperation='destination-in';p.drawImage(area,0,0,d.width,d.height);p.globalCompositeOperation='source-over'}}
+ if(e.isFxRegion){p.drawImage(c.canvas,0,0,d.width,d.height);const area=layerMasks.read(e.layerMaskSrc,d).canvas;if(!area)return;{p.globalCompositeOperation='destination-in';p.drawImage(area,0,0,d.width,d.height);p.globalCompositeOperation='source-over'}}
  else paintMaskedBase(p,e,d);
  const {current,under}=fxComposeLayer(raw,e,d);
  const backdropEffect=fxBackgroundEffect(c,raw,e,d);
@@ -1494,7 +1493,7 @@ $('#dockMarquee').addEventListener('contextmenu',ev=>{ev.preventDefault();setMar
 $('#selectionMenu').addEventListener('click',ev=>{const b=ev.target.closest('[data-select-kind]');if(b)setSelectionKind(b.dataset.selectKind)});
 $('#maskFromSelection').onclick=applySelectionMask;$('#clearPixelSelection').onclick=clearPixelSelection;
 
-function paintDocument(c,d,withSelection=false){d=boundaryRenderDoc(d);c.save();c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,withSelection&&app.editingId?{...d,elements:d.elements.filter(e=>e.id!==app.editingId||e.textMode==='boundary')}:d);if(withSelection){drawSavedGuides(c);drawGuides(c);drawPixelSelectionOverlay(c);
+function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDoc(d);const stack=withSelection&&app.editingId?{...d,elements:d.elements.filter(e=>e.id!==app.editingId||e.textMode==='boundary')}:d;maskRenderDocuments.set(stack,model);c.save();c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack);if(withSelection){drawSavedGuides(c);drawGuides(c);drawPixelSelectionOverlay(c);
 const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();if(app.cropMode)drawCropControls(c,e);drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
 function paint(){if(!app.doc)return;if(app.inkTool)inkMoveCursor(lastInkPointer);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);const ratio=app.renderScale||1;ctx.setTransform(app.zoom*ratio,0,0,app.zoom*ratio,0,0);paintDocument(ctx,app.doc,true);if(app.drag?.type==='newText'){const a=app.drag.start,b=app.drag.current||a;ctx.save();ctx.lineWidth=1/app.zoom;ctx.setLineDash([5/app.zoom,3/app.zoom]);ctx.strokeStyle='#ab8aff';ctx.fillStyle='#9a73ee22';ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.restore()}inkOverlay(ctx);ctx.restore();paintCropPreview();updateQuickBubble()}
 function updateQuickBubble(){const bubble=$('#quickBubble');if(!bubble||!app.doc)return;
@@ -1922,16 +1921,17 @@ $('#seriesCheckNone').onclick=()=>$$('[data-series-export]').forEach(cb=>cb.chec
 $('#seriesExportCancel').onclick=closeSeriesExportDialog;
 $('#seriesExportDialog').addEventListener('pointerdown',ev=>{if(ev.target.id==='seriesExportDialog')closeSeriesExportDialog()});
 function toPNGBlob(target){return new Promise((resolve,reject)=>target.toBlob(b=>b?resolve(b):reject(new Error('PNG недоступен')),'image/png'))}
+async function prepareLayerMasks(d){await Promise.all((d.elements||[]).filter(e=>isLayerVisible(e,d)&&e.layerMaskSrc).map(e=>prepareImage(imageResource,e.layerMaskSrc)))}
 async function loadSlideImages(slide){for(const e of slide.elements||[]){if(e.visible&&e.imageSrc){const item=getImage(e.imageSrc);if(!item){const img=new Image();img.src=e.imageSrc;await img.decode();imgCache.set(e.imageSrc,{image:img,ready:true})}}}}
 async function zipOriginal_exportSeriesIndices(indices){const d=app.doc,project=app.projects.find(p=>p.id===d.projectId)||currentProject(),base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';syncCurrentSlide(d);
  project.exportCounters ||= {};let counter=Number(project.exportCounters[base])||0;let done=0;
- for(const i of indices){const page=slideAsDoc(d,i);if(page.width*page.height>30000000){toast('Слишком большой холст №'+(i+1));break}try{await loadSlideImages(page);const c=document.createElement('canvas');c.width=page.width;c.height=page.height;paintDocument(c.getContext('2d'),page,false);const blob=await toPNGBlob(c);const name=`${base} ${++counter}.png`;downloadBlob(blob,name);done++}catch(error){console.error(error);toast('Ошибка экспорта холста '+(i+1));break}}
+ for(const i of indices){const page=slideAsDoc(d,i);if(page.width*page.height>30000000){toast('Слишком большой холст №'+(i+1));break}try{await loadSlideImages(page);await prepareLayerMasks(page);const c=document.createElement('canvas');c.width=page.width;c.height=page.height;paintDocument(c.getContext('2d'),page,false);const blob=await toPNGBlob(c);const name=`${base} ${++counter}.png`;downloadBlob(blob,name);done++}catch(error){console.error(error);toast('Ошибка экспорта холста '+(i+1));break}}
  if(done){project.exportCounters[base]=counter;if(!await persistProjectForUI(project)){toast('PNG выгружены; счётчик не сохранён');return}toast(`Экспортировано холстов: ${done}. Если браузер блокирует несколько загрузок, разреши их для приложения.`)}
 }
 $('#seriesExportConfirm').onclick=async()=>{const ids=$$('[data-series-export]:checked').map(x=>Number(x.dataset.seriesExport));if(!ids.length){toast('Выбери хотя бы один холст');return}$('#seriesExportConfirm').disabled=true;closeSeriesExportDialog();await exportSeriesIndices(ids)};
 function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;($('#zipBackupDialog[open]')||document.body).append(a);a.click();a.remove();const timer=setTimeout(()=>URL.revokeObjectURL(url),30000);return()=>{clearTimeout(timer);URL.revokeObjectURL(url)}}
 function niceName(s){return sanitizeCardTitle(s).slice(0,100)}
-async function zipOriginal_exportPNG(){if(app.doc?.type==='card'){ensureCardSlides(app.doc);if(app.doc.slides.length>1){openSeriesExportDialog();return}}const d=app.doc;if(d.width*d.height>30000000){toast('Слишком большой холст для телефона');return}for(const e of d.elements){if(e.visible&&e.fillType==='image'&&e.imageSrc){const im=getImage(e.imageSrc);if(!im){const wait=new Image();wait.src=e.imageSrc;try{await wait.decode();imgCache.set(e.imageSrc,{image:wait,ready:true})}catch(err){toast('Не удалось прочитать изображение для PNG');return}}}}const target=document.createElement('canvas');target.width=d.width;target.height=d.height;const c=target.getContext('2d');paintDocument(c,d,false);await new Promise(resolve=>target.toBlob(async blob=>{try{if(!blob){toast('Ошибка экспорта PNG');return}const project=app.projects.find(p=>p.id===d.projectId)||currentProject();const base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';if(project){project.exportCounters||={};const previous=project.exportCounters[base]||0;const name=base+(previous?' '+previous:'')+'.png';downloadBlob(blob,name);project.exportCounters[base]=previous+1;try{await persistProject(project)}catch(error){console.error(error);toast('Счётчик экспорта не сохранён')}}else downloadBlob(blob,base+'.png')}finally{resolve()}},'image/png'))}
+async function zipOriginal_exportPNG(){if(app.doc?.type==='card'){ensureCardSlides(app.doc);if(app.doc.slides.length>1){openSeriesExportDialog();return}}const d=app.doc;if(d.width*d.height>30000000){toast('Слишком большой холст для телефона');return}for(const e of d.elements){if(e.visible&&e.fillType==='image'&&e.imageSrc){const im=getImage(e.imageSrc);if(!im){const wait=new Image();wait.src=e.imageSrc;try{await wait.decode();imgCache.set(e.imageSrc,{image:wait,ready:true})}catch(err){toast('Не удалось прочитать изображение для PNG');return}}}}try{await prepareLayerMasks(d)}catch(err){toast('Не удалось прочитать маску для PNG');return}const target=document.createElement('canvas');target.width=d.width;target.height=d.height;const c=target.getContext('2d');paintDocument(c,d,false);await new Promise(resolve=>target.toBlob(async blob=>{try{if(!blob){toast('Ошибка экспорта PNG');return}const project=app.projects.find(p=>p.id===d.projectId)||currentProject();const base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';if(project){project.exportCounters||={};const previous=project.exportCounters[base]||0;const name=base+(previous?' '+previous:'')+'.png';downloadBlob(blob,name);project.exportCounters[base]=previous+1;try{await persistProject(project)}catch(error){console.error(error);toast('Счётчик экспорта не сохранён')}}else downloadBlob(blob,base+'.png')}finally{resolve()}},'image/png'))}
 function exportJSON(){syncCurrentSlide();const payload={format:'kartochnaya-v1',document:app.doc,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts,exportedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});downloadBlob(blob,niceName(app.doc.title)+'.json')}
 function exportProjectDocuments(id=app.currentProjectId){const records=new Map(projectDocs(id).map(d=>[d.id,clone(d)]));for(const tab of documentTabSession.tabs)if(tab.doc.projectId===id)records.set(tab.id,clone(tab.doc));if(app.doc?.projectId===id){syncCurrentSlide();records.set(app.doc.id,clone(app.doc))}return [...records.values()]}
 async function exportProjectBackup(){

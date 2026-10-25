@@ -1,5 +1,5 @@
 const { PNG } = require('pngjs');
-const { test, expect, openHome, importPayload, records, openLibraryDocument, exportPNG, exportedDocument } = require('./helpers');
+const { test, expect, openHome, importPayload, records, openLibraryDocument, exportPNG, exportedDocument, canvasPoint } = require('./helpers');
 
 function maskPNG(kind) {
   const png = new PNG({width: 32, height: 24});
@@ -45,7 +45,9 @@ for(const [kind,expected] of [['black',[white,white]],['half',[half,half]],['whi
   await page.reload();await expect(page.locator('#homeScreen')).toBeVisible();
   await openLibraryDocument(page,saved.id);
   const first=await exportPNG(page);await evidence(info,'first-PNG-pixels',pngPixels(first.image));
-  expect.soft(pngPixels(first.image)).toEqual(expected);await live(page,expected);
+  expect.soft(pngPixels(first.image)).toEqual(expected);
+  expect.soft(first.image.data.every((v,i)=>v===expected[0][i%4]),'every exported pixel matches the uniform mask').toBe(true);
+  await live(page,expected);
   expect(pngPixels((await exportPNG(page)).image)).toEqual(expected);
 });
 
@@ -103,14 +105,54 @@ test('pending isFxRegion never applies noise to the whole document',async({page}
 });
 
 test('rendering masks preserves model, updatedAt, history, IDs and document writes',async({page})=>{
-  await page.addInitScript(()=>{window.maskObservation={writes:0,ids:0};
-    for(const method of ['put','add','delete']){const fn=IDBObjectStore.prototype[method];IDBObjectStore.prototype[method]=function(...args){if(this.name==='docs')maskObservation.writes++;return fn.apply(this,args);};}
+  await page.addInitScript(()=>{window.maskObservation={writes:0,ids:0,allWrites:[]};
+    for(const method of ['put','add','delete']){const fn=IDBObjectStore.prototype[method];IDBObjectStore.prototype[method]=function(...args){maskObservation.allWrites.push(this.name);if(this.name==='docs')maskObservation.writes++;return fn.apply(this,args);};}
     const uuid=Crypto.prototype.randomUUID;Crypto.prototype.randomUUID=function(...args){maskObservation.ids++;return uuid.apply(this,args);};
   });
-  await imageGate(page,'split');const [saved]=await seed(page,[doc('Readonly masks')]);await openLibraryDocument(page,saved.id);
+  const gate=await imageGate(page,'split',true);const [saved]=await seed(page,[doc('Readonly masks')]);await openLibraryDocument(page,saved.id);
   await expect(page.locator('#saveStatus')).toHaveText('Сохранено на этом устройстве');
   const model=await exportedDocument(page),stored=await records(page,'docs'),history=await page.locator('#historyEntries').innerHTML(),observed=await page.evaluate(()=>({...maskObservation}));
-  for(let i=0;i<3;i++){await page.locator('#zoomOutBtn').click();await page.locator('#zoomInBtn').click();await exportPNG(page);}
+  gate.release();await live(page,[white,red]);
+  for(let i=0;i<3;i++){await page.locator('#zoomOutBtn').click();await page.locator('#zoomInBtn').click();}
+  expect(await page.evaluate(()=>maskObservation)).toEqual(observed);
+  for(let i=0;i<3;i++)await exportPNG(page);
   expect(await exportedDocument(page)).toEqual(model);expect(await records(page,'docs')).toEqual(stored);
-  expect(await page.locator('#historyEntries').innerHTML()).toBe(history);expect(await page.evaluate(()=>maskObservation)).toEqual(observed);
+  expect(await page.locator('#historyEntries').innerHTML()).toBe(history);
+  const final=await page.evaluate(()=>maskObservation);expect(final.writes).toBe(observed.writes);expect(final.ids).toBe(observed.ids);
+  expect(final.allWrites.slice(observed.allWrites.length).every(store=>store==='projects')).toBe(true);
+});
+
+test('PNG waits for its layer mask, including when another document becomes active',async({page})=>{
+  const gate=await imageGate(page,'split',true);await imageGate(page,'white');
+  const docs=await seed(page,[doc('Export pending'),doc('Export other','white',160,120)]);
+  await openLibraryDocument(page,docs.find(d=>d.title==='Export pending').id);await gate.requested();
+  const downloads=[];page.on('download',d=>downloads.push(d));await page.locator('#exportBtn').click();
+  // Switching the editor completes while the PNG operation awaits the old mask.
+  await page.locator('#documentTabsHome').click();await openLibraryDocument(page,docs.find(d=>d.title==='Export other').id);await live(page,[red,red]);
+  expect(downloads).toHaveLength(0);gate.release();await expect.poll(()=>downloads.length).toBe(1);
+  const {readFile}=require('node:fs/promises');const image=PNG.sync.read(await readFile(await downloads[0].path()));
+  expect([image.width,image.height]).toEqual([320,240]);expect(pngPixels(image)).toEqual([white,red]);
+});
+
+test('failed layer mask keeps layer hidden and reports PNG error without an unmasked download',async({page})=>{
+  await page.route(source('broken'),route=>route.fulfill({contentType:'image/png',body:Buffer.from('invalid PNG')}));
+  const [saved]=await seed(page,[doc('Failed mask','broken')]);await openLibraryDocument(page,saved.id);await live(page,[white,white]);
+  const downloads=[];page.on('download',d=>downloads.push(d));await page.locator('#exportBtn').click();
+  await expect(page.locator('#toast')).toContainText('Не удалось прочитать маску для PNG');expect(downloads).toHaveLength(0);
+});
+
+test('mask brush draft is isolated from a sibling with the same historical ID and source; Undo/Redo preserve each source',async({page})=>{
+  await imageGate(page,'white');const [saved]=await seed(page,[series()]);await page.locator('[data-filter="card"]').click();await openLibraryDocument(page,saved.id);
+  await live(page,[red,red]);
+  await page.locator('#layers [data-select-mask="historical-id"]').click();
+  await page.locator('#dockBrush').click();await page.locator('#inkClose').click();
+  const p=await canvasPoint(page,80,60,160,120);await page.mouse.move(p.x,p.y);await page.mouse.down();
+  await page.setViewportSize({width:1300,height:920});
+  await expect.poll(()=>pixels(page.locator('#canvas'),[[.5,.5]])).toEqual([white]);
+  const probe=page.locator('#artboardSiblings [data-board-index="1"] canvas');
+  expect(await pixels(probe,[[.5,.5]])).toEqual([red]);
+  await page.mouse.up();const after=await exportedDocument(page);expect(after.slides[1].elements[0].layerMaskSrc).toBe(source('white'));
+  expect(after.elements[0].layerMaskSrc).not.toBe(source('white'));
+  await page.locator('#undoBtn').click();expect((await exportedDocument(page)).elements[0].layerMaskSrc).toBe(source('white'));
+  await page.locator('#redoBtn').click();expect((await exportedDocument(page)).elements[0].layerMaskSrc).toBe(after.elements[0].layerMaskSrc);
 });

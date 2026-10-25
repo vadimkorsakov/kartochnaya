@@ -1,0 +1,164 @@
+{
+  "sourceSHA": "e2a3d94ad440bc42ea955dca3b2138623b7dedc3",
+  "testsCommit": "b957bda",
+  "command": "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npx playwright test --project=chromium tests/mask-rendering.spec.js",
+  "browser": "Chromium 154.0.8037.57",
+  "serviceWorkers": "blocked only in these synthetic image tests",
+  "passed": 3,
+  "failed": 6,
+  "results": [
+    {
+      "name": "cold reload: black mask reaches canvas and repeated PNG",
+      "status": "failed",
+      "expectedStatus": "passed",
+      "pixelEvidence": {
+        "first-PNG-pixels": [
+          [
+            255,
+            0,
+            0,
+            255
+          ],
+          [
+            255,
+            0,
+            0,
+            255
+          ]
+        ]
+      },
+      "errors": [
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 4\n+ Received  + 4\n\n  Array [\n    Array [\n      255,\n-     255,\n-     255,\n+     0,\n+     0,\n      255,\n    ],\n    Array [\n-     255,\n      255,\n-     255,\n+     0,\n+     0,\n      255,\n    ],\n  ]\n\n  46 |   await openLibraryDocument(page,saved.id);\n  47 |   const first=await exportPNG(page);await evidence(info,'first-PNG-pixels',pngPixels(first.image));\n> 48 |   expect.soft(pngPixels(first.image)).toEqual(expected);await live(page,expected);\n     |                                       ^\n  49 |   expect(pngPixels((await exportPNG(page)).image)).toEqual(expected);\n  50 | });\n  51 |\n    at /workspace/kartochnaya/tests/mask-rendering.spec.js:48:39",
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 4\n+ Received  + 4\n\n  Array [\n    Array [\n      255,\n-     255,\n-     255,\n+     0,\n+     0,\n      255,\n    ],\n    Array [\n-     255,\n      255,\n-     255,\n+     0,\n+     0,\n      255,\n    ],\n  ]\n\nCall Log:\n- Timeout 7000ms exceeded while waiting on the predicate\n\n  37 |   return locator.evaluate((c,points)=>points.map(([x,y])=>[...c.getContext('2d').getImageData(Math.floor(c.width*x),Math.floor(c.height*y),1,1).data]),points);\n  38 | }\n> 39 | async function live(page, expected) {await expect.poll(()=>pixels(page.locator('#canvas'))).toEqual(expected);}\n     |                                                                                             ^\n  40 | function pngPixels(image) {return [.25,.75].map(x=>[...image.data.subarray((Math.floor(image.height/2)*image.width+Math.floor(image.width*x))*4,(Math.floor(image.height/2)*image.width+Math.floor(image.width*x))*4+4)]);}\n  41 | async function evidence(info, name, value) {await info.attach(name,{body:JSON.stringify(value),contentType:'application/json'});}\n  42 |\n    at live (/workspace/kartochnaya/tests/mask-rendering.spec.js:39:93)\n    at /workspace/kartochnaya/tests/mask-rendering.spec.js:48:63"
+      ]
+    },
+    {
+      "name": "cold reload: half mask reaches canvas and repeated PNG",
+      "status": "failed",
+      "expectedStatus": "passed",
+      "pixelEvidence": {
+        "first-PNG-pixels": [
+          [
+            255,
+            0,
+            0,
+            255
+          ],
+          [
+            255,
+            0,
+            0,
+            255
+          ]
+        ]
+      },
+      "errors": [
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 4\n+ Received  + 4\n\n  Array [\n    Array [\n      255,\n-     127,\n-     127,\n+     0,\n+     0,\n      255,\n    ],\n    Array [\n      255,\n-     127,\n-     127,\n+     0,\n+     0,\n      255,\n    ],\n  ]\n\n  46 |   await openLibraryDocument(page,saved.id);\n  47 |   const first=await exportPNG(page);await evidence(info,'first-PNG-pixels',pngPixels(first.image));\n> 48 |   expect.soft(pngPixels(first.image)).toEqual(expected);await live(page,expected);\n     |                                       ^\n  49 |   expect(pngPixels((await exportPNG(page)).image)).toEqual(expected);\n  50 | });\n  51 |\n    at /workspace/kartochnaya/tests/mask-rendering.spec.js:48:39",
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 4\n+ Received  + 4\n\n  Array [\n    Array [\n      255,\n-     127,\n-     127,\n+     0,\n+     0,\n      255,\n    ],\n    Array [\n      255,\n-     127,\n-     127,\n+     0,\n+     0,\n      255,\n    ],\n  ]\n\nCall Log:\n- Timeout 7000ms exceeded while waiting on the predicate\n\n  37 |   return locator.evaluate((c,points)=>points.map(([x,y])=>[...c.getContext('2d').getImageData(Math.floor(c.width*x),Math.floor(c.height*y),1,1).data]),points);\n  38 | }\n> 39 | async function live(page, expected) {await expect.poll(()=>pixels(page.locator('#canvas'))).toEqual(expected);}\n     |                                                                                             ^\n  40 | function pngPixels(image) {return [.25,.75].map(x=>[...image.data.subarray((Math.floor(image.height/2)*image.width+Math.floor(image.width*x))*4,(Math.floor(image.height/2)*image.width+Math.floor(image.width*x))*4+4)]);}\n  41 | async function evidence(info, name, value) {await info.attach(name,{body:JSON.stringify(value),contentType:'application/json'});}\n  42 |\n    at live (/workspace/kartochnaya/tests/mask-rendering.spec.js:39:93)\n    at /workspace/kartochnaya/tests/mask-rendering.spec.js:48:63"
+      ]
+    },
+    {
+      "name": "cold reload: white mask reaches canvas and repeated PNG",
+      "status": "passed",
+      "expectedStatus": "passed",
+      "pixelEvidence": {
+        "first-PNG-pixels": [
+          [
+            255,
+            0,
+            0,
+            255
+          ],
+          [
+            255,
+            0,
+            0,
+            255
+          ]
+        ]
+      },
+      "errors": []
+    },
+    {
+      "name": "loading layer mask hides layer until ready and repaints without interaction",
+      "status": "failed",
+      "expectedStatus": "passed",
+      "pixelEvidence": {
+        "pending-pixels": [
+          [
+            255,
+            0,
+            0,
+            255
+          ],
+          [
+            255,
+            0,
+            0,
+            255
+          ]
+        ]
+      },
+      "errors": [
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 4\n+ Received  + 4\n\n  Array [\n    Array [\n      255,\n-     255,\n-     255,\n+     0,\n+     0,\n      255,\n    ],\n    Array [\n-     255,\n      255,\n-     255,\n+     0,\n+     0,\n      255,\n    ],\n  ]\n\n  54 |   await openLibraryDocument(page,saved.id);await gate.requested();\n  55 |   const before=await pixels(page.locator('#canvas'));await evidence(info,'pending-pixels',before);\n> 56 |   expect.soft(before).toEqual([white,white]);gate.release();\n     |                       ^\n  57 |   await live(page,[white,red]);expect(pngPixels((await exportPNG(page)).image)).toEqual([white,red]);\n  58 | });\n  59 |\n    at /workspace/kartochnaya/tests/mask-rendering.spec.js:56:23",
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 2\n+ Received  + 2\n\n@@ -1,10 +1,10 @@\n  Array [\n    Array [\n      255,\n-     255,\n-     255,\n+     0,\n+     0,\n      255,\n    ],\n    Array [\n      255,\n      0,\n\nCall Log:\n- Timeout 7000ms exceeded while waiting on the predicate\n\n  37 |   return locator.evaluate((c,points)=>points.map(([x,y])=>[...c.getContext('2d').getImageData(Math.floor(c.width*x),Math.floor(c.height*y),1,1).data]),points);\n  38 | }\n> 39 | async function live(page, expected) {await expect.poll(()=>pixels(page.locator('#canvas'))).toEqual(expected);}\n     |                                                                                             ^\n  40 | function pngPixels(image) {return [.25,.75].map(x=>[...image.data.subarray((Math.floor(image.height/2)*image.width+Math.floor(image.width*x))*4,(Math.floor(image.height/2)*image.width+Math.floor(image.width*x))*4+4)]);}\n  41 | async function evidence(info, name, value) {await info.attach(name,{body:JSON.stringify(value),contentType:'application/json'});}\n  42 |\n    at live (/workspace/kartochnaya/tests/mask-rendering.spec.js:39:93)\n    at /workspace/kartochnaya/tests/mask-rendering.spec.js:57:9"
+      ]
+    },
+    {
+      "name": "non-active library thumbnail refreshes after its mask loads",
+      "status": "failed",
+      "expectedStatus": "passed",
+      "pixelEvidence": {},
+      "errors": [
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 2\n+ Received  + 2\n\n@@ -5,10 +5,10 @@\n      255,\n      255,\n    ],\n    Array [\n      255,\n-     0,\n-     0,\n+     255,\n+     255,\n      255,\n    ],\n  ]\n\nCall Log:\n- Timeout 7000ms exceeded while waiting on the predicate\n\n  64 |   await page.locator('#documentTabsHome').click();await gate.requested();gate.release();\n  65 |   const thumb=page.locator(`[data-docid=\"${docs.find(d=>d.title==='Target').id}\"] canvas`);\n> 66 |   await expect.poll(()=>pixels(thumb)).toEqual([white,red]);\n     |                                        ^\n  67 | });\n  68 |\n  69 | function series() {\n    at /workspace/kartochnaya/tests/mask-rendering.spec.js:66:40"
+      ]
+    },
+    {
+      "name": "same historical ID and source at two sizes: thumbnails, switching, reopen and series PNG",
+      "status": "failed",
+      "expectedStatus": "passed",
+      "pixelEvidence": {},
+      "errors": [
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 4\n+ Received  + 4\n\n  Array [\n    Array [\n      255,\n-     0,\n-     0,\n+     176,\n+     176,\n      255,\n    ],\n    Array [\n+     255,\n      255,\n-     0,\n-     0,\n+     255,\n      255,\n    ],\n  ]\n\nCall Log:\n- Timeout 7000ms exceeded while waiting on the predicate\n\n  37 |   return locator.evaluate((c,points)=>points.map(([x,y])=>[...c.getContext('2d').getImageData(Math.floor(c.width*x),Math.floor(c.height*y),1,1).data]),points);\n  38 | }\n> 39 | async function live(page, expected) {await expect.poll(()=>pixels(page.locator('#canvas'))).toEqual(expected);}\n     |                                                                                             ^\n  40 | function pngPixels(image) {return [.25,.75].map(x=>[...image.data.subarray((Math.floor(image.height/2)*image.width+Math.floor(image.width*x))*4,(Math.floor(image.height/2)*image.width+Math.floor(image.width*x))*4+4)]);}\n  41 | async function evidence(info, name, value) {await info.attach(name,{body:JSON.stringify(value),contentType:'application/json'});}\n  42 |\n    at live (/workspace/kartochnaya/tests/mask-rendering.spec.js:39:93)\n    at /workspace/kartochnaya/tests/mask-rendering.spec.js:78:85"
+      ]
+    },
+    {
+      "name": "active document changes before mask completion; returning keeps correct pixels",
+      "status": "passed",
+      "expectedStatus": "passed",
+      "pixelEvidence": {},
+      "errors": []
+    },
+    {
+      "name": "pending isFxRegion never applies noise to the whole document",
+      "status": "failed",
+      "expectedStatus": "passed",
+      "pixelEvidence": {
+        "pending-fx-pixels": [
+          [
+            230,
+            143,
+            143,
+            255
+          ],
+          [
+            118,
+            35,
+            35,
+            255
+          ]
+        ]
+      },
+      "errors": [
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 6\n+ Received  + 6\n\n  Array [\n    Array [\n-     255,\n-     0,\n-     0,\n+     230,\n+     143,\n+     143,\n      255,\n    ],\n    Array [\n-     255,\n-     0,\n-     0,\n+     118,\n+     35,\n+     35,\n      255,\n    ],\n  ]\n\n   98 |   d.elements.push({...d.elements[0],id:'region',fillType:'none',isFxRegion:true,layerMaskSrc:source('region'),effects:[{id:'noise',type:'noise',enabled:true,amount:100,opacity:100,density:100,size:1,seed:123}]});\n   99 |   const [saved]=await seed(page,[d]);await openLibraryDocument(page,saved.id);await gate.requested();\n> 100 |   const pending=await pixels(page.locator('#canvas'));await evidence(info,'pending-fx-pixels',pending);expect.soft(pending).toEqual([red,red]);\n      |                                                                                                                             ^\n  101 |   gate.release();await expect.poll(async()=>{const p=await pixels(page.locator('#canvas'));return p[0].join()!==red.join()&&p[1].join()===red.join();}).toBe(true);\n  102 |   const ready=pngPixels((await exportPNG(page)).image);expect(ready[0]).not.toEqual(red);expect(ready[1]).toEqual(red);\n  103 | });\n    at /workspace/kartochnaya/tests/mask-rendering.spec.js:100:125"
+      ]
+    },
+    {
+      "name": "rendering masks preserves model, updatedAt, history, IDs and document writes",
+      "status": "passed",
+      "expectedStatus": "passed",
+      "pixelEvidence": {},
+      "errors": []
+    }
+  ]
+}

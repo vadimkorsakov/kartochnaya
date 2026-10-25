@@ -1,0 +1,145 @@
+{
+  "testedSourceCommit": "69f33331c2e2e8df94e950becebea63ffece9270",
+  "mainBaseSHA": "e2a3d94ad440bc42ea955dca3b2138623b7dedc3",
+  "command": "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium npm run test:all",
+  "browser": "Chromium 154.0.8037.57",
+  "passed": 12,
+  "failed": 0,
+  "results": [
+    {
+      "name": "cold reload: black mask reaches canvas and repeated PNG",
+      "status": "passed",
+      "pixelEvidence": {
+        "first-PNG-pixels": [
+          [
+            255,
+            255,
+            255,
+            255
+          ],
+          [
+            255,
+            255,
+            255,
+            255
+          ]
+        ]
+      }
+    },
+    {
+      "name": "cold reload: half mask reaches canvas and repeated PNG",
+      "status": "passed",
+      "pixelEvidence": {
+        "first-PNG-pixels": [
+          [
+            255,
+            127,
+            127,
+            255
+          ],
+          [
+            255,
+            127,
+            127,
+            255
+          ]
+        ]
+      }
+    },
+    {
+      "name": "cold reload: white mask reaches canvas and repeated PNG",
+      "status": "passed",
+      "pixelEvidence": {
+        "first-PNG-pixels": [
+          [
+            255,
+            0,
+            0,
+            255
+          ],
+          [
+            255,
+            0,
+            0,
+            255
+          ]
+        ]
+      }
+    },
+    {
+      "name": "loading layer mask hides layer until ready and repaints without interaction",
+      "status": "passed",
+      "pixelEvidence": {
+        "pending-pixels": [
+          [
+            255,
+            255,
+            255,
+            255
+          ],
+          [
+            255,
+            255,
+            255,
+            255
+          ]
+        ]
+      }
+    },
+    {
+      "name": "non-active library thumbnail refreshes after its mask loads",
+      "status": "passed",
+      "pixelEvidence": {}
+    },
+    {
+      "name": "same historical ID and source at two sizes: thumbnails, switching, reopen and series PNG",
+      "status": "passed",
+      "pixelEvidence": {}
+    },
+    {
+      "name": "active document changes before mask completion; returning keeps correct pixels",
+      "status": "passed",
+      "pixelEvidence": {}
+    },
+    {
+      "name": "pending isFxRegion never applies noise to the whole document",
+      "status": "passed",
+      "pixelEvidence": {
+        "pending-fx-pixels": [
+          [
+            255,
+            0,
+            0,
+            255
+          ],
+          [
+            255,
+            0,
+            0,
+            255
+          ]
+        ]
+      }
+    },
+    {
+      "name": "rendering masks preserves model, updatedAt, history, IDs and document writes",
+      "status": "passed",
+      "pixelEvidence": {}
+    },
+    {
+      "name": "PNG waits for its layer mask, including when another document becomes active",
+      "status": "passed",
+      "pixelEvidence": {}
+    },
+    {
+      "name": "failed layer mask keeps layer hidden and reports PNG error without an unmasked download",
+      "status": "passed",
+      "pixelEvidence": {}
+    },
+    {
+      "name": "mask brush draft is isolated from a sibling with the same historical ID and source; Undo/Redo preserve each source",
+      "status": "passed",
+      "pixelEvidence": {}
+    }
+  ]
+}

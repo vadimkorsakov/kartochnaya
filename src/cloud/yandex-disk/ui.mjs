@@ -37,10 +37,10 @@ export function installYandexUI({ snapshot, download, backupUI } = {}) {
   for (const button of mainDialog.querySelectorAll('[data-backup-tab]')) button.addEventListener('click', () => render());
   mainDialog.querySelector('.backup-tabs').addEventListener('keydown', () => render());
   let oauth, diagnostics, client, notice = '', operation = null, operationStatus = '', listStatus = '';
-  let downloaded = null, archiveLease = null, releaseDownload = null;
+  let downloaded = null, archiveLease = null, releaseDownload = null, transferred = false;
   function clearArchive() {
     releaseDownload?.(); releaseDownload = null;
-    downloaded = null; archiveLease?.abort(); archiveLease = null;
+    downloaded = null; archiveLease?.abort(); archiveLease = null; transferred = false;
     find('yandexVerified').hidden = true;
     for (const id of ['yandexArchiveSummary', 'yandexIntegrity', 'yandexWarnings']) find(id).textContent = '';
   }
@@ -151,13 +151,13 @@ export function installYandexUI({ snapshot, download, backupUI } = {}) {
     const check = () => { if (lease.signal.aborted || !oauth.view().connected || oauth.view().generation !== generation) throw Error('Сеанс Яндекса изменился. Скачай и проверь архив заново.'); };
     try {
       check();
-      const bytes = downloaded.bytes; downloaded = null; releaseDownload?.(); releaseDownload = null;
+      const bytes = downloaded.bytes; downloaded = null; transferred = true; releaseDownload?.(); releaseDownload = null;
       find('yandexVerified').hidden = true; render();
       // Wait for the close event and its focus return before opening the next
       // modal. No DataTransfer, global hook or privileged restore capability.
       await new Promise(resolve => { mainDialog.addEventListener('close', resolve, { once: true }); mainDialog.close(); });
       check();
-      await backupUI.openArchive(bytes, { signal: lease.signal, check, opener: card });
+      await backupUI.openArchive(bytes, { signal: lease.signal, check, release: () => { if (archiveLease === lease) clearArchive(); }, opener: card });
       operationStatus = 'Архив передан в локальный ZIP-диалог. Выбери способ восстановления.';
     } catch (error) { clearArchive(); operationStatus = error.message; }
     render();
@@ -177,6 +177,30 @@ export function installYandexUI({ snapshot, download, backupUI } = {}) {
   find('yandexApi').onclick = () => { void diagnostics.api(); };
   find('yandexTransfer').onclick = () => { void diagnostics.transfer(); };
   find('yandexRemove').onclick = () => { void diagnostics.remove(); };
+  backupUI?.registerProvider({ recipients: () => [{
+    id: 'yandex', name: 'Яндекс Диск', maxBytes: /Android/i.test(navigator.userAgent) ? ANDROID_CLOUD_BYTES : MAX_CLOUD_BYTES,
+    available: oauth.view().connected && !operation && !diagnostics.view().busy,
+    async reserve(signal) {
+      if (operation || diagnostics.view().busy || !oauth.view().connected || transferred) throw Error('Сначала заверши операцию или восстановление из Яндекса.');
+      const controller = new AbortController(), generation = oauth.view().generation;
+      const abort = () => controller.abort(); signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) controller.abort();
+      clearArchive();
+      operation = controller; operationStatus = 'Ожидаем общий ZIP…'; render();
+      const release = () => { signal.removeEventListener('abort', abort); controller.abort(); if (operation === controller) operation = null; render(); };
+      const check = () => {
+        if (controller.signal.aborted || operation !== controller || !oauth.view().connected || oauth.view().generation !== generation) throw Error('Исходный сеанс Яндекса изменился. Подключи повторно и начни новую операцию.');
+      };
+      try {
+        const owner = await client.reserveUpload({ signal: controller.signal }); check();
+        return { check, release, upload: (backup, progress) => {
+          check();
+          return client.uploadPrepared(backup, { owner, signal: controller.signal, maxBytes: /Android/i.test(navigator.userAgent) ? ANDROID_CLOUD_BYTES : MAX_CLOUD_BYTES,
+            progress: value => { operationStatus = value; render(); progress({ phase: value.startsWith('Проверяем') ? 'verify' : 'upload', message: value }); } });
+        } };
+      } catch (error) { release(); throw error; }
+    },
+  }] });
   window.addEventListener('pagehide', () => oauth.disconnect());
   window.addEventListener('offline', () => oauth.disconnect('Нет сети. Подключи Яндекс повторно после восстановления связи.'));
   render();

@@ -39,6 +39,9 @@ on:
       - 'tests/netlify-deploy.test.mjs'
       - '.github/workflows/deploy-netlify.yml'
       - 'tests/netlify.spec.js'
+      - 'tests/cloud-coordinator.test.mjs'
+      - 'tests/cloud-backup.spec.js'
+      - 'tests/cloud-backup-local.spec.js'
       - 'tests/google-drive.spec.js'
       - 'tests/google-drive.test.mjs'
       - 'tests/google-drive-backup.test.mjs'
@@ -66,6 +69,7 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm ci
+      - run: npm run test:cloud
       - run: npm run test:yandex
       - run: npm run test:drive
       - run: npm run test:source

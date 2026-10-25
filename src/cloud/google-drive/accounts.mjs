@@ -48,7 +48,7 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
     if (lease.account.id !== id || lease.account.operation || lease.transferred) throw staleArchive();
     const bytes = lease.result.bytes;
     lease.result = lease.account.verified = null; lease.transferred = true;
-    return { bytes, signal: lease.controller.signal, check: () => checkArchive(lease) };
+    return { bytes, signal: lease.controller.signal, check: () => checkArchive(lease), release: () => { if (archive === lease) { lease.transferred = false; clearArchive(); } } };
   }
   function persist() {
     storage.setItem(ACCOUNTS_KEY, JSON.stringify([...accounts.values()].map(a => ({ provider: 'google-drive', id: a.id, name: a.name, clientId }))));
@@ -136,6 +136,29 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
     catch (error) { a.result = error instanceof RangeError ? 'Недостаточно памяти для ZIP. Используй компьютер.' : error.message; a.folderUnavailable = error.code === 'folder_unavailable'; throw error; }
     finally { a.operation = null; notify(); }
   }
+  function reserveUpload(id, signal) {
+    const a = accounts.get(id), session = a?.session, initial = session?.view();
+    if (archive?.transferred) throw Error('Сначала заверши или отмени восстановление из Google Drive.');
+    if (!a || batch || a.operation || initial.status !== 'connected' || initial.accountId !== id || Date.now() >= initial.expiresAt || typeof a.client.upload !== 'function') throw Error('Подключи Google-аккаунт и дождись завершения операции.');
+    const controller = new AbortController();
+    const abort = () => controller.abort(); signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) controller.abort();
+    clearArchive();
+    a.operation = controller; a.result = 'Ожидаем общий ZIP…'; notify();
+    const check = () => {
+      const state = session.view();
+      if (controller.signal.aborted || accounts.get(id) !== a || a.operation !== controller || a.session !== session || state.generation !== initial.generation || state.accountId !== initial.accountId || state.status !== 'connected' || Date.now() >= state.expiresAt) throw Error('Исходный сеанс Google изменился. Подключи аккаунт повторно и начни новую операцию.');
+    };
+    return { check,
+      async upload(backup, progress) {
+        check();
+        const file = await session.withDriveOperation(op => { check(); return a.client.upload(op, backup, value => { a.result = value.phase === 'verify' ? 'Проверяем подтверждение…' : `Загрузка: ${Math.round(value.confirmed / value.total * 100)}%`; notify(); progress(value); }); }, { signal: controller.signal });
+        a.result = 'Загрузка подтверждена. Обнови список копий.';
+        return { confirmed: true, file, verification: 'sha256' };
+      },
+      release() { signal.removeEventListener('abort', abort); controller.abort(); if (a.operation === controller) a.operation = null; notify(); },
+    };
+  }
   async function createCopies(ids, options) {
     if (batch) throw Error('Создание общей копии уже выполняется.');
     const selected = [...new Set(ids)].map(id => accounts.get(id));
@@ -161,7 +184,7 @@ export function createDriveAccounts({ storage, sessionFactory = createDriveSessi
     } catch (error) { for (const { a } of reservations) a.result = 'Общий ZIP не создан: ' + error.message; throw error; }
     finally { backup = null; for (const { a } of reservations) a.operation = null; batch = false; notify(); }
   }
-  return { clearArchive, checkArchive, downloadArchive, takeArchive, reload, configure, authorize, cancelAuthorization, disconnect, remove, task, createCopies,
+  return { reserveUpload, clearArchive, checkArchive, downloadArchive, takeArchive, reload, configure, authorize, cancelAuthorization, disconnect, remove, task, createCopies,
     list: () => [...accounts.values()], get: id => accounts.get(id),
     view: () => ({ clientId, batch, message: message || invalidationMessage, authorization: candidate?.view() || null, targetId }),
     networkChanged() { candidate?.networkChanged(); for (const a of accounts.values()) a.session.networkChanged(); notify(); },

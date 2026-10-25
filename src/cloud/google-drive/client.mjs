@@ -1,4 +1,5 @@
-import { createBackup, readBackup, inspectContainer, sha256, FORMAT } from '../../backup/archive.mjs';
+import { prepareWorkspaceBackup, preparedDigest } from '../../backup/prepared.mjs';
+import { readBackup, inspectContainer, sha256, FORMAT } from '../../backup/archive.mjs';
 import { driveEndpoint } from './session.mjs';
 
 export const FOLDER_NAME = 'КАРТОЧНАЯ — резервные копии';
@@ -31,17 +32,7 @@ export function safeFilename(name) {
   const stem = String(name).normalize('NFKC').replace(/[<>:"/\\|?*\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, '_').replace(/^[.\s]+|[.\s]+$/g, '').slice(0, 180).replace(/\.zip$/i, '');
   return 'kartochnaya-' + (stem || 'backup') + '.zip';
 }
-// Only objects produced here may skip repeated ZIP verification and hashing.
-const prepared = new WeakMap();
-export async function prepareDriveBackup({ snapshot, preferences, preparing = () => {} }) {
-  preparing('Подтверждаем сохранения и читаем согласованный снимок…');
-  const data = await snapshot();
-  preparing('Создаём полный ZIP и проверяем SHA-256…');
-  const backup = await createBackup(data, { preferences: preferences() });
-  await readBackup(backup.bytes);
-  prepared.set(backup, await sha256(backup.bytes));
-  return backup;
-}
+export const prepareDriveBackup = prepareWorkspaceBackup;
 export function createDriveClient() {
   let folderId = null;
   async function metadata(op, id) { if (!validId(id)) throw Error('Недопустимый ID файла'); const file = await json(await op.request(API + '/' + id + query({ fields: FIELDS }))); op.check(); return file; }
@@ -82,9 +73,9 @@ export function createDriveClient() {
   }
   async function upload(op, backup, progress = () => {}) {
     op.check();
-    if (!prepared.has(backup)) inspectContainer(backup.bytes);
+    if (!preparedDigest(backup)) inspectContainer(backup.bytes);
     if (backup.manifest.scope !== 'workspace' || backup.manifest.format !== FORMAT) throw Error('Разрешены только полные ZIP рабочего пространства.');
-    const digest = prepared.get(backup) || await sha256(backup.bytes); op.check();
+    const digest = preparedDigest(backup) || await sha256(backup.bytes); op.check();
     const parent = await folder(op, true), size = backup.bytes.byteLength;
     const properties = { application: APP, kind: 'backup', backupId: backup.manifest.backupId, format: FORMAT, scope: 'workspace', sha256: digest };
     const initial = http(await op.request(UPLOAD, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Upload-Content-Type': 'application/zip', 'X-Upload-Content-Length': String(size) }, body: JSON.stringify({ name: backup.filename, mimeType: 'application/zip', parents: [parent], appProperties: properties }) }));
@@ -139,6 +130,7 @@ export function createDriveClient() {
       try { result = await json(res); if (!validId(result.id)) throw Error(); }
       catch { result = null; const status = await probe(); if (status.status === 308) { incomplete(status, sent); continue; } try { result = await json(status); if (!validId(result.id)) throw Error(); } catch { throw uncertain(); } }
     }
+    progress({ sent, confirmed, total: size, phase: 'verify' });
     const file = await metadata(op, result.id); op.check();
     if (file.id !== result.id || !validBackup(file, parent) || Number(file.size) !== size || file.name !== backup.filename || Object.entries(properties).some(([k, v]) => file.appProperties[k] !== v)) throw uncertain();
     confirmed = size; report(); return file;

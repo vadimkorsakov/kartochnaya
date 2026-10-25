@@ -149,3 +149,10 @@ test('a different download frees the previous active verified buffer and stale v
   await h.manager.downloadArchive('B', 'file-B'); assert.equal(a.verified, null);
   h.manager.get('B').verified = { bytes: new Uint8Array() }; assert.throws(() => h.manager.takeArchive('B'), /исходного/);
 });
+
+test('batch reservation never invalidates a transferred restore lease; explicit local release permits a new batch', async t => {
+  const h = await verifiedAccount(t), lease = h.manager.takeArchive('A'), signal = new AbortController().signal;
+  assert.throws(() => h.manager.reserveUpload('B', signal), /восстановление/); lease.check(); assert.equal(lease.signal.aborted, false);
+  lease.release(); assert.equal(lease.signal.aborted, true); assert.equal(h.manager.view().message, '');
+  const reservation = h.manager.reserveUpload('B', signal); reservation.check(); reservation.release(); assert.equal(h.manager.get('B').operation, null);
+});

@@ -1,0 +1,1311 @@
+{
+  "base": "e2604260fbb255fef11dda2bdc71abe69e72ba4b",
+  "unit": {
+    "passed": 5,
+    "failed": 5,
+    "log": "✖ confirmed identical snapshots cause no second transaction (9.943534ms)\n✔ A → A pending snapshot deduplicates and waits for confirmation (8.043848ms)\n✖ A → B → C writes serialize even if upstream async work could finish backwards (1.358667ms)\n✔ A confirmation cannot confirm edited B; explicit flush saves B (1.551198ms)\n✔ A → B → A must persist A after the outstanding B (1.612051ms)\n✔ failure retains confirmed memory and explicit retry succeeds (1.667935ms)\n✖ saveSoon preserves an observable error until successful retry (4.519373ms)\n✔ old X confirmation cannot replace active Y status (0.893232ms)\n✖ queued write rechecks deletion / workspace seals before issuing transaction (2.493995ms)\n✖ reverse upstream releases cannot leave IndexedDB older than confirmed memory (2.580967ms)\nℹ tests 10\nℹ suites 0\nℹ pass 5\nℹ fail 5\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 158.660305\n\n✖ failing tests:\n\ntest at tests/document-save.test.mjs:22:1\n✖ confirmed identical snapshots cause no second transaction (9.943534ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  2 !== 1\n  \n      at TestContext.<anonymous> (file:///workspace/kartochnaya/tests/document-save.test.mjs:22:205)\n      at async Test.run (node:internal/test_runner/test:1389:7)\n      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: 2,\n    expected: 1,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at tests/document-save.test.mjs:24:1\n✖ A → B → C writes serialize even if upstream async work could finish backwards (1.358667ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  3 !== 1\n  \n      at TestContext.<anonymous> (file:///workspace/kartochnaya/tests/document-save.test.mjs:24:276)\n      at async Test.run (node:internal/test_runner/test:1389:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: 3,\n    expected: 1,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at tests/document-save.test.mjs:28:1\n✖ saveSoon preserves an observable error until successful retry (4.519373ms)\n  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n  \n    assert.ok(h.api.saveState('x').error)\n  \n      at TestContext.<anonymous> (file:///workspace/kartochnaya/tests/document-save.test.mjs:28:195)\n      at runNextTicks (node:internal/process/task_queues:65:5)\n      at process.processImmediate (node:internal/timers:502:9)\n      at async Test.run (node:internal/test_runner/test:1389:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: null,\n    expected: true,\n    operator: '==',\n    diff: 'simple'\n  }\n\ntest at tests/document-save.test.mjs:30:1\n✖ queued write rechecks deletion / workspace seals before issuing transaction (2.493995ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  true !== false\n  \n      at TestContext.<anonymous> (file:///workspace/kartochnaya/tests/document-save.test.mjs:30:333)\n      at async Test.run (node:internal/test_runner/test:1389:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: true,\n    expected: false,\n    operator: 'strictEqual',\n    diff: 'simple'\n  }\n\ntest at tests/document-save.test.mjs:31:1\n✖ reverse upstream releases cannot leave IndexedDB older than confirmed memory (2.580967ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n  + actual - expected\n  \n    {\n      id: 'x',\n      projectId: 'p',\n  +   text: 'A'\n  -   text: 'C'\n    }\n  \n      at TestContext.<anonymous> (file:///workspace/kartochnaya/tests/document-save.test.mjs:31:283)\n      at async Test.run (node:internal/test_runner/test:1389:7)\n      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {\n    generatedMessage: true,\n    code: 'ERR_ASSERTION',\n    actual: { id: 'x', projectId: 'p', text: 'A' },\n    expected: { id: 'x', projectId: 'p', text: 'C' },\n    operator: 'deepStrictEqual',\n    diff: 'simple'\n  }\n"
+  },
+  "browser": [
+    {
+      "title": "F05 passive reload, opening, home, closing and reopening perform zero document writes",
+      "status": "failed",
+      "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m",
+      "observations": [
+        {
+          "name": "writes",
+          "data": {
+            "startup": {
+              "transactions": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "operations": [
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "9456e72b-7e50-4935-8399-0435b60d068d",
+                    "projectId": "eb0596e5-4a83-4892-8f6f-e1a91341dd58",
+                    "title": "F05 passive",
+                    "type": "template",
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "backgroundAlpha": 100,
+                    "palette": [],
+                    "rulers": [],
+                    "elements": [],
+                    "createdAt": 1792961646785,
+                    "updatedAt": 1792961646785,
+                    "groups": []
+                  }
+                }
+              ],
+              "commits": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "aborts": []
+            },
+            "observed": {
+              "transactions": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "operations": [
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "9456e72b-7e50-4935-8399-0435b60d068d",
+                    "projectId": "eb0596e5-4a83-4892-8f6f-e1a91341dd58",
+                    "title": "F05 passive",
+                    "type": "template",
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "backgroundAlpha": 100,
+                    "palette": [],
+                    "rulers": [],
+                    "elements": [],
+                    "createdAt": 1792961646785,
+                    "updatedAt": 1792961646785,
+                    "groups": []
+                  }
+                },
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "9456e72b-7e50-4935-8399-0435b60d068d",
+                    "projectId": "eb0596e5-4a83-4892-8f6f-e1a91341dd58",
+                    "title": "F05 passive",
+                    "type": "template",
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "backgroundAlpha": 100,
+                    "palette": [],
+                    "rulers": [],
+                    "elements": [],
+                    "createdAt": 1792961646785,
+                    "updatedAt": 1792961646785,
+                    "groups": []
+                  }
+                },
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "9456e72b-7e50-4935-8399-0435b60d068d",
+                    "projectId": "eb0596e5-4a83-4892-8f6f-e1a91341dd58",
+                    "title": "F05 passive",
+                    "type": "template",
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "backgroundAlpha": 100,
+                    "palette": [],
+                    "rulers": [],
+                    "elements": [],
+                    "createdAt": 1792961646785,
+                    "updatedAt": 1792961646785,
+                    "groups": []
+                  }
+                },
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "9456e72b-7e50-4935-8399-0435b60d068d",
+                    "projectId": "eb0596e5-4a83-4892-8f6f-e1a91341dd58",
+                    "title": "F05 passive",
+                    "type": "template",
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "backgroundAlpha": 100,
+                    "palette": [],
+                    "rulers": [],
+                    "elements": [],
+                    "createdAt": 1792961646785,
+                    "updatedAt": 1792961646785,
+                    "groups": []
+                  }
+                },
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "9456e72b-7e50-4935-8399-0435b60d068d",
+                    "projectId": "eb0596e5-4a83-4892-8f6f-e1a91341dd58",
+                    "title": "F05 passive",
+                    "type": "template",
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "backgroundAlpha": 100,
+                    "palette": [],
+                    "rulers": [],
+                    "elements": [],
+                    "createdAt": 1792961646785,
+                    "updatedAt": 1792961646785,
+                    "groups": []
+                  }
+                }
+              ],
+              "commits": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "aborts": []
+            },
+            "before": {
+              "id": "9456e72b-7e50-4935-8399-0435b60d068d",
+              "projectId": "eb0596e5-4a83-4892-8f6f-e1a91341dd58",
+              "title": "F05 passive",
+              "type": "template",
+              "width": 320,
+              "height": 240,
+              "background": "#ffffff",
+              "backgroundAlpha": 100,
+              "palette": [],
+              "rulers": [],
+              "elements": [],
+              "createdAt": 1792961646785,
+              "updatedAt": 1792961646785,
+              "groups": []
+            },
+            "after": [
+              {
+                "id": "9456e72b-7e50-4935-8399-0435b60d068d",
+                "projectId": "eb0596e5-4a83-4892-8f6f-e1a91341dd58",
+                "title": "F05 passive",
+                "type": "template",
+                "width": 320,
+                "height": 240,
+                "background": "#ffffff",
+                "backgroundAlpha": 100,
+                "palette": [],
+                "rulers": [],
+                "elements": [],
+                "createdAt": 1792961646785,
+                "updatedAt": 1792961646785,
+                "groups": []
+              },
+              {
+                "id": "aebdda73-4a1a-4f74-8109-ad9092a3df88",
+                "projectId": "eb0596e5-4a83-4892-8f6f-e1a91341dd58",
+                "title": "Афиша · пример",
+                "type": "template",
+                "width": 1080,
+                "height": 1350,
+                "background": "#f5f3ed",
+                "backgroundAlpha": 100,
+                "palette": [],
+                "rulers": [],
+                "elements": [
+                  {
+                    "name": "Тёмная подложка",
+                    "x": 0,
+                    "y": 0,
+                    "w": 1080,
+                    "h": 830,
+                    "rotation": 0,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#22252b",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "id": "f66f6930-e770-4b4d-90d0-ba03e88493c5",
+                    "type": "rect"
+                  },
+                  {
+                    "name": "Градиент для фото",
+                    "x": 0,
+                    "y": 550,
+                    "w": 1080,
+                    "h": 410,
+                    "rotation": 0,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "gradient",
+                    "fillOpacity": 100,
+                    "fill": "#22252b",
+                    "fill2": "#f5f3ed",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "id": "ea68e88a-202f-42e3-89d1-1c1ab2b5a698",
+                    "type": "rect"
+                  },
+                  {
+                    "name": "Салатовая звезда",
+                    "x": -105,
+                    "y": 290,
+                    "w": 400,
+                    "h": 400,
+                    "rotation": 20,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#d4fc15",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "id": "2f77f943-8562-4bb6-9033-66497bb0bc5f",
+                    "type": "star"
+                  },
+                  {
+                    "name": "Фиолетовая звезда",
+                    "x": 840,
+                    "y": 640,
+                    "w": 270,
+                    "h": 270,
+                    "rotation": -12,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#ab79fa",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "id": "f06c31d0-a0a9-4db8-a0a8-da52358db7a4",
+                    "type": "star"
+                  },
+                  {
+                    "name": "Логотип",
+                    "x": 58,
+                    "y": 64,
+                    "w": 500,
+                    "h": 65,
+                    "rotation": 0,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#12151a",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "text": "ТУМАН • ПОСТЫ",
+                    "fontSize": 45,
+                    "fontFamily": "Arial",
+                    "fontWeight": "900",
+                    "textColor": "#ffffff",
+                    "textAlign": "left",
+                    "lineHeight": 1.06,
+                    "letterSpacing": 0,
+                    "id": "3ee803cb-1a79-4a3f-bbaa-208e5a1ea75f",
+                    "type": "text"
+                  },
+                  {
+                    "name": "Рубрика: плашка",
+                    "x": 58,
+                    "y": 930,
+                    "w": 177,
+                    "h": 49,
+                    "rotation": 0,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#d4fc15",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "id": "1bbdede5-9cf8-492c-b43d-b06a2c2c8da4",
+                    "type": "rect"
+                  },
+                  {
+                    "name": "Рубрика",
+                    "x": 70,
+                    "y": 935,
+                    "w": 150,
+                    "h": 43,
+                    "rotation": 0,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#12151a",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "text": "КОНЦЕРТ",
+                    "fontSize": 31,
+                    "fontFamily": "Arial",
+                    "fontWeight": "800",
+                    "textColor": "#161716",
+                    "textAlign": "left",
+                    "lineHeight": 1.06,
+                    "letterSpacing": 0,
+                    "id": "728d999c-10f4-4cd5-9462-63840d807b9f",
+                    "type": "text"
+                  },
+                  {
+                    "name": "Заголовок",
+                    "x": 58,
+                    "y": 1006,
+                    "w": 980,
+                    "h": 67,
+                    "rotation": 0,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#12151a",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "text": "КОНЦЕРТ ГРУППЫ",
+                    "fontSize": 68,
+                    "fontFamily": "Arial",
+                    "fontWeight": "900",
+                    "textColor": "#16171a",
+                    "textAlign": "left",
+                    "lineHeight": 1.06,
+                    "letterSpacing": 0,
+                    "id": "d2aa0997-cb3a-477c-9650-023564ca2bc0",
+                    "type": "text"
+                  },
+                  {
+                    "name": "Название",
+                    "x": 58,
+                    "y": 1084,
+                    "w": 970,
+                    "h": 74,
+                    "rotation": 0,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#12151a",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "text": "«НАЗВАНИЕ ГРУППЫ»",
+                    "fontSize": 65,
+                    "fontFamily": "Arial",
+                    "fontWeight": "900",
+                    "textColor": "#16171a",
+                    "textAlign": "left",
+                    "lineHeight": 1.06,
+                    "letterSpacing": 0,
+                    "id": "a88d37c1-806c-4168-9b7a-1eda2d98e5d8",
+                    "type": "text"
+                  },
+                  {
+                    "name": "Место",
+                    "x": 58,
+                    "y": 1235,
+                    "w": 590,
+                    "h": 58,
+                    "rotation": 0,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#12151a",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "text": "●  Место проведения",
+                    "fontSize": 31,
+                    "fontFamily": "Arial",
+                    "fontWeight": "400",
+                    "textColor": "#16171a",
+                    "textAlign": "left",
+                    "lineHeight": 1.06,
+                    "letterSpacing": 0,
+                    "id": "55743167-2e20-4c7e-bb0b-f3ffcbab782b",
+                    "type": "text"
+                  },
+                  {
+                    "name": "Дата",
+                    "x": 720,
+                    "y": 1235,
+                    "w": 330,
+                    "h": 58,
+                    "rotation": 0,
+                    "opacity": 100,
+                    "visible": true,
+                    "locked": false,
+                    "fillType": "solid",
+                    "fillOpacity": 100,
+                    "fill": "#12151a",
+                    "fill2": "#d9ff00",
+                    "gradientAngle": 90,
+                    "fillAlpha1": 100,
+                    "fillAlpha2": 100,
+                    "stroke": "#000000",
+                    "strokeWidth": 0,
+                    "corner": 0,
+                    "imageSrc": "",
+                    "cropX": 0,
+                    "cropY": 0,
+                    "cropZoom": 1,
+                    "cropRotation": 0,
+                    "imageFit": "fill",
+                    "text": "▦  26 сентября",
+                    "fontSize": 29,
+                    "fontFamily": "Arial",
+                    "fontWeight": "400",
+                    "textColor": "#16171a",
+                    "textAlign": "left",
+                    "lineHeight": 1.06,
+                    "letterSpacing": 0,
+                    "id": "c43b4ed6-4cb9-47c6-870b-63df27130174",
+                    "type": "text"
+                  }
+                ],
+                "createdAt": 1792961646298,
+                "updatedAt": 1792961646299
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "title": "F05 two and three clean tabs, focus, zoom and home remain read only",
+      "status": "failed",
+      "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m8\u001b[39m",
+      "observations": [
+        {
+          "name": "writes",
+          "data": {
+            "transactions": [
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              }
+            ],
+            "operations": [
+              {
+                "store": "docs",
+                "method": "put",
+                "value": {
+                  "id": "bff2393e-b3e8-443d-a112-ba4955317388",
+                  "projectId": "f303935f-5f10-4327-b0e5-bf2ccc7cd721",
+                  "title": "F05 tab 0",
+                  "type": "template",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "backgroundAlpha": 100,
+                  "palette": [],
+                  "rulers": [],
+                  "elements": [],
+                  "createdAt": 1792961646854,
+                  "updatedAt": 1792961646854,
+                  "groups": []
+                }
+              },
+              {
+                "store": "docs",
+                "method": "put",
+                "value": {
+                  "id": "1932d87e-dbef-4428-8298-4be920294ed7",
+                  "projectId": "f303935f-5f10-4327-b0e5-bf2ccc7cd721",
+                  "title": "F05 tab 1",
+                  "type": "template",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "backgroundAlpha": 100,
+                  "palette": [],
+                  "rulers": [],
+                  "elements": [],
+                  "createdAt": 1792961648082,
+                  "updatedAt": 1792961648082,
+                  "groups": []
+                }
+              },
+              {
+                "store": "docs",
+                "method": "put",
+                "value": {
+                  "id": "bff2393e-b3e8-443d-a112-ba4955317388",
+                  "projectId": "f303935f-5f10-4327-b0e5-bf2ccc7cd721",
+                  "title": "F05 tab 0",
+                  "type": "template",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "backgroundAlpha": 100,
+                  "palette": [],
+                  "rulers": [],
+                  "elements": [],
+                  "createdAt": 1792961646854,
+                  "updatedAt": 1792961646854,
+                  "groups": []
+                }
+              },
+              {
+                "store": "docs",
+                "method": "put",
+                "value": {
+                  "id": "1932d87e-dbef-4428-8298-4be920294ed7",
+                  "projectId": "f303935f-5f10-4327-b0e5-bf2ccc7cd721",
+                  "title": "F05 tab 1",
+                  "type": "template",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "backgroundAlpha": 100,
+                  "palette": [],
+                  "rulers": [],
+                  "elements": [],
+                  "createdAt": 1792961648082,
+                  "updatedAt": 1792961648082,
+                  "groups": []
+                }
+              },
+              {
+                "store": "docs",
+                "method": "put",
+                "value": {
+                  "id": "17fb7d79-4494-4922-ab77-598b67175fd6",
+                  "projectId": "f303935f-5f10-4327-b0e5-bf2ccc7cd721",
+                  "title": "F05 tab 2",
+                  "type": "template",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "backgroundAlpha": 100,
+                  "palette": [],
+                  "rulers": [],
+                  "elements": [],
+                  "createdAt": 1792961649063,
+                  "updatedAt": 1792961649063,
+                  "groups": []
+                }
+              },
+              {
+                "store": "docs",
+                "method": "put",
+                "value": {
+                  "id": "bff2393e-b3e8-443d-a112-ba4955317388",
+                  "projectId": "f303935f-5f10-4327-b0e5-bf2ccc7cd721",
+                  "title": "F05 tab 0",
+                  "type": "template",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "backgroundAlpha": 100,
+                  "palette": [],
+                  "rulers": [],
+                  "elements": [],
+                  "createdAt": 1792961646854,
+                  "updatedAt": 1792961646854,
+                  "groups": []
+                }
+              },
+              {
+                "store": "docs",
+                "method": "put",
+                "value": {
+                  "id": "17fb7d79-4494-4922-ab77-598b67175fd6",
+                  "projectId": "f303935f-5f10-4327-b0e5-bf2ccc7cd721",
+                  "title": "F05 tab 2",
+                  "type": "template",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "backgroundAlpha": 100,
+                  "palette": [],
+                  "rulers": [],
+                  "elements": [],
+                  "createdAt": 1792961649063,
+                  "updatedAt": 1792961649063,
+                  "groups": []
+                }
+              },
+              {
+                "store": "docs",
+                "method": "put",
+                "value": {
+                  "id": "1932d87e-dbef-4428-8298-4be920294ed7",
+                  "projectId": "f303935f-5f10-4327-b0e5-bf2ccc7cd721",
+                  "title": "F05 tab 1",
+                  "type": "template",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "backgroundAlpha": 100,
+                  "palette": [],
+                  "rulers": [],
+                  "elements": [],
+                  "createdAt": 1792961648082,
+                  "updatedAt": 1792961648082,
+                  "groups": []
+                }
+              }
+            ],
+            "commits": [
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              },
+              {
+                "stores": [
+                  "docs"
+                ]
+              }
+            ],
+            "aborts": []
+          }
+        }
+      ]
+    },
+    {
+      "title": "F05 active slide click is read only; real navigation persists active root and keeps history",
+      "status": "failed",
+      "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m1\u001b[39m",
+      "observations": [
+        {
+          "name": "writes",
+          "data": {
+            "same": {
+              "transactions": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "operations": [
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "b0376d2d-6b3b-4e0d-b77d-015fd06f0d0a",
+                    "title": "F05 series (импорт)",
+                    "type": "card",
+                    "hasCustomName": true,
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "elements": [],
+                    "groups": [],
+                    "activeSlideIndex": 0,
+                    "slides": [
+                      {
+                        "id": "20cfce07-144c-4d92-bd98-6f01e6a96967",
+                        "width": 320,
+                        "height": 240,
+                        "background": "#ffffff",
+                        "elements": [],
+                        "groups": []
+                      },
+                      {
+                        "id": "c1ae2b67-9948-4e6d-b29d-aa05664a46f8",
+                        "width": 340,
+                        "height": 240,
+                        "background": "#ff0000",
+                        "elements": [],
+                        "groups": []
+                      }
+                    ],
+                    "projectId": "a235f94f-aad0-48cd-8b7f-d933dcad03d1",
+                    "createdAt": 1792961652577,
+                    "updatedAt": 1792961652577,
+                    "rulers": [],
+                    "palette": [],
+                    "backgroundAlpha": 100
+                  }
+                }
+              ],
+              "commits": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "aborts": []
+            },
+            "observed": {
+              "transactions": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "operations": [
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "b0376d2d-6b3b-4e0d-b77d-015fd06f0d0a",
+                    "title": "F05 series (импорт)",
+                    "type": "card",
+                    "hasCustomName": true,
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "elements": [],
+                    "groups": [],
+                    "activeSlideIndex": 0,
+                    "slides": [
+                      {
+                        "id": "20cfce07-144c-4d92-bd98-6f01e6a96967",
+                        "width": 320,
+                        "height": 240,
+                        "background": "#ffffff",
+                        "elements": [],
+                        "groups": []
+                      },
+                      {
+                        "id": "c1ae2b67-9948-4e6d-b29d-aa05664a46f8",
+                        "width": 340,
+                        "height": 240,
+                        "background": "#ff0000",
+                        "elements": [],
+                        "groups": []
+                      }
+                    ],
+                    "projectId": "a235f94f-aad0-48cd-8b7f-d933dcad03d1",
+                    "createdAt": 1792961652577,
+                    "updatedAt": 1792961652577,
+                    "rulers": [],
+                    "palette": [],
+                    "backgroundAlpha": 100
+                  }
+                },
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "b0376d2d-6b3b-4e0d-b77d-015fd06f0d0a",
+                    "title": "F05 series (импорт)",
+                    "type": "card",
+                    "hasCustomName": true,
+                    "width": 340,
+                    "height": 240,
+                    "background": "#ff0000",
+                    "elements": [],
+                    "groups": [],
+                    "activeSlideIndex": 1,
+                    "slides": [
+                      {
+                        "id": "20cfce07-144c-4d92-bd98-6f01e6a96967",
+                        "width": 320,
+                        "height": 240,
+                        "background": "#ffffff",
+                        "elements": [],
+                        "groups": []
+                      },
+                      {
+                        "id": "c1ae2b67-9948-4e6d-b29d-aa05664a46f8",
+                        "width": 340,
+                        "height": 240,
+                        "background": "#ff0000",
+                        "elements": [],
+                        "groups": []
+                      }
+                    ],
+                    "projectId": "a235f94f-aad0-48cd-8b7f-d933dcad03d1",
+                    "createdAt": 1792961652577,
+                    "updatedAt": 1792961652577,
+                    "rulers": [],
+                    "palette": [],
+                    "backgroundAlpha": 100
+                  }
+                }
+              ],
+              "commits": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "aborts": []
+            },
+            "before": {
+              "id": "b0376d2d-6b3b-4e0d-b77d-015fd06f0d0a",
+              "title": "F05 series (импорт)",
+              "type": "card",
+              "hasCustomName": true,
+              "width": 320,
+              "height": 240,
+              "background": "#ffffff",
+              "elements": [],
+              "groups": [],
+              "activeSlideIndex": 0,
+              "slides": [
+                {
+                  "id": "20cfce07-144c-4d92-bd98-6f01e6a96967",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "elements": [],
+                  "groups": []
+                },
+                {
+                  "id": "c1ae2b67-9948-4e6d-b29d-aa05664a46f8",
+                  "width": 340,
+                  "height": 240,
+                  "background": "#ff0000",
+                  "elements": [],
+                  "groups": []
+                }
+              ],
+              "projectId": "a235f94f-aad0-48cd-8b7f-d933dcad03d1",
+              "createdAt": 1792961652577,
+              "updatedAt": 1792961652577,
+              "rulers": [],
+              "palette": [],
+              "backgroundAlpha": 100
+            },
+            "after": {
+              "id": "b0376d2d-6b3b-4e0d-b77d-015fd06f0d0a",
+              "title": "F05 series (импорт)",
+              "type": "card",
+              "hasCustomName": true,
+              "width": 340,
+              "height": 240,
+              "background": "#ff0000",
+              "elements": [],
+              "groups": [],
+              "activeSlideIndex": 1,
+              "slides": [
+                {
+                  "id": "20cfce07-144c-4d92-bd98-6f01e6a96967",
+                  "width": 320,
+                  "height": 240,
+                  "background": "#ffffff",
+                  "elements": [],
+                  "groups": []
+                },
+                {
+                  "id": "c1ae2b67-9948-4e6d-b29d-aa05664a46f8",
+                  "width": 340,
+                  "height": 240,
+                  "background": "#ff0000",
+                  "elements": [],
+                  "groups": []
+                }
+              ],
+              "projectId": "a235f94f-aad0-48cd-8b7f-d933dcad03d1",
+              "createdAt": 1792961652577,
+              "updatedAt": 1792961652577,
+              "rulers": [],
+              "palette": [],
+              "backgroundAlpha": 100
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "F05 a new unsaved document and two rapid text edits persist the latest version once",
+      "status": "passed",
+      "observations": []
+    },
+    {
+      "title": "F05 A → B → C under held transaction never confirms an obsolete edit",
+      "status": "passed",
+      "observations": []
+    },
+    {
+      "title": "F05 failed X survives tab switches and failed close; explicit retry confirms the same memory",
+      "status": "failed",
+      "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoHaveText\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m failed\n\nLocator:  locator('#saveStatus')\nExpected: \u001b[32m\"\u001b[7mСохранено на этом устройств\u001b[27mе\"\u001b[39m\nReceived: \u001b[31m\"\u001b[7mОшибка сохранения · не закрывай приложени\u001b[27mе\"\u001b[39m\nTimeout:  7000ms\n\nCall log:\n\u001b[2m  - Expect \"toHaveText\" locator('#saveStatus') with timeout 7000ms\u001b[22m\n\u001b[2m  - waiting for locator('#saveStatus')\u001b[22m\n\u001b[2m    18 × locator resolved to <span id=\"saveStatus\">Ошибка сохранения · не закрывай приложение</span>\u001b[22m\n\u001b[2m       - unexpected value \"Ошибка сохранения · не закрывай приложение\"\u001b[22m\n",
+      "observations": []
+    },
+    {
+      "title": "F05 legacy display preparation never rewrites raw stored document",
+      "status": "failed",
+      "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 6\u001b[39m\n\u001b[31m+ Received  + 3\u001b[39m\n\n\u001b[2m  Object {\u001b[22m\n\u001b[32m-   \"activeSlideIndex\": undefined,\u001b[39m\n\u001b[2m    \"background\": \"#ffffff\",\u001b[22m\n\u001b[32m-   \"backgroundAlpha\": undefined,\u001b[39m\n\u001b[31m+   \"backgroundAlpha\": 100,\u001b[39m\n\u001b[2m    \"createdAt\": 1792961661432,\u001b[22m\n\u001b[2m    \"elements\": Array [],\u001b[22m\n\u001b[32m-   \"groups\": undefined,\u001b[39m\n\u001b[32m-   \"hasCustomName\": true,\u001b[39m\n\u001b[31m+   \"groups\": Array [],\u001b[39m\n\u001b[2m    \"height\": 240,\u001b[22m\n\u001b[2m    \"id\": \"f60839ab-811e-45fd-be0e-d8ad9cb3ee2b\",\u001b[22m\n\u001b[2m    \"palette\": Array [],\u001b[22m\n\u001b[2m    \"projectId\": \"63c8bfb2-16f9-49bf-abae-8ecafc5aeb25\",\u001b[22m\n\u001b[2m    \"rulers\": Array [],\u001b[22m\n\u001b[32m-   \"slides\": undefined,\u001b[39m\n\u001b[2m    \"title\": \"F05 legacy\",\u001b[22m\n\u001b[32m-   \"type\": \"card\",\u001b[39m\n\u001b[31m+   \"type\": \"template\",\u001b[39m\n\u001b[2m    \"updatedAt\": 1792961661432,\u001b[22m\n\u001b[2m    \"width\": 320,\u001b[22m\n\u001b[2m  }\u001b[22m",
+      "observations": [
+        {
+          "name": "legacy",
+          "data": {
+            "legacy": {
+              "id": "f60839ab-811e-45fd-be0e-d8ad9cb3ee2b",
+              "projectId": "63c8bfb2-16f9-49bf-abae-8ecafc5aeb25",
+              "title": "F05 legacy",
+              "type": "card",
+              "width": 320,
+              "height": 240,
+              "background": "#ffffff",
+              "palette": [],
+              "rulers": [],
+              "elements": [],
+              "createdAt": 1792961661432,
+              "updatedAt": 1792961661432,
+              "hasCustomName": true
+            },
+            "after": {
+              "id": "f60839ab-811e-45fd-be0e-d8ad9cb3ee2b",
+              "projectId": "63c8bfb2-16f9-49bf-abae-8ecafc5aeb25",
+              "title": "F05 legacy",
+              "type": "template",
+              "width": 320,
+              "height": 240,
+              "background": "#ffffff",
+              "backgroundAlpha": 100,
+              "palette": [],
+              "rulers": [],
+              "elements": [],
+              "createdAt": 1792961661432,
+              "updatedAt": 1792961661432,
+              "groups": []
+            },
+            "observed": {
+              "transactions": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "operations": [
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "f60839ab-811e-45fd-be0e-d8ad9cb3ee2b",
+                    "projectId": "63c8bfb2-16f9-49bf-abae-8ecafc5aeb25",
+                    "title": "F05 legacy",
+                    "type": "template",
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "backgroundAlpha": 100,
+                    "palette": [],
+                    "rulers": [],
+                    "elements": [],
+                    "createdAt": 1792961661432,
+                    "updatedAt": 1792961661432,
+                    "groups": []
+                  }
+                },
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "f60839ab-811e-45fd-be0e-d8ad9cb3ee2b",
+                    "projectId": "63c8bfb2-16f9-49bf-abae-8ecafc5aeb25",
+                    "title": "F05 legacy",
+                    "type": "template",
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "backgroundAlpha": 100,
+                    "palette": [],
+                    "rulers": [],
+                    "elements": [],
+                    "createdAt": 1792961661432,
+                    "updatedAt": 1792961661432,
+                    "groups": []
+                  }
+                },
+                {
+                  "store": "docs",
+                  "method": "put",
+                  "value": {
+                    "id": "f60839ab-811e-45fd-be0e-d8ad9cb3ee2b",
+                    "projectId": "63c8bfb2-16f9-49bf-abae-8ecafc5aeb25",
+                    "title": "F05 legacy",
+                    "type": "template",
+                    "width": 320,
+                    "height": 240,
+                    "background": "#ffffff",
+                    "backgroundAlpha": 100,
+                    "palette": [],
+                    "rulers": [],
+                    "elements": [],
+                    "createdAt": 1792961661432,
+                    "updatedAt": 1792961661432,
+                    "groups": []
+                  }
+                }
+              ],
+              "commits": [
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                },
+                {
+                  "stores": [
+                    "docs"
+                  ]
+                }
+              ],
+              "aborts": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "F05 inline text finalization and debounce belong to the outgoing tab",
+      "status": "passed",
+      "observations": []
+    }
+  ]
+}

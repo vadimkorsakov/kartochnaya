@@ -107,3 +107,45 @@ test('removal during shared ZIP preparation cancels that recipient without affec
   const pending = h.manager.createCopies(['A', 'B'], { snapshot: () => new Promise(r => { resume = r; }), preferences: () => ({}) });
   h.manager.remove('A'); resume(snapshot()); assert.deepEqual((await pending).map(r => r.saved), [false, true]);
 });
+
+async function verifiedAccount(t) {
+  const h = harness(t); await h.connect('A'); await h.connect('B'); await h.copies(['A', 'B']);
+  await h.manager.downloadArchive('A', 'file-A'); return h;
+}
+test('verified ZIP belongs to its exact record/session/ID; handoff has one byte owner and makes no Drive request', async t => {
+  const h = await verifiedAccount(t), a = h.manager.get('A'), bytes = a.verified.bytes;
+  assert.equal(h.manager.get('B').verified, null); assert.throws(() => h.manager.takeArchive('B'), /исходного/);
+  const before = h.calls.length, lease = h.manager.takeArchive('A');
+  assert.equal(lease.bytes, bytes); assert.equal(a.verified, null); assert.equal(h.calls.length, before); lease.check();
+  assert.throws(() => h.manager.takeArchive('A'), /исходного/);
+  h.manager.disconnect('B'); lease.check();
+  h.manager.disconnect('A'); assert.ok(lease.signal.aborted); assert.throws(lease.check, /исходного/);
+});
+for (const reason of ['reauthorize', 'duplicate', 'clientId', 'remove', 'expire', 'session', 'record', 'identity', 'archive']) test('cloud lease revoked after handoff: ' + reason, async t => {
+  const h = await verifiedAccount(t), a = h.manager.get('A'), original = a.session, lease = h.manager.takeArchive('A');
+  if (reason === 'reauthorize') { await h.connect('A', 'A'); assert.notEqual(a.session, original); assert.equal(a.session.view().accountId, 'A'); }
+  if (reason === 'duplicate') { await h.connect('A'); assert.equal(a.session, original); }
+  if (reason === 'clientId') h.manager.configure('new.apps.googleusercontent.com');
+  if (reason === 'remove') h.manager.remove('A');
+  if (reason === 'expire') { t.mock.timers.enable({ apis: ['Date'], now: original.view().expiresAt + 1 }); h.manager.checkExpiry(); }
+  if (reason === 'session') { a.session = h.manager.get('B').session; h.manager.networkChanged(); a.session = original; }
+  if (reason === 'record') { h.manager.remove('A'); await h.connect('A'); assert.notEqual(h.manager.get('A'), a); }
+  if (reason === 'identity') { const view = original.view; original.view = () => ({ ...view(), accountId: 'B' }); h.manager.networkChanged(); original.view = view; }
+  if (reason === 'archive') await h.manager.downloadArchive('B', 'file-B');
+  assert.ok(lease.signal.aborted); assert.throws(lease.check, /исходного/); assert.equal(a.verified, null);
+});
+test('switching selection during an awaited download prevents a stale result from retaining bytes', async t => {
+  const h = await verifiedAccount(t), a = h.manager.get('A'), original = a.client.download;
+  let release, started; const gate = new Promise(r => { release = r; }), ready = new Promise(r => { started = r; });
+  a.client.download = async (...args) => { const result = await original(...args); started(); await gate; return result; };
+  const pending = h.manager.downloadArchive('A', 'file-A'); await ready;
+  h.manager.clearArchive(); await h.manager.downloadArchive('B', 'file-B'); const b = h.manager.get('B').verified;
+  release(); await assert.rejects(pending, /исходного/);
+  assert.equal(a.verified, null); assert.equal(h.manager.get('B').verified, b); h.manager.checkArchive();
+  h.manager.disconnect('A'); assert.equal(h.manager.get('B').verified, b);
+});
+test('a different download frees the previous active verified buffer and stale verified assignment fails closed', async t => {
+  const h = await verifiedAccount(t), a = h.manager.get('A');
+  await h.manager.downloadArchive('B', 'file-B'); assert.equal(a.verified, null);
+  h.manager.get('B').verified = { bytes: new Uint8Array() }; assert.throws(() => h.manager.takeArchive('B'), /исходного/);
+});

@@ -576,3 +576,71 @@ test("F05 renaming a dormant tab waits behind its pending content snapshots", as
   expect((await exportedDocument(page)).elements).toEqual(latest.elements);
   expect((await exportedDocument(page)).title).toBe("F05 renamed");
 });
+
+test("F05 workspace preparation waits for an actual new editor snapshot after preview", async ({
+  page,
+}) => {
+  await observe(page);
+  await openHome(page);
+  await createDocument(page, "F05 replacement pending");
+  await addShape(page);
+  await saved(page);
+  const original = await exportedDocument(page),
+    projects = await records(page, "projects");
+  const { createBackup } = await import("../src/backup/archive.mjs");
+  const incoming = await createBackup({
+    projects: [{ ...projects[0], id: "restored-f05" }],
+    docs: [{ ...original, id: "restored-f05-doc", projectId: "restored-f05" }],
+    fonts: [],
+    settings: [],
+  });
+  await home(page);
+  await page
+    .locator("#zipInput")
+    .setInputFiles({
+      name: "pending-replace.zip",
+      mimeType: "application/zip",
+      buffer: Buffer.from(incoming.bytes),
+    });
+  await expect(page.locator("#zipConfirm")).toBeEnabled();
+  await page.locator("[name=zipRestoreMode][value=replace]").check();
+  await expect(page.locator("#zipComparison")).toContainText("Текущие данные");
+  await expect(page.locator("#zipReplacePrepare")).toBeEnabled();
+  await expect(page.locator("#zipBackupDialog")).not.toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  await page.evaluate(() => (saveAudit.hold = true));
+  // A real UI edit arriving after preview must be drained before sealing replacement.
+  await page
+    .locator("#layers [data-layeract=visibility]")
+    .first()
+    .evaluate((button) => button.click());
+  await page.locator("#zipReplacePrepare").click();
+  await expect
+    .poll(() => page.evaluate(() => saveAudit.releases.length))
+    .toBeGreaterThan(0);
+  await expect(page.locator("#zipConfirm")).toBeDisabled();
+  await release(page);
+  await expect(page.locator("#zipConfirm")).toBeEnabled();
+  expect(
+    (await records(page, "docs")).find((d) => d.id === original.id).elements[0]
+      .visible,
+  ).toBe(false);
+  page.once("dialog", (dialog) => dialog.accept());
+  await Promise.all([
+    page.waitForEvent("load"),
+    page.locator("#zipConfirm").click(),
+  ]);
+  await expect(page.locator("#homeScreen")).toBeVisible();
+  await quiet(page);
+  expect((await records(page, "docs")).map((d) => d.id)).toEqual([
+    "restored-f05-doc",
+  ]);
+  await page.reload();
+  await expect(page.locator("#homeScreen")).toBeVisible();
+  await quiet(page);
+  expect((await records(page, "docs")).map((d) => d.id)).toEqual([
+    "restored-f05-doc",
+  ]);
+});

@@ -1,0 +1,635 @@
+{
+  "format": "kartochnaya-project-v1",
+  "project": {
+    "id": "graph-project",
+    "name": "Graph project",
+    "resources": []
+  },
+  "documents": [
+    {
+      "id": "graph-template",
+      "title": "Graph template",
+      "type": "template",
+      "width": 320,
+      "height": 240,
+      "background": "#ffffff",
+      "backgroundAlpha": 100,
+      "groups": [
+        {
+          "id": "outer",
+          "name": "Outer",
+          "visible": true,
+          "locked": false,
+          "collapsed": false
+        },
+        {
+          "id": "inner",
+          "name": "Inner",
+          "parentId": "outer",
+          "visible": true,
+          "locked": false,
+          "collapsed": false,
+          "custom": {
+            "keep": 1
+          }
+        }
+      ],
+      "elements": [
+        {
+          "x": 20,
+          "y": 20,
+          "w": 200,
+          "h": 100,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#111111",
+          "strokeWidth": 0,
+          "id": "shape-original",
+          "type": "rect",
+          "name": "Source rectangle",
+          "groupId": "inner"
+        },
+        {
+          "x": 20,
+          "y": 20,
+          "w": 200,
+          "h": 100,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#111111",
+          "strokeWidth": 0,
+          "id": "text-original",
+          "type": "text",
+          "name": "Boundary text",
+          "groupId": "inner",
+          "text": "Контур",
+          "fontFamily": "Arial",
+          "fontWeight": "400",
+          "fontSize": 18,
+          "textColor": "#111111",
+          "textMode": "boundary",
+          "pathBoundary": {
+            "sourceId": "shape-original",
+            "position": 0,
+            "offset": 4,
+            "side": "outside",
+            "align": "start",
+            "fallback": {
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                },
+                {
+                  "x": 1,
+                  "y": 1
+                },
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0,
+                  "y": 0
+                }
+              ],
+              "closed": true
+            }
+          },
+          "clipped": true,
+          "clipBaseId": "shape-original"
+        },
+        {
+          "x": 20,
+          "y": 160,
+          "w": 200,
+          "h": 30,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#111111",
+          "strokeWidth": 0,
+          "id": "title",
+          "type": "text",
+          "name": "Title",
+          "groupId": null,
+          "text": "Graph title",
+          "fontFamily": "Arial",
+          "fontWeight": "400",
+          "fontSize": 18,
+          "textColor": "#111111",
+          "textMode": "horizontal",
+          "clipped": false,
+          "isTitleLayer": true
+        },
+        {
+          "x": 270,
+          "y": 180,
+          "w": 20,
+          "h": 20,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#111111",
+          "strokeWidth": 0,
+          "id": "independent",
+          "type": "rect",
+          "name": "Independent",
+          "groupId": null
+        }
+      ],
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "projectId": "graph-project"
+    },
+    {
+      "id": "graph-card",
+      "title": "Graph series",
+      "type": "card",
+      "width": 320,
+      "height": 240,
+      "background": "#ffffff",
+      "backgroundAlpha": 100,
+      "groups": [
+        {
+          "id": "outer",
+          "name": "Outer",
+          "visible": true,
+          "locked": false,
+          "collapsed": false
+        },
+        {
+          "id": "inner",
+          "name": "Inner",
+          "parentId": "outer",
+          "visible": true,
+          "locked": false,
+          "collapsed": false,
+          "custom": {
+            "keep": 1
+          }
+        }
+      ],
+      "elements": [
+        {
+          "x": 20,
+          "y": 20,
+          "w": 200,
+          "h": 100,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#111111",
+          "strokeWidth": 0,
+          "id": "shape-original",
+          "type": "rect",
+          "name": "Source rectangle",
+          "groupId": "inner"
+        },
+        {
+          "x": 20,
+          "y": 20,
+          "w": 200,
+          "h": 100,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#111111",
+          "strokeWidth": 0,
+          "id": "text-original",
+          "type": "text",
+          "name": "Boundary text",
+          "groupId": "inner",
+          "text": "Контур",
+          "fontFamily": "Arial",
+          "fontWeight": "400",
+          "fontSize": 18,
+          "textColor": "#111111",
+          "textMode": "boundary",
+          "pathBoundary": {
+            "sourceId": "shape-original",
+            "position": 0,
+            "offset": 4,
+            "side": "outside",
+            "align": "start",
+            "fallback": {
+              "points": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 1,
+                  "y": 0
+                },
+                {
+                  "x": 1,
+                  "y": 1
+                },
+                {
+                  "x": 0,
+                  "y": 1
+                },
+                {
+                  "x": 0,
+                  "y": 0
+                }
+              ],
+              "closed": true
+            }
+          },
+          "clipped": true,
+          "clipBaseId": "shape-original"
+        },
+        {
+          "x": 20,
+          "y": 160,
+          "w": 200,
+          "h": 30,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#111111",
+          "strokeWidth": 0,
+          "id": "title",
+          "type": "text",
+          "name": "Title",
+          "groupId": null,
+          "text": "Graph title",
+          "fontFamily": "Arial",
+          "fontWeight": "400",
+          "fontSize": 18,
+          "textColor": "#111111",
+          "textMode": "horizontal",
+          "clipped": false,
+          "isTitleLayer": true
+        },
+        {
+          "x": 270,
+          "y": 180,
+          "w": 20,
+          "h": 20,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#111111",
+          "strokeWidth": 0,
+          "id": "independent",
+          "type": "rect",
+          "name": "Independent",
+          "groupId": null
+        }
+      ],
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "projectId": "graph-project",
+      "activeSlideIndex": 1,
+      "slides": [
+        {
+          "id": "graph-slide-0",
+          "label": "Slide 0",
+          "width": 320,
+          "height": 240,
+          "background": "#ffffff",
+          "elements": [
+            {
+              "x": 20,
+              "y": 20,
+              "w": 200,
+              "h": 100,
+              "rotation": 0,
+              "opacity": 100,
+              "visible": true,
+              "locked": false,
+              "fillType": "solid",
+              "fillOpacity": 100,
+              "fill": "#ab92fb",
+              "stroke": "#111111",
+              "strokeWidth": 0,
+              "id": "shape-original",
+              "type": "rect",
+              "name": "Source rectangle",
+              "groupId": "inner"
+            },
+            {
+              "x": 20,
+              "y": 20,
+              "w": 200,
+              "h": 100,
+              "rotation": 0,
+              "opacity": 100,
+              "visible": true,
+              "locked": false,
+              "fillType": "solid",
+              "fillOpacity": 100,
+              "fill": "#ab92fb",
+              "stroke": "#111111",
+              "strokeWidth": 0,
+              "id": "text-original",
+              "type": "text",
+              "name": "Boundary text",
+              "groupId": "inner",
+              "text": "Контур",
+              "fontFamily": "Arial",
+              "fontWeight": "400",
+              "fontSize": 18,
+              "textColor": "#111111",
+              "textMode": "boundary",
+              "pathBoundary": {
+                "sourceId": "shape-original",
+                "position": 0,
+                "offset": 4,
+                "side": "outside",
+                "align": "start",
+                "fallback": {
+                  "points": [
+                    {
+                      "x": 0,
+                      "y": 0
+                    },
+                    {
+                      "x": 1,
+                      "y": 0
+                    },
+                    {
+                      "x": 1,
+                      "y": 1
+                    },
+                    {
+                      "x": 0,
+                      "y": 1
+                    },
+                    {
+                      "x": 0,
+                      "y": 0
+                    }
+                  ],
+                  "closed": true
+                }
+              },
+              "clipped": true,
+              "clipBaseId": "shape-original"
+            },
+            {
+              "x": 20,
+              "y": 160,
+              "w": 200,
+              "h": 30,
+              "rotation": 0,
+              "opacity": 100,
+              "visible": true,
+              "locked": false,
+              "fillType": "solid",
+              "fillOpacity": 100,
+              "fill": "#ab92fb",
+              "stroke": "#111111",
+              "strokeWidth": 0,
+              "id": "title",
+              "type": "text",
+              "name": "Title",
+              "groupId": null,
+              "text": "Graph title",
+              "fontFamily": "Arial",
+              "fontWeight": "400",
+              "fontSize": 18,
+              "textColor": "#111111",
+              "textMode": "horizontal",
+              "clipped": false,
+              "isTitleLayer": true
+            },
+            {
+              "x": 270,
+              "y": 180,
+              "w": 20,
+              "h": 20,
+              "rotation": 0,
+              "opacity": 100,
+              "visible": true,
+              "locked": false,
+              "fillType": "solid",
+              "fillOpacity": 100,
+              "fill": "#ab92fb",
+              "stroke": "#111111",
+              "strokeWidth": 0,
+              "id": "independent",
+              "type": "rect",
+              "name": "Independent",
+              "groupId": null
+            }
+          ],
+          "groups": [
+            {
+              "id": "outer",
+              "name": "Outer",
+              "visible": true,
+              "locked": false,
+              "collapsed": false
+            },
+            {
+              "id": "inner",
+              "name": "Inner",
+              "parentId": "outer",
+              "visible": true,
+              "locked": false,
+              "collapsed": false,
+              "custom": {
+                "keep": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "graph-slide-1",
+          "label": "Slide 1",
+          "width": 320,
+          "height": 240,
+          "background": "#ffffff",
+          "elements": [
+            {
+              "x": 20,
+              "y": 20,
+              "w": 200,
+              "h": 100,
+              "rotation": 0,
+              "opacity": 100,
+              "visible": true,
+              "locked": false,
+              "fillType": "solid",
+              "fillOpacity": 100,
+              "fill": "#ab92fb",
+              "stroke": "#111111",
+              "strokeWidth": 0,
+              "id": "shape-original",
+              "type": "rect",
+              "name": "Source rectangle",
+              "groupId": "inner"
+            },
+            {
+              "x": 20,
+              "y": 20,
+              "w": 200,
+              "h": 100,
+              "rotation": 0,
+              "opacity": 100,
+              "visible": true,
+              "locked": false,
+              "fillType": "solid",
+              "fillOpacity": 100,
+              "fill": "#ab92fb",
+              "stroke": "#111111",
+              "strokeWidth": 0,
+              "id": "text-original",
+              "type": "text",
+              "name": "Boundary text",
+              "groupId": "inner",
+              "text": "Контур",
+              "fontFamily": "Arial",
+              "fontWeight": "400",
+              "fontSize": 18,
+              "textColor": "#111111",
+              "textMode": "boundary",
+              "pathBoundary": {
+                "sourceId": "shape-original",
+                "position": 0,
+                "offset": 4,
+                "side": "outside",
+                "align": "start",
+                "fallback": {
+                  "points": [
+                    {
+                      "x": 0,
+                      "y": 0
+                    },
+                    {
+                      "x": 1,
+                      "y": 0
+                    },
+                    {
+                      "x": 1,
+                      "y": 1
+                    },
+                    {
+                      "x": 0,
+                      "y": 1
+                    },
+                    {
+                      "x": 0,
+                      "y": 0
+                    }
+                  ],
+                  "closed": true
+                }
+              },
+              "clipped": true,
+              "clipBaseId": "shape-original"
+            },
+            {
+              "x": 20,
+              "y": 160,
+              "w": 200,
+              "h": 30,
+              "rotation": 0,
+              "opacity": 100,
+              "visible": true,
+              "locked": false,
+              "fillType": "solid",
+              "fillOpacity": 100,
+              "fill": "#ab92fb",
+              "stroke": "#111111",
+              "strokeWidth": 0,
+              "id": "title",
+              "type": "text",
+              "name": "Title",
+              "groupId": null,
+              "text": "Graph title",
+              "fontFamily": "Arial",
+              "fontWeight": "400",
+              "fontSize": 18,
+              "textColor": "#111111",
+              "textMode": "horizontal",
+              "clipped": false,
+              "isTitleLayer": true
+            },
+            {
+              "x": 270,
+              "y": 180,
+              "w": 20,
+              "h": 20,
+              "rotation": 0,
+              "opacity": 100,
+              "visible": true,
+              "locked": false,
+              "fillType": "solid",
+              "fillOpacity": 100,
+              "fill": "#ab92fb",
+              "stroke": "#111111",
+              "strokeWidth": 0,
+              "id": "independent",
+              "type": "rect",
+              "name": "Independent",
+              "groupId": null
+            }
+          ],
+          "groups": [
+            {
+              "id": "outer",
+              "name": "Outer",
+              "visible": true,
+              "locked": false,
+              "collapsed": false
+            },
+            {
+              "id": "inner",
+              "name": "Inner",
+              "parentId": "outer",
+              "visible": true,
+              "locked": false,
+              "collapsed": false,
+              "custom": {
+                "keep": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

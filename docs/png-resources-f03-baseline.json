@@ -331,5 +331,23 @@
         ]
       }
     ]
+  },
+  "fontPixelFollowup": {
+    "base": "da53aca8fbe5fd964240d7e18fd16bef9200ab56",
+    "title": "known failed custom font cannot silently export fallback glyphs",
+    "status": "failed",
+    "evidence": [
+      {
+        "name": "failed-font-fallback-pixels",
+        "data": {
+          "matchesFallback": true,
+          "inkPixels": 3120
+        }
+      },
+      {
+        "name": "failed-font-downloads",
+        "data": 1
+      }
+    ]
   }
 }

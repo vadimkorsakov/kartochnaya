@@ -96,7 +96,12 @@ test('custom face: exact family, weight, style and legacy alias render real glyp
 test('known failed custom font cannot silently export fallback glyphs',async({page},info)=>{
   await openHome(page);await importPayload(page,{format:'kartochnaya-v1',document:doc('Failed font',[text()]),fonts:[{id:'bad',name:'PNG Custom',family:'PNG Custom',weight:700,style:'italic',data:'data:font/ttf;base64,YmFk'}]});
   await expect(page.locator('#toast')).toContainText('Документ импортирован');const saved=(await records(page,'docs')).find(d=>d.title.startsWith('Failed font'));await openLibraryDocument(page,saved.id);
-  const downloads=await start(page);await page.waitForTimeout(250);await evidence(info,'failed-font-downloads',downloads.length);expect(downloads).toHaveLength(0);await expect(page.locator('#toast')).toContainText(/шрифт/i);
+  const downloads=await start(page);await page.waitForTimeout(250);
+  if(downloads.length){
+    const actual=await image(downloads[0]);const reference=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=240;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,320,240);x.fillStyle='#000';x.font='italic 700 64px \"Unregistered fallback control\"';x.textBaseline='top';x.fillText('WWMi',0,0);return [...x.getImageData(0,0,320,240).data];});
+    await evidence(info,'failed-font-fallback-pixels',{matchesFallback:[...actual.data].every((v,i)=>v===reference[i]),inkPixels:Array.from({length:actual.width*actual.height},(_,i)=>actual.data[i*4]<128).filter(Boolean).length});
+  }
+  await evidence(info,'failed-font-downloads',downloads.length);expect(downloads).toHaveLength(0);await expect(page.locator('#toast')).toContainText(/шрифт/i);
 });
 
 test('document switch and layer deletion during preparation keep the original PNG snapshot',async({page},info)=>{
@@ -123,4 +128,64 @@ test('series prepares each slide sequentially; failure retains successful count 
   await page.waitForTimeout(180);const early=downloads.length;first.release();expect(pixels(await finish(downloads))).toEqual([red,red]);second.release();
   await expect(page.locator('#toast')).toContainText(/Экспортировано холстов: 1/);await evidence(info,'series-downloads',{early,names:downloads.map(d=>d.suggestedFilename())});expect(early).toBe(0);expect(downloads.map(d=>d.suggestedFilename())).toEqual(['Series (PNG resources (импорт)) 1.png']);
   expect(Object.values((await records(page,'projects')).find(p=>p.name.startsWith('PNG resources')).exportCounters||{})).toEqual([1]);
+});
+
+for(const type of ['text','vector'])test(`delayed image fill in ${type} is prepared and rendered`,async({page})=>{
+  const g=await gate(page,'fill-'+type);const e=type==='text'?text({fontFamily:'Arial',fontWeight:'400',fontStyle:'normal',fillType:'image',imageSrc:url('fill-'+type)}):layer({type:'vector',vectorD:'M 0 0 H 100 V 100 H 0 Z',fillType:'image',imageSrc:url('fill-'+type)});
+  const [saved]=await seed(page,[doc('Fill '+type,[e])]);await openLibraryDocument(page,saved.id);await g.requested();const downloads=await start(page);await page.waitForTimeout(100);expect(downloads).toHaveLength(0);g.release();const p=await finish(downloads);
+  if(type==='vector')expect(pixels(p)).toEqual([red,red]);
+  else {const colors=Array.from({length:p.width*p.height},(_,i)=>[...p.data.subarray(i*4,i*4+4)]);expect(colors.some(c=>c.join()===red.join())).toBe(true);expect(colors.every(c=>c[0]===255&&c[1]===c[2])).toBe(true);}
+});
+
+test('timeout refuses PNG, allows UI interaction and a successful retry using the same request',async({page})=>{
+  test.setTimeout(25000);
+  const g=await gate(page,'stalled');const [saved]=await seed(page,[doc('Timeout',[layer({type:'raster',fillType:'none',rasterSrc:url('stalled')})])]);await openLibraryDocument(page,saved.id);
+  const downloads=await start(page);await page.locator('#zoomOutBtn').click();await page.locator('#zoomInBtn').click();
+  await expect(page.locator('#toast')).toContainText('таймаут подготовки',{timeout:17000});expect(downloads).toHaveLength(0);
+  g.release();await page.locator('#exportBtn').click();expect(pixels(await finish(downloads))).toEqual([red,red]);expect(g.count()).toBe(1);
+});
+
+test('repeat click and opening another project during image preparation cannot mix content or counters',async({page})=>{
+  const g=await gate(page,'project');const [saved]=await seed(page,[doc('Original project',[layer({fillType:'image',imageSrc:url('project')})])]);await openLibraryDocument(page,saved.id);await g.requested();
+  const before=await records(page,'projects'),owner=before.find(p=>p.id===saved.projectId),other=before.find(p=>p.id!==saved.projectId);
+  const downloads=await start(page);await page.locator('#exportBtn').click();await expect(page.locator('#toast')).toContainText('PNG уже подготавливается');
+  await page.locator('#documentTabsHome').click();await page.locator(`[data-switch-project="${other.id}"]`).click();
+  const otherDoc=(await records(page,'docs')).find(d=>d.projectId===other.id);await openLibraryDocument(page,otherDoc.id);g.release();
+  expect(pixels(await finish(downloads))).toEqual([red,red]);await expect.poll(async()=>{const p=(await records(page,'projects')).find(p=>p.id===owner.id);return Object.values(p.exportCounters||{});}).toEqual([1]);
+  expect((await records(page,'projects')).find(p=>p.id===other.id)).toEqual(other);expect(downloads).toHaveLength(1);
+});
+
+test('series dialog close discards selection; confirmed snapshot survives slide switch and editing',async({page})=>{
+  const first=await gate(page,'selected-first'),last=await gate(page,'selected-last','split');const d=doc('Selected series');d.type='card';d.hasCustomName=true;d.activeSlideIndex=0;
+  d.elements=[layer({type:'raster',fillType:'none',rasterSrc:url('selected-first')})];
+  d.slides=[doc('first',d.elements),doc('unused',[layer({fillType:'image',imageSrc:url('unselected')})]),doc('last',[layer({fill:'#0000ff',layerMaskSrc:url('selected-last')})])];
+  await gate(page,'unselected','broken',false);
+  const [saved]=await seed(page,[d]);await page.locator('[data-filter="card"]').click();await openLibraryDocument(page,saved.id);
+  const downloads=await start(page);await page.locator('#seriesExportCancel').click();first.release();await page.waitForTimeout(100);expect(downloads).toHaveLength(0);
+  await page.locator('#exportBtn').click();await page.locator('[data-series-export="1"]').uncheck();await page.locator('#seriesExportConfirm').click();
+  expect(pixels(await finish(downloads))).toEqual([red,red]);
+  await page.locator('#seriesSidebarList [data-side-slide="2"]').click();await page.locator('#layers [data-select-layer-thumb]').first().click();await page.keyboard.press('Delete');
+  await page.locator('#exportBtn').click();await expect(page.locator('#toast')).toContainText('PNG уже подготавливается');last.release();
+  expect(pixels(await finish(downloads,2))).toEqual([white,[0,0,255,255]]);await expect(page.locator('#toast')).toContainText('Экспортировано холстов: 2');
+  expect(downloads.map(d=>d.suggestedFilename())).toEqual(['Selected series (PNG resources (импорт)) 1.png','Selected series (PNG resources (импорт)) 2.png']);
+  // Active-root edits are reflected only in the next operation.
+  await page.locator('#exportBtn').click();await page.locator('[data-series-export="1"]').uncheck();await page.locator('#seriesExportConfirm').click();await finish(downloads,4);
+  expect(pixels(await image(downloads[3]))).toEqual([white,white]);expect(downloads[3].suggestedFilename()).toBe('Selected series (PNG resources (импорт)) 4.png');
+});
+
+test('cold startup waits for a delayed custom font and renders its legacy alias',async({page},info)=>{
+  const fontURL='http://127.0.0.1:4173/png-resources/custom.ttf';const bytes=await readFile(require.resolve('./fixtures/fonts/DejaVuSans.ttf'));let release;let delayed=false,requested=0;
+  await page.route(fontURL,async route=>{requested++;if(delayed)await new Promise(r=>release=r);await route.fulfill({contentType:'font/ttf',body:bytes});});
+  const f={id:'delayed-font',name:'PNG Legacy',family:'PNG Custom',weight:700,style:'italic',data:fontURL};
+  const [saved]=await seed(page,[doc('Legacy font',[text({fontFamily:'PNG Legacy',fontWeight:'400',fontStyle:'normal'})])],[f]);
+  delayed=true;const before=requested;await page.reload({waitUntil:'domcontentloaded'});await expect.poll(()=>requested).toBeGreaterThan(before);expect(await page.locator('#homeScreen').isVisible()).toBe(false);delayed=false;release();
+  await expect(page.locator('#homeScreen')).toBeVisible();await openLibraryDocument(page,saved.id);const actual=await finish(await start(page));
+  const reference=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=240;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,320,240);x.fillStyle='#000';x.font='normal 400 64px "PNG Legacy"';x.textBaseline='top';x.fillText('WWMi',0,0);return {data:[...x.getImageData(0,0,320,240).data],faces:[...document.fonts].map(f=>({family:f.family,weight:f.weight,style:f.style,status:f.status}))};});
+  await evidence(info,'delayed-startup-fonts',reference.faces);expect([...actual.data]).toEqual(reference.data);expect(reference.faces.some(f=>f.family.includes('PNG Legacy')&&f.status==='loaded')).toBe(true);
+});
+
+test('font menu preview during preparation cannot replace the snapshot font',async({page})=>{
+  const g=await gate(page,'font-preview');const [saved]=await seed(page,[doc('Font preview',[text({fontFamily:'Arial'}),layer({id:'wait',type:'raster',fillType:'none',rasterSrc:url('font-preview'),x:300,w:20})])]);await openLibraryDocument(page,saved.id);
+  const downloads=await start(page);await page.locator('#layers [data-select-layer-thumb]').last().click();await page.locator('#inspector [data-font-open]').click();await page.locator('#inspector [data-font-option="Courier New"]').hover();g.release();
+  const actual=await finish(downloads),reference=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=240;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,320,240);x.font='italic 700 64px Arial';x.textBaseline='top';x.fillStyle='#000';x.fillText('WWMi',0,0);x.fillStyle='#f00';x.fillRect(300,0,20,240);return [...x.getImageData(0,0,320,240).data];});expect([...actual.data]).toEqual(reference);
 });

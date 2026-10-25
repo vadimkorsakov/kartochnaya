@@ -9,7 +9,9 @@ import { toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint }
 import { validateShapeCatalog } from './core/shape-catalog.mjs';
 import { html, clamp, fmt } from './core/primitives.mjs';
 import { rgbHex, hexRgb, hsvRGB, rgbHSV, rgbHSL, hslRGB, normalizeHex, cpFormatValues } from './core/colors.mjs';
-import { readImageResource, prepareImage } from './render/image-resource.mjs';
+import { readImageResource } from './render/image-resource.mjs';
+import { collectCanvasResources, prepareCanvasResources } from './render/export-resources.mjs';
+import { createFontResources } from './render/font-resource.mjs';
 import { createLayerMasks } from './render/layer-masks.mjs';
 import { createGradientModel, readGradientStops, readGradientGeometry } from './core/gradient-model.mjs';
 
@@ -214,10 +216,9 @@ function v41FontUnavailable(name){return !fontFamilies().some(f=>f.toLowerCase()
 function v41FontOptions(names,chosen){return names.map(f=>`<button type="button" class="font-family-item ${chosen===f?'current':''}" role="option" data-font-option="${html(f)}" ${v41FontUnavailable(f)?'disabled title="Семейство не установлено"':''} style="font-family:${html(JSON.stringify(f))}">${html(f)}<span>${v41FontUnavailable(f)?'Недоступен':app.fonts.some(x=>normaliseFont(x).family===f)?'Свой':'›'}</span></button>`).join('')||'<div class="v41-font-empty">В этой категории нет шрифтов</div>'}
 function fontSelectControl(e){const family=e?.fontFamily||'Arial';return `<div class="font-control"><span class="font-control-label">Семейство шрифта</span><button type="button" class="font-family-trigger" data-font-open="1" aria-haspopup="listbox" aria-expanded="false"><span style="font-family:${html(JSON.stringify(family))}">${html(family)}</span><span>⌄</span></button><div class="font-family-menu hidden" role="listbox"><div class="v41-font-filters">${v41FontCategories.map(([id,name])=>`<button type="button" data-font-filter="${id}" class="${v41DesktopFontCategory===id?'active':''}">${name}</button>`).join('')}</div><input class="v41-font-search" data-font-search="1" type="search" placeholder="Поиск шрифта" aria-label="Поиск шрифта"><div class="v41-font-list">${v41FontOptions(v41FontsByCategory(v41DesktopFontCategory),family)}</div></div></div>`}
 function v41RefreshDesktopFonts(menu){if(!menu)return;const term=(menu.querySelector('[data-font-search]')?.value||'').toLowerCase().trim();const selected=active()?.fontFamily||'Arial';menu.querySelector('.v41-font-list').innerHTML=v41FontOptions(v41FontsByCategory(v41DesktopFontCategory).filter(n=>n.toLowerCase().includes(term)),selected);menu.querySelectorAll('[data-font-filter]').forEach(b=>b.classList.toggle('active',b.dataset.fontFilter===v41DesktopFontCategory));}
+const fontResources=createFontResources({createFace:(...args)=>new FontFace(...args),fontSet:document.fonts});
 async function loadFontFace(f){normaliseFont(f);try{
- // Legacy files are also registered by their old one-file name, preserving older cards.
- const face=new FontFace(f.family,`url("${f.data}")`,{weight:String(f.weight),style:f.style||'normal'});await face.load();document.fonts.add(face);
- if(f.name!==f.family){const legacy=new FontFace(f.name,`url("${f.data}")`);await legacy.load();document.fonts.add(legacy)}
+ await prepareCanvasResources({images:[],fonts:[{family:f.family}]},{prepareFont:()=>fontResources.load(f)});
 }catch(e){console.warn('Font load failure',f.name,e);toast('Не удалось загрузить '+f.name)}}
 // v0.20: A card may contain multiple fully editable canvases. The original root
 // fields continue to point at the active canvas for the existing paint engine.
@@ -842,7 +843,7 @@ function imageGeometry(e){
 function imageInside(c,e){const g=imageGeometry(e);if(!g){c.fillStyle='#dee2ee';c.fillRect(0,0,e.w,e.h);c.strokeStyle='#b0b9cf';c.lineWidth=Math.max(e.w/90,1);c.beginPath();c.moveTo(e.w*.24,e.h*.72);c.lineTo(e.w*.48,e.h*.46);c.lineTo(e.w*.64,e.h*.62);c.lineTo(e.w*.77,e.h*.47);c.stroke();c.beginPath();c.arc(e.w*.7,e.h*.28,e.w*.06,0,Math.PI*2);c.fillStyle='#b0b9cf';c.fill();return}
 const {im,dw,dh,dx,dy}=g;c.save();c.translate(dx+dw/2,dy+dh/2);c.rotate((e.cropRotation||0)*Math.PI/180);c.drawImage(im,-dw/2,-dh/2,dw,dh);c.restore()}
 
-function fontString(e){const preview=app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;const family=preview?.family||e.fontFamily||'Arial';const weight=preview?.weight||e.fontWeight||'400';return `${preview?.style||e.fontStyle||'normal'} ${weight} ${Math.max(1,e.fontSize||24)}px "${family.replaceAll('\"','')}"`}
+function fontString(e){const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;const family=preview?.family||e.fontFamily||'Arial';const weight=preview?.weight||e.fontWeight||'400';return `${preview?.style||e.fontStyle||'normal'} ${weight} ${Math.max(1,e.fontSize||24)}px "${family.replaceAll('\"','')}"`}
 function wrapLines(c,e){const content=String(e.text??'').replace(/\r/g,'');const maxW=Math.max(10,e.w);const lines=[];const spacing=e.letterSpacing||0;const measure=t=>c.measureText(t).width+Math.max(0,t.length-1)*spacing;for(const paragraph of content.split('\n')){if(paragraph===''){lines.push('');continue}let line='';for(const word of paragraph.split(/(\s+)/)){if(!word)continue;const trial=line+word;if(measure(trial)<=maxW||!line){line=trial;while(measure(line)>maxW&&line.length>1){let count=line.length-1;while(count>1&&measure(line.slice(0,count))>maxW)count--;lines.push(line.slice(0,count));line=line.slice(count)}}else{lines.push(line.trimEnd());line=word.trimStart()}}lines.push(line.trimEnd())}return lines}
 
 function createTextBoxFromDrag(dr){const p=dr.current||dr.start,mode=dr.mode||'horizontal';let x=Math.min(dr.start.x,p.x),y=Math.min(dr.start.y,p.y),w=Math.abs(p.x-dr.start.x),h=Math.abs(p.y-dr.start.y);
@@ -1914,24 +1915,76 @@ async function removeSeriesSlide(index){const d=app.doc;if(d?.type!=='card'||d.s
 $('#slideStrip').addEventListener('click',ev=>{const del=ev.target.closest('[data-slide-remove]');if(del){ev.preventDefault();ev.stopPropagation();removeSeriesSlide(Number(del.dataset.slideRemove));return}const plus=ev.target.closest('#seriesAddBtn');if(plus){showSlideMenu(plus);return}const s=ev.target.closest('[data-slide-switch]');if(s)changeSlide(Number(s.dataset.slideSwitch))});
 $('#slideAddMenu').addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.hasAttribute('data-add-slide-blank'))createSeriesSlide(true);else if(b.hasAttribute('data-add-slide-template')){const t=projectDocs().find(d=>d.id===b.dataset.addSlideTemplate&&d.type==='template');if(t)createSeriesSlide(false,t)}});
 document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#seriesAddBtn,#slideAddMenu'))$('#slideAddMenu').classList.add('hidden')});
-function openSeriesExportDialog(){const d=app.doc;ensureCardSlides(d);syncCurrentSlide(d);$('#seriesExportList').innerHTML=d.slides.map((s,i)=>`<label class="series-export-item"><input type="checkbox" data-series-export="${i}" checked><span>Холст ${i+1}</span><small>${s.width} × ${s.height}</small></label>`).join('');$('#seriesExportDialog').classList.remove('hidden');$('#seriesExportConfirm').disabled=false}
-function closeSeriesExportDialog(){$('#seriesExportDialog').classList.add('hidden')}
+let seriesExportContext=null,pngExportBusy=false,pngRendering=false;
+// Own the model and font metadata for the lifetime of an export. Normalization
+// and active-slide synchronization operate only on this detached copy.
+function pngExportContext(){
+ const d=clone(app.doc);ensureCardSlides(d);syncCurrentSlide(d);
+ const project=app.projects.find(p=>p.id===d.projectId)||currentProject();
+ return {doc:d,fonts:app.fonts.map(f=>normaliseFont({...f})),project,
+  base:niceName(d.title)+' ('+niceName(project?.name||'Проект')+')'};
+}
+function openSeriesExportDialog(context=pngExportContext()){
+ if(pngExportBusy){toast('PNG уже подготавливается');return}
+ seriesExportContext=context;const d=context.doc;
+ $('#seriesExportList').innerHTML=d.slides.map((s,i)=>`<label class="series-export-item"><input type="checkbox" data-series-export="${i}" checked><span>Холст ${i+1}</span><small>${s.width} × ${s.height}</small></label>`).join('');
+ $('#seriesExportDialog').classList.remove('hidden');$('#seriesExportConfirm').disabled=false;
+}
+function closeSeriesExportDialog(){seriesExportContext=null;$('#seriesExportDialog').classList.add('hidden')}
 $('#seriesCheckAll').onclick=()=>$$('[data-series-export]').forEach(cb=>cb.checked=true);
 $('#seriesCheckNone').onclick=()=>$$('[data-series-export]').forEach(cb=>cb.checked=false);
 $('#seriesExportCancel').onclick=closeSeriesExportDialog;
 $('#seriesExportDialog').addEventListener('pointerdown',ev=>{if(ev.target.id==='seriesExportDialog')closeSeriesExportDialog()});
 function toPNGBlob(target){return new Promise((resolve,reject)=>target.toBlob(b=>b?resolve(b):reject(new Error('PNG недоступен')),'image/png'))}
-async function prepareLayerMasks(d){await Promise.all((d.elements||[]).filter(e=>isLayerVisible(e,d)&&e.layerMaskSrc).map(e=>prepareImage(imageResource,e.layerMaskSrc)))}
-async function loadSlideImages(slide){for(const e of slide.elements||[]){if(e.visible&&e.imageSrc){const item=getImage(e.imageSrc);if(!item){const img=new Image();img.src=e.imageSrc;await img.decode();imgCache.set(e.imageSrc,{image:img,ready:true})}}}}
-async function zipOriginal_exportSeriesIndices(indices){const d=app.doc,project=app.projects.find(p=>p.id===d.projectId)||currentProject(),base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';syncCurrentSlide(d);
- project.exportCounters ||= {};let counter=Number(project.exportCounters[base])||0;let done=0;
- for(const i of indices){const page=slideAsDoc(d,i);if(page.width*page.height>30000000){toast('Слишком большой холст №'+(i+1));break}try{await loadSlideImages(page);await prepareLayerMasks(page);const c=document.createElement('canvas');c.width=page.width;c.height=page.height;paintDocument(c.getContext('2d'),page,false);const blob=await toPNGBlob(c);const name=`${base} ${++counter}.png`;downloadBlob(blob,name);done++}catch(error){console.error(error);toast('Ошибка экспорта холста '+(i+1));break}}
- if(done){project.exportCounters[base]=counter;if(!await persistProjectForUI(project)){toast('PNG выгружены; счётчик не сохранён');return}toast(`Экспортировано холстов: ${done}. Если браузер блокирует несколько загрузок, разреши их для приложения.`)}
+async function preparePNGCanvas(d,fonts){
+ const dependencies=collectCanvasResources(d,{isVisible:isLayerVisible,hasEffect:type=>!!FX_TYPES[type]});
+ await prepareCanvasResources(dependencies,{readImage:imageResource,prepareFont:font=>fontResources.ensure(font,fonts)});
 }
-$('#seriesExportConfirm').onclick=async()=>{const ids=$$('[data-series-export]:checked').map(x=>Number(x.dataset.seriesExport));if(!ids.length){toast('Выбери хотя бы один холст');return}$('#seriesExportConfirm').disabled=true;closeSeriesExportDialog();await exportSeriesIndices(ids)};
+async function pngCanvasBlob(d,fonts){
+ await preparePNGCanvas(d,fonts);
+ const c=document.createElement('canvas');c.width=d.width;c.height=d.height;
+ // Font menu hover is transient editor state, never part of the saved snapshot.
+ pngRendering=true;try{paintDocument(c.getContext('2d'),d,false)}finally{pngRendering=false}
+ return toPNGBlob(c);
+}
+async function zipOriginal_exportSeriesIndices(indices,context=pngExportContext()){
+ if(pngExportBusy){toast('PNG уже подготавливается');return}
+ pngExportBusy=true;
+ try{
+  const {doc:d,project,base,fonts}=context;let counter=Number(project?.exportCounters?.[base])||0,done=0,failure='';
+  for(const i of indices){
+   const page=slideAsDoc(d,i);
+   if(page.width*page.height>30000000){failure='Слишком большой холст №'+(i+1);break}
+   try{
+    const blob=await pngCanvasBlob(page,fonts);
+    downloadBlob(blob,`${base} ${counter+1}.png`);counter++;done++;
+   }catch(error){failure='Ошибка экспорта холста '+(i+1)+': '+error.message;break}
+  }
+  if(done&&project){project.exportCounters||={};project.exportCounters[base]=counter;if(!await persistProjectForUI(project)){toast('PNG выгружены; счётчик не сохранён');return}}
+  if(done)toast(`Экспортировано холстов: ${done}. ${failure||'Если браузер блокирует несколько загрузок, разреши их для приложения.'}`);
+  else if(failure)toast(failure);
+ }finally{pngExportBusy=false}
+}
+$('#seriesExportConfirm').onclick=async()=>{
+ const ids=$$('[data-series-export]:checked').map(x=>Number(x.dataset.seriesExport));if(!ids.length){toast('Выбери хотя бы один холст');return}
+ const context=seriesExportContext;if(!context)return;
+ $('#seriesExportConfirm').disabled=true;closeSeriesExportDialog();await exportSeriesIndices(ids,context);
+};
 function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;($('#zipBackupDialog[open]')||document.body).append(a);a.click();a.remove();const timer=setTimeout(()=>URL.revokeObjectURL(url),30000);return()=>{clearTimeout(timer);URL.revokeObjectURL(url)}}
 function niceName(s){return sanitizeCardTitle(s).slice(0,100)}
-async function zipOriginal_exportPNG(){if(app.doc?.type==='card'){ensureCardSlides(app.doc);if(app.doc.slides.length>1){openSeriesExportDialog();return}}const d=app.doc;if(d.width*d.height>30000000){toast('Слишком большой холст для телефона');return}for(const e of d.elements){if(e.visible&&e.fillType==='image'&&e.imageSrc){const im=getImage(e.imageSrc);if(!im){const wait=new Image();wait.src=e.imageSrc;try{await wait.decode();imgCache.set(e.imageSrc,{image:wait,ready:true})}catch(err){toast('Не удалось прочитать изображение для PNG');return}}}}try{await prepareLayerMasks(d)}catch(err){toast('Не удалось прочитать маску для PNG');return}const target=document.createElement('canvas');target.width=d.width;target.height=d.height;const c=target.getContext('2d');paintDocument(c,d,false);await new Promise(resolve=>target.toBlob(async blob=>{try{if(!blob){toast('Ошибка экспорта PNG');return}const project=app.projects.find(p=>p.id===d.projectId)||currentProject();const base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';if(project){project.exportCounters||={};const previous=project.exportCounters[base]||0;const name=base+(previous?' '+previous:'')+'.png';downloadBlob(blob,name);project.exportCounters[base]=previous+1;try{await persistProject(project)}catch(error){console.error(error);toast('Счётчик экспорта не сохранён')}}else downloadBlob(blob,base+'.png')}finally{resolve()}},'image/png'))}
+async function zipOriginal_exportPNG(){
+ if(pngExportBusy){toast('PNG уже подготавливается');return}
+ const context=pngExportContext(),{doc:d,project,base,fonts}=context;
+ if(d.type==='card'&&d.slides.length>1){openSeriesExportDialog(context);return}
+ if(d.width*d.height>30000000){toast('Слишком большой холст для телефона');return}
+ pngExportBusy=true;
+ try{
+  const blob=await pngCanvasBlob(d,fonts),previous=project?.exportCounters?.[base]||0;
+  downloadBlob(blob,base+(previous?' '+previous:'')+'.png');
+  if(project){project.exportCounters||={};project.exportCounters[base]=previous+1;try{await persistProject(project)}catch(error){console.error(error);toast('Счётчик экспорта не сохранён')}}
+ }catch(error){toast(error.message||'Ошибка экспорта PNG')}
+ finally{pngExportBusy=false}
+}
 function exportJSON(){syncCurrentSlide();const payload={format:'kartochnaya-v1',document:app.doc,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts,exportedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});downloadBlob(blob,niceName(app.doc.title)+'.json')}
 function exportProjectDocuments(id=app.currentProjectId){const records=new Map(projectDocs(id).map(d=>[d.id,clone(d)]));for(const tab of documentTabSession.tabs)if(tab.doc.projectId===id)records.set(tab.id,clone(tab.doc));if(app.doc?.projectId===id){syncCurrentSlide();records.set(app.doc.id,clone(app.doc))}return [...records.values()]}
 async function exportProjectBackup(){
@@ -1962,8 +2015,7 @@ async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null,chec
    const f=normaliseFont({...clone(raw),id:uid()});
    if(accepted.some(x=>x.family===f.family&&x.weight===f.weight&&x.style===f.style)){diagnostics.info.push({code:'duplicate-font-skipped',path:`fonts[${index}]`});continue}
    try{
-    const loaded=[];
-    for(const name of new Set([f.family,f.name])){const face=new FontFace(name,`url("${f.data}")`,name===f.family?{weight:String(f.weight),style:f.style}:{});await face.load();loaded.push(face)}
+    const loaded=await fontResources.prepare(f);
     fonts.push(f);faces.push(...loaded);accepted.push(f);
    }catch(error){console.warn('Шрифт пропущен при импорте',error);diagnostics.warnings.push({code:'unsupported-font-skipped',path:`fonts[${index}]`})}
   }
@@ -1978,7 +2030,7 @@ async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null,chec
   });
   app.projects.push(...plan.projects);app.docs.push(...plan.documents);app.fonts.push(...fonts);
   // Registration is outside IndexedDB atomicity; loading happened before the transaction.
-  for(const face of faces)document.fonts.add(face);
+  fontResources.register(faces);
   if(sections)applyShapeCatalog(sections);
   if(diagnostics.warnings.length)console.warn('Диагностика импорта',diagnostics);
   if(app.currentProjectId===context.projectId&&app.doc===context.doc&&documentTabSession.activeId===context.tab&&homeVisible()===context.home&&plan.projects.length){

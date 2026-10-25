@@ -3,7 +3,7 @@ import { createOAuth, CLIENT_ID_KEY, validClientId } from './oauth.mjs';
 import { readPreferences } from '../../backup/archive.mjs';
 import { createYandexClient, MAX_CLOUD_BYTES, ANDROID_CLOUD_BYTES } from './client.mjs';
 import { createDiagnostics, STEPS } from './diagnostics.mjs';
-export function installYandexUI({ snapshot } = {}) {
+export function installYandexUI({ snapshot, download, backupUI } = {}) {
   const grid = document.querySelector('#homeDataPane .home-data-grid');
   if (!grid) return;
   const card = storageRow({ id: 'yandexCard', title: 'Яндекс Диск', description: 'Резервные ZIP-копии в папке приложения', icon: 'Я', status: 'Требуется подключение' });
@@ -17,7 +17,7 @@ export function installYandexUI({ snapshot } = {}) {
         <div class="backup-toolbar"><button type="button" class="btn btn-outline" id="yandexConfigure">Настроить Client ID</button><button type="button" class="btn btn-primary" id="yandexConnect">Подключить Яндекс</button></div>
       </section>
       <section id="yandexCreatePanel" data-backup-panel="create" hidden><p>Полный ZIP рабочего пространства: проекты, документы, ресурсы, шрифты, settings и настройки приложения. Сначала подтверждаются сохранения IndexedDB.</p><p>Предел ZIP: 256 МиБ на компьютере, 128 МиБ на Android.</p><div class="backup-toolbar"><button type="button" class="btn btn-primary" id="yandexCreate">Создать ZIP на Яндекс Диске</button><button type="button" class="btn btn-outline" id="yandexAbort" disabled>Отменить</button></div></section>
-      <section id="yandexCopiesPanel" data-backup-panel="copies" hidden><button type="button" class="btn btn-outline" id="yandexRefresh">Обновить список копий</button><p id="yandexListStatus" role="status"></p><div id="yandexCopies"></div><p>Скачивание и восстановление появятся в следующем обновлении.</p></section>
+      <section id="yandexCopiesPanel" data-backup-panel="copies" hidden><button type="button" class="btn btn-outline" id="yandexRefresh">Обновить список копий</button><p id="yandexListStatus" role="status"></p><div id="yandexCopies"></div><button type="button" class="btn btn-outline" id="yandexDownloadAbort" disabled>Отменить скачивание</button><section id="yandexVerified" hidden><h3>Проверенная копия</h3><p id="yandexArchiveSummary"></p><p id="yandexIntegrity"></p><p id="yandexWarnings"></p><div class="backup-toolbar"><button type="button" class="btn btn-outline" id="yandexSave" disabled>Сохранить ZIP на устройство</button><button type="button" class="btn btn-primary" id="yandexRestore" disabled>Восстановить в КАРТОЧНОЙ</button></div></section></section>
       <section id="yandexDiagnosticsPanel" data-backup-panel="diagnostics" hidden><h3>Результаты проверок</h3><div id="yandexResults"></div><p id="yandexPath"></p></section>
       <section id="yandexSettings" hidden><form><h3>Яндекс OAuth: публичный Client ID</h3><p>Сохраняется только Client ID, отдельно от Google Drive. Разрешение: cloud_api:disk.app_folder. Укажи в Яндекс OAuth точный Redirect URI:</p><p id="yandexRedirect"></p><label for="yandexClientId">Client ID</label><input id="yandexClientId" autocomplete="off" spellcheck="false" maxlength="32"><p id="yandexSettingsError" role="alert"></p><div class="backup-toolbar"><button type="button" class="btn btn-outline" id="yandexCancel">Отмена</button><button type="submit" class="btn btn-primary">Сохранить</button></div></form></section>
     </div>
@@ -37,9 +37,16 @@ export function installYandexUI({ snapshot } = {}) {
   for (const button of mainDialog.querySelectorAll('[data-backup-tab]')) button.addEventListener('click', () => render());
   mainDialog.querySelector('.backup-tabs').addEventListener('keydown', () => render());
   let oauth, diagnostics, client, notice = '', operation = null, operationStatus = '', listStatus = '';
+  let downloaded = null, archiveLease = null, releaseDownload = null;
+  function clearArchive() {
+    releaseDownload?.(); releaseDownload = null;
+    downloaded = null; archiveLease?.abort(); archiveLease = null;
+    find('yandexVerified').hidden = true;
+    for (const id of ['yandexArchiveSummary', 'yandexIntegrity', 'yandexWarnings']) find(id).textContent = '';
+  }
   const copiesPager = pager(find('yandexCopies'), { size: 4, label: 'Резервные копии Яндекса' });
   function clearSession() {
-    operation?.abort(); operation = null; operationStatus = ''; listStatus = '';
+    clearArchive(); operation?.abort(); operation = null; operationStatus = ''; listStatus = '';
     find('yandexCopies').replaceChildren(); copiesPager.update(true); client?.reset();
   }
   function showFiles(files) {
@@ -48,11 +55,38 @@ export function installYandexUI({ snapshot } = {}) {
       const name = document.createElement('p'), detail = document.createElement('p');
       name.textContent = file.name; name.style.overflowWrap = 'anywhere';
       detail.textContent = new Date(file.created).toLocaleString('ru-RU') + ' · ' + (file.size / 1024 / 1024).toFixed(2) + ' МиБ · файл · доступен';
-      row.append(name, detail); return row;
+      const get = document.createElement('button'); get.type = 'button'; get.className = 'btn btn-outline'; get.dataset.yandexDownload = ''; get.textContent = 'Проверить и скачать';
+      get.onclick = () => { void getArchive(file); };
+      row.append(name, detail, get); return row;
     })); copiesPager.update(true);
+  }
+  async function getArchive(file) {
+    if (operation || !oauth.view().connected || diagnostics.view().busy) return;
+    clearArchive();
+    const controller = new AbortController(); operation = controller;
+    const generation = oauth.view().generation;
+    const active = () => operation === controller && !controller.signal.aborted && oauth.view().connected && oauth.view().generation === generation;
+    operationStatus = 'Подтверждаем выбранный ZIP…'; render();
+    try {
+      const result = await client.download({ file, signal: controller.signal,
+        maxBytes: /Android/i.test(navigator.userAgent) ? ANDROID_CLOUD_BYTES : MAX_CLOUD_BYTES,
+        progress: ({ received, total, phase }) => {
+          if (active()) { operationStatus = phase === 'verify' ? 'ZIP получен. Проверяем SHA-256, manifest и связи…' : `Получено ${received.toLocaleString()} из ${total.toLocaleString()} байт`; render(); }
+        } });
+      if (!active()) return;
+      downloaded = result; archiveLease = new AbortController();
+      find('yandexArchiveSummary').textContent = `${result.filename} · Дата создания архива: ${new Date(result.createdAt).toLocaleString('ru-RU')} · ${result.projects} проектов · ${result.documents} документов · ${result.fonts} шрифтов`;
+      find('yandexIntegrity').textContent = (result.serverSha256 ? 'Серверный SHA-256 всего ZIP совпал. ' : 'Серверный SHA-256 отсутствует: полная идентичность серверному файлу не подтверждена. ') + 'Внутренние SHA-256 и CRC ZIP совпали. Структура, manifest и связи проверены.';
+      find('yandexWarnings').textContent = result.warnings.length ? 'Предупреждения: ' + result.warnings.join('; ') : '';
+      find('yandexVerified').hidden = false;
+      operationStatus = 'Проверка архива завершена. Выбери сохранение ZIP или переход к восстановлению.';
+    } catch (error) {
+      if (operation === controller) { clearArchive(); operationStatus = error.message; }
+    } finally { if (operation === controller) operation = null; render(); }
   }
   async function runBackup(list = false) {
     if (operation || !oauth.view().connected || diagnostics.view().busy) return;
+    if (!list) clearArchive();
     const controller = new AbortController(); operation = controller;
     const generation = oauth.view().generation;
     const active = () => operation === controller && oauth.view().connected && oauth.view().generation === generation;
@@ -80,7 +114,10 @@ export function installYandexUI({ snapshot } = {}) {
     find('yandexListStatus').textContent = listStatus;
     find('yandexCreate').disabled = !v.connected || !!operation || d.busy || !snapshot;
     find('yandexRefresh').disabled = !v.connected || !!operation || d.busy;
-    find('yandexAbort').disabled = !operation;
+    find('yandexAbort').disabled = find('yandexDownloadAbort').disabled = !operation;
+    for (const button of mainDialog.querySelectorAll('[data-yandex-download]')) button.disabled = !v.connected || !!operation || d.busy;
+    find('yandexSave').disabled = !downloaded || !v.connected || !!operation || d.busy || !download;
+    find('yandexRestore').disabled = !downloaded || !v.connected || !!operation || d.busy || !backupUI;
     find('yandexConfigure').disabled = !!operation;
     card.querySelector('.storage-status').textContent = (v.busy || d.busy || operation ? 'выполняется операция' : v.connected ? 'подключён' : 'Требуется подключение');
     find('yandexApi').hidden = find('yandexTransfer').hidden = tab !== 'diagnostics' || !dialog.hidden;
@@ -98,7 +135,33 @@ export function installYandexUI({ snapshot } = {}) {
   client = createYandexClient(oauth);
   find('yandexCreate').onclick = () => { void runBackup(); };
   find('yandexRefresh').onclick = () => { void runBackup(true); };
-  find('yandexAbort').onclick = () => { operation?.abort(); };
+  find('yandexAbort').onclick = find('yandexDownloadAbort').onclick = () => { operation?.abort(); };
+  find('yandexSave').onclick = event => {
+    if (!event.isTrusted || !downloaded || operation || !oauth.view().connected || archiveLease?.signal.aborted) return;
+    try {
+      releaseDownload?.();
+      releaseDownload = download(new Blob([downloaded.bytes], { type: 'application/zip' }), downloaded.filename);
+      operationStatus = 'Проверенный ZIP передан браузеру для скачивания. Проверь фактическое сохранение в загрузках браузера.';
+    } catch { operationStatus = 'Не удалось передать ZIP браузеру. Освободи память и повтори сохранение.'; }
+    render();
+  };
+  find('yandexRestore').onclick = async event => {
+    if (!event.isTrusted || !mainDialog.open || !downloaded || operation || !oauth.view().connected || !backupUI) return;
+    const lease = archiveLease, generation = oauth.view().generation;
+    const check = () => { if (lease.signal.aborted || !oauth.view().connected || oauth.view().generation !== generation) throw Error('Сеанс Яндекса изменился. Скачай и проверь архив заново.'); };
+    try {
+      check();
+      const bytes = downloaded.bytes; downloaded = null; releaseDownload?.(); releaseDownload = null;
+      find('yandexVerified').hidden = true; render();
+      // Wait for the close event and its focus return before opening the next
+      // modal. No DataTransfer, global hook or privileged restore capability.
+      await new Promise(resolve => { mainDialog.addEventListener('close', resolve, { once: true }); mainDialog.close(); });
+      check();
+      await backupUI.openArchive(bytes, { signal: lease.signal, check, opener: card });
+      operationStatus = 'Архив передан в локальный ZIP-диалог. Выбери способ восстановления.';
+    } catch (error) { clearArchive(); operationStatus = error.message; }
+    render();
+  };
   try { const value = localStorage.getItem(CLIENT_ID_KEY); if (validClientId(value)) oauth.configure(value); } catch { notice = 'Публичную конфигурацию не удалось прочитать. Настрой Client ID повторно.'; }
   find('yandexConfigure').onclick = () => { find('yandexClientId').value = oauth.view().clientId; find('yandexRedirect').textContent = oauth.view().redirectUri; find('yandexSettingsError').textContent = ''; for (const panel of mainDialog.querySelectorAll('[data-backup-panel]')) panel.hidden = true; dialog.hidden = false; render(); find('yandexClientId').focus(); };
   find('yandexCancel').onclick = () => { showTab('connection'); find('yandexConfigure').focus(); };

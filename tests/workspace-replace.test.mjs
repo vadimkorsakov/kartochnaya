@@ -193,3 +193,13 @@ test('confirmed commit remains final even if navigation throws', async () => {
   await assert.rejects(x.operation.prepare()); await assert.rejects(x.operation.commit((await createBackup(old)).bytes));
   assert.deepEqual(await readWorkspaceSnapshot(db), incoming); assert.equal(x.ended(), 0); db.close();
 });
+
+test('cloud ownership guard is rechecked after ZIP validation and before any replacement write', async () => {
+  const db = await database(), x = session(db), zip = await createBackup(incoming);
+  await x.operation.prepare(); let active = true, checks = 0;
+  const digest = crypto.subtle.digest.bind(crypto.subtle);
+  crypto.subtle.digest = (...args) => { active = false; return digest(...args); };
+  try { await assert.rejects(x.operation.commit(zip.bytes, () => { checks++; if (!active) throw Error('Cloud session expired'); }), /Cloud session expired/); }
+  finally { crypto.subtle.digest = digest; }
+  assert.ok(checks >= 2); assert.equal(x.ended(), 1); assert.deepEqual(await readWorkspaceSnapshot(db), old); db.close();
+});

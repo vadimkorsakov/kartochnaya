@@ -205,3 +205,19 @@ test('UI-2: paged project selection survives tabs and produces only the chosen p
   expect(parsed.manifest.scope).toBe('selected-projects'); expect(parsed.data.projects).toHaveLength(7);
   expect(parsed.data.projects.every(project => !omitted.includes(project.id))).toBe(true);
 });
+
+test('new local ZIP replaces cached preview across mode changes and completion clears restore actions', async ({ page }) => {
+  await openHome(page);
+  const first = await (await model()).createBackup({ projects: [{ id: 'first', name: 'First ZIP' }], docs: [], fonts: [], settings: [] });
+  const second = await (await model()).createBackup({ projects: [{ id: 'second', name: 'Second ZIP' }], docs: [], fonts: [], settings: [] }, { selectedIds: ['second'] });
+  await preview(page, first.bytes); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await page.locator('#zipCreate').click(); await expect(page.locator('#zipConfirm')).toBeEnabled(); await page.locator('#zipRestore').click();
+  await preview(page, second.bytes); await expect(page.locator('#zipBody')).toContainText('Выбранные проекты');
+  await expect(page.locator('[name=zipRestoreMode][value=replace]')).toBeDisabled();
+  await page.locator('#zipConfirm').click(); await expect(page.locator('#zipStatus')).toContainText('Транзакция завершена');
+  expect((await records(page, 'projects')).some(p => p.name.startsWith('Second ZIP'))).toBe(true);
+  expect((await records(page, 'projects')).some(p => p.name.startsWith('First ZIP'))).toBe(false);
+  await expect(page.locator('#zipReplacePrepare')).toHaveCount(0);
+  await page.locator('#zipCreate').click(); await page.locator('#zipRestore').click();
+  await expect(page.locator('#zipConfirm')).toBeDisabled(); await expect(page.locator('#zipOpen')).toBeVisible();
+});

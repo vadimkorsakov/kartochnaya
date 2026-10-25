@@ -81,12 +81,13 @@ export function createReplacementSession({ begin, end, db, storage, download, st
         await download(new Blob([safety.bytes], { type: 'application/zip' }), safety.filename);
       } finally { state = 'ready'; }
     },
-    async commit(bytes) {
+    async commit(bytes, checkActive = () => {}) {
       if (state !== 'ready') throw Error('Замена не подготовлена');
       state = 'committing';
       let restored;
       try {
         const checkPreferences = () => {
+          checkActive();
           if (encode(readPreferences(storage)) !== encode(preferences)) throw Error('Настройки изменились. Подготовь замену заново');
         };
         checkPreferences();

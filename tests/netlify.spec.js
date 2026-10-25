@@ -216,3 +216,13 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1366, height: 76
   for (const store of Object.keys(before)) expect(await records(page, store)).toEqual(before[store]);
   expect(errors).toEqual([]);
 });
+
+test('Netlify keeps ZIP restore bridge module-local and the local dialog available without OAuth', async ({ page }) => {
+  const cloudRequests = []; page.on('request', r => { if (/yandex|googleapis/.test(r.url())) cloudRequests.push(r.url()); });
+  await openHome(page); await page.locator('[data-home-nav=data]').click();
+  await page.locator('#zipStorage').click(); await expect(page.locator('#zipConfirm')).toBeEnabled();
+  await page.locator('#zipRestore').click(); await expect(page.locator('#zipOpen')).toBeVisible();
+  expect(await page.evaluate(() => [typeof window.backupRestore, typeof window.zipBackupUI])).toEqual(['undefined', 'undefined']);
+  await page.locator('#zipCancel').click(); await page.locator('#yandexCard').click(); await page.locator('#yandexCopiesTab').click();
+  await expect(page.locator('#yandexSave')).toBeDisabled(); await expect(page.locator('#yandexRestore')).toBeDisabled(); expect(cloudRequests).toEqual([]);
+});

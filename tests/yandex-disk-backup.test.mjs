@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createOAuth, authorizedEndpoint, validBackupName } from '../src/cloud/yandex-disk/oauth.mjs';
 import { createYandexClient, UNCERTAIN, MAX_CLOUD_BYTES, ANDROID_CLOUD_BYTES } from '../src/cloud/yandex-disk/client.mjs';
 import { createBackup, readBackup, sha256, FORMAT } from '../src/backup/archive.mjs';
+import { prepareWorkspaceBackup } from '../src/backup/prepared.mjs';
 const sessions = [];
 afterEach(() => sessions.splice(0).forEach(s => s.disconnect()));
 const tick = () => new Promise(r => setTimeout(r, 5));
@@ -143,11 +144,11 @@ test('operation deadline aborts request; expired session stops ZIP preparation',
   await assert.rejects(expired.create({ snapshot: async () => { await new Promise(r => setTimeout(r, 65)); return snapshot(); } }), /отменена/);
   assert.equal(expired.state.puts, 0);
 });
-test('account switch or unavailable known identity after preparation disconnects before PUT', async () => {
+test('account switch disconnects; unavailable known identity rejects without erasing session', async () => {
   for (const id of ['account-b', null]) {
     const h = await harness();
     await assert.rejects(h.create({ snapshot: async () => { h.state.id = id; return snapshot(); } }), /Аккаунт/);
-    assert.equal(h.state.puts, 0); assert.equal(h.oauth.view().connected, false);
+    assert.equal(h.state.puts, 0); assert.equal(h.oauth.view().connected, id === null);
   }
 });
 test('new authorization during snapshot cannot upload to the new account; unknown identity has no old cache', async () => {
@@ -374,4 +375,54 @@ test('allocation failure and expanded JSON budget stop verification and cancel s
   const { zipSync, unzipSync } = await import('fflate'); backup.bytes = zipSync(unzipSync(backup.bytes), { level: 6 });
   const expanded = await downloadHarness({ backup });
   await assert.rejects(expanded.download({ maxBytes: 1024 * 1024 }), /распаковки/); assert.equal(expanded.transfer.stream.locked, false);
+});
+
+for (const outage of ['network', '403', 'malformed']) test('F-07 known identity survives temporary /info failure: ' + outage, async () => {
+  let unavailable = false;
+  const h = await harness({ intercept: u => {
+    if (u.pathname !== '/info' || !unavailable) return;
+    if (outage === 'network') throw Error('offline');
+    return Response.json(outage === 'malformed' ? { id: null } : {}, { status: outage === '403' ? 403 : 200 });
+  } });
+  const owner = await h.client.reserveUpload(); const generation = h.oauth.view().generation;
+  const backup = await prepareWorkspaceBackup({ snapshot, preferences: () => ({}) });
+  unavailable = true;
+  await assert.rejects(h.client.reserveUpload(), /личность|Аккаунт/);
+  assert.equal(h.oauth.view().connected, true); assert.equal(h.oauth.view().generation, generation);
+  await assert.rejects(h.client.uploadPrepared(backup, { owner }), /личность|Аккаунт/); assert.equal(h.state.puts, 0);
+  unavailable = false; h.state.id = 'account-b';
+  await assert.rejects(h.client.uploadPrepared(backup, { owner }), /Аккаунт/);
+  assert.equal(h.oauth.view().connected, false); assert.equal(h.state.puts, 0);
+});
+test('F-07 recovery of /info validates the original owner without reconnect', async () => {
+  let down = false;
+  const h = await harness({ intercept: u => { if (u.pathname === '/info' && down) throw Error('network'); } });
+  const owner = await h.client.reserveUpload(); const generation = h.oauth.view().generation;
+  down = true; await assert.rejects(h.client.reserveUpload()); down = false;
+  const backup = await prepareWorkspaceBackup({ snapshot, preferences: () => ({}) });
+  assert.equal((await h.client.uploadPrepared(backup, { owner })).confirmed, true);
+  assert.equal(h.oauth.view().generation, generation); assert.equal(h.state.puts, 1);
+});
+test('F-07 new generation with unavailable /info never inherits old identity or owner', async () => {
+  let down = false;
+  const h = await harness({ intercept: u => u.pathname === '/info' && down ? Response.json({}, { status: 403 }) : null });
+  const old = await h.client.reserveUpload(); h.oauth.disconnect(); await h.connect(); down = true;
+  const owner = await h.client.reserveUpload();
+  const backup = await prepareWorkspaceBackup({ snapshot, preferences: () => ({}) });
+  await assert.rejects(h.client.uploadPrepared(backup, { owner: old }), /сеанс/);
+  // If old account-a had been substituted for unknown, a later real account-b
+  // would disconnect. Unknown capability must instead reject the changed ID.
+  down = false; h.state.id = 'account-b';
+  await assert.rejects(h.client.uploadPrepared(backup, { owner }), /Аккаунт/);
+  assert.equal(h.oauth.view().connected, true); assert.equal(h.state.puts, 0);
+});
+for (const point of ['before ZIP', 'during ZIP', 'upload link']) test('real OAuth generation change blocks original prepared owner: ' + point, async () => {
+  let h, change = false;
+  h = await harness({ intercept: async u => {
+    if (change && point === 'upload link' && u.pathname.endsWith('/upload')) { h.oauth.disconnect(); await h.connect(); }
+  } });
+  const owner = await h.client.reserveUpload(); change = true;
+  if (point === 'before ZIP') { h.oauth.disconnect(); await h.connect(); }
+  const backup = await prepareWorkspaceBackup({ snapshot: async () => { if (point === 'during ZIP') { h.oauth.disconnect(); await h.connect(); } return snapshot(); }, preferences: () => ({}) });
+  await assert.rejects(h.client.uploadPrepared(backup, { owner })); assert.equal(h.state.puts, 0);
 });

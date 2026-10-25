@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createOAuth, authorizedEndpoint, validBackupName } from '../src/cloud/yandex-disk/oauth.mjs';
 import { createYandexClient, UNCERTAIN, MAX_CLOUD_BYTES, ANDROID_CLOUD_BYTES } from '../src/cloud/yandex-disk/client.mjs';
-import { readBackup, sha256, FORMAT } from '../src/backup/archive.mjs';
+import { createBackup, readBackup, sha256, FORMAT } from '../src/backup/archive.mjs';
 const sessions = [];
 afterEach(() => sessions.splice(0).forEach(s => s.disconnect()));
 const tick = () => new Promise(r => setTimeout(r, 5));
@@ -53,7 +53,7 @@ test('strict ZIP endpoint grammar, duplicate/encoded/traversal paths, methods an
   for (const query of ['path=app:/&limit=0', 'path=app:/&limit=101', 'path=app:/&offset=-1', 'path=app:/&offset=10001', 'path=app:/&offset=1.5', 'path=app:/&path=app:/', 'path=app:/&overwrite=false']) assert.throws(() => authorizedEndpoint(API + '?' + query));
   for (const suffix of ['', '&overwrite=true', '&overwrite=false&overwrite=false']) assert.throws(() => authorizedEndpoint(API + '/upload?path=app:/' + filename + suffix));
   for (const method of ['PUT', 'POST', 'PATCH', 'DELETE', 'HEAD']) assert.throws(() => authorizedEndpoint(API + '?path=app:/' + filename, method));
-  assert.throws(() => authorizedEndpoint(API + '/download?path=app:/' + filename));
+  assert.ok(authorizedEndpoint(API + '/download?path=app:/' + filename));
 });
 test('real complete workspace ZIP, unique names, no bearer/cookies/redirect on PUT; server SHA-256 confirmation', async () => {
   const h = await harness(); const result = await h.create();
@@ -189,4 +189,189 @@ test('unavailable /info uses only current session; malformed server hashes and e
   await assert.rejects(bad.create(), /Загрузка не подтверждена/);
   const absent = await harness({ intercept: (u, _, state) => state.files.length && u.pathname === '/v1/disk/resources' && u.searchParams.get('path') !== 'app:/' ? Response.json({}, { status: 404 }) : null });
   await assert.rejects(absent.create(), /Загрузка не подтверждена/); assert.equal(absent.state.puts, 1);
+});
+
+test('download-link is GET-only, exact app ZIP path, with no duplicate/additional parameters or forbidden APIs', () => {
+  const url = API + '/download?path=app:/' + filename;
+  assert.ok(authorizedEndpoint(url));
+  for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']) assert.throws(() => authorizedEndpoint(url, method));
+  for (const suffix of ['&foo=1', '&overwrite=false', '&path=app:/' + filename, '&limit=1', '&public_key=1']) assert.throws(() => authorizedEndpoint(url + suffix));
+  for (const path of ['disk:/' + filename, 'app:/../' + filename, 'app:/sub/' + filename, 'app:/foreign.zip', 'app:/%2e%2e/' + filename]) assert.throws(() => authorizedEndpoint(API + '/download?path=' + path));
+  for (const action of ['publish', 'unpublish', 'copy', 'move', 'permissions']) assert.throws(() => authorizedEndpoint(API + '/' + action + '?path=app:/' + filename));
+});
+async function downloadHarness(options = {}) {
+  const backup = options.backup || await createBackup(snapshot(), { now: new Date('2026-10-01T12:00:00.000Z') });
+  const state = { pulls: 0, cancelled: 0, unlocked: false, gets: 0 };
+  const rootPath = options.canonical ? 'disk:/Приложения/КАРТОЧНАЯ' : 'app:/';
+  const metadata = { ...row(backup.filename), path: rootPath.replace(/\/$/, '') + '/' + backup.filename, size: backup.bytes.length, created: '2026-10-24T15:00:00Z', ...(options.noHash ? {} : { sha256: await sha256(backup.bytes) }), ...options.metadata };
+  let h;
+  h = await harness({ expires: options.expires, intercept: async (u, init, raw) => {
+    if (options.intercept) { const response = await options.intercept(u, init, raw); if (response) return response; }
+    if (u.pathname.endsWith('/download')) return Response.json(options.link || { method: 'GET', href: 'https://downloader.disk.yandex.ru/zip?signature=private' }, { status: options.linkStatus || 200 });
+    if (u.hostname === 'downloader.disk.yandex.ru') {
+      state.gets++;
+      const source = options.bytes || backup.bytes;
+      let offset = 0;
+      const stream = new ReadableStream({
+        async pull(controller) {
+          state.pulls++;
+          if (options.pull) { const handled = await options.pull(controller, state, h); if (handled) return; }
+          if (offset >= source.length) { controller.close(); return; }
+          const end = Math.min(offset + 113, source.length); controller.enqueue(source.subarray(offset, end)); offset = end;
+        },
+        cancel() { state.cancelled++; },
+      }, { highWaterMark: 0 });
+      state.stream = stream;
+      const response = new Response(stream, { status: options.status || 200, headers: options.headers || {} });
+      Object.defineProperty(response, 'url', { value: options.final || 'https://mds.storage.yandex.net/zip' });
+      response.arrayBuffer = () => { throw Error('unbounded arrayBuffer forbidden'); };
+      return response;
+    }
+    if (u.searchParams.get('path') === 'app:/') {
+      const offset = Number(u.searchParams.get('offset') || 0), limit = Number(u.searchParams.get('limit') || 100);
+      return Response.json({ type: 'dir', path: rootPath, _embedded: { items: [metadata], offset, limit, total: 1 } });
+    }
+    if (u.pathname === '/v1/disk/resources') return Response.json(options.fresh ? { ...metadata, ...options.fresh } : metadata, { status: options.metadataStatus || 200 });
+  } });
+  const file = (await h.client.list()).files[0];
+  return { ...h, transfer: state, file, backup, download: args => h.client.download({ file, maxBytes: MAX_CLOUD_BYTES, ...args }) };
+}
+test('bounded real chunk sequence, canonical direct-child metadata, signed GET redirect policy and actual byte progress', async () => {
+  const h = await downloadHarness({ canonical: true }); const progress = [];
+  const oldIDB = globalThis.indexedDB;
+  globalThis.indexedDB = { open() { assert.fail('download must never access IndexedDB'); } };
+  try {
+    const result = await h.download({ progress: v => progress.push(v) });
+    assert.deepEqual(result.bytes, h.backup.bytes); assert.equal(result.serverSha256, true);
+    assert.equal(result.projects, 1); assert.equal(result.documents, 1); assert.equal(result.fonts, 1);
+    assert.equal(result.createdAt, h.backup.manifest.createdAt); // upload date is deliberately different
+    assert.ok(h.transfer.pulls > 10); assert.equal(h.transfer.stream.locked, false);
+    const calls = h.state.calls.filter(c => c.u.hostname === 'downloader.disk.yandex.ru'); assert.equal(calls.length, 1);
+    const call = calls[0]; assert.equal(new Headers(call.headers).has('Authorization'), false);
+    for (const [k, v] of Object.entries({ credentials: 'omit', redirect: 'follow', cache: 'no-store', referrerPolicy: 'no-referrer', mode: 'cors' })) assert.equal(call[k], v);
+    assert.equal(h.state.calls.some(c => c.u.searchParams.get('path')?.startsWith('disk:/')), false);
+    assert.equal(progress[0].received, 0); assert.equal(progress.at(-1).received, h.backup.bytes.length);
+    for (let n = 1; n < progress.length; n++) assert.ok(progress[n].received >= progress[n - 1].received && progress[n].received <= progress[n].total);
+  } finally { globalThis.indexedDB = oldIDB; }
+});
+test('Content-Length absent or exact accepted; malformed/mismatched values cancel before allocation/reading', async () => {
+  const h = await downloadHarness(); assert.ok((await h.download()).bytes.length);
+  const valid = await downloadHarness({ headers: { 'Content-Length': String(h.backup.bytes.length) }, backup: h.backup }); assert.ok((await valid.download()).bytes.length);
+  for (const value of ['0', '1', '-1', 'NaN', '12.3', '0x20', '1, 2', '9007199254740992', '']) {
+    const bad = await downloadHarness({ headers: { 'Content-Length': value } });
+    await assert.rejects(bad.download(), /Content-Length/); assert.equal(bad.transfer.pulls, 0); assert.equal(bad.transfer.cancelled, 1); assert.equal(bad.transfer.stream.locked, false);
+  }
+});
+test('empty, truncated, oversized, broken streams never return partial ZIP, retry or leak the lock', async () => {
+  const seed = await downloadHarness();
+  for (const bytes of [new Uint8Array(), seed.backup.bytes.subarray(0, 125), new Uint8Array(seed.backup.bytes.length + 1)]) {
+    const h = await downloadHarness({ backup: seed.backup, bytes });
+    await assert.rejects(h.download(), /меньше|превышает/); assert.equal(h.transfer.gets, 1); assert.equal(h.transfer.stream.locked, false);
+  }
+  const broken = await downloadHarness({ pull(controller) { controller.error(Error('private signed URL')); return true; } });
+  await assert.rejects(broken.download(), error => /Поток ZIP прерван/.test(error.message) && !/private/.test(error.message));
+  assert.equal(broken.transfer.gets, 1); assert.equal(broken.transfer.stream.locked, false);
+});
+test('invalid link, HTTP, untrusted final host and private network failures cannot report success', async () => {
+  for (const link of [{ method: 'PUT', href: 'https://storage.yandex.net/a' }, { method: 'GET', href: 'https://storage.yandex.net/a', templated: true }, { method: 'GET', href: 'https://evil.example/a' }, { method: 'GET' }]) {
+    const h = await downloadHarness({ link }); await assert.rejects(h.download()); assert.equal(h.transfer.gets, 0);
+  }
+  for (const metadataStatus of [401, 403, 404]) { const h = await downloadHarness({ metadataStatus }); await assert.rejects(h.download(), new RegExp(String(metadataStatus))); assert.equal(h.transfer.gets, 0); }
+  const bad = await downloadHarness({ final: 'https://evil.example/?signature=private' });
+  await assert.rejects(bad.download(), error => /Недоверенный/.test(error.message) && !/signature/.test(error.message)); assert.equal(bad.transfer.cancelled, 1);
+  const failed = await downloadHarness({ intercept: u => { if (u.hostname === 'downloader.disk.yandex.ru') throw TypeError('private token URL'); } });
+  await assert.rejects(failed.download(), error => /CORS/.test(error.message) && !/private/.test(error.message));
+  assert.equal(failed.state.calls.filter(c => c.u.hostname === 'downloader.disk.yandex.ru').length, 1);
+});
+test('fresh metadata, session provenance and strict selection reject forged/changed archives before signed link', async () => {
+  for (const fresh of [{ size: 1 }, { sha256: 'invalid' }, { sha256: 'a'.repeat(64) }, { type: 'dir' }, { path: 'disk:/elsewhere/' + filename }, { name: filename }]) {
+    const h = await downloadHarness({ fresh }); await assert.rejects(h.download(), /Метаданные/); assert.equal(h.transfer.gets, 0);
+  }
+  const h = await downloadHarness();
+  await assert.rejects(h.download({ file: { ...h.file } }), /Принадлежность/);
+  h.oauth.disconnect(); await h.connect(); await assert.rejects(h.download(), /Принадлежность/);
+  assert.equal(h.transfer.gets, 0);
+  const unknown = await downloadHarness({ intercept: u => u.pathname === '/info' ? Response.json({}, { status: 403 }) : null });
+  assert.ok((await unknown.download()).bytes.length, 'same token generation still proves ownership when /info is unavailable');
+  unknown.oauth.disconnect(); await unknown.connect(); await assert.rejects(unknown.download(), /Принадлежность/);
+});
+test('desktop/Android size budgets reject before download-link; parser reserves expanded memory', async () => {
+  for (const limit of [MAX_CLOUD_BYTES, ANDROID_CLOUD_BYTES]) {
+    const h = await downloadHarness({ metadata: { size: limit + 1 } });
+    await assert.rejects(h.download({ maxBytes: limit }), /бюджет памяти/);
+    assert.equal(h.state.calls.some(c => c.u.pathname.endsWith('/download')), false);
+  }
+  const h = await downloadHarness();
+  await assert.rejects(h.download({ maxBytes: Infinity }), /бюджет/);
+});
+test('server SHA mismatch, malformed ZIP, manifest/name/scope and structural links are never accepted', async () => {
+  const badHash = await downloadHarness({ metadata: { sha256: 'a'.repeat(64) } }); await assert.rejects(badHash.download(), /Серверный SHA-256/);
+  const broken = await downloadHarness({ noHash: true, bytes: new Uint8Array(badHash.backup.bytes.length) }); await assert.rejects(broken.download(), /ZIP/);
+  const { unzipSync, zipSync, strToU8 } = await import('fflate');
+  for (const change of ['id', 'scope', 'manifest', 'links', 'hash']) {
+    const files = unzipSync(badHash.backup.bytes); const m = JSON.parse(new TextDecoder().decode(files['manifest.json']));
+    if (change === 'id') m.backupId = '00000000-0000-4000-8000-000000000000';
+    if (change === 'scope') m.scope = 'selected-projects';
+    if (change === 'manifest') m.counts.docs = 9;
+    if (change === 'hash') m.files[0].sha256 = '0'.repeat(64);
+    if (change === 'links') {
+      const docs = JSON.parse(new TextDecoder().decode(files['data/docs.json'])); docs[0].projectId = 'missing';
+      files['data/docs.json'] = strToU8(JSON.stringify(docs));
+      Object.assign(m.files.find(f => f.path === 'data/docs.json'), { bytes: files['data/docs.json'].length, sha256: await sha256(files['data/docs.json']) });
+    }
+    files['manifest.json'] = strToU8(JSON.stringify(m)); const bytes = zipSync(files, { level: 0 });
+    const h = await downloadHarness({ backup: { ...badHash.backup, bytes }, noHash: true });
+    await assert.rejects(h.download()); assert.equal(h.transfer.gets, 1);
+  }
+  const valid = await downloadHarness({ noHash: true }); assert.equal((await valid.download()).serverSha256, false);
+});
+test('cancel during pending read cancels reader, releases lock and blocks concurrent downloads', async () => {
+  const controller = new AbortController(); let start;
+  const started = new Promise(r => { start = r; });
+  const h = await downloadHarness({ pull() { start(); return true; } });
+  const pending = h.download({ signal: controller.signal }); await started;
+  await assert.rejects(h.download(), /Уже скачивается/); controller.abort();
+  await assert.rejects(pending, /отменена/); assert.equal(h.transfer.cancelled, 1); assert.equal(h.transfer.stream.locked, false); assert.equal(h.transfer.gets, 1);
+});
+test('expiry/disconnect during stream and account change at final identity discard all bytes', async () => {
+  for (const action of ['disconnect', 'expire', 'account']) {
+    const h = await downloadHarness({ expires: action === 'expire' ? 0.1 : 3600,
+      pull(controller, state, instance) {
+        if (action === 'account') { instance.state.id = 'account-b'; return false; }
+        if (action === 'disconnect') instance.oauth.disconnect();
+        return true;
+      } });
+    const keepAlive = setTimeout(() => {}, 1000);
+    try { await assert.rejects(h.download(), /отменена|Аккаунт/); }
+    finally { clearTimeout(keepAlive); }
+    assert.equal(h.transfer.stream.locked, false); assert.equal(h.transfer.gets, 1); assert.equal(h.oauth.view().connected, false);
+  }
+});
+test('long signed GET deadline also cancels its body; normal API still uses 30 seconds', async () => {
+  const original = AbortSignal.timeout, durations = []; let signal;
+  AbortSignal.timeout = function(ms) { durations.push(ms); return original.call(this, ms === 600000 ? 20 : ms); };
+  try {
+    const h = await downloadHarness({ intercept: (u, init) => {
+      if (u.hostname !== 'downloader.disk.yandex.ru') return;
+      signal = init.signal;
+      const res = new Response(new ReadableStream({ start(controller) { init.signal.addEventListener('abort', () => controller.error(Error('timeout')), { once: true }); } }));
+      Object.defineProperty(res, 'url', { value: 'https://mds.storage.yandex.net/zip' }); return res;
+    } });
+    const keepAlive = setTimeout(() => {}, 1000);
+    try { await assert.rejects(h.download(), /Поток ZIP прерван/); } finally { clearTimeout(keepAlive); }
+    assert.equal(signal.aborted, true); assert.ok(durations.includes(600000)); assert.ok(durations.includes(30000)); assert.ok(durations.includes(900000));
+  } finally { AbortSignal.timeout = original; }
+});
+
+test('allocation failure and expanded JSON budget stop verification and cancel stream', async () => {
+  const h = await downloadHarness(); const Original = globalThis.Uint8Array;
+  globalThis.Uint8Array = new Proxy(Original, { construct(Target, args) { if (args.length === 1 && args[0] === h.backup.bytes.length) throw RangeError('allocation failed'); return Reflect.construct(Target, args); } });
+  try { await assert.rejects(h.download(), /Недостаточно оперативной памяти/); }
+  finally { globalThis.Uint8Array = Original; }
+  assert.equal(h.transfer.cancelled, 1); assert.equal(h.transfer.pulls, 0);
+  const data = snapshot(); data.settings = [{ key: 'big', value: 'x'.repeat(2 * 1024 * 1024) }];
+  const backup = await createBackup(data);
+  const { zipSync, unzipSync } = await import('fflate'); backup.bytes = zipSync(unzipSync(backup.bytes), { level: 6 });
+  const expanded = await downloadHarness({ backup });
+  await assert.rejects(expanded.download({ maxBytes: 1024 * 1024 }), /распаковки/); assert.equal(expanded.transfer.stream.locked, false);
 });

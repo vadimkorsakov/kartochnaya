@@ -30,7 +30,7 @@ export function authorizedEndpoint(value, method = 'GET') {
   const archive = path?.startsWith('app:/') && validBackupName(path.slice(5));
   const pagination = ['limit', 'offset'].every(k => !u.searchParams.has(k) || (/^(0|[1-9]\d*)$/.test(u.searchParams.get(k)) && Number(u.searchParams.get(k)) <= (k === 'limit' ? 100 : 10000) && (k !== 'limit' || Number(u.searchParams.get(k)) > 0)));
   const permitted = method === 'GET' && resource && path === 'app:/' && only(['path', 'limit', 'offset']) && pagination
-    || method === 'GET' && resource && archive && only(['path'])
+    || method === 'GET' && (resource || u.pathname.endsWith('/download')) && archive && only(['path'])
     || method === 'GET' && u.pathname.endsWith('/upload') && archive && only(['path', 'overwrite']) && u.searchParams.get('overwrite') === 'false'
     || probe && (method === 'GET' && resource && only(['path'])
       || method === 'GET' && u.pathname.endsWith('/upload') && only(['path', 'overwrite']) && u.searchParams.get('overwrite') === 'false'
@@ -43,7 +43,7 @@ export function createOAuth({ win = window, request = globalThis.fetch.bind(glob
   let clientId = '', attempt = null, token = '', expires = 0, expiry, generation = 0;
   let status = 'disconnected', message = 'Требуется подключение.', results = {};
   const operations = new Set();
-  const view = () => ({ clientId, status, message, results: { ...results }, connected: !!token, generation, busy: !!attempt, redirectUri: win.location.origin + CALLBACK });
+  const view = () => ({ clientId, status, message, results: { ...results }, connected: !!token && Date.now() < expires, generation, busy: !!attempt, redirectUri: win.location.origin + CALLBACK });
   const emit = () => changed(view());
   function stopAttempt() {
     const old = attempt; attempt = null;
@@ -131,14 +131,17 @@ export function createOAuth({ win = window, request = globalThis.fetch.bind(glob
           url = signedEndpoint(url);
           if (new Headers(options.headers).has('Authorization')) throw Error('Авторизация на подписанном URL запрещена.');
         }
-        const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(!authorized && method === 'PUT' && operationMs > 30000 ? 600000 : 30000)]);
+        const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(!authorized && ['PUT', 'GET'].includes(method) && operationMs > 30000 ? 600000 : 30000)]);
         const signedGet = !authorized && method === 'GET';
         let res;
         try { res = await request(url, { ...options, method, headers: authorized ? { Authorization: 'OAuth ' + token } : options.headers, signal: requestSignal, credentials: 'omit', cache: 'no-store', redirect: signedGet ? 'follow' : 'error', referrerPolicy: 'no-referrer', mode: 'cors' }); }
         catch { check(); throw Error(networkError('Запрос')); }
         check();
         // Fetch has already followed redirects; this validates only the final URL.
-        if (signedGet) signedEndpoint(res.url);
+        if (signedGet) {
+          try { signedEndpoint(res.url); }
+          catch (error) { await res.body?.cancel().catch(() => {}); throw error; }
+        }
         if (authorized && res.status === 401) { disconnect('HTTP 401: подключи Яндекс повторно.'); throw Error('HTTP 401: токен отклонён.'); }
         return res;
       } });

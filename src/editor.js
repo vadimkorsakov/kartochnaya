@@ -1901,7 +1901,7 @@ async function zipOriginal_exportSeriesIndices(indices){const d=app.doc,project=
  if(done){project.exportCounters[base]=counter;if(!await persistProjectForUI(project)){toast('PNG выгружены; счётчик не сохранён');return}toast(`Экспортировано холстов: ${done}. Если браузер блокирует несколько загрузок, разреши их для приложения.`)}
 }
 $('#seriesExportConfirm').onclick=async()=>{const ids=$$('[data-series-export]:checked').map(x=>Number(x.dataset.seriesExport));if(!ids.length){toast('Выбери хотя бы один холст');return}$('#seriesExportConfirm').disabled=true;closeSeriesExportDialog();await exportSeriesIndices(ids)};
-function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;($('#zipBackupDialog[open]')||document.body).append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
+function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;($('#zipBackupDialog[open]')||document.body).append(a);a.click();a.remove();const timer=setTimeout(()=>URL.revokeObjectURL(url),30000);return()=>{clearTimeout(timer);URL.revokeObjectURL(url)}}
 function niceName(s){return sanitizeCardTitle(s).slice(0,100)}
 async function zipOriginal_exportPNG(){if(app.doc?.type==='card'){ensureCardSlides(app.doc);if(app.doc.slides.length>1){openSeriesExportDialog();return}}const d=app.doc;if(d.width*d.height>30000000){toast('Слишком большой холст для телефона');return}for(const e of d.elements){if(e.visible&&e.fillType==='image'&&e.imageSrc){const im=getImage(e.imageSrc);if(!im){const wait=new Image();wait.src=e.imageSrc;try{await wait.decode();imgCache.set(e.imageSrc,{image:wait,ready:true})}catch(err){toast('Не удалось прочитать изображение для PNG');return}}}}const target=document.createElement('canvas');target.width=d.width;target.height=d.height;const c=target.getContext('2d');paintDocument(c,d,false);await new Promise(resolve=>target.toBlob(async blob=>{try{if(!blob){toast('Ошибка экспорта PNG');return}const project=app.projects.find(p=>p.id===d.projectId)||currentProject();const base=niceName(d.title)+' ('+niceName(project?.name||'Проект')+')';if(project){project.exportCounters||={};const previous=project.exportCounters[base]||0;const name=base+(previous?' '+previous:'')+'.png';downloadBlob(blob,name);project.exportCounters[base]=previous+1;try{await persistProject(project)}catch(error){console.error(error);toast('Счётчик экспорта не сохранён')}}else downloadBlob(blob,base+'.png')}finally{resolve()}},'image/png'))}
 function exportJSON(){syncCurrentSlide();const payload={format:'kartochnaya-v1',document:app.doc,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts,exportedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});downloadBlob(blob,niceName(app.doc.title)+'.json')}
@@ -1918,7 +1918,7 @@ const deletedProjectIds=new Set();
 function blockProjectInteraction(event){if(!workspaceInstances.writable()||(replacementFrozen&&!event.target.closest?.('#zipBackupDialog,#zipInput'))||projectOperation||zipWorkspaceBusy){event.preventDefault();event.stopImmediatePropagation()}}
 for(const name of ['click','keydown','pointerdown','input','change','drop'])document.addEventListener(name,blockProjectInteraction,true);
 async function importProjectBackup(payload){return importProjectSet(payload,[{project:payload.project,documents:payload.documents}],2000)}
-async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null){
+async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null,checkActive=()=>{}){
  if(projectOperation)throw Error('Дождись завершения операции с проектами');
  projectOperation=true;
  try{
@@ -1940,6 +1940,7 @@ async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null){
    }catch(error){console.warn('Шрифт пропущен при импорте',error);diagnostics.warnings.push({code:'unsupported-font-skipped',path:`fonts[${index}]`})}
   }
   if(app.currentProjectId!==context.projectId||app.doc!==context.doc||documentTabSession.activeId!==context.tab||homeVisible()!==context.home)throw Error('Контекст изменился; повтори импорт');
+  checkActive();
   const stores=['projects','docs'];if(fonts.length)stores.push('fonts');if(sections)stores.push('settings');
   await runStoreTransaction(app.db,stores,'readwrite',store=>{
    for(const project of plan.projects)store('projects').add(project);
@@ -3664,14 +3665,15 @@ function showWorkspaceRestoreResult(){
   if(result.failures.length)alert(workspaceRestoreMessage(result));else toast(workspaceRestoreMessage(result));
  }catch{}
 }
-installBackupUI({
+const zipBackupUI=installBackupUI({
  replacement:workspaceReplacement,
  snapshot:zipSavedSnapshot,
  download:downloadBlob,
- restore:async verified=>{
+ restore:async (verified,checkActive=()=>{})=>{
   const existing=await zipSavedSnapshot();
+  checkActive();
   // No asynchronous gap before importProjectSet acquires its existing lock.
-  const diagnostics=await importProjectSet({fonts:verified.data.fonts},verified.data.projects.map(project=>({project,documents:verified.data.docs.filter(doc=>doc.projectId===project.id)})),Number.MAX_SAFE_INTEGER,existing);
+  const diagnostics=await importProjectSet({fonts:verified.data.fonts},verified.data.projects.map(project=>({project,documents:verified.data.docs.filter(doc=>doc.projectId===project.id)})),Number.MAX_SAFE_INTEGER,existing,checkActive);
   renderDocumentTabs();
   return [...verified.warnings,...diagnostics.warnings.map(item=>item.code+' ('+item.path+')')];
  }

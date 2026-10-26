@@ -21,8 +21,8 @@ async function observe(page) {
       }
       return request;
     };
-    for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture']) {
-      document.addEventListener(type, ev => mobileAudit.events.push({ type, id: ev.pointerId, target: ev.target.id || ev.target.dataset?.mpNudge || ev.target.dataset?.mpPlane }), true);
+    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture']) {
+      document.addEventListener(type, ev => mobileAudit.events.push({ type, id: ev.pointerId, x: ev.clientX, y: ev.clientY, target: ev.target.id || ev.target.dataset?.mpNudge || ev.target.dataset?.mpPlane }), true);
     }
   });
 }
@@ -75,8 +75,16 @@ async function touch(page, selector, x = .5, y = .5) {
   const id = (await audit(page)).events.filter(e => e.type === 'pointerdown').at(-1).id;
   expect(await page.locator(selector).evaluate((el, id) => el.hasPointerCapture(id), id)).toBe(true);
   return { id, client, point,
-    move: async (x, y) => client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point, x: r.x + r.width * x, y: r.y + r.height * y }] }),
-    end: async (cancel = false) => client.send('Input.dispatchTouchEvent', { type: cancel ? 'touchCancel' : 'touchEnd', touchPoints: [] }),
+    move: async (x, y) => {
+      const next = { ...point, x: r.x + r.width * x, y: r.y + r.height * y };
+      await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [next] });
+      // CDP acknowledgement can precede delivery of a coalesced pointermove.
+      await expect.poll(async () => (await audit(page)).events.some(e => e.type === 'pointermove' && e.id === id && Math.abs(e.x - next.x) < 1 && Math.abs(e.y - next.y) < 1)).toBe(true);
+    },
+    end: async (cancel = false) => {
+      await client.send('Input.dispatchTouchEvent', { type: cancel ? 'touchCancel' : 'touchEnd', touchPoints: [] });
+      await expect.poll(async () => (await audit(page)).events.some(e => e.id === id && e.type === (cancel ? 'pointercancel' : 'pointerup'))).toBe(true);
+    },
   };
 }
 async function saved(page, expected) {
@@ -148,10 +156,11 @@ for (const finish of ['cancel', 'up', 'close', 'switch']) test(`color plane ${fi
   await pointer(page, '#mobilePropertyUI', 'pointercancel', t.id); expect((await audit(page)).saves).toBe(1);
   expect((await exportedDocument(page)).elements).toEqual(after.elements);
   await expect(page.locator('#mobileContext')).not.toHaveClass(/hidden/);
-  if (finish !== 'close') await page.locator('#mobileConfirm').dispatchEvent('click');
+  if (finish !== 'close') await page.locator('[data-mp-action="done"]').tap();
+  await expect(page.locator('#mobilePropertyUI')).not.toHaveClass(/mp-open/);
   await color(page);
   await expect(page.locator('[data-mp-hex]')).toHaveValue(after.elements[0].fill);
-  await page.locator('#mobileConfirm').dispatchEvent('click');
+  await page.locator('[data-mp-action="done"]').tap();
   await undoRedo(page, before, after); await reload(page, after);
 });
 
@@ -232,9 +241,15 @@ test('two-finger canvas router cancels tentative drag, zooms and leaves no point
   expect((await exportedDocument(page)).elements[0].x).not.toBe(before.elements[0].x);
   await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [moved, b] });
   await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...moved, x: moved.x - 12, y: moved.y + 8 }, { ...b, x: b.x + 18, y: b.y + 8 }] });
+  await expect.poll(() => page.locator('#zoomLabel').textContent()).not.toBe(zoom);
   const scroller = page.locator('#stageScroller'), panBefore = await scroller.evaluate(el => el.scrollLeft);
-  await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...moved, x: moved.x - 32, y: moved.y + 8 }, { ...b, x: b.x - 2, y: b.y + 8 }] });
-  expect(await scroller.evaluate(el => el.scrollLeft)).toBeGreaterThan(panBefore);
+  // Pan away from the nearest bound: increasing an already maximal scrollLeft
+  // is clamped and cannot demonstrate whether the router panned correctly.
+  const dx = panBefore >= 20 ? 20 : -20;
+  await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...moved, x: moved.x - 12 + dx, y: moved.y + 8 }, { ...b, x: b.x + 18 + dx, y: b.y + 8 }] });
+  if (dx > 0) await expect.poll(() => scroller.evaluate(el => el.scrollLeft)).toBeLessThan(panBefore);
+  else await expect.poll(() => scroller.evaluate(el => el.scrollLeft)).toBeGreaterThan(panBefore);
+  expect(Math.abs(await scroller.evaluate(el => el.scrollLeft) - (panBefore - dx))).toBeLessThanOrEqual(1);
   await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   expect(await page.locator('#zoomLabel').textContent()).not.toBe(zoom);
   expect((await exportedDocument(page)).elements).toEqual(before.elements); expect(await history(page)).toEqual(h);
@@ -316,9 +331,14 @@ test('matching pointerup outside the panel works without pointer capture', async
 
 test('lost capture settles a real color preview only once', async ({ page }) => {
   await open(page); await color(page); const h = await history(page), t = await touch(page, '[data-mp-plane]', .3, .4);
+  // setPointerCapture is pending after down. Apply it before testing actual loss.
+  await t.move(.31, .41);
+  expect((await audit(page)).events.some(e => e.type === 'gotpointercapture' && e.id === t.id)).toBe(true);
   const after = await exportedDocument(page); await resetAudit(page);
   await page.locator('[data-mp-plane]').evaluate((el, id) => el.releasePointerCapture(id), t.id);
-  await t.move(.3, .4); await t.end(true);
+  await t.move(.32, .42);
+  expect((await audit(page)).events.some(e => e.type === 'lostpointercapture' && e.id === t.id)).toBe(true);
+  await t.end(true);
   expect((await audit(page)).saves).toBe(1); expect((await history(page)).length).toBe(h.length + 1);
   expect((await exportedDocument(page)).elements).toEqual(after.elements); await reload(page, after);
 });

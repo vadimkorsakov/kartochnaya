@@ -21,8 +21,11 @@ async function observe(page) {
       }
       return request;
     };
-    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture']) {
-      document.addEventListener(type, ev => mobileAudit.events.push({ type, id: ev.pointerId, x: ev.clientX, y: ev.clientY, target: ev.target.id || ev.target.dataset?.mpNudge || ev.target.dataset?.mpPlane }), true);
+    for (const type of ['click', 'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture']) {
+      document.addEventListener(type, ev => {
+        const button = ev.target.closest?.('button');
+        mobileAudit.events.push({ type, id: ev.pointerId, x: ev.clientX, y: ev.clientY, trusted: ev.isTrusted, action: button?.dataset.mpAction, mobile: button?.dataset.mobile, target: ev.target.id || ev.target.dataset?.mpNudge || ev.target.dataset?.mpPlane });
+      }, true);
     }
   });
 }
@@ -52,7 +55,26 @@ async function tool(page, name) {
   const button = page.locator(`#mobileContext [data-mobile="${name}"]`);
   await button.scrollIntoViewIfNeeded(); await button.tap();
 }
-async function color(page) { await tool(page, 'color'); await page.locator('[data-mp-action="colorEdit"]').tap(); }
+async function nativeTap(page, client, selector) {
+  const button = page.locator(selector);
+  await expect(button).toBeVisible(); await expect(button).toBeEnabled();
+  await button.scrollIntoViewIfNeeded();
+  const expected = await button.evaluate(el => ({ action: el.dataset.mpAction, mobile: el.dataset.mobile }));
+  const r = await button.boundingBox(), start = (await audit(page)).events.length;
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 0, x: r.x + r.width / 2, y: r.y + r.height / 2 }] });
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  try {
+    await expect.poll(async () => (await audit(page)).events.slice(start).some(e => e.type === 'click' && e.trusted && e.action === expected.action && e.mobile === expected.mobile)).toBe(true);
+  } catch (error) {
+    throw new Error(error.message + '\nNative tap events: ' + JSON.stringify((await audit(page)).events.slice(start)));
+  }
+}
+async function color(page, client) {
+  if (client) {
+    await nativeTap(page, client, '#mobileContext [data-mobile="color"]');
+    await nativeTap(page, client, '[data-mp-action="colorEdit"]');
+  } else { await tool(page, 'color'); await page.locator('[data-mp-action="colorEdit"]').tap(); }
+}
 async function resetAudit(page) { await page.evaluate(() => { mobileAudit.saves = 0; mobileAudit.puts = []; mobileAudit.completed = []; mobileAudit.events = []; }); }
 async function freezeClock(page) {
   await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
@@ -156,11 +178,11 @@ for (const finish of ['cancel', 'up', 'close', 'switch']) test(`color plane ${fi
   await pointer(page, '#mobilePropertyUI', 'pointercancel', t.id); expect((await audit(page)).saves).toBe(1);
   expect((await exportedDocument(page)).elements).toEqual(after.elements);
   await expect(page.locator('#mobileContext')).not.toHaveClass(/hidden/);
-  if (finish !== 'close') await page.locator('[data-mp-action="done"]').tap();
-  await expect(page.locator('#mobilePropertyUI')).not.toHaveClass(/mp-open/);
-  await color(page);
+  if (finish !== 'close') await nativeTap(page, t.client, '[data-mp-action="done"]');
+  await expect(page.locator('#mobilePropertyUI'), 'After Done: ' + JSON.stringify((await audit(page)).events.slice(-16))).not.toHaveClass(/mp-open/);
+  await color(page, t.client);
   await expect(page.locator('[data-mp-hex]')).toHaveValue(after.elements[0].fill);
-  await page.locator('[data-mp-action="done"]').tap();
+  await nativeTap(page, t.client, '[data-mp-action="done"]');
   await undoRedo(page, before, after); await reload(page, after);
 });
 

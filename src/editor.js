@@ -1518,7 +1518,8 @@ $('#maskFromSelection').onclick=applySelectionMask;$('#clearPixelSelection').onc
 function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDoc(d);const stack=withSelection&&app.editingId?{...d,elements:d.elements.filter(e=>e.id!==app.editingId||e.textMode==='boundary')}:d;maskRenderDocuments.set(stack,model);c.save();c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack);if(withSelection){drawSavedGuides(c);drawGuides(c);drawPixelSelectionOverlay(c);
 const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();if(app.cropMode)drawCropControls(c,e);drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
 function paint(){if(!app.doc)return;if(app.inkTool)inkMoveCursor(lastInkPointer);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);const ratio=app.renderScale||1;ctx.setTransform(app.zoom*ratio,0,0,app.zoom*ratio,0,0);paintDocument(ctx,app.doc,true);if(app.drag?.type==='newText'){const a=app.drag.start,b=app.drag.current||a;ctx.save();ctx.lineWidth=1/app.zoom;ctx.setLineDash([5/app.zoom,3/app.zoom]);ctx.strokeStyle='#ab8aff';ctx.fillStyle='#9a73ee22';ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.restore()}inkOverlay(ctx);ctx.restore();paintCropPreview();updateQuickBubble()}
-function updateQuickBubble(){const bubble=$('#quickBubble');if(!bubble||!app.doc)return;
+function updateQuickBubble(){const bubble=$('#quickBubble');if(!bubble)return;
+ if(!app.doc||homeVisible()||$('#app').classList.contains('hidden')){bubble.classList.add('hidden');return}
  const selected=picked();const onMobile=matchMedia('(max-width:760px)').matches;
  const show=onMobile&&!app.mobileLayersOpen&&selected.length>0&&!app.cropMode&&!app.editingId&&!$('#stageScroller').classList.contains('drag-over');
  bubble.classList.toggle('hidden',!show);if(!show)return;
@@ -2074,7 +2075,7 @@ async function duplicateDoc(source){if(!await flushSave())return;const doc=clone
 async function removeDoc(source){if(!confirm(`Удалить «${source.title}»? Это действие нельзя отменить.`))return;if(app.doc?.id===source.id&&!await flushSave())return;if(!await closeDocumentTab(source.id))return;try{await dbOp('docs','readwrite',s=>s.delete(source.id))}catch(error){return}app.docs=app.docs.filter(d=>d.id!==source.id);if(app.doc?.id===source.id){app.doc=null}renderDocumentTabs();renderLibrary()}
 function homeVisible(){return !$('#homeScreen').classList.contains('hidden')}
 function showHome(section='workspace'){
- if(documentTabSession.activeId!=='home')captureDocumentTab();documentTabSession.activeId='home';renderDocumentTabs();
+ if(documentTabSession.activeId!=='home')captureDocumentTab();else closeEditorTransientUI();documentTabSession.activeId='home';renderDocumentTabs();
  closeDialogs();$('#app').classList.add('hidden');$('#homeScreen').classList.remove('hidden');
  $$('.home-nav-item').forEach(b=>{const match=b.dataset.homeNav===section;b.classList.toggle('active',match);b.setAttribute('aria-current',match?'page':'false')});
  $('#homeWorkspacePane').classList.toggle('hidden',section!=='workspace');$('#fontDialog').classList.toggle('hidden',section!=='fonts');$('#homeDataPane').classList.toggle('hidden',section!=='data');
@@ -2677,12 +2678,21 @@ window.addEventListener('resize',()=>{if(!$('#editorProjectMenu').classList.cont
 const documentTabSession={activeId:'home',lastDocumentId:null,tabs:[]};
 const DOCUMENT_TAB_FIELDS=['selected','selectedIds','selectedGroupIds','focusGroupId','groupIsolation','zoom','lastZoom','renderScale','history','historyNames','historyIndex','historyBase','historyPreviewOriginal','pixelSelection','pixelDraft','polyDraft','selectionTargetId','guides','showRulers','handTool','penTool','penDraft','penEditId','penNode','marqueeTool','marqueeKind','magicTolerance','insertTool','insertShape','inkTool','inkSettings','maskEditId','maskPaintColor','textToolMode','textDraft','textPathDraft','cropMode','cropBefore','multiMode','panelOpen','mobilePane','mobileLayersOpen','resourceFolderId','filter'];
 function liveDocumentTab(){return documentTabSession.tabs.find(t=>t.id===documentTabSession.activeId)||null}
+// These surfaces belong to the current editor visit, not a saved document view.
+function closeEditorTransientUI(){
+ mobileV36Close(); // F-06 settles actual changes and releases owned pointers/timers.
+ closeMobileOverlays('mobileProperties');closeToolPopovers();closeMobileLayerMenu();
+ if(!$('#fillPopover').classList.contains('hidden')||app.pipetteArmed)closeFillPopover();
+ boundaryPanelOpen=false;$('#boundaryFloatingPanel')?.classList.add('hidden');
+ for(const id of ['quickBubble','editorProjectMenu','inkPopover','textModeMenu'])$('#'+id).classList.add('hidden');
+ document.body.classList.remove('ink-cursor-on');
+}
 function captureDocumentTab(){
- if(typeof mobileV36Close==="function" && matchMedia("(max-width:760px)").matches)mobileV36Close();
  const tab=liveDocumentTab();if(!tab||app.doc?.id!==tab.id)return;
  // Finish an active inline text editor before transferring its document context.
  if(app.editingId)closeInlineText(false);
  if(app.inkDraft)inkEnd();
+ closeEditorTransientUI();
  if(app.doc?.type==='card')syncCurrentSlide(app.doc);
  tab.doc=app.doc;tab.view={};
  for(const field of DOCUMENT_TAB_FIELDS)tab.view[field]=app[field];
@@ -2772,7 +2782,6 @@ function captureInitialDocumentTabView(tab){
 }
 function activateDocumentTab(id){
  if(id==='home'){
-  if(documentTabSession.activeId!=='home')captureDocumentTab();
   showHome('workspace');return;
  }
  const tab=documentTabSession.tabs.find(t=>t.id===id);if(!tab)return;

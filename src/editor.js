@@ -3055,6 +3055,7 @@ function mobileV36ApplyView(){
  });
 }
 function mobileV36Close(){
+ mobileV36FinishInteraction();
  mobileV36State.tool=null;mobileV36State.elementId=null;mobileV36State.expanded=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.fxColor=null;
  mobileV36.className='';mobileV36.innerHTML='';mobileV36ResetView();
  $$('#mobileContext button').forEach(b=>b.classList.remove('mobile-active'));
@@ -3076,6 +3077,7 @@ mobileV36.addEventListener('click',ev=>{const b=ev.target.closest('[data-mp-imag
 },true);
 function mobileV36Open(tool,expanded){
  if(!mobileV36Small()||!app.doc||!app.selectedIds.length)return;
+ mobileV36FinishInteraction();
  if(tool==='layers'){mobileV36Close();toggleMobileLayers();return}
  if(tool==='edit'){mobileV36Close();if(active()?.type==='text')openInlineText();else showInspector('settings');return}
  if(tool==='replace'){mobileV36Close();if(active()){app.pendingImage={kind:'fill',id:active().id};$('#imageInput').click()}return}
@@ -3180,11 +3182,18 @@ function mobileV36EffectPanel(){const e=active(),effects=e.effects||[];const def
   controls=`<div class="mp-divider"></div><div class="mp-subtitle">Настройки · ${mobileV36Escape(defs.find(x=>x[0]===selected)?.[1]||selected)}</div>${defs2.map(([label,k,min,max,step])=>{const value=fx?.[k]??e[k]??0;return `<label class="mp-field">${label}<div class="mp-line"><input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"><input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"></div></label>`}).join('')}<div class="mp-line"><label>Цвет эффекта <input data-mp-effect-color="${selected}" data-mp-color-key="color" type="color" value="${fx?.color||e.mobileBackgroundColor||'#7857de'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color" aria-label="Редактор цвета эффекта">◉ HEX</button></label>${selected==='textGlitch'?`<label>Второй цвет <input data-mp-effect-color="${selected}" data-mp-color-key="color2" type="color" value="${fx?.color2||'#00f0f0'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color2" aria-label="Редактор второго цвета эффекта">◉ HEX</button></label>`:''}</div>`;
  }
  return mobileV36Sheet('Эффекты',`<div class="mp-tile-scroll">${cards}</div>${controls}<div class="mp-dim">Первый тап применяет эффект, второй открывает параметры. Эффекты входят в историю действий.</div>`)}
-function mobileV36MorePanel(){const e=active();const a=(id,label)=>`<button data-mp-more="${id}" class="mp-btn-wide">${label}</button>`;
- return mobileV36Sheet('Ещё',`<div class="mp-grid three">${[['copy','⧉ Копировать'],['paste','▣ Вставить'],['delete','× Удалить']].map(([id,label])=>`<button class="mp-choice" data-mp-more="${id}">${label}</button>`).join('')}</div><div class="mp-subtitle">Действия со слоем</div>${e.type==='text'?a('title',`${e.isTitleLayer?'✓ ':''}Сделать заголовком карточки (H1)`):''}${a('lock',e.locked?'Разблокировать слой':'Заблокировать слой')}${a('group',isOneGroup()?'Разгруппировать':'Сгруппировать')}${e.type==='text'?`<div class="mp-subtitle">Режим текста</div><div class="mp-grid three">${[['horizontal','Горизонт.'],['vertical','Вертикал.']].map(([id,label])=>`<button class="mp-choice ${e.textMode===id?'active':''}" data-mp-textmode="${id}">${label}</button>`).join('')}</div>`:''}<div class="mp-subtitle">Режим наложения</div><div class="mp-grid two">${BLEND_OPTIONS.map(([id,label])=>`<button class="mp-choice ${e.blendMode===id?'active':''}" data-mp-blend="${id}">${mobileV36Escape(label)}</button>`).join('')}</div>${['path','vector'].includes(e.type)?a('saveShape','Сохранить фигуру в библиотеку'):''}`)}
+function mobileV36MorePanel(){
+ const e=active(),elements=picked(),a=(id,label)=>`<button data-mp-more="${id}" class="mp-btn-wide">${label}</button>`;
+ // Batch actions use the full selection; single-layer controls need active().
+ const actions=`<div class="mp-grid three">${[['copy','⧉ Копировать'],['paste','▣ Вставить'],['delete','× Удалить']].map(([id,label])=>`<button class="mp-choice" data-mp-more="${id}">${label}</button>`).join('')}</div><div class="mp-subtitle">Действия со слоем</div>`;
+ const batch=`${a('lock',elements.every(x=>x.locked)?'Разблокировать слой':'Заблокировать слой')}${a('group',isOneGroup()?'Разгруппировать':'Сгруппировать')}`;
+ if(!e)return mobileV36Sheet('Ещё',actions+batch);
+ return mobileV36Sheet('Ещё',`${actions}${e.type==='text'?a('title',`${e.isTitleLayer?'✓ ':''}Сделать заголовком карточки (H1)`):''}${batch}${e.type==='text'?`<div class="mp-subtitle">Режим текста</div><div class="mp-grid three">${[['horizontal','Горизонт.'],['vertical','Вертикал.']].map(([id,label])=>`<button class="mp-choice ${e.textMode===id?'active':''}" data-mp-textmode="${id}">${label}</button>`).join('')}</div>`:''}<div class="mp-subtitle">Режим наложения</div><div class="mp-grid two">${BLEND_OPTIONS.map(([id,label])=>`<button class="mp-choice ${e.blendMode===id?'active':''}" data-mp-blend="${id}">${mobileV36Escape(label)}</button>`).join('')}</div>${['path','vector'].includes(e.type)?a('saveShape','Сохранить фигуру в библиотеку'):''}`)
+}
 function mobileV36Render(){
- if(!mobileV36Small()||!mobileV36State.tool||!app.doc||!active()){mobileV36Close();return}
- const s=mobileV36State,e=active(),t=s.tool;
+ mobileV36FinishInteraction();
+ const s=mobileV36State,t=s.tool,e=active()||(t==='more'?picked()[0]:null);
+ if(!mobileV36Small()||!t||!app.doc||!e){mobileV36Close();return}
  let content='';
  if(!s.expanded){
   if(t==='font')content=mobileV36Pill(`<div class="mp-horizontal">${fontFamilies().map(mobileV36FontChip).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
@@ -3240,18 +3249,55 @@ function mobileV36UpdatePlane(ev){const rect=ev.currentTarget.getBoundingClientR
  const hex=mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value);mobileV36ApplyColor(hex,false);const cursor=mobileV36.querySelector('.mp-color-cursor');if(cursor){cursor.style.left=(mobileV36State.sat*100)+'%';cursor.style.top=((1-mobileV36State.value)*100)+'%'}
  const v=mobileV36.querySelector('[data-mp-hex]'),p=mobileV36.querySelector('[data-mp-preview]');if(v)v.value=hex;if(p)p.style.background=hex;
 }
-let mobileV36NudgeTimer=null,mobileV36NudgeStarted=false;
-function mobileV36Nudge(dir){const shift={left:[-1,0],right:[1,0],up:[0,-1],down:[0,1]}[dir];if(!shift)return;for(const e of picked().filter(x=>!isLayerLocked(x))){e.x+=shift[0];e.y+=shift[1]}paint();saveSoon();mobileV36NudgeStarted=true}
-function mobileV36EndNudge(){if(mobileV36NudgeTimer){clearTimeout(mobileV36NudgeTimer);clearInterval(mobileV36NudgeTimer);mobileV36NudgeTimer=null}if(mobileV36NudgeStarted){mobileV36NudgeStarted=false;commit();refreshLayers()}}
+// A property gesture owns its pointer until it ends or its panel is replaced.
+// Preview already mutates/schedules the model: cancellation retains that value,
+// just like pointerup. Compare model data, not selection-bearing history snapshots.
+let mobileV36NudgeTimer=null,mobileV36Interaction=null;
+function mobileV36InteractionModel(){return JSON.stringify({elements:app.doc?.elements,groups:app.doc?.groups})}
+function mobileV36BeginInteraction(type,ev,target){
+ if(mobileV36Interaction)return false;
+ mobileV36Interaction={type,pointerId:ev.pointerId,target,documentId:app.doc.id,before:mobileV36InteractionModel()};
+ try{target.setPointerCapture(ev.pointerId)}catch{}
+ return true;
+}
+function mobileV36FinishInteraction(ev){
+ const interaction=mobileV36Interaction;
+ if(!interaction||(ev&&ev.pointerId!==interaction.pointerId))return;
+ if(ev?.type==='lostpointercapture'&&ev.target!==interaction.target)return;
+ // Clear ownership before release/commit; lostcapture and repeated cancel are inert.
+ mobileV36Interaction=null;
+ if(interaction.type==='nudge'){
+  clearTimeout(mobileV36NudgeTimer);clearInterval(mobileV36NudgeTimer);mobileV36NudgeTimer=null;
+ }
+ try{if(interaction.target.hasPointerCapture(interaction.pointerId))interaction.target.releasePointerCapture(interaction.pointerId)}catch{}
+ if(app.doc?.id===interaction.documentId&&interaction.before!==mobileV36InteractionModel())mobileV36Commit();
+}
+function mobileV36Nudge(dir){
+ const shift={left:[-1,0],right:[1,0],up:[0,-1],down:[0,1]}[dir],elements=picked().filter(x=>!isLayerLocked(x));
+ if(!shift||!elements.length)return false;
+ for(const e of elements){e.x+=shift[0];e.y+=shift[1]}
+ paint();saveSoon();return true;
+}
+function mobileV36EndNudge(){if(mobileV36Interaction?.type==='nudge')mobileV36FinishInteraction()}
 mobileV36.addEventListener('pointerdown',ev=>{
- const arrow=ev.target.closest('[data-mp-nudge]');if(arrow){ev.preventDefault();mobileV36EndNudge();mobileV36Nudge(arrow.dataset.mpNudge);mobileV36NudgeTimer=setTimeout(()=>{mobileV36NudgeTimer=setInterval(()=>mobileV36Nudge(arrow.dataset.mpNudge),70)},360);try{arrow.setPointerCapture(ev.pointerId)}catch{}return}
- const plane=ev.target.closest('[data-mp-plane]');if(plane){ev.preventDefault();mobileV36UpdatePlane({clientX:ev.clientX,clientY:ev.clientY,currentTarget:plane});try{plane.setPointerCapture(ev.pointerId)}catch{}}
+ const arrow=ev.target.closest('[data-mp-nudge]');
+ if(arrow){
+  ev.preventDefault();if(!mobileV36BeginInteraction('nudge',ev,arrow))return;
+  if(mobileV36Nudge(arrow.dataset.mpNudge))mobileV36NudgeTimer=setTimeout(()=>{mobileV36NudgeTimer=setInterval(()=>mobileV36Nudge(arrow.dataset.mpNudge),70)},360);
+  return;
+ }
+ const plane=ev.target.closest('[data-mp-plane]');
+ if(plane){ev.preventDefault();if(mobileV36BeginInteraction('plane',ev,plane))mobileV36UpdatePlane({clientX:ev.clientX,clientY:ev.clientY,currentTarget:plane})}
 });
-mobileV36.addEventListener('pointermove',ev=>{const plane=ev.target.closest('[data-mp-plane]');if(plane&&plane.hasPointerCapture?.(ev.pointerId))mobileV36UpdatePlane({clientX:ev.clientX,clientY:ev.clientY,currentTarget:plane})});
-mobileV36.addEventListener('pointerup',ev=>{if(ev.target.closest('[data-mp-nudge]'))mobileV36EndNudge();if(ev.target.closest('[data-mp-plane]'))mobileV36Commit()});
-mobileV36.addEventListener('pointercancel',()=>{mobileV36EndNudge();mobileV36Commit()});
+mobileV36.addEventListener('pointermove',ev=>{
+ const interaction=mobileV36Interaction;
+ if(interaction?.type==='plane'&&interaction.pointerId===ev.pointerId)mobileV36UpdatePlane({clientX:ev.clientX,clientY:ev.clientY,currentTarget:interaction.target});
+});
+// A matching release still finishes if capture was unavailable or the target moved.
+for(const type of ['pointerup','pointercancel','lostpointercapture'])window.addEventListener(type,mobileV36FinishInteraction,true);
 mobileV36.addEventListener('click',ev=>{
- const b=ev.target.closest('button');if(!b)return;
+ const b=ev.target.closest('button');if(!b||b.dataset.mpNudge)return;
+ mobileV36FinishInteraction();
  if(b.dataset.mpAction){const action=b.dataset.mpAction;
   if(action==='done'){mobileV36Close();return}
   if(action==='back'){mobileV36Back();return}
@@ -3277,7 +3323,7 @@ mobileV36.addEventListener('click',ev=>{
  if(b.dataset.mpArrange){if(b.dataset.mpArrange.startsWith('a'))mobileV36AlignLayer(b.dataset.mpArrange);else{arrangeLayer(b.dataset.mpArrange);mobileV36Render()}return}
  if(b.dataset.mpFxPick){mobileV36State.fxColor={type:b.dataset.mpFxPick,key:b.dataset.mpColorKey||'color'};mobileV36State.colorTab='solid';mobileV36State.sub='colorEdit';mobileV36State.expanded=true;mobileV36InitColor();mobileV36Render();return}
  if(b.dataset.mpEffect){mobileV36ApplyEffect(b.dataset.mpEffect);return}
- if(b.dataset.mpMore){const id=b.dataset.mpMore;if(id==='copy'){copyLayers();duplicateElement()}if(id==='paste')pasteLayers();if(id==='delete'){deleteElement();mobileV36Close();return}if(id==='lock')contextAction('lock');if(id==='group'){if(isOneGroup())ungroupSelected();else groupSelected()};if(id==='title'){const e=active();if(e.type==='text'){for(const x of app.doc.elements)if(x.type==='text')x.isTitleLayer=false;e.isTitleLayer=true;syncAutoCardTitle();commit()}}if(id==='saveShape')openSaveSelectedShape();mobileV36Render();return}
+ if(b.dataset.mpMore){const id=b.dataset.mpMore;if(id==='copy')copyLayers();if(id==='paste')pasteLayers();if(id==='delete'){deleteElement();mobileV36Close();return}if(id==='lock')contextAction('lock');if(id==='group'){if(isOneGroup())ungroupSelected();else groupSelected()};if(id==='title'){const e=active();if(e.type==='text'){for(const x of app.doc.elements)if(x.type==='text')x.isTitleLayer=false;e.isTitleLayer=true;syncAutoCardTitle();commit()}}if(id==='saveShape')openSaveSelectedShape();mobileV36Render();return}
  if(b.dataset.mpTextmode){const mode=b.dataset.mpTextmode,e=active();if(mode==='path'&&(!e.textPathPoints||e.textPathPoints.length<2)){e.textPathPoints=[{x:0,y:.72},{x:.25,y:.15},{x:.5,y:.15},{x:.75,y:.72},{x:1,y:.72}];e.textPathOffset=0;e.textPathSide='above'}mobileV36Property('textMode',mode,true);mobileV36Render();return}
  if(b.dataset.mpBlend){mobileV36Property('blendMode',b.dataset.mpBlend,true);mobileV36Render();return}
  if(b.dataset.mpStep){const k=b.dataset.mpStep,step=Number(b.closest('.mp-stepper').querySelector('[data-mp-key]').step)||1;const n=Number(active()?.[k]||0)+Number(b.dataset.dir)*step;mobileV36Property(k,Math.max(0,n),true);mobileV36Render();return}

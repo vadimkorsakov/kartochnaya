@@ -1,0 +1,128 @@
+{
+  "base": "4c44e9a707c48f231f4db10d1f7f3d5d626a3a02",
+  "productionUnchanged": true,
+  "summary": {
+    "failed": 14,
+    "passed": 4
+  },
+  "scenarios": [
+    {
+      "title": "nudge pointerup settles one actual change once",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 1\nReceived: 2"
+      ]
+    },
+    {
+      "title": "nudge pointercancel settles one actual change once",
+      "status": "unexpected",
+      "errors": [
+        "Error: one finish, no second generic commit\n\nexpect(received).toBe(expected) // Object.is equality\n\nExpected: 1\nReceived: 2"
+      ]
+    },
+    {
+      "title": "foreign and repeated cancellation cannot finalize a pending numeric edit",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 2\n+ Received  + 2"
+      ]
+    },
+    {
+      "title": "foreign pointerup/cancel and second down cannot steal a held nudge",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 2\n+ Received  + 2"
+      ]
+    },
+    {
+      "title": "color plane cancel keeps last preview, one undo and persisted color",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 1\nReceived: 2"
+      ]
+    },
+    {
+      "title": "color plane up keeps last preview, one undo and persisted color",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 1\nReceived: 2"
+      ]
+    },
+    {
+      "title": "color plane close keeps last preview, one undo and persisted color",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 1\nReceived: 0"
+      ]
+    },
+    {
+      "title": "color plane switch keeps last preview, one undo and persisted color",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 1\nReceived: 2"
+      ]
+    },
+    {
+      "title": "foreign cancellation leaves captured color plane active",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 0\nReceived: 2"
+      ]
+    },
+    {
+      "title": "closing a held nudge stops repeats and releases capture",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 41\nReceived: 46"
+      ]
+    },
+    {
+      "title": "locked nudge and idle cancellation create no selection-only history",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 0\nReceived: 3"
+      ]
+    },
+    {
+      "title": "More copy single is read-only; paste allocates IDs, history and linked graph",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  -  1\n+ Received  + 28\n\n@@ -125,10 +125,37 @@\n        \"visible\": true,\n        \"w\": 20,\n        \"x\": 270,\n        \"y\": 180,\n      },\n+     Object {\n+       \"clipped\": false,\n+       \"fill\": \"#ab92fb\",\n+       \"fillOpacity\": 100,\n+       \"fillType\": \"solid\",\n+       \"fontFamily\": \"Arial\",\n+       \"fontSize\": 18,\n+       \"fontWeight\": \"400\",\n+       \"groupId\": null,\n+       \"h\": 30,\n+       \"id\": \"cd532b87-428d-4fe2-ab48-72dcfcacb7e2\",\n+       \"isTitleLayer\": false,\n+       \"locked\": false,\n+       \"name\": \"Title — копия\",\n+       \"opacity\": 100,\n+       \"rotation\": 0,\n+       \"stroke\": \"#111111\",\n+       \"strokeWidth\": 0,\n+       \"text\": \"Graph title\",\n+       \"textColor\": \"#111111\",\n+       \"textMode\": \"horizontal\",\n+       \"type\": \"text\",\n+       \"visible\": true,\n+       \"w\": 200,\n+       \"x\": 28,\n+       \"y\": 168,\n+     },\n    ],\n    \"groups\": Array [\n      Object {\n        \"collapsed\": false,\n        \"id\": \"outer\",\n@@ -151,8 +178,8 @@\n    \"height\": 240,\n    \"id\": \"4fe38316-fa26-412f-80f8-fb138d5ec510\",\n    \"projectId\": \"2788848a-a492-4fcb-b745-60916fbba7d9\",\n    \"title\": \"Graph template\",\n    \"type\": \"template\",\n-   \"updatedAt\": 1793000694834,\n+   \"updatedAt\": 1793000696221,\n    \"width\": 320,\n  }"
+      ]
+    },
+    {
+      "title": "More copy group is read-only; paste allocates IDs, history and linked graph",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(locator).toBeVisible() failed\n\nLocator: locator('[data-mp-more=\"copy\"]')\nExpected: visible\nTimeout: 7000ms\nError: element(s) not found\n\nCall log:\n  - Expect \"toBeVisible\" locator('[data-mp-more=\"copy\"]') with timeout 7000ms\n  - waiting for locator('[data-mp-more=\"copy\"]')\n"
+      ]
+    },
+    {
+      "title": "baseline control: tap normal contract",
+      "status": "expected",
+      "errors": []
+    },
+    {
+      "title": "baseline control: hold normal contract",
+      "status": "expected",
+      "errors": []
+    },
+    {
+      "title": "baseline control: color cancel normal contract",
+      "status": "expected",
+      "errors": []
+    },
+    {
+      "title": "two-finger canvas router cancels tentative drag, zooms and leaves no pointer state",
+      "status": "expected",
+      "errors": []
+    },
+    {
+      "title": "unchanged black color plane cancellation never creates a history entry",
+      "status": "unexpected",
+      "errors": [
+        "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 0\nReceived: 1"
+      ]
+    }
+  ]
+}

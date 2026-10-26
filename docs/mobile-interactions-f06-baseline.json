@@ -1,0 +1,116 @@
+{
+  "base": "4c44e9a707c48f231f4db10d1f7f3d5d626a3a02",
+  "scenarios": [
+    {
+      "title": "nudge pointerup settles one actual change once",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\n   98 |   await page.waitForTimeout(550); expect((await audit(page)).puts).toHaveLength(1); expect((await audit(page)).completed).toHaveLength(1);\n   99 |   await pointer(page, '#mobilePropertyUI', 'pointercancel', t.id);\n> 100 |   expect((await audit(page)).saves).toBe(1);\n      |                                     ^\n  101 |   await undoRedo(page, before, after); await reload(page, after);\n  102 | });\n  103 |\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:100:37"
+      ]
+    },
+    {
+      "title": "nudge pointercancel settles one actual change once",
+      "status": "unexpected",
+      "errors": [
+        "Error: one finish, no second generic commit\n\n\u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\n  93 |   expect((await exportedDocument(page)).elements[0].x).toBe(41);\n  94 |   await resetAudit(page); await t.end(cancel);\n> 95 |   expect((await audit(page)).saves, 'one finish, no second generic commit').toBe(1);\n     |                                                                             ^\n  96 |   expect(await history(page)).toEqual({ length: h.length + 1, index: h.index + 1 });\n  97 |   const after = await exportedDocument(page); expect(after.elements[0].x).toBe(41);\n  98 |   await page.waitForTimeout(550); expect((await audit(page)).puts).toHaveLength(1); expect((await audit(page)).completed).toHaveLength(1);\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:95:77"
+      ]
+    },
+    {
+      "title": "foreign and repeated cancellation cannot finalize a pending numeric edit",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 2\u001b[39m\n\n\u001b[2m  Object {\u001b[22m\n\u001b[32m-   \"index\": 0,\u001b[39m\n\u001b[32m-   \"length\": 1,\u001b[39m\n\u001b[31m+   \"index\": 1,\u001b[39m\n\u001b[31m+   \"length\": 2,\u001b[39m\n\u001b[2m  }\u001b[22m\n\n  107 |   const h = await history(page); await resetAudit(page);\n  108 |   for (let i = 0; i < 2; i++) await pointer(page, '#mobilePropertyUI', 'pointercancel', 99);\n> 109 |   expect(await history(page)).toEqual(h); expect((await audit(page)).saves).toBe(0);\n      |                               ^\n  110 |   await page.locator('input[type=\"range\"][data-mp-key=\"opacity\"]').dispatchEvent('change');\n  111 |   expect((await exportedDocument(page)).elements[0].opacity).toBe(70);\n  112 | });\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:109:31"
+      ]
+    },
+    {
+      "title": "foreign pointerup/cancel and second down cannot steal a held nudge",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  - 2\u001b[39m\n\u001b[31m+ Received  + 2\u001b[39m\n\n\u001b[2m  Object {\u001b[22m\n\u001b[32m-   \"index\": 0,\u001b[39m\n\u001b[32m-   \"length\": 1,\u001b[39m\n\u001b[31m+   \"index\": 2,\u001b[39m\n\u001b[31m+   \"length\": 3,\u001b[39m\n\u001b[2m  }\u001b[22m\n\n  119 |   await pointer(page, '[data-mp-nudge=\"right\"]', 'pointerup', 12);\n  120 |   await pointer(page, '#mobilePropertyUI', 'pointercancel', 12);\n> 121 |   expect(await history(page)).toEqual(h); expect((await audit(page)).saves).toBe(0);\n      |                               ^\n  122 |   await page.clock.runFor(640); // 1 immediate + 4 repeats at 430, 500, 570, 640.\n  123 |   expect((await exportedDocument(page)).elements[0].x).toBe(45);\n  124 |   await pointer(page, '#mobilePropertyUI', 'pointercancel', 11);\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:121:31"
+      ]
+    },
+    {
+      "title": "color plane cancel keeps last preview, one undo and persisted color",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\n  138 |   expect((await audit(page)).saves).toBe(1);\n  139 |   expect(await history(page)).toEqual({ length: h.length + 1, index: h.index + 1 });\n> 140 |   await pointer(page, '#mobilePropertyUI', 'pointercancel', t.id); expect((await audit(page)).saves).toBe(1);\n      |                                                                                                      ^\n  141 |   expect((await exportedDocument(page)).elements).toEqual(after.elements);\n  142 |   await page.locator('#mobileConfirm').dispatchEvent('click'); await color(page);\n  143 |   await expect(page.locator('[data-mp-hex]')).toHaveValue(after.elements[0].fill);\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:140:102"
+      ]
+    },
+    {
+      "title": "color plane up keeps last preview, one undo and persisted color",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\n  138 |   expect((await audit(page)).saves).toBe(1);\n  139 |   expect(await history(page)).toEqual({ length: h.length + 1, index: h.index + 1 });\n> 140 |   await pointer(page, '#mobilePropertyUI', 'pointercancel', t.id); expect((await audit(page)).saves).toBe(1);\n      |                                                                                                      ^\n  141 |   expect((await exportedDocument(page)).elements).toEqual(after.elements);\n  142 |   await page.locator('#mobileConfirm').dispatchEvent('click'); await color(page);\n  143 |   await expect(page.locator('[data-mp-hex]')).toHaveValue(after.elements[0].fill);\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:140:102"
+      ]
+    },
+    {
+      "title": "color plane close keeps last preview, one undo and persisted color",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m0\u001b[39m\n\n  136 |   else if (finish === 'switch') { await page.locator('#mobileContext [data-mobile=\"more\"]').dispatchEvent('click'); await t.end(true); }\n  137 |   else await t.end(finish === 'cancel');\n> 138 |   expect((await audit(page)).saves).toBe(1);\n      |                                     ^\n  139 |   expect(await history(page)).toEqual({ length: h.length + 1, index: h.index + 1 });\n  140 |   await pointer(page, '#mobilePropertyUI', 'pointercancel', t.id); expect((await audit(page)).saves).toBe(1);\n  141 |   expect((await exportedDocument(page)).elements).toEqual(after.elements);\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:138:37"
+      ]
+    },
+    {
+      "title": "color plane switch keeps last preview, one undo and persisted color",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m1\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\n  138 |   expect((await audit(page)).saves).toBe(1);\n  139 |   expect(await history(page)).toEqual({ length: h.length + 1, index: h.index + 1 });\n> 140 |   await pointer(page, '#mobilePropertyUI', 'pointercancel', t.id); expect((await audit(page)).saves).toBe(1);\n      |                                                                                                      ^\n  141 |   expect((await exportedDocument(page)).elements).toEqual(after.elements);\n  142 |   await page.locator('#mobileConfirm').dispatchEvent('click'); await color(page);\n  143 |   await expect(page.locator('[data-mp-hex]')).toHaveValue(after.elements[0].fill);\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:140:102"
+      ]
+    },
+    {
+      "title": "foreign cancellation leaves captured color plane active",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m2\u001b[39m\n\n  151 |   await pointer(page, '[data-mp-plane]', 'pointercancel', t.id + 100);\n  152 |   await pointer(page, '[data-mp-plane]', 'pointerup', t.id + 100);\n> 153 |   expect((await audit(page)).saves).toBe(0); expect(await history(page)).toEqual(h);\n      |                                     ^\n  154 |   await t.move(.8, .8); const preview = await exportedDocument(page); await t.end(true);\n  155 |   expect((await exportedDocument(page)).elements).toEqual(preview.elements);\n  156 |   expect((await history(page)).length).toBe(h.length + 1);\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:153:37"
+      ]
+    },
+    {
+      "title": "closing a held nudge stops repeats and releases capture",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m41\u001b[39m\nReceived: \u001b[31m45\u001b[39m\n\n  161 |   const t = await touch(page, '[data-mp-nudge=\"down\"]');\n  162 |   await page.locator('#mobileConfirm').dispatchEvent('click');\n> 163 |   await page.waitForTimeout(600); expect((await exportedDocument(page)).elements[0].y).toBe(41);\n      |                                                                                        ^\n  164 |   await t.end(true); expect((await history(page)).length).toBe(h.length + 1);\n  165 |   const after = await exportedDocument(page); await reload(page, after);\n  166 | });\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:163:88"
+      ]
+    },
+    {
+      "title": "locked nudge and idle cancellation create no selection-only history",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m0\u001b[39m\nReceived: \u001b[31m3\u001b[39m\n\n  169 |   await open(page, { locked: true }); const before = await exportedDocument(page), h = await history(page); await tool(page, 'nudge');\n  170 |   await resetAudit(page); const t = await touch(page, '[data-mp-nudge=\"right\"]'); await t.end(true);\n> 171 |   expect(await history(page)).toEqual(h); expect((await audit(page)).saves).toBe(0);\n      |                                                                             ^\n  172 |   expect(await exportedDocument(page)).toEqual(before);\n  173 | });\n  174 |\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:171:77"
+      ]
+    },
+    {
+      "title": "More copy single is read-only; paste allocates IDs, history and linked graph",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoEqual\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // deep equality\u001b[22m\n\n\u001b[32m- Expected  -  1\u001b[39m\n\u001b[31m+ Received  + 28\u001b[39m\n\n\u001b[33m@@ -125,10 +125,37 @@\u001b[39m\n\u001b[2m        \"visible\": true,\u001b[22m\n\u001b[2m        \"w\": 20,\u001b[22m\n\u001b[2m        \"x\": 270,\u001b[22m\n\u001b[2m        \"y\": 180,\u001b[22m\n\u001b[2m      },\u001b[22m\n\u001b[31m+     Object {\u001b[39m\n\u001b[31m+       \"clipped\": false,\u001b[39m\n\u001b[31m+       \"fill\": \"#ab92fb\",\u001b[39m\n\u001b[31m+       \"fillOpacity\": 100,\u001b[39m\n\u001b[31m+       \"fillType\": \"solid\",\u001b[39m\n\u001b[31m+       \"fontFamily\": \"Arial\",\u001b[39m\n\u001b[31m+       \"fontSize\": 18,\u001b[39m\n\u001b[31m+       \"fontWeight\": \"400\",\u001b[39m\n\u001b[31m+       \"groupId\": null,\u001b[39m\n\u001b[31m+       \"h\": 30,\u001b[39m\n\u001b[31m+       \"id\": \"54ce1b6d-f52e-43c2-9231-c921847f00db\",\u001b[39m\n\u001b[31m+       \"isTitleLayer\": false,\u001b[39m\n\u001b[31m+       \"locked\": false,\u001b[39m\n\u001b[31m+       \"name\": \"Title — копия\",\u001b[39m\n\u001b[31m+       \"opacity\": 100,\u001b[39m\n\u001b[31m+       \"rotation\": 0,\u001b[39m\n\u001b[31m+       \"stroke\": \"#111111\",\u001b[39m\n\u001b[31m+       \"strokeWidth\": 0,\u001b[39m\n\u001b[31m+       \"text\": \"Graph title\",\u001b[39m\n\u001b[31m+       \"textColor\": \"#111111\",\u001b[39m\n\u001b[31m+       \"textMode\": \"horizontal\",\u001b[39m\n\u001b[31m+       \"type\": \"text\",\u001b[39m\n\u001b[31m+       \"visible\": true,\u001b[39m\n\u001b[31m+       \"w\": 200,\u001b[39m\n\u001b[31m+       \"x\": 28,\u001b[39m\n\u001b[31m+       \"y\": 168,\u001b[39m\n\u001b[31m+     },\u001b[39m\n\u001b[2m    ],\u001b[22m\n\u001b[2m    \"groups\": Array [\u001b[22m\n\u001b[2m      Object {\u001b[22m\n\u001b[2m        \"collapsed\": false,\u001b[22m\n\u001b[2m        \"id\": \"outer\",\u001b[22m\n\u001b[33m@@ -151,8 +178,8 @@\u001b[39m\n\u001b[2m    \"height\": 240,\u001b[22m\n\u001b[2m    \"id\": \"2950fcdf-7141-45e4-86d9-5d6c272aa927\",\u001b[22m\n\u001b[2m    \"projectId\": \"5f0fa901-b998-4f9d-b4e1-d1e1333662e2\",\u001b[22m\n\u001b[2m    \"title\": \"Graph template\",\u001b[22m\n\u001b[2m    \"type\": \"template\",\u001b[22m\n\u001b[32m-   \"updatedAt\": 1793000111716,\u001b[39m\n\u001b[31m+   \"updatedAt\": 1793000113289,\u001b[39m\n\u001b[2m    \"width\": 320,\u001b[22m\n\u001b[2m  }\u001b[22m\n\n  178 |   await expect(page.locator('[data-mp-more=\"copy\"]')).toBeVisible();\n  179 |   await resetAudit(page); await page.locator('[data-mp-more=\"copy\"]').tap();\n> 180 |   expect(await exportedDocument(page)).toEqual(before); expect(await history(page)).toEqual(h); expect((await audit(page)).saves).toBe(0);\n      |                                        ^\n  181 |   await page.waitForTimeout(550); expect((await audit(page)).puts).toHaveLength(0);\n  182 |   await page.locator('[data-mp-more=\"paste\"]').tap();\n  183 |   const after = await exportedDocument(page), copies = after.elements.filter(e => !before.elements.some(o => o.id === e.id));\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:180:40"
+      ]
+    },
+    {
+      "title": "More copy group is read-only; paste allocates IDs, history and linked graph",
+      "status": "unexpected",
+      "errors": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('[data-mp-more=\"copy\"]')\nExpected: visible\nTimeout: 7000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" locator('[data-mp-more=\"copy\"]') with timeout 7000ms\u001b[22m\n\u001b[2m  - waiting for locator('[data-mp-more=\"copy\"]')\u001b[22m\n\n\n  176 |   await open(page, { graph: true }); if (mode === 'group') await select(page, 'outer', true);\n  177 |   const before = await exportedDocument(page), h = await history(page); await tool(page, 'more');\n> 178 |   await expect(page.locator('[data-mp-more=\"copy\"]')).toBeVisible();\n      |                                                       ^\n  179 |   await resetAudit(page); await page.locator('[data-mp-more=\"copy\"]').tap();\n  180 |   expect(await exportedDocument(page)).toEqual(before); expect(await history(page)).toEqual(h); expect((await audit(page)).saves).toBe(0);\n  181 |   await page.waitForTimeout(550); expect((await audit(page)).puts).toHaveLength(0);\n    at /workspace/kartochnaya/tests/mobile-interactions.spec.js:178:55"
+      ]
+    },
+    {
+      "title": "baseline control: tap normal contract",
+      "status": "expected",
+      "errors": []
+    },
+    {
+      "title": "baseline control: hold normal contract",
+      "status": "expected",
+      "errors": []
+    },
+    {
+      "title": "baseline control: color cancel normal contract",
+      "status": "expected",
+      "errors": []
+    },
+    {
+      "title": "two-finger canvas router cancels tentative drag, zooms and leaves no pointer state",
+      "status": "expected",
+      "errors": []
+    }
+  ]
+}

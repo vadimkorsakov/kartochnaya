@@ -116,6 +116,10 @@ test('failed candidate integrity leaves old active worker and complete cache ava
   const old = await ready(page); await createDocument(page, 'Survivor'); await addShape(page); const doc = await savedDocument(page, 'Survivor', 1);
   await deploy('broken'); await writeFile(join(site, 'icon-512.png'), Buffer.from('truncated deployment'));
   await update(page, 'redundant');
+  await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
+  await expect(page.locator('#pwaStatus')).toContainText('Не удалось обновить');
+  await page.locator('#pwaDetailsToggle').click();
+  await expect(page.locator('#pwaDetails')).toContainText('Прежняя рабочая копия сохранена');
   expect(await page.evaluate(() => navigator.serviceWorker.controller.scriptURL)).toContain('/sw.js');
   const keys = await page.evaluate(() => caches.keys()); expect(keys.filter(x => x.startsWith('kartochnaya-netlify-'))).toEqual(['kartochnaya-netlify-' + old]);
   await context.setOffline(true); await page.reload(); await expect(page.locator('#homeScreen')).toBeVisible();
@@ -133,26 +137,58 @@ test('save failure postpones update and keeps editing state', async ({ page }) =
   await deploy('save-failure'); await update(page); await page.evaluate(() => { window.failUpdateSave = true; });
   await addShape(page); await page.locator('#pwaUpdate').click();
   await expect(page.locator('#pwaStatus')).toContainText('Обновление отложено');
+  expect(await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).waiting?.state)).toBe('installed');
   expect(await page.locator('meta[name=test-deploy]').count()).toBe(0);
   expect((await exportedDocument(page)).elements).toHaveLength(2);
 });
 
-test('modified HTTP HTML fails integrity visibly and retries safely without clearing caches', async ({ page, context }) => {
+for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }]) test(`PWA compact lifecycle and safe retry after modified HTTP HTML ${viewport.width}x${viewport.height}`, async ({ page, context }) => {
+  await page.setViewportSize(viewport);
+  await page.clock.install();
   const filename = join(site, 'index.html');
   const original = await readFile(filename);
   // Model a host changing only the response HTML after SHA256SUMS generation.
   await writeFile(filename, Buffer.concat([original, Buffer.from('\n<!-- host mutation -->')]));
   await page.goto('/');
-  await expect(page.locator('#pwaStatus')).toContainText('Не удалось установить');
+  await expect(page.locator('#pwaStatus')).toContainText('Не удалось подготовить');
+  await expect(page.locator('#pwaStatus')).not.toContainText('Прежняя рабочая копия сохранена');
   await expect(page.locator('#pwaRetry')).toBeEnabled();
   expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations().then(x => x.length))).toBe(0);
+  await createDocument(page, 'Mobile retry');
+  async function unblocked() {
+    const geometry = await page.locator('#pwaStatus').evaluate(panel => {
+      const box = panel.getBoundingClientRect();
+      const controls = ['#documentTabs', '.topbar', '#stageScroller', '#mobileToolbars'].map(selector => document.querySelector(selector)).filter(node => node?.getClientRects().length);
+      return { left: box.left, right: box.right, height: box.height, overlap: controls.some(node => {
+        const r = node.getBoundingClientRect(); return r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+      }), overflow: document.documentElement.scrollWidth > innerWidth };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0); expect(geometry.right).toBeLessThanOrEqual(viewport.width);
+    expect(geometry.height).toBeLessThanOrEqual(132); expect(geometry.overlap).toBe(false); expect(geometry.overflow).toBe(false);
+  }
+  await unblocked();
+  await page.locator('#pwaDetailsToggle').click();
+  await expect(page.locator('#pwaDetails')).toContainText('SHA-256');
+  await unblocked();
+  await page.locator('#pwaClose').click(); await expect(page.locator('#pwaStatus')).toBeHidden();
+  await page.locator('#documentTabsHome').click(); await expect(page.locator('#homeScreen')).toBeVisible();
+  await page.locator('#pwaToggle').click(); await page.locator('#pwaDetailsToggle').click();
+  await expect(page.locator('#pwaDetails')).toBeVisible();
   await page.evaluate(async () => { await (await caches.open('unrelated-working-cache')).put('/keep', new Response('keep')); });
   await writeFile(filename, original);
   await page.locator('#pwaRetry').click();
   await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
+  await expect(page.locator('#pwaMessage')).toHaveText('Офлайн-копия готова');
+  await page.clock.runFor(4001);
+  await expect(page.locator('#pwaStatus')).toBeHidden();
+  await page.locator('#pwaToggle').click(); await expect(page.locator('#pwaMessage')).toHaveText('Готово к работе офлайн');
+  await page.locator('#pwaClose').click();
   expect(await page.evaluate(() => caches.has('unrelated-working-cache'))).toBe(true);
   await context.setOffline(true); await page.reload();
   await expect(page.locator('#homeScreen')).toBeVisible();
+  await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
+  await expect(page.locator('#pwaStatus')).toBeHidden();
+  await expect(page.locator('#pwaToggle')).toBeVisible();
 });
 
 test('stalled registration stops preparation after deadline and offers retry', async ({ page }) => {
@@ -163,7 +199,9 @@ test('stalled registration stops preparation after deadline and offers retry', a
   await openHome(page);
   await expect(page.locator('#pwaStatus')).toContainText('Подготовка');
   await page.clock.runFor(30001);
-  await expect(page.locator('#pwaStatus')).toContainText('30 секунд');
+  await expect(page.locator('#pwaStatus')).toContainText('Не удалось подготовить');
+  await page.locator('#pwaDetailsToggle').click();
+  await expect(page.locator('#pwaDetails')).toContainText('30 секунд');
   await expect(page.locator('#pwaRetry')).toBeEnabled();
 });
 

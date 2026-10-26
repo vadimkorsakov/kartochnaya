@@ -176,6 +176,9 @@ test('new instance cannot start with stale data during exclusive safety lock', a
 test('preparation waits for a genuine pending save; frozen old timers cannot resurrect old docs', async ({ page }) => {
   await fault(page); await openHome(page); await createDocument(page, 'Pending old'); await addShape(page); await page.locator('#documentTabsHome').click();
   await replaceMode(page, (await incoming()).bytes); await page.evaluate(() => { replaceFault.hold = true; });
+  // Preview already confirmed the earlier edit. Queue a real editor change so
+  // the hold intercepts a necessary save rather than an idempotent flush.
+  await page.locator('#layers [data-layeract=visibility]').first().evaluate(button => button.click());
   await page.locator('#zipReplacePrepare').click();
   await expect.poll(() => page.evaluate(() => replaceFault.releases.length)).toBeGreaterThan(0); await expect(page.locator('#zipConfirm')).toBeDisabled();
   await page.evaluate(() => { replaceFault.hold = false; replaceFault.releases.splice(0).forEach(f => f()); });

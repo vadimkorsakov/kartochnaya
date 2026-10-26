@@ -402,3 +402,31 @@ test('Yandex expiry during import font preparation aborts before the existing co
   await expect(page.locator('#zipStatus')).toContainText('Не удалось завершить'); expect(await cloudRecords(page)).toEqual(before);
   await expect(page.locator('#zipConfirm')).toBeDisabled(); expect((await page.evaluate(() => navigator.locks.query())).held.some(l => l.mode === 'exclusive')).toBe(false);
 });
+
+const f08 = require('./restore-lifecycle-helpers');
+for (const outcome of ['retry', 'disconnect', 'generation']) test('F-08 Yandex retained ZIP after read failure: ' + outcome, async ({ page, context }) => {
+  await f08.observeRestore(page); const { archive, seen } = await cloudDownloadMock(context); await cloudList(page); await cloudToLocal(page);
+  const before = await cloudRecords(page), writes = await page.evaluate(() => restoreProbe.writes);
+  await page.evaluate(() => { restoreProbe.failReads = true; });
+  await f08.selectReplace(page); await f08.retryable(page);
+  expect(await cloudRecords(page)).toEqual(before); expect(await page.evaluate(() => restoreProbe.writes)).toBe(writes);
+  await page.evaluate(() => { restoreProbe.failReads = false; });
+  if (outcome === 'retry') {
+    await f08.ready(page); page.once('dialog', d => d.accept());
+    await Promise.all([page.waitForEvent('load'), page.locator('#zipConfirm').click()]); await expect(page.locator('#homeScreen')).toBeVisible();
+    const expected = Object.fromEntries(Object.keys(before).map(k => [k, archive.data[k]]));
+    expect(await cloudRecords(page)).toEqual(expected);
+    await page.reload(); await expect(page.locator('#homeScreen')).toBeVisible(); expect(await cloudRecords(page)).toEqual(expected);
+  } else {
+    await page.evaluate(outcome => {
+      if (outcome === 'disconnect') document.querySelector('#yandexDisconnect').click();
+      else { document.querySelector('#yandexClientId').value = 'b'.repeat(32); document.querySelector('#yandexSettings form').requestSubmit(); }
+    }, outcome);
+    await expect(page.locator('#zipBackupDialog')).not.toBeVisible();
+    await page.locator('#zipRestore').evaluate(n => n.click());
+    await expect(page.locator('[name=zipRestoreMode]')).toHaveCount(0); await expect(page.locator('#zipConfirm')).toBeDisabled();
+    expect(await cloudRecords(page)).toEqual(before); expect(await page.evaluate(() => restoreProbe.writes)).toBe(writes);
+  }
+  expect(seen.redirects).toBe(1); expect(seen.finals).toBe(1);
+  expect((await page.evaluate(() => navigator.locks.query())).held.some(l => l.mode === 'exclusive')).toBe(false);
+});

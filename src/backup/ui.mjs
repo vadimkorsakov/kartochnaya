@@ -63,18 +63,33 @@ export function installBackupUI({ snapshot, restore, download, replacement }) {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || busy) return;
     event.preventDefault(); const target = find(event.key === 'Home' ? 'zipCreate' : event.key === 'End' ? 'zipRestore' : id === 'zipCreate' ? 'zipRestore' : 'zipCreate'); target.focus(); target.click();
   });
-  async function task(message, operation, { optional = false } = {}) {
+  async function task(message, operation, { optional = false, retryPreparation = null } = {}) {
     if (busy) return;
     busy = true; confirm.disabled = true; cancel.disabled = true; find('zipCreate').disabled = find('zipRestore').disabled = true; dialog.querySelector('[data-backup-close]').disabled = true; status.textContent = message; dialog.setAttribute('aria-busy', 'true');
     const long = setTimeout(() => { status.textContent = message + '\nБольшой архив требует времени и свободной памяти. Операция продолжается; данные не удаляются.'; }, 8000);
     try { await new Promise(resolve => setTimeout(resolve, 0)); await operation(); }
     catch (error) {
-      if (optional) {
+      // Only comparison/preparation may retain the already verified source.
+      // The owner must still authorize it after every asynchronous failure.
+      // Validation and writes never opt into this path.
+      let archiveValid = false;
+      if (verified && restoreBytes && !['SecurityError', 'NotAllowedError'].includes(error?.name)) {
+        try { checkArchive(); archiveValid = true; } catch (sourceError) { error = sourceError; }
+      }
+      if (optional && archiveValid) {
         status.textContent = 'Не удалось скачать копию: ' + (error.message || error) + '\nКонтрольный снимок сохранён в памяти. Можно повторить скачивание, продолжить замену или отменить её.';
         confirm.disabled = !prepared; return;
       }
       const replacing = body.querySelector('[name=zipRestoreMode]:checked')?.value === 'replace';
-      await replacement.cancel(); prepared = false; releaseArchive();
+      await replacement.cancel(); prepared = false;
+      // Cancellation can await lock release: recheck the capability afterwards.
+      if (archiveValid) { try { checkArchive(); } catch (sourceError) { archiveValid = false; error = sourceError; } }
+      if (retryPreparation && replacing && archiveValid && !replacement.committed()) {
+        retryPreparation();
+        status.textContent = 'Не удалось подготовить замену: ' + (error.message || error) + '\nПроверенный ZIP сохранён в памяти. Повтори подготовку: текущие данные и все обязательные проверки будут выполнены заново.';
+        return;
+      }
+      releaseArchive();
       if (find('zipReplaceReady')) find('zipReplaceReady').hidden = true;
       if (find('zipReplacePrepare')) find('zipReplacePrepare').disabled = true;
       status.textContent = replacement.committed() ? 'Транзакция IndexedDB уже подтверждена. Старое состояние остановлено. Перезагрузи приложение вручную. ' + (error.message || error) : 'Не удалось завершить: ' + (error.message || error) + (replacing ? '\nЗамена не выполнена. Повторно открой исходный ZIP и подготовь замену заново.' : '\nСохранение и создание копии не подтверждены. Для больших копий выбери меньше проектов или освободи память.');
@@ -178,24 +193,30 @@ export function installBackupUI({ snapshot, restore, download, replacement }) {
       text('p', 'Снимок в памяти не является резервной копией для восстановления после успешной замены. Без скачанного страховочного ZIP прежние данные могут быть безвозвратно потеряны. Скачивание рекомендуется, но не обязательно. Проверь, что выбран нужный архив.', final);
       const safety = text('button', 'Скачать копию текущих данных (рекомендуется)', final); safety.type = 'button'; safety.id = 'zipSafetyDownload'; safety.className = 'btn btn-outline';
       const update = () => { confirm.disabled = !verified || !prepared; };
+      const retryPreparation = () => {
+        // No previous comparison or preparation proof authorizes confirmation.
+        comparison.replaceChildren(); review.hidden = false; final.hidden = true;
+        prepare.disabled = false; prepare.hidden = false; confirm.hidden = true; confirm.disabled = true;
+      };
       prepare.onclick = () => task('Блокируем редактирование и подтверждаем сохранения…', async () => {
         checkArchive(); if (!verified) throw Error('Повторно открой исходный ZIP');
         const current = await replacement.prepare(); checkArchive(); compare(current); prepared = true; prepare.disabled = true; prepare.hidden = true; confirm.hidden = false; review.hidden = true; final.hidden = false;
         status.textContent = 'Замена подготовлена. Можно скачать копию текущих данных или перейти к финальному подтверждению.'; update();
-      });
+      }, { retryPreparation });
       safety.onclick = () => task('Упаковываем копию контрольного снимка…', async () => {
-        await replacement.downloadSafety();
+        checkArchive(); await replacement.downloadSafety(); checkArchive();
         status.textContent = 'ZIP подготовлен и передан браузеру для скачивания. Сохрани файл самостоятельно и проверь загрузки: браузер может отменить или заблокировать скачивание.'; update();
       }, { optional: true });
       body.onchange = event => {
         if (event.target.name !== 'zipRestoreMode' || busy) return;
         void task('Читаем текущее состояние для сравнения…', async () => {
-          await replacement.cancel(); prepared = false; prepare.disabled = false; review.hidden = false; final.hidden = true;
+          checkArchive();
+          await replacement.cancel(); checkArchive(); prepared = false; prepare.disabled = false; review.hidden = false; final.hidden = true;
           const replace = event.target.value === 'replace'; intro.hidden = replace; panel.hidden = !replace; copyDescription.hidden = replace; prepare.hidden = !replace; confirm.hidden = replace;
           confirm.textContent = replace ? 'Заменить рабочее пространство' : 'Восстановить копии проектов';
-          if (replace) { compare(await snapshot()); update(); status.textContent = 'Сравни данные и нажми «Подготовить замену».'; }
+          if (replace) { const current = await snapshot(); checkArchive(); compare(current); update(); status.textContent = 'Сравни данные и нажми «Подготовить замену».'; }
           else { confirm.disabled = !verified; status.textContent = 'Будут добавлены копии проектов.'; }
-        });
+        }, { retryPreparation });
       };
       status.textContent = 'Проверка пройдена. Восстановление начнётся только после нажатия кнопки.'; confirm.disabled = false;
     });

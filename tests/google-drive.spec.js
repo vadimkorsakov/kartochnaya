@@ -408,3 +408,33 @@ test('Drive disconnect during dialog close prevents handoff to the local modal',
   await page.evaluate(() => document.querySelector('#googleDriveDialog').addEventListener('close', () => document.querySelector('#driveDisconnect').click(), { once: true }));
   await page.locator('#driveRestore').click(); await expect(page.locator('#zipBackupDialog')).not.toBeVisible(); expect(await driveStorage(page)).toEqual(before);
 });
+
+const f08 = require('./restore-lifecycle-helpers');
+for (const outcome of ['retry', 'disconnect', 'generation']) test('F-08 Drive retained ZIP after read failure: ' + outcome, async ({ page }) => {
+  await f08.observeRestore(page); const state = await driveArchive(page); await driveHandoff(page);
+  const before = await driveStorage(page), writes = await page.evaluate(() => restoreProbe.writes);
+  await f08.selectReplace(page); await page.evaluate(() => { restoreProbe.failReads = true; });
+  await page.locator('#zipReplacePrepare').click(); await f08.retryable(page);
+  expect(await driveStorage(page)).toEqual(before); expect(await page.evaluate(() => restoreProbe.writes)).toBe(writes);
+  await page.evaluate(() => { restoreProbe.failReads = false; });
+  if (outcome === 'retry') {
+    await f08.ready(page);
+    page.once('dialog', d => d.accept());
+    await Promise.all([page.waitForEvent('load'), page.locator('#zipConfirm').click()]);
+    await expect(page.locator('#homeScreen')).toBeVisible();
+    const incoming = await (await import('../src/backup/archive.mjs')).readBackup(new Uint8Array(state.bytes.get('cloud-1')));
+    expect(await driveStorage(page)).toEqual(Object.fromEntries(Object.keys(before).map(k => [k, incoming.data[k]])));
+    await page.reload(); await expect(page.locator('#homeScreen')).toBeVisible();
+    expect((await driveStorage(page)).projects).toEqual(incoming.data.projects);
+  } else {
+    await page.evaluate(outcome => {
+      if (outcome === 'disconnect') document.querySelector('#driveDisconnect').onclick();
+      else { document.querySelector('#driveAccounts button').onclick(); document.querySelector('#driveConnect').onclick(); }
+    }, outcome);
+    await expect(page.locator('#zipBackupDialog')).not.toBeVisible();
+    await page.locator('#zipRestore').evaluate(n => n.click());
+    await expect(page.locator('[name=zipRestoreMode]')).toHaveCount(0); await expect(page.locator('#zipConfirm')).toBeDisabled();
+    expect(await driveStorage(page)).toEqual(before); expect(await page.evaluate(() => restoreProbe.writes)).toBe(writes);
+  }
+  expect(state.media).toBe(1); expect(await exclusiveDriveLock(page)).toBe(false);
+});

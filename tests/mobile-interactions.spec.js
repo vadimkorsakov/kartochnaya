@@ -1,5 +1,10 @@
 const { test, expect, openHome, importPayload, records, openLibraryDocument, exportedDocument } = require('./helpers');
+const { installMobilePointerDiagnostics, attachMobilePointerDiagnostics } = require('./mobile-pointer-diagnostics');
 const graphFixture = require('./fixtures/canvas-graph.json');
+
+test.afterEach(async ({ page }, info) => {
+  if (info.title.startsWith('color plane up ') && info.status !== info.expectedStatus) await attachMobilePointerDiagnostics(page, info);
+});
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
@@ -164,6 +169,7 @@ test('foreign pointerup/cancel and second down cannot steal a held nudge', async
 });
 
 for (const finish of ['cancel', 'up', 'close', 'switch']) test(`color plane ${finish} keeps last preview, one undo and persisted color`, async ({ page }) => {
+  if (finish === 'up') await installMobilePointerDiagnostics(page);
   await open(page); const before = await exportedDocument(page), h = await history(page); await color(page);
   const t = await touch(page, '[data-mp-plane]', .1, .1); await t.move(.8, .7);
   const after = await exportedDocument(page); expect(after.elements[0].fill).not.toBe(before.elements[0].fill);
@@ -181,6 +187,7 @@ for (const finish of ['cancel', 'up', 'close', 'switch']) test(`color plane ${fi
   await color(page);
   await expect(page.locator('[data-mp-hex]')).toHaveValue(after.elements[0].fill);
   await tapButton(page, '[data-mp-action="done"]');
+  if (finish === 'up') await attachMobilePointerDiagnostics(page, test.info());
   await undoRedo(page, before, after); await reload(page, after);
 });
 

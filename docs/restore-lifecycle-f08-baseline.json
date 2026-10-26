@@ -22,7 +22,7 @@
         "F-08 Drive retained ZIP after read failure: retry ",
         "F-08 Yandex retained ZIP after read failure: retry "
       ],
-      "observed": "The expected retry button is absent; IDB unchanged and no exclusive locks assertions passed before this assertion."
+      "observed": "The retry button is absent; no exclusive locks are held. Store-preservation assertions after retryable() were not reached in these two baseline cases; they run in the fixed regression."
     },
     {
       "run": "f08-controls-baseline",
@@ -31,5 +31,13 @@
       "failures": [],
       "observed": "Existing protections pass without production changes."
     }
-  ]
+  ],
+  "repeatWithFinalLocalFixture": {
+    "base": "cf46ab4bfac39dcbe98bde518cc32701d42016d1",
+    "detached": true,
+    "productionChanged": false,
+    "passed": 0,
+    "failed": 4,
+    "reason": "The same missing #zipReplacePrepare assertion after temporary current-workspace failure."
+  }
 }

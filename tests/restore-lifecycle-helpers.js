@@ -8,15 +8,19 @@ async function contents(page) {
 // Faults affect actual browser IDB transactions, never archive validation or app hooks.
 async function observeRestore(page) {
   await page.addInitScript(() => {
-    window.restoreProbe = { failReads: false, reads: 0, writes: 0, completes: 0, aborts: 0 };
+    window.restoreProbe = { failReads: false, readFailure: 'InvalidStateError', abortReads: false, reads: 0, writes: 0, completes: 0, aborts: 0 };
     const transaction = IDBDatabase.prototype.transaction;
     IDBDatabase.prototype.transaction = function(names, mode, ...args) {
       const workspace = Array.isArray(names) && names.length === 4;
       if (workspace && mode === 'readonly') {
         restoreProbe.reads++;
-        if (restoreProbe.failReads) throw new DOMException('F-08 temporary workspace read failure', 'InvalidStateError');
+        if (restoreProbe.failReads) throw new DOMException('F-08 temporary workspace read failure', restoreProbe.readFailure);
       }
       const tx = transaction.call(this, names, mode, ...args);
+      if (workspace && mode === 'readonly' && restoreProbe.abortReads) {
+        const request = tx.objectStore('projects').getAll();
+        request.addEventListener('success', () => tx.abort());
+      }
       if (mode === 'readwrite') {
         restoreProbe.writes++;
         tx.addEventListener('complete', () => restoreProbe.completes++);

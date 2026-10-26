@@ -420,7 +420,7 @@ for (const outcome of ['retry', 'disconnect', 'generation']) test('F-08 Yandex r
   } else {
     await page.evaluate(outcome => {
       if (outcome === 'disconnect') document.querySelector('#yandexDisconnect').click();
-      else { const key = 'kartochnaya-yandex-public-client-id'; localStorage.setItem(key, 'b'.repeat(32)); window.dispatchEvent(new StorageEvent('storage', { key })); }
+      else { document.querySelector('#yandexClientId').value = 'b'.repeat(32); document.querySelector('#yandexSettings form').requestSubmit(); }
     }, outcome);
     await expect(page.locator('#zipBackupDialog')).not.toBeVisible();
     await page.locator('#zipRestore').evaluate(n => n.click());

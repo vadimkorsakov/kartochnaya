@@ -3,7 +3,7 @@ const { installMobilePointerDiagnostics, attachMobilePointerDiagnostics } = requ
 const graphFixture = require('./fixtures/canvas-graph.json');
 
 test.afterEach(async ({ page }, info) => {
-  if (info.title.startsWith('color plane up ') && info.status !== info.expectedStatus) await attachMobilePointerDiagnostics(page, info);
+  if (/^(color plane |color Done |color UI )/.test(info.title) && info.status !== info.expectedStatus) await attachMobilePointerDiagnostics(page, info);
 });
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -34,13 +34,14 @@ async function observe(page) {
     }
   });
 }
-async function open(page, { graph = false, locked = false } = {}) {
+async function open(page, { graph = false, locked = false, fill } = {}) {
   await observe(page); await openHome(page);
   const payload = structuredClone(graphFixture); payload.documents = [payload.documents[0]];
   if (!graph) {
     payload.documents[0].groups = [];
     payload.documents[0].elements = [{ ...payload.documents[0].elements[3], x: 40, y: 40, w: 80, h: 80, locked }];
   }
+  if (fill) payload.documents[0].elements[0].fill = fill;
   await importPayload(page, payload);
   let doc;
   await expect.poll(async () => { doc = (await records(page, 'docs')).find(d => d.title === 'Graph template'); return doc?.id; }).toBeTruthy();
@@ -120,9 +121,9 @@ async function reload(page, doc) {
   await saved(page, doc); await page.reload(); await openLibraryDocument(page, doc.id);
   expect((await exportedDocument(page)).elements).toEqual(doc.elements);
 }
-async function undoRedo(page, before, after) {
-  await page.locator('#undoBtn').tap(); expect((await exportedDocument(page)).elements).toEqual(before.elements);
-  await page.locator('#redoBtn').tap(); expect((await exportedDocument(page)).elements).toEqual(after.elements);
+async function undoRedo(page, before, after, input = 'tap') {
+  await page.locator('#undoBtn')[input](); expect((await exportedDocument(page)).elements).toEqual(before.elements);
+  await page.locator('#redoBtn')[input](); expect((await exportedDocument(page)).elements).toEqual(after.elements);
 }
 
 for (const cancel of [false, true]) test(`nudge ${cancel ? 'pointercancel' : 'pointerup'} settles one actual change once`, async ({ page }) => {
@@ -169,26 +170,93 @@ test('foreign pointerup/cancel and second down cannot steal a held nudge', async
 });
 
 for (const finish of ['cancel', 'up', 'close', 'switch']) test(`color plane ${finish} keeps last preview, one undo and persisted color`, async ({ page }) => {
-  if (finish === 'up') await installMobilePointerDiagnostics(page);
+  await installMobilePointerDiagnostics(page);
   await open(page); const before = await exportedDocument(page), h = await history(page); await color(page);
   const t = await touch(page, '[data-mp-plane]', .1, .1); await t.move(.8, .7);
   const after = await exportedDocument(page); expect(after.elements[0].fill).not.toBe(before.elements[0].fill);
   await resetAudit(page);
-  if (finish === 'close') { await page.locator('#mobileConfirm').dispatchEvent('click'); await t.end(true); }
-  else if (finish === 'switch') { await page.locator('#mobileContext [data-mobile="more"]').dispatchEvent('click'); await t.end(true); }
+  if (finish === 'close') { await page.locator('[data-mp-action="done"]').click(); await t.end(true); }
+  else if (finish === 'switch') {
+    const more = page.locator('#mobileContext [data-mobile="more"]');
+    await more.focus(); await more.press('Enter'); await t.end(true);
+  }
   else await t.end(finish === 'cancel');
   expect((await audit(page)).saves).toBe(1);
   expect(await history(page)).toEqual({ length: h.length + 1, index: h.index + 1 });
-  await pointer(page, '#mobilePropertyUI', 'pointercancel', t.id); expect((await audit(page)).saves).toBe(1);
+  for (const id of [t.id + 100, t.id, t.id]) {
+    await pointer(page, '#mobilePropertyUI', 'pointercancel', id);
+    await pointer(page, '#mobilePropertyUI', 'pointerup', id);
+    expect((await audit(page)).saves).toBe(1);
+    expect(await history(page)).toEqual({ length: h.length + 1, index: h.index + 1 });
+  }
   expect((await exportedDocument(page)).elements).toEqual(after.elements);
   await expect(page.locator('#mobileContext')).not.toHaveClass(/hidden/);
-  if (finish !== 'close') await tapButton(page, '[data-mp-action="done"]');
-  await expect(page.locator('#mobilePropertyUI'), 'After Done: ' + JSON.stringify((await audit(page)).events.slice(-16))).not.toHaveClass(/mp-open/);
-  await color(page);
-  await expect(page.locator('[data-mp-hex]')).toHaveValue(after.elements[0].fill);
+  // Mouse is an independent, actionable UI close after the controlled CDP stream.
+  // Touch-click delivery is covered below in fresh contexts without synthetic IDs.
+  if (finish !== 'close') await page.locator('[data-mp-action="done"]').click();
+  await expect(page.locator('#mobilePropertyUI')).not.toHaveClass(/mp-open/);
+  await saved(page, after);
+  await expect.poll(async () => (await audit(page)).completed.length).toBe(1);
+  expect((await audit(page)).puts).toHaveLength(1);
+  await attachMobilePointerDiagnostics(page, test.info());
+  await undoRedo(page, before, after, 'click'); await reload(page, after);
+});
+
+test('color Done tap delivers trusted click, closes and reopens without mutation', async ({ page }) => {
+  await installMobilePointerDiagnostics(page);
+  await open(page, { fill: '#2874A6' });
+  const before = await exportedDocument(page), h = await history(page);
+  await color(page); await expect(page.locator('[data-mp-hex]')).toHaveValue('#2874A6');
+  await resetAudit(page);
   await tapButton(page, '[data-mp-action="done"]');
-  if (finish === 'up') await attachMobilePointerDiagnostics(page, test.info());
-  await undoRedo(page, before, after); await reload(page, after);
+  await expect(page.locator('#mobilePropertyUI')).not.toHaveClass(/mp-open/);
+  await color(page); await expect(page.locator('[data-mp-hex]')).toHaveValue('#2874A6');
+  await tapButton(page, '[data-mp-action="done"]');
+  await expect(page.locator('#mobilePropertyUI')).not.toHaveClass(/mp-open/);
+  expect(await exportedDocument(page)).toEqual(before); expect(await history(page)).toEqual(h);
+  expect((await audit(page)).saves).toBe(0);
+  await page.waitForTimeout(550);
+  expect((await audit(page)).puts).toHaveLength(0); expect((await audit(page)).completed).toHaveLength(0);
+  await attachMobilePointerDiagnostics(page, test.info());
+  await reload(page, before);
+});
+
+test('color UI taps edit, confirm, reopen and edit again with history and persistence', async ({ page }) => {
+  await installMobilePointerDiagnostics(page);
+  await open(page); const before = await exportedDocument(page), h = await history(page);
+  await color(page);
+  const versions = [before];
+  for (const fraction of [{ x: .2, y: .25 }, { x: .8, y: .7 }]) {
+    await resetAudit(page);
+    // One Playwright touch stream throughout: no CDP or dispatched PointerEvents.
+    const plane = page.locator('[data-mp-plane]');
+    const position = await plane.evaluate((el, f) => ({ x: el.clientWidth * f.x, y: el.clientHeight * f.y }), fraction);
+    await plane.tap({ position });
+    const after = await exportedDocument(page); versions.push(after);
+    expect(after.elements[0].fill).not.toBe(versions.at(-2).elements[0].fill);
+    await expect(page.locator('[data-mp-hex]')).toHaveValue(after.elements[0].fill);
+    expect(await history(page)).toEqual({ length: h.length + versions.length - 1, index: h.index + versions.length - 1 });
+    // Plane preview plus its finish; confirming and reopening must add no saves.
+    const saves = (await audit(page)).saves;
+    await tapButton(page, '[data-mp-action="done"]');
+    await expect(page.locator('#mobilePropertyUI')).not.toHaveClass(/mp-open/);
+    await color(page); await expect(page.locator('[data-mp-hex]')).toHaveValue(after.elements[0].fill);
+    expect((await audit(page)).saves).toBe(saves);
+    expect((await exportedDocument(page)).elements).toEqual(after.elements);
+    await saved(page, after);
+    await expect.poll(async () => (await audit(page)).completed.length).toBe(1);
+    expect((await audit(page)).puts).toHaveLength(1);
+  }
+  await tapButton(page, '[data-mp-action="done"]');
+  await expect(page.locator('#mobilePropertyUI')).not.toHaveClass(/mp-open/);
+  await undoRedo(page, versions[1], versions[2]);
+  await page.locator('#undoBtn').tap(); await page.locator('#undoBtn').tap();
+  expect((await exportedDocument(page)).elements).toEqual(before.elements);
+  await page.locator('#redoBtn').tap(); await page.locator('#redoBtn').tap();
+  expect((await exportedDocument(page)).elements).toEqual(versions[2].elements);
+  expect(await history(page)).toEqual({ length: h.length + 2, index: h.index + 2 });
+  await attachMobilePointerDiagnostics(page, test.info());
+  await reload(page, versions[2]);
 });
 
 test('foreign cancellation leaves captured color plane active', async ({ page }) => {

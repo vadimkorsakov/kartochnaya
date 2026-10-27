@@ -3,6 +3,11 @@ const fixture = require('./fixtures/canvas-graph.json');
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
+async function mobileTab(page, id, close = false) {
+  await page.locator('#documentTabsMenuToggle').tap();
+  await page.locator(`[data-mobile-tab-id="${id}"] ${close ? '[data-mobile-tab-close]' : '[data-mobile-tab-activate]'}`).tap();
+}
+
 async function open(page) {
   await page.addInitScript(() => {
     window.panelWrites = [];
@@ -92,17 +97,17 @@ test('library, tab switches and active tab closure discard temporary panels with
   await closed(page);
   await expect(page.locator('#quickBubble')).toBeHidden();
   await select(page); await color(page);
-  await page.locator(`[data-tab-id="${docs[0].id}"]`).tap();
+  await mobileTab(page, docs[0].id);
   await closed(page);
   await expect(page.locator('#quickBubble')).toBeVisible();
   expect(await exportedDocument(page)).toEqual(before);
   expect(await history(page)).toEqual(h);
   await color(page);
-  await page.locator(`[data-tab-id="${docs[0].id}"] .document-tab-close`).tap();
+  await mobileTab(page, docs[0].id, true);
   await closed(page);
-  await expect(page.locator(`[data-tab-id="${docs[1].id}"]`)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#documentTabsMenuLabel')).toHaveText(docs[1].title);
   await color(page);
-  await page.locator(`[data-tab-id="${docs[1].id}"] .document-tab-close`).tap();
+  await mobileTab(page, docs[1].id, true);
   await expect(page.locator('#homeScreen')).toBeVisible();
   await closed(page);
   await expect(page.locator('#quickBubble')).toBeHidden();
@@ -115,7 +120,7 @@ for (const destination of ['home', 'tab']) test(`active F-06 interaction settles
   const docs = await open(page);
   await page.locator('#documentTabsHome').tap();
   await openLibraryDocument(page, docs[1].id);
-  await page.locator(`[data-tab-id="${docs[0].id}"]`).tap();
+  await mobileTab(page, docs[0].id);
   const before = await exportedDocument(page), h = await history(page);
   await page.evaluate(() => { panelWrites = []; });
   await page.locator('#mobileContext [data-mobile="nudge"]').scrollIntoViewIfNeeded();
@@ -126,7 +131,7 @@ for (const destination of ['home', 'tab']) test(`active F-06 interaction settles
   // Keep a panel interaction active while navigating with an ordinary tap.
   // Synthetic ownership avoids multi-touch navigation being interpreted as a pinch.
   await page.locator('[data-mp-nudge="right"]').dispatchEvent('pointerdown', { pointerId: 91, pointerType: 'touch', button: 0, buttons: 1 });
-  await page.locator(destination === 'home' ? '#documentTabsHome' : `[data-tab-id="${docs[1].id}"]`).tap();
+  if (destination === 'home') await page.locator('#documentTabsHome').tap(); else await mobileTab(page, docs[1].id);
   await closed(page);
   await page.clock.runFor(600);
   await page.clock.resume();
@@ -134,7 +139,7 @@ for (const destination of ['home', 'tab']) test(`active F-06 interaction settles
   expect(after.elements[0].x).toBe(before.elements[0].x + 1);
   expect(await page.evaluate(() => panelWrites.map(d => d.id))).toEqual([before.id]);
   expect((await records(page, 'docs')).find(d => d.id === docs[1].id)).toEqual(docs[1]);
-  await page.locator(`[data-tab-id="${docs[0].id}"]`).tap();
+  await mobileTab(page, docs[0].id);
   expect((await exportedDocument(page)).elements).toEqual(after.elements);
   expect((await history(page)).length).toBe(h.length + 1);
   await page.locator('#undoBtn').tap();

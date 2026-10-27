@@ -1343,7 +1343,7 @@ html,body{background:#1e1f27!important;}
 @media(max-width:760px){
  .document-tabs-bar{display:flex;align-items:stretch;width:100%;overflow:hidden}
  .document-tabs-home{flex:0 0 47px!important;min-width:47px!important;max-width:47px!important}
- .document-tabs-scroll{flex:1 1 0!important;min-width:0!important;width:auto!important;max-width:none!important;overflow-x:auto!important;overflow-y:hidden!important;touch-action:pan-x!important;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+ .document-tabs-scroll{display:none}
  .document-tabs-scroll::-webkit-scrollbar{display:none}
  .document-tab{flex:0 0 150px!important;width:150px!important;min-width:140px!important;max-width:150px!important;overflow:hidden!important;}
  .document-tab-label{overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important;}
@@ -1448,4 +1448,30 @@ html,body{background:#1e1f27!important;}
  #mobileLayerList .folder-toggle{flex-basis:24px;width:24px;height:36px;}
  #mobileLayerList .layer-thumb.folder-icon{flex-basis:18px;width:18px;min-width:18px;}
  #mobileLayerList .layer-group .group-children{gap:3px;}
+}
+
+/* Mobile resident-document switcher; desktop tab geometry is unchanged. */
+.document-tabs-menu-toggle,.document-tabs-menu,#homePwaStatus:empty{display:none}
+@media(max-width:760px){
+ .document-tabs-menu-toggle{display:flex;align-items:center;gap:8px;flex:1;min-width:0;border:0;border-right:1px solid #35323e;padding:0 10px;background:#24212e;color:#f3efff;font:12px system-ui;text-align:left;cursor:pointer}
+ #documentTabsMenuLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .document-tabs-menu-toggle[aria-expanded=true]{box-shadow:inset 0 2px #9a78ef}
+ .document-tabs-menu{display:flex;flex-direction:column;position:fixed;left:8px;right:8px;z-index:400;min-height:0;border:1px solid #625475;border-radius:0 0 9px 9px;background:#24212e;color:#f3efff;box-shadow:0 12px 28px #0008;font:12px system-ui;overflow:auto;overscroll-behavior:contain}
+ .document-tabs-menu.hidden{display:none}
+ .document-tabs-menu header{display:flex;align-items:center;justify-content:space-between;padding-left:12px;border-bottom:1px solid #51475f}
+ .document-tabs-menu button{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:inherit;min-height:42px;padding:8px 12px;text-align:left;font:inherit;cursor:pointer}
+ .document-tabs-menu header,.document-tabs-menu>button{flex:none}
+ .document-tabs-menu ul{list-style:none;margin:0;padding:4px;overflow:auto;min-height:0;overscroll-behavior:contain}
+ .document-tabs-menu li{display:flex;align-items:stretch;border-radius:5px}
+ .document-tabs-menu li.active{background:#433254;box-shadow:inset 3px 0 #b99aff}
+ .document-tabs-menu [data-mobile-tab-activate]{flex:1;min-width:0}
+ .document-tabs-menu-title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .document-tabs-menu [data-mobile-tab-close],#documentTabsMenuClose{flex:0 0 42px;justify-content:center;font-size:20px}
+ .document-tabs-menu>button{border-top:1px solid #51475f}
+ .document-tabs-menu-empty{padding:14px}
+ .document-tabs-menu button:hover{background:#ffffff0c}
+ .document-tabs-menu button:focus-visible,.document-tabs-menu-toggle:focus-visible{outline:2px solid #b99aff;outline-offset:-3px}
+ #homePwaStatus{flex:0 0 auto;margin-left:auto}
+ #homePwaStatus:empty{display:none}
+ #homePwaStatus:has(button)+.home-editor-btn{margin-left:0;padding:9px 8px;gap:5px;font-size:12px}
 }

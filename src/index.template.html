@@ -13,8 +13,10 @@
 <body>
 <nav id="documentTabs" class="document-tabs-bar" aria-label="Открытые макеты">
   <button id="documentTabsHome" class="document-tabs-home active" type="button" title="Главная · Рабочее пространство" aria-label="Главная"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg><span>Главная</span></button>
+  <button id="documentTabsMenuToggle" class="document-tabs-menu-toggle" type="button" aria-haspopup="dialog" aria-controls="documentTabsMenu" aria-expanded="false"><span id="documentTabsMenuType" aria-hidden="true"></span><span id="documentTabsMenuLabel">Документы</span><span aria-hidden="true">▾</span></button>
   <div id="documentTabsScroll" class="document-tabs-scroll" role="tablist" aria-label="Документы"></div><button id="documentTabsPlus" class="document-tabs-plus" type="button" aria-label="Открыть или создать макет" title="Открыть или создать макет">+</button><div class="document-tabs-end"></div>
 </nav>
+<section id="documentTabsMenu" class="document-tabs-menu hidden" role="dialog" aria-label="Открытые документы"><header><strong>Открытые документы</strong><button id="documentTabsMenuClose" type="button" aria-label="Закрыть список документов">×</button></header><ul id="documentTabsMenuList"></ul><button id="documentTabsMenuAdd" type="button">+ Открыть или создать документ</button></section>
 <div id="app">
   <header class="topbar">
     <button type="button" class="brand" id="brandHomeBtn" title="Открыть главную страницу"><span class="brand-mark">▣</span><span class="brand-word">КАРТОЧНАЯ</span></button>
@@ -74,6 +76,7 @@
   <header class="home-topbar">
     <button class="home-brand" type="button" id="homeBrandBtn" title="Главная страница"><span class="brand-mark">▣</span><strong>КАРТОЧНАЯ</strong><span class="home-version">v0.45</span></button>
     <span class="home-top-project" id="homeProjectBadge">Рабочее пространство</span>
+    <span id="homePwaStatus"></span>
     <button type="button" class="btn btn-primary home-editor-btn" id="homeEditorBtn">↗ <span>В редактор</span></button>
   </header>
   <div class="home-layout">

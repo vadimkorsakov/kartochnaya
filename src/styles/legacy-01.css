@@ -364,7 +364,7 @@ body.alt-held .inspector input[type=number],.inspector input[type=number].scrubb
 
 
 /* v0.11 — Photoshop-inspired layer tree */
-.layer-sort{position:relative;padding-left:calc(5px + var(--depth,0)*17px)!important;min-width:0;}
+.layer-sort{position:relative;padding-left:5px!important;min-width:0;}
 .layer-sort.group-row{background:transparent;color:inherit;font-weight:600;}
 .layer-sort.group-row.selected{background:rgba(134,111,237,.26)!important;color:#f8f7ff!important;}
 .layer-sort.selected:not(.group-row){background:rgba(131,109,237,.25)!important;color:#f8f7ff!important;}
@@ -375,7 +375,7 @@ body.alt-held .inspector input[type=number],.inspector input[type=number].scrubb
 .layer-sort .folder-toggle{flex:0 0 16px;width:16px;padding:0;border:0;background:transparent;color:#b3acc3;line-height:1;}
 .layer-sort .folder-spacer{flex:0 0 16px;width:16px;}
 .layer-sort .layer-rename-input{flex:1;min-width:0;background:#202029;border:1px solid #a38cfc;border-radius:3px;color:white;padding:3px 5px;font-size:12px;}
-.layer-sort .clip-tag{position:absolute;left:calc(12px + var(--depth,0)*17px);font-size:15px;color:#b9a1ff;pointer-events:none;}
+.layer-sort .clip-tag{position:absolute;left:8px;font-size:15px;color:#b9a1ff;pointer-events:none;}
 .layer-clip-hit{position:absolute;top:-4px;left:62px;right:14px;height:8px;z-index:3;pointer-events:none;}
 body.alt-held .layer-clip-hit{pointer-events:auto;cursor:alias;}
 body.alt-held .layer-clip-hit:hover{background:#aa81fb;box-shadow:0 0 0 2px #aa81fb55;border-radius:3px;}
@@ -391,12 +391,12 @@ body.alt-held .layer-clip-hit:hover{background:#aa81fb;box-shadow:0 0 0 2px #aa8
 .left-panel{position:relative;min-width:0}
 .layer-panel-resize{position:absolute;right:-4px;top:0;bottom:0;width:8px;z-index:8;cursor:col-resize;background:transparent}
 .layer-panel-resize:hover,.layer-panel-resize.resizing{background:linear-gradient(90deg,transparent 35%,#9f87f8 35%,#9f87f8 65%,transparent 65%)}
-.layer-sort{cursor:grab;user-select:none;touch-action:none;padding-left:calc(5px + var(--depth,0)*17px)!important}
+.layer-sort{cursor:grab;user-select:none;touch-action:none;padding-left:5px!important}
 .layer-sort:active{cursor:grabbing}.layer-sort .grip{display:none!important}
-.layer-sort .clip-tag{left:calc(8px + var(--depth,0)*17px)!important;top:50%;transform:translateY(-50%)}
+.layer-sort .clip-tag{left:8px!important;top:50%;transform:translateY(-50%)}
 .layer-sort.clipped-row .layer-thumb{margin-left:10px}
 .layer-sort .layer-thumb{flex-shrink:0}
-.layer-clip-hit{position:absolute!important;top:auto!important;bottom:-6px!important;left:calc(32px + var(--depth,0)*17px)!important;right:5px!important;height:12px!important;border:0;z-index:11;pointer-events:none}
+.layer-clip-hit{position:absolute!important;top:auto!important;bottom:-6px!important;left:32px!important;right:5px!important;height:12px!important;border:0;z-index:11;pointer-events:none}
 body.alt-held .layer-clip-hit{pointer-events:auto!important;cursor:alias}
 body.alt-held .layer-clip-hit::after{content:'+';font-weight:700;font-size:11px;position:absolute;left:1px;top:-2px;color:#d6c8ff}
 body.alt-held .layer-clip-hit:hover{background:#ac88ff!important;box-shadow:0 0 0 2px #ac88ff66!important}
@@ -900,7 +900,7 @@ body.ink-cursor-on #canvas,body.ink-cursor-on #stageScroller{cursor:none!importa
 .layer-label{padding:9px 9px 7px!important;display:flex;align-items:center;gap:6px;justify-content:space-between}
 #newPaintLayerBtn,#mobileNewPaintLayerBtn{display:inline-flex;align-items:center;justify-content:center;gap:4px;background:#393341;border:1px solid #645778;border-radius:7px;color:#ece3ff;padding:5px 7px;font-size:11px;line-height:1;white-space:nowrap;cursor:pointer}
 #newPaintLayerBtn:hover,#mobileNewPaintLayerBtn:hover{background:#6547ae}
-.layer,.mobile-layer{padding-left:9px!important}
+.layer,.mobile-layer{padding-left:5px!important}
 .folder-spacer{width:7px!important;min-width:7px!important;flex:0 0 7px!important}
 .folder-toggle{width:14px!important;min-width:14px!important;padding:0!important}
 .layer-thumb{margin:0!important;flex-shrink:0}
@@ -1313,7 +1313,7 @@ body{padding-top:var(--document-tab-height)}
  .mobile-layer-action-menu button:active{background:#504062}
  .mobile-layer-action-menu button.danger{color:#ff9ba9}
  .mobile-layer-action-menu button svg{width:18px;height:18px;flex-shrink:0}
- #mobileLayerList .mobile-layer{padding-left:calc(6px + var(--depth,0) * 13px)!important}
+ #mobileLayerList .mobile-layer{padding-left:6px!important}
  #mobileLayerList .mobile-layer.group-row.selected{background:#4d3d64!important;color:#f5efff!important;border-color:#9172e1!important}
  #mobileLayerList .mobile-layer.group-row.selected .layer-name{color:#f5efff!important}
  #mobileLayerList .mobile-layer.selected:not(.group-row){background:#3d3450!important;border-color:#8566d5!important}
@@ -1415,4 +1415,37 @@ html,body{background:#1e1f27!important;}
  .backup-header{padding:8px 12px}.backup-header h2{font-size:17px}.backup-tabs{padding:8px;gap:3px}.backup-tabs button{font-size:12px;padding:6px}
  .backup-content{padding:12px}.backup-actions{padding:10px 12px}.backup-status{padding:8px 12px;max-height:76px}
  .backup-actions .btn{flex:1}.backup-dialog .btn{font-size:12px}.backup-account-actions .btn{padding:7px}
+}
+
+/* Layer hierarchy: bounded local insets, shared desktop/mobile containers. */
+.layer-group{min-width:0;margin:0 0 4px;border:1px solid #514b60;border-radius:8px;background:#27252e;}
+.layer-group.selected-group{border-color:#a38cfc;background:#2e293b;}
+.group-children{min-width:0;display:grid;gap:3px;padding:2px 4px 5px 8px;}
+.group-children[hidden]{display:none;}
+.layer-group .layer-group .layer-group .group-children{padding-left:2px;padding-right:2px;}
+.group-children>.layer-sort,.group-children>.layer-group{margin-bottom:0;}
+.layer-group>.group-row{margin:0;border:0;border-radius:7px;}
+.layer-sort{gap:6px;align-items:center;}
+.layers{container-type:inline-size;}
+/* Keep names readable at the sidebar's 190px minimum. Actions use a second
+   line only on this narrow surface; thumbnails retain their fixed size. */
+@container(max-width:210px){
+ .layer-sort:not(.group-row){display:grid;grid-template-columns:38px minmax(0,1fr);column-gap:6px;row-gap:0;}
+ .layer-sort:not(.group-row)>.layer-thumb{grid-column:1;grid-row:1 / span 2;}
+ .layer-sort:not(.group-row)>.layer-name,.layer-sort:not(.group-row)>.layer-rename-input{grid-column:2;grid-row:1;}
+ .layer-sort:not(.group-row)>.layer-actions{grid-column:2;grid-row:2;justify-content:flex-end;flex-wrap:wrap;opacity:1;}
+ .layer-sort>.layer-mask-link{grid-column:1;grid-row:3;justify-self:end;}
+ .layer-sort>.layer-mask-thumb{grid-column:2;grid-row:3;}
+}
+.layer-sort .layer-actions{flex:0 0 auto;align-items:center;}
+.layer-sort .folder-toggle{flex:0 0 18px;width:18px;height:30px;display:grid;place-items:center;cursor:pointer;}
+.layer-sort .folder-toggle svg{width:14px;height:14px;}
+.layer-sort .layer-thumb.folder-icon{flex:0 0 18px;width:18px;min-width:18px;height:24px;}
+.layer-sort .folder-icon svg{width:18px;height:18px;stroke:currentColor;}
+.layer-sort .folder-toggle:focus-visible{outline:2px solid #a38cfc;border-radius:4px;}
+@media(max-width:760px){
+ #mobileLayerList .layer-group>.group-row{border:0!important;background:transparent!important;margin:0;}
+ #mobileLayerList .folder-toggle{flex-basis:24px;width:24px;height:36px;}
+ #mobileLayerList .layer-thumb.folder-icon{flex-basis:18px;width:18px;min-width:18px;}
+ #mobileLayerList .layer-group .group-children{gap:3px;}
 }

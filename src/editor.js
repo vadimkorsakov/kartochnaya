@@ -3,6 +3,7 @@ import { createInstanceGuard } from './backup/instances.mjs';
 import { installBackupUI } from './backup/ui.mjs';
 import { readWorkspaceSnapshot, createWorkspaceBarrier } from './backup/storage.mjs';
 import { openDatabase, runStoreRequest, runStoreTransaction } from './storage/indexeddb.mjs';
+import { planLayerGroup } from './model/group-plan.mjs';
 import { prepareProjectImport } from './model/project-integrity.mjs';
 import { remapCanvasGraph, remapDocumentGraph, selectCanvasGraph, canvasGraphIds } from './model/canvas-graph.mjs';
 import { toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint } from './core/geometry.mjs';
@@ -292,27 +293,15 @@ function selectGroup(id,toggle=false){
  refreshLayers();refreshInspector();updateQuickBubble();
 }
 function groupSelected(){
- const selected=picked(),gs=(app.selectedGroupIds||[]).filter((g,i,a)=>a.indexOf(g)===i);
- const selectedGroups=gs.filter(id=>!gs.some(parent=>parent!==id&&groupAncestor(id,parent)));
- const leaves=selected.filter(e=>!selectedGroups.some(g=>e.groupId&&groupAncestor(e.groupId,g)));
- if(leaves.length+selectedGroups.length<2){toast('Выбери минимум два слоя или папки');return}
- const directParents=[...leaves.map(e=>e.groupId||null),...selectedGroups.map(id=>groupInfo(id)?.parentId||null)];
- if(!directParents.every(p=>p===directParents[0])){toast('Группировать можно только слои одного уровня');return false}
-  const selectedIds=new Set([...leaves.map(e=>e.id),...selectedGroups.flatMap(g=>groupMembers(g).map(e=>e.id))]);
-  const indices=app.doc.elements.map((e,i)=>selectedIds.has(e.id)?i:-1).filter(i=>i>=0);
-  if(indices.some((index,i)=>i>0&&index!==indices[i-1]+1)){toast('Для группировки выбери соседние по порядку слои');return false}
-  const parent=directParents[0]||null;
- const grp={id:uid(),name:'Группа '+(()=>{let n=1;while(app.doc.groups.some(g=>g.name==='Группа '+n))n++;return n})(),parentId:parent,collapsed:false,visible:true,locked:false};
+ const id=uid();let plan;
+ try{plan=planLayerGroup(app.doc,app.selectedIds,app.selectedGroupIds||[],id)}catch(error){toast(error.message);return false}
+ const grp={id,name:'Группа '+(()=>{let n=1;while(app.doc.groups.some(g=>g.name==='Группа '+n))n++;return n})(),parentId:plan.parentId,collapsed:false,visible:true,locked:false};
+ rememberLayerSelection();
  app.doc.groups.push(grp);
- // Place the selected blocks together, preserving their existing stacking order.
- const ids=new Set([...leaves.map(e=>e.id),...selectedGroups.flatMap(g=>groupMembers(g).map(e=>e.id))]);
- const from=app.doc.elements.filter(e=>ids.has(e.id));
- const first=app.doc.elements.findIndex(e=>ids.has(e.id));
- const remaining=app.doc.elements.filter(e=>!ids.has(e.id));
- const insertion=app.doc.elements.slice(0,first).filter(e=>!ids.has(e.id)).length;
- for(const e of leaves){e.groupId=grp.id;delete e.groupLabel}
- for(const id of selectedGroups){const g=groupInfo(id);if(g)g.parentId=grp.id}
- remaining.splice(insertion,0,...from);app.doc.elements=remaining;
+ for(const e of plan.leaves){e.groupId=grp.id;delete e.groupLabel}
+ for(const g of plan.roots)g.parentId=grp.id;
+ app.doc.elements=plan.elements;
+ const from=groupMembers(grp.id);
  setSelected(from.map(e=>e.id),true);app.selectedGroupIds=[grp.id];app.focusGroupId=grp.id;commit();refreshLayers();refreshInspector();toast('Группа создана');return true;
 }
 function ungroupSelected(){
@@ -397,7 +386,21 @@ function layerThumbnail(e){
   return thumb.toDataURL('image/png');
  }catch(err){return ''}
 }
-function layerHTML(mobile=false){if(mobile)return mobileLayerHTML();return layerRows().map(row=>{
+// Containers express hierarchy; rows keep a fixed local inset on both surfaces.
+function renderLayerTree(renderRow){
+ const rows=layerRows();let result='',open=0;
+ for(const row of rows){
+  while(open>row.depth){result+='</div></section>';open--}
+  if(row.kind==='group'){
+   const g=groupInfo(row.groupId),selected=(app.selectedGroupIds||[]).includes(g.id);
+   result+=`<section class="layer-group ${selected?'selected-group':''}" data-group-container="${g.id}">${renderRow(row)}<div class="group-children" ${g.collapsed?'hidden':''}>`;open++;
+  }else result+=renderRow(row);
+ }
+ while(open-- >0)result+='</div></section>';
+ return result||'<div class="empty-state">Нет слоёв</div>';
+}
+function folderToggle(g){return `<button type="button" class="folder-toggle" data-folder-toggle="${g.id}" aria-expanded="${!g.collapsed}" aria-label="${g.collapsed?'Развернуть':'Свернуть'} группу" title="${g.collapsed?'Развернуть':'Свернуть'}">${uiIcon(g.collapsed?'chevronRight':'chevronDown')}</button>`}
+function layerHTML(mobile=false){if(mobile)return mobileLayerHTML();return renderLayerTree(row=>{
  const group=row.kind==='group',e=row.e,g=group?groupInfo(row.groupId):null;
  const selected=group?(app.selectedGroupIds||[]).includes(row.groupId):app.selectedIds.includes(row.id);
  const maskBase=!group&&findClipBase(app.doc,e);
@@ -406,29 +409,29 @@ function layerHTML(mobile=false){if(mobile)return mobileLayerHTML();return layer
  const icon=group?uiIcon('folder'):e?`<img draggable="false" src="${layerThumbnail(e)}" alt="">`:'';
  return `<div class="${mobile?'mobile-layer':'layer'} layer-sort ${selected?'selected active':''} ${group?'group-row':''} ${e?.clipped?'clipped-row':''} ${!effectiveVisible?'tree-hidden':''} ${effectiveLocked?'tree-locked':''}" style="--depth:${row.depth}" data-layer="${group?'':row.id}" data-sort="${group?row.groupId:row.id}" ${group?`data-group-id="${row.groupId}"`:''} draggable="false">
   ${!group&&e.clipped&&maskBase?`<span class="clip-tag" title="Обтравочная маска">↳</span>`:''}
-  ${group?`<button class="folder-toggle" data-folder-toggle="${g.id}" title="${g.collapsed?'Развернуть':'Свернуть'}">${g.collapsed?'▸':'▾'}</button>`:'<span class="folder-spacer"></span>'}
+  ${group?folderToggle(g):''}
   <span class="layer-symbol layer-thumb ${group?'folder-icon':''} ${!group&&app.maskEditId!==e.id&&selected?'layer-image-active':''}" ${!group?`data-select-layer-thumb="${e.id}" title="Редактировать содержимое слоя"`:``}>${icon}</span>${!group&&e.layerMaskSrc?`<span class="layer-mask-link" title="Связь слоя и маски">♧</span><button type="button" class="layer-mask-thumb ${app.maskEditId===e.id?'active':''}" data-select-mask="${e.id}" title="Выбрать маску · повторный клик — удалить маску"><img src="${e.layerMaskSrc}" alt="Маска"></button>`:''}
   ${mobile?`<span class="mobile-drag-handle" title="Перетащить слой" aria-label="Перетащить слой">⠿</span>`:''}<span class="layer-name" data-rename="${group?g.id:e.id}" title="Двойной клик — переименовать">${html(group?g.name:e.name)}</span>
   <span class="layer-actions">${!group?`<button type="button" class="layer-mask-create" data-create-mask="${e.id}" title="${e.layerMaskSrc?'Редактировать маску':'Добавить маску слоя'}" aria-label="Добавить маску слоя">◩</button>`:''}${!group&&e?.type==='text'?`<button type="button" class="layer-title-button ${e.isTitleLayer?'active':''}" data-title-toggle="${e.id}" aria-pressed="${e.isTitleLayer?'true':'false'}" title="Использовать как заголовок карточки" aria-label="Использовать как заголовок карточки">H1</button>${e.isTitleLayer&&app.doc.type==='card'&&app.doc.hasCustomName?`<button type="button" class="layer-title-button" data-reset-autoname="true" title="Вернуть автоматическое название карточки" aria-label="Вернуть автоматическое название карточки">↻</button>`:''}`:''}<button type="button" data-layeract="visibility" data-kind="${group?'group':'layer'}" data-id="${group?g.id:e.id}" title="${effectiveVisible?'Скрыть':'Показать'} ${group?'группу':'слой'}" aria-label="${effectiveVisible?'Скрыть':'Показать'} ${group?'группу':'слой'}">${uiIcon(effectiveVisible?'eye':'eyeOff')}</button><button type="button" data-layeract="lock" data-kind="${group?'group':'layer'}" data-id="${group?g.id:e.id}" title="${effectiveLocked?'Разблокировать':'Заблокировать'} ${group?'группу':'слой'}" aria-label="${effectiveLocked?'Разблокировать':'Заблокировать'} ${group?'группу':'слой'}">${uiIcon(effectiveLocked?'lock':'unlock')}</button></span>
   ${!group&&findClipBase(app.doc,e)?`<span class="layer-clip-hit" data-clip-layer="${e.id}" title="Alt+клик — ${e.clipped?'снять':'создать'} обтравочную маску"></span>`:''}
- </div>`}).join('')||'<div class="empty-state">Нет слоёв</div>'}
+ </div>`})}
 
 // v0.40: Mobile rows use the same layerRows / group entities as desktop.
 const mobileLayerChoice=new Set();let mobileLayerMulti=false;
 function mobileLayerKey(row){return row.kind==='group'?'g:'+row.groupId:'l:'+row.id}
-function mobileLayerHTML(){return layerRows().map(row=>{
+function mobileLayerHTML(){return renderLayerTree(row=>{
  const group=row.kind==='group',g=group?groupInfo(row.groupId):null,e=row.e;
  const id=group?row.groupId:row.id,key=mobileLayerKey(row);
  const selected=mobileLayerMulti?mobileLayerChoice.has(key):(group?(app.selectedGroupIds||[]).includes(id):app.selectedIds.includes(id));
  const shown=group?groupEffectiveVisible(g):isLayerVisible(e),locked=group?groupEffectiveLocked(g):isLayerLocked(e);
  const icon=group?uiIcon('folder'):`<img draggable="false" src="${layerThumbnail(e)}" alt="">`;
  return `<div class="mobile-layer layer-sort ${selected?'selected active':''} ${group?'group-row':''} ${locked?'tree-locked':''} ${!shown?'tree-hidden':''}" data-sort="${id}" ${group?`data-group-id="${id}"`:`data-layer="${id}"`} style="--depth:${row.depth}" draggable="false">
- ${mobileLayerMulti?`<input class="mobile-layer-check" type="checkbox" data-mobile-select="${key}" ${selected?'checked':''} aria-label="Выбрать ${html(group?g.name:e.name)}">`:group?`<button type="button" class="folder-toggle" data-folder-toggle="${id}" aria-label="${g.collapsed?'Раскрыть':'Свернуть'} группу">${g.collapsed?'▸':'▾'}</button>`:'<span class="folder-spacer"></span>'}
+ ${mobileLayerMulti?`<input class="mobile-layer-check" type="checkbox" data-mobile-select="${key}" ${selected?'checked':''} aria-label="Выбрать ${html(group?g.name:e.name)}">`:''}${group?folderToggle(g):''}
  <span class="layer-symbol layer-thumb ${group?'folder-icon':''}">${icon}</span>
  ${!mobileLayerMulti?'<span class="mobile-drag-handle" aria-label="Перетащить слой" title="Перетащить слой">⠿</span>':''}
  <span class="layer-name" data-rename="${id}">${html(group?g.name:e.name)}</span>
  ${!mobileLayerMulti?`<span class="layer-actions"><button type="button" data-layeract="visibility" data-kind="${group?'group':'layer'}" data-id="${id}" title="${shown?'Скрыть':'Показать'}">${uiIcon(shown?'eye':'eyeOff')}</button><button type="button" data-layeract="lock" data-kind="${group?'group':'layer'}" data-id="${id}" title="${locked?'Разблокировать':'Заблокировать'}">${uiIcon(locked?'lock':'unlock')}</button><button type="button" class="mobile-layer-more" data-mobile-layer-menu="${key}" title="Действия со слоем" aria-label="Действия со слоем">⋯</button></span>`:''}
- </div>`}).join('')||'<div class="empty-state">Нет слоёв</div>'}
+ </div>`})}
 function mobileSelectionUI(){const choose=$('#mobileLayersSelect'),bar=$('#mobileLayerMultiActions');if(!choose||!bar)return;
  choose.classList.toggle('active',mobileLayerMulti);choose.textContent=mobileLayerMulti?'Готово':'Выбрать';bar.classList.toggle('hidden',!mobileLayerMulti);
  if(!mobileLayerMulti)return;
@@ -476,7 +479,9 @@ function active(){return app.doc?.elements.find(e=>e.id===app.selected)||null}
 function picked(){return app.doc?.elements.filter(e=>app.selectedIds.includes(e.id))||[]}
 function setSelected(ids,isolated=false){cancelRegionEffects();if(app.maskEditId&&!ids.includes(app.maskEditId))app.maskEditId=null;app.selectedGroupIds=[];app.focusGroupId=null;app.groupIsolation=isolated?(ids[0]||null):null;app.selectedIds=expandSelection([...new Set(ids)].filter(id=>app.doc.elements.some(e=>e.id===id)),isolated);app.selected=app.selectedIds.length===1?app.selectedIds[0]:null;app.guides=[];app.cropMode=false;$('#cropActions').classList.add('hidden');refreshLayers();refreshInspector();refreshMobileTools();paint()}
 const iconPaths={text:'M4 5h16 M12 5v15 M8 20h8',image:'M3 4h18v16H3z M6 16l5-5 4 3 3-4 3 4 M8 9h.01',rect:'M4 5h16v14H4z',circle:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',triangle:'M12 3 22 21H2z',star:'M12 2 15 9l8 .4-6 5 2 8-7-4.5L5 22l2-8-6-5 8-.4z',hexagon:'M7 3h10l5 9-5 9H7l-5-9z',parallelogram:'M8 4h13l-5 16H3z',edit:'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',font:'M3 19 10 4l7 15 M6 13h9 M18 5h4 M20 5v14',size:'M4 6h16 M12 6v14 M8 20h8',color:'M12 3a9 9 0 1 0 9 9c0-2-2-2-3-1s-3 0-2-2S16 3 12 3z M7 10h.01 M11 7h.01 M16 8h.01',align:'M4 6h16 M4 10h10 M4 14h16 M4 18h10',spacing:'M4 4v16 M20 4v16 M8 9h8 M8 15h8',opacity:'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 2a10 10 0 0 1 0 20z',crop:'M7 3v14a3 3 0 0 0 3 3h11 M3 7h14a3 3 0 0 1 3 3v11',replace:'M4 6h16v13H4z M4 15l5-5 4 4 3-3 4 5 M8 9h.01',stroke:'M3 12h18 M12 3v18',round:'M3 21V10a7 7 0 0 1 7-7h11',layers:'M4 7l8-4 8 4-8 4z M4 12l8 4 8-4 M4 17l8 4 8-4',duplicate:'M8 7h12v14H8z M4 17V3h13',delete:'M4 7h16 M9 7V4h6v3 M7 7l1 14h8l1-14',back:'M19 12H5m7-7-7 7 7 7',position:'M12 2v20 M2 12h20 M8 6l4-4 4 4 M8 18l4 4 4-4',more:'M5 12h.01 M12 12h.01 M19 12h.01',fill:'M5 14 13 4l7 7-8 8-7-5z M4 21h17',settings:'M5 6h14 M5 12h14 M5 18h14',eye:'M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6 M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',eyeOff:'M3 3l18 18 M10 6c6-2 11 6 11 6s-2 4-5 5 M8 18C4 17 2 12 2 12s1-2 3-4',lock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4',unlock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0',alignLeft:'M4 4v16 M7 7h13 M7 12h9 M7 17h13',alignCenter:'M12 3v18 M4 7h16 M7 12h10 M4 17h16',alignRight:'M20 4v16 M4 7h13 M8 12h9 M4 17h13',alignTop:'M3 4h18 M7 7v13 M12 7v9 M17 7v13',alignMiddle:'M3 12h18 M7 4v16 M12 7v10 M17 4v16',alignBottom:'M3 20h18 M7 4v13 M12 8v9 M17 4v13'};
-iconPaths.folder='M3 5h7l2 3h9v12H3z';
+iconPaths.folder='M3 8V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8h18';
+iconPaths.chevronRight='M9 6l6 6-6 6';
+iconPaths.chevronDown='M6 9l6 6 6-6';
 iconPaths.trash='M4 7h16 M9 4h6 M6 7l1 14h10l1-14 M10 11v7 M14 11v7';
 iconPaths.heading='M4 5v14 M4 12h12 M16 5v14';
 iconPaths.mask='M3 4h18v16H3z M3 20L21 4';
@@ -512,11 +517,14 @@ function renderMobilePane(){const root=$('#inspector'),es=picked(),e=es[0],d=app
 // Only a byte-matching confirmed input may establish a display-equivalence key.
 // Normalization below prepares memory; it must not rewrite an old stored record.
 function setDoc(d){const stored=app.docs.find(rec=>rec.id===d.id),fromStorage=app.db&&stored&&JSON.stringify(stored)===JSON.stringify(d);mobileLayerChoice.clear();mobileLayerMulti=false;closeMobileLayerMenu();app.maskEditId=null;inkStop();if(d?.type==='card'){ensureCardSlides(d);applySlideToRoot(d,d.activeSlideIndex)}app.handTool=false;app.spaceDown=false;if(!d.projectId)d.projectId=app.currentProjectId;if(d.projectId&&d.projectId!==app.currentProjectId)useProjectId(d.projectId);app.penDraft=null;app.penEditId=null;app.penNode=-1;app.penTool=false;app.marqueeTool=false;app.insertTool=null;toolDockState();$('#penHint').classList.add('hidden');$('#stageScroller').classList.remove('pen-mode');ensureGroupData(d);app.doc=d;boundaryRememberDoc(d);app.pixelSelection=null;app.pixelDraft=null;app.polyDraft=null;app.selectedGroupIds=[];app.focusGroupId=null;app.selected=null;app.selectedIds=[];app.guides=[];app.cropMode=false;$('.stage-column').classList.remove('crop-active');$('#stageViewport').style.padding='';app.lastZoom=null;app.editingId=null;app.mobileLayersOpen=false;$('#mobileLayersSheet').classList.remove('open');hideInspector();resetHistory();updateProjectBadge();$('#typeChip').textContent=d.type==='template'?'ШАБЛОН':'КАРТОЧКА';$('#sizeLabel').textContent=`${d.width} × ${d.height} px`;refreshLayers();refreshInspector();refreshMobileTools();fitCanvas();$('#newCardBtn').style.display=d.type==='template'?'':'none';renderSlideStrip();const state=saveState(d.id);if(fromStorage&&!state.pending&&!state.error){state.saved=JSON.stringify(d);refreshSaveStatus()}else saveSoon()}
-function snapshot(){syncCurrentSlide();const d=app.doc;return JSON.stringify({hasCustomName:!!d.hasCustomName,title:d.title,width:d.width,height:d.height,background:d.background,backgroundAlpha:d.backgroundAlpha??100,rulers:d.rulers||[],groups:d.groups||[],elements:d.elements,slides:d.type==='card'?d.slides:undefined,activeSlideIndex:d.type==='card'?d.activeSlideIndex:undefined,selection:encodeSelectionForHistory()})}
+function layerSelectionForHistory(){return {ids:[...app.selectedIds],groups:[...(app.selectedGroupIds||[])],focus:app.focusGroupId||null,isolation:app.groupIsolation||null}}
+function rememberLayerSelection(){if(app.history[app.historyIndex]){const state=JSON.parse(app.history[app.historyIndex]);state.layerSelection=layerSelectionForHistory();app.history[app.historyIndex]=JSON.stringify(state)}}
+function restoreLayerSelection(state){const ids=new Set(app.doc.elements.map(e=>e.id)),groups=new Set(app.doc.groups.map(g=>g.id));app.selectedIds=(state?.ids||[]).filter(id=>ids.has(id));app.selected=app.selectedIds.length===1?app.selectedIds[0]:null;app.selectedGroupIds=(state?.groups||[]).filter(id=>groups.has(id));app.focusGroupId=groups.has(state?.focus)?state.focus:null;app.groupIsolation=ids.has(state?.isolation)?state.isolation:null}
+function snapshot(){syncCurrentSlide();const d=app.doc;return JSON.stringify({hasCustomName:!!d.hasCustomName,title:d.title,width:d.width,height:d.height,background:d.background,backgroundAlpha:d.backgroundAlpha??100,rulers:d.rulers||[],groups:d.groups||[],elements:d.elements,slides:d.type==='card'?d.slides:undefined,activeSlideIndex:d.type==='card'?d.activeSlideIndex:undefined,selection:encodeSelectionForHistory(),layerSelection:layerSelectionForHistory()})}
 function describeChange(before,after){try{const a=JSON.parse(before),b=JSON.parse(after);if(JSON.stringify(a.selection)!==JSON.stringify(b.selection))return 'Изменение выделения';if(a.title!==b.title)return 'Переименование документа';if(a.width!==b.width||a.height!==b.height)return 'Изменение размеров холста';if(a.background!==b.background||a.backgroundAlpha!==b.backgroundAlpha)return 'Изменение фона холста';if((a.slides?.length||0)!==(b.slides?.length||0))return (b.slides?.length||0)>(a.slides?.length||0)?'Добавление холста':'Удаление холста';if((a.groups?.length||0)!==(b.groups?.length||0))return (b.groups?.length||0)>(a.groups?.length||0)?'Группировка слоёв':'Разгруппировка слоёв';if(JSON.stringify(a.groups)!==JSON.stringify(b.groups))return 'Изменение состояния группы';if((a.rulers?.length||0)!==(b.rulers?.length||0))return 'Изменение направляющих';if(a.elements.length!==b.elements.length)return b.elements.length>a.elements.length?'Добавление объекта':'Удаление объекта';const aa=new Map(a.elements.map(e=>[e.id,e]));for(const e of b.elements){const prev=aa.get(e.id);if(!prev)return 'Замена слоя';if(prev.text!==e.text)return 'Изменение текста';if(prev.name!==e.name)return 'Переименование слоя';if(prev.x!==e.x||prev.y!==e.y)return 'Перемещение слоя';if(prev.w!==e.w||prev.h!==e.h||prev.rotation!==e.rotation)return 'Трансформация слоя';if(JSON.stringify(prev.effects)!==JSON.stringify(e.effects))return 'Изменение эффектов';if(prev.fill!==e.fill||prev.fillType!==e.fillType||prev.opacity!==e.opacity||prev.stroke!==e.stroke||prev.strokeWidth!==e.strokeWidth)return 'Изменение оформления';if(prev.fontFamily!==e.fontFamily||prev.fontSize!==e.fontSize||prev.fontWeight!==e.fontWeight)return 'Изменение типографики';}if(a.elements.some((e,i)=>e.id!==b.elements[i]?.id))return 'Изменение порядка слоёв';if(JSON.stringify(a.slides)!==JSON.stringify(b.slides))return 'Изменение холста серии';return 'Изменение свойств';}catch{return 'Изменение макета'}}
 function resetHistory(){if(!app.doc)return;const initial=snapshot();app.historyBase=initial;app.historyPreviewOriginal=false;app.history=[initial];app.historyNames=['Исходное состояние'];app.historyIndex=0;updateHistoryButtons()}
 function commit(label){if(!app.doc)return;boundarySyncDoc(app.doc);syncCurrentSlide();syncAutoCardTitle();const state=snapshot(),previous=app.history[app.historyIndex];if(previous!==state){app.history=app.history.slice(0,app.historyIndex+1);app.historyNames=(app.historyNames||[]).slice(0,app.historyIndex+1);app.history.push(state);app.historyNames.push(typeof label==='string'?label:describeChange(previous,state));if(app.history.length>51){const n=app.history.length-51;app.history.splice(1,n);app.historyNames.splice(1,n);}app.historyIndex=app.history.length-1;app.historyPreviewOriginal=false}updateHistoryButtons();const save=saveState(app.doc.id),key=JSON.stringify(app.doc);if(key!==save.saved&&key!==save.pending?.key)app.doc.updatedAt=Date.now();saveSoon();paint();renderSlideStrip()}
-function historyGo(index){if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;app.historyIndex=index;const state=JSON.parse(app.history[index]);const storedSelection=state.selection;delete state.selection;Object.assign(app.doc,state);boundaryRememberDoc(app.doc);ensureGroupData(app.doc);if(app.doc.type==='card')ensureCardSlides(app.doc);app.selectedGroupIds=[];app.focusGroupId=null;app.selectedIds=[];app.selected=null;app.guides=app.doc.rulers||[];restoreSelectionFromHistory(storedSelection);if(oldSlide!==app.doc.activeSlideIndex){$('#sizeLabel').textContent=`${app.doc.width} × ${app.doc.height} px`;applyZoom()}updateHistoryButtons();updateProjectBadge();refreshLayers();refreshInspector();refreshMobileTools();paint();renderSlideStrip();app.historyPreviewOriginal=index===0&&app.history.length>1;if(app.historyPreviewOriginal){clearTimeout(app.saveTimer);app.saveTimer=null;$('#saveStatus').textContent='Исходное состояние · предпросмотр';}else saveSoon()}
+function historyGo(index){if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;app.historyIndex=index;const state=JSON.parse(app.history[index]);const storedSelection=state.selection,storedLayers=state.layerSelection;delete state.selection;delete state.layerSelection;Object.assign(app.doc,state);boundaryRememberDoc(app.doc);ensureGroupData(app.doc);if(app.doc.type==='card')ensureCardSlides(app.doc);app.selectedGroupIds=[];app.focusGroupId=null;app.selectedIds=[];app.selected=null;app.guides=app.doc.rulers||[];restoreSelectionFromHistory(storedSelection);restoreLayerSelection(storedLayers);if(oldSlide!==app.doc.activeSlideIndex){$('#sizeLabel').textContent=`${app.doc.width} × ${app.doc.height} px`;applyZoom()}updateHistoryButtons();updateProjectBadge();refreshLayers();refreshInspector();refreshMobileTools();paint();renderSlideStrip();app.historyPreviewOriginal=index===0&&app.history.length>1;if(app.historyPreviewOriginal){clearTimeout(app.saveTimer);app.saveTimer=null;$('#saveStatus').textContent='Исходное состояние · предпросмотр';}else saveSoon()}
 function undo(dir){if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
 function renderHistoryList(){const root=$('#historyEntries');if(!root)return;root.innerHTML=(app.history||[]).map((_,i)=>`<button type="button" class="history-entry ${i===app.historyIndex?'active':''}" data-history-index="${i}" ${i===app.historyIndex?'aria-current="step"':''}><span class="history-step">${i===0?'●':i}</span><span>${html(app.historyNames?.[i]||'Изменение макета')}</span></button>`).join('');const current=root.querySelector('.history-entry.active');if(current&&!$('#historyPopover').classList.contains('hidden'))current.scrollIntoView({block:'nearest'})}
 function updateHistoryButtons(){const draft=app.penDraft;$('#undoBtn').disabled=draft?!draft.undoStack?.length:app.historyIndex===0;$('#redoBtn').disabled=draft?!draft.redoStack?.length:app.historyIndex===app.history.length-1;renderHistoryList()}
@@ -723,7 +731,7 @@ function layerInteraction(root){
  root.addEventListener('pointerdown',ev=>{if(root.id==='mobileLayerList'&&(mobileLayerMulti||ev.pointerType==='touch'))return;const n=ev.target.closest('[data-rename]');if(!n)return;const id=n.dataset.rename,now=performance.now();if(lastRenameDown?.id===id&&now-lastRenameDown.time<540){ev.preventDefault();ev.stopPropagation();renamingUntil=now+600;renameLayerFromName(n);lastRenameDown=null;return}lastRenameDown={id,time:now}},true);
  root.addEventListener('dblclick',ev=>{const name=ev.target.closest('[data-rename]');if(name){ev.preventDefault();renameLayerFromName(name)}});
  root.addEventListener('click',ev=>{
-   if(root.id==='mobileLayerList'){const menuButton=ev.target.closest('[data-mobile-layer-menu]');if(menuButton){ev.stopPropagation();openMobileLayerMenu(menuButton.dataset.mobileLayerMenu,menuButton);return;}if(mobileLayerMulti){if(ev.target.closest('button, .mobile-drag-handle'))return;const row=ev.target.closest('.layer-sort');if(row){const key=row.dataset.groupId?'g:'+row.dataset.groupId:'l:'+row.dataset.layer;if(mobileLayerChoice.has(key))mobileLayerChoice.delete(key);else mobileLayerChoice.add(key);renderMobileLayers();}return;}}
+   if(root.id==='mobileLayerList'){const menuButton=ev.target.closest('[data-mobile-layer-menu]');if(menuButton){ev.stopPropagation();openMobileLayerMenu(menuButton.dataset.mobileLayerMenu,menuButton);return;}if(mobileLayerMulti&&!ev.target.closest('[data-folder-toggle]')){if(ev.target.closest('button, .mobile-drag-handle'))return;const row=ev.target.closest('.layer-sort');if(row){const key=row.dataset.groupId?'g:'+row.dataset.groupId:'l:'+row.dataset.layer;if(mobileLayerChoice.has(key))mobileLayerChoice.delete(key);else mobileLayerChoice.add(key);renderMobileLayers();}return;}}
   if(ev.target.closest('.layer-rename-input')||root.querySelector('.layer-rename-input'))return;
   const folder=ev.target.closest('[data-folder-toggle]');if(folder){const g=groupInfo(folder.dataset.folderToggle);if(g){g.collapsed=!g.collapsed;commit();refreshLayers()}return}
   const clip=ev.target.closest('[data-clip-layer]');if(clip&&ev.altKey){ev.preventDefault();toggleClip(clip.dataset.clipLayer);return}

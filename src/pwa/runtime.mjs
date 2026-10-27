@@ -35,9 +35,10 @@ export function installNetlifyPWA({ prepare, resume }) {
     #pwaStatus [hidden],#pwaStatus[hidden]{display:none!important}
     #pwaStatus .pwa-row{height:36px;display:flex;align-items:center;gap:8px;padding:0 8px}
     #pwaMessage{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    #pwaStatus button,#documentTabs #pwaToggle{flex:0 0 auto;border:1px solid #625475;border-radius:6px;background:#37313f;color:#f3efff;font:12px system-ui;min-height:32px;padding:4px 8px}
+    #pwaStatus button,#pwaToggle{flex:0 0 auto;border:1px solid #625475;border-radius:6px;background:#37313f;color:#f3efff;font:12px system-ui;min-height:32px;padding:4px 8px}
     #documentTabs #pwaToggle{order:4;border-radius:0;min-width:64px}
     #pwaStatus button:focus-visible,#pwaToggle:focus-visible{outline:2px solid #b99aff;outline-offset:-2px}
+    #pwaToggle[hidden]{display:none}
     #pwaDetails{height:60px;overflow:auto;overflow-wrap:anywhere;margin:0;padding:4px 8px;white-space:pre-wrap}
   `;
   document.head.append(style);
@@ -64,26 +65,36 @@ export function installNetlifyPWA({ prepare, resume }) {
   heading.append(label, close); actions.append(button, retry, detailsToggle);
   panel.append(heading, actions, details); document.body.append(panel);
   document.getElementById('documentTabs').append(toggle);
+  const mobile = window.matchMedia('(max-width:760px)');
+  let screen = document.getElementById('homeScreen')?.classList.contains('hidden') ? 'editor' : 'home';
+  let expanded = false;
   let preparing = false, confirmedReady = false, announceSuccess = false, displayedWorker, collapseTimer;
   const registrationDisplay = new WeakMap();
   function layout() {
+    const visible = !mobile.matches || screen === 'home';
+    const host = document.getElementById(mobile.matches ? 'homePwaStatus' : 'documentTabs');
+    if (host && toggle.parentNode !== host) host.append(toggle);
+    toggle.hidden = !visible;
+    panel.hidden = !visible || !expanded;
     toggle.setAttribute('aria-expanded', String(!panel.hidden));
     detailsToggle.setAttribute('aria-expanded', String(!details.hidden));
     document.documentElement.style.setProperty('--pwa-notice-height', (panel.hidden ? 0 : 36 + (actions.hidden ? 0 : 36) + (details.hidden ? 0 : 60)) + 'px');
   }
+  document.addEventListener('karto-screen-change', event => { screen = event.detail.screen; layout(); });
+  mobile.addEventListener('change', layout);
   function collapse() {
-    clearTimeout(collapseTimer); panel.hidden = true; details.hidden = true;
+    clearTimeout(collapseTimer); expanded = false; details.hidden = true;
     // Keep keyboard focus on a visible control after closing or auto-collapse.
-    if (panel.contains(document.activeElement)) toggle.focus();
+    if (!toggle.hidden && panel.contains(document.activeElement)) toggle.focus();
     layout();
   }
   close.onclick = collapse;
   toggle.onclick = () => {
     if (!panel.hidden) { collapse(); return; }
-    clearTimeout(collapseTimer); panel.hidden = false; layout();
+    clearTimeout(collapseTimer); expanded = true; layout();
   };
   detailsToggle.onclick = () => { details.hidden = !details.hidden; layout(); };
-  function notice(message, { expanded = true, detail = '', retryable = false, update = false, success = false } = {}) {
+  function notice(message, { expanded: showExpanded = true, detail = '', retryable = false, update = false, success = false } = {}) {
     clearTimeout(collapseTimer);
     label.textContent = label.title = message;
     details.textContent = detail; details.hidden = true; detailsToggle.hidden = !detail;
@@ -91,7 +102,7 @@ export function installNetlifyPWA({ prepare, resume }) {
     actions.hidden = !detail && !retryable && !update;
     toggle.textContent = update ? 'Версия ↑' : retryable ? 'Офлайн !' : confirmedReady ? 'Офлайн ✓' : 'Офлайн …';
     toggle.setAttribute('aria-label', 'Офлайн: ' + message);
-    panel.hidden = !expanded; layout();
+    expanded = showExpanded; layout();
     if (success) collapseTimer = setTimeout(() => {
       label.textContent = label.title = 'Готово к работе офлайн'; collapse();
     }, 4000);

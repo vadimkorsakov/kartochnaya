@@ -2093,8 +2093,10 @@ async function duplicateDoc(source){if(!await flushSave())return;const doc=clone
 async function removeDoc(source){if(!confirm(`Удалить «${source.title}»? Это действие нельзя отменить.`))return;if(app.doc?.id===source.id&&!await flushSave())return;if(!await closeDocumentTab(source.id))return;try{await dbOp('docs','readwrite',s=>s.delete(source.id))}catch(error){return}app.docs=app.docs.filter(d=>d.id!==source.id);if(app.doc?.id===source.id){app.doc=null}renderDocumentTabs();renderLibrary()}
 function homeVisible(){return !$('#homeScreen').classList.contains('hidden')}
 function showHome(section='workspace'){
+ closeDocumentTabsMenu();
  if(documentTabSession.activeId!=='home')captureDocumentTab();else closeEditorTransientUI();documentTabSession.activeId='home';renderDocumentTabs();
  closeDialogs();$('#app').classList.add('hidden');$('#homeScreen').classList.remove('hidden');
+ document.dispatchEvent(new CustomEvent('karto-screen-change',{detail:{screen:'home'}}));
  $$('.home-nav-item').forEach(b=>{const match=b.dataset.homeNav===section;b.classList.toggle('active',match);b.setAttribute('aria-current',match?'page':'false')});
  $('#homeWorkspacePane').classList.toggle('hidden',section!=='workspace');$('#fontDialog').classList.toggle('hidden',section!=='fonts');$('#homeDataPane').classList.toggle('hidden',section!=='data');
  $('#homeProjectBadge').textContent=currentProject()?.name||'Проекты';
@@ -2105,8 +2107,8 @@ async function openBackupsHome(){
  if(!await flushSave()){toast('Сохранение не подтверждено. Раздел резервных копий не открыт');return}
  $('#editorProjectMenu').classList.add('hidden');showHome('data');
 }
-function openEditor(){closeDialogs();$('#homeScreen').classList.add('hidden');$('#app').classList.remove('hidden');requestAnimationFrame(()=>{if(!app.doc)return;applyZoom();paint();refreshLayers();refreshInspector();renderDocumentTabs()})}
-function showDialog(id){if(id==='libraryDialog'){showHome('workspace');return}if(id==='fontDialog'){showHome('fonts');return}if(id==='layersDialog')renderMobileLayers();$$('.dialog').forEach(x=>x.classList.add('hidden'));$('#shade').classList.remove('hidden');$('#'+id).classList.remove('hidden')}
+function openEditor(){closeDocumentTabsMenu();closeDialogs();$('#homeScreen').classList.add('hidden');$('#app').classList.remove('hidden');document.dispatchEvent(new CustomEvent('karto-screen-change',{detail:{screen:'editor'}}));requestAnimationFrame(()=>{if(!app.doc)return;applyZoom();paint();refreshLayers();refreshInspector();renderDocumentTabs()})}
+function showDialog(id){closeDocumentTabsMenu();if(id==='libraryDialog'){showHome('workspace');return}if(id==='fontDialog'){showHome('fonts');return}if(id==='layersDialog')renderMobileLayers();$$('.dialog').forEach(x=>x.classList.add('hidden'));$('#shade').classList.remove('hidden');$('#'+id).classList.remove('hidden')}
 function closeDialogs(){$$('.dialog').forEach(x=>x.classList.add('hidden'));$('#shade').classList.add('hidden')}
 const libraryViews={template:'grid',card:'grid'};
 const libraryIcons={
@@ -2681,7 +2683,7 @@ $('#artboardSiblings').addEventListener('pointerdown',ev=>{const b=ev.target.clo
 document.body.appendChild($('#editorProjectMenu'));
 let compactMenuPage='root',compactBrowseProjectId=null;
 function compactMenuPosition(){const r=$('#libraryBtn').getBoundingClientRect(),menu=$('#editorProjectMenu');menu.style.left=Math.max(8,Math.min(innerWidth-390,r.left))+'px';menu.style.top=Math.min(innerHeight-56,r.bottom+7)+'px';}
-function compactMenuShow(page='root'){compactMenuPage=page;const menu=$('#editorProjectMenu');menu.classList.remove('hidden');compactMenuPosition();const body=$('#compactMenuContent'),title=$('#compactMenuTitle');$('#compactMenuBack').classList.toggle('hidden',page==='root');title.textContent={root:'Быстрый доступ',workspace:'Рабочее пространство',fonts:'Мои шрифты',data:'Резервные копии'}[page]||'Быстрый доступ';
+function compactMenuShow(page='root'){closeDocumentTabsMenu();compactMenuPage=page;const menu=$('#editorProjectMenu');menu.classList.remove('hidden');compactMenuPosition();const body=$('#compactMenuContent'),title=$('#compactMenuTitle');$('#compactMenuBack').classList.toggle('hidden',page==='root');title.textContent={root:'Быстрый доступ',workspace:'Рабочее пространство',fonts:'Мои шрифты',data:'Резервные копии'}[page]||'Быстрый доступ';
  if(page==='root'){body.innerHTML=`<button class="compact-menu-item" data-compact-page="workspace"><span>▦</span> Рабочее пространство <b style="margin-left:auto">›</b></button><button class="compact-menu-item" data-compact-page="fonts"><span>Аа</span> Мои шрифты <b style="margin-left:auto">›</b></button><button class="compact-menu-item" data-compact-full="data"><span>⇩</span> Резервные копии</button>`}
  else if(page==='workspace'){const selectedId=compactBrowseProjectId||app.currentProjectId,project=app.projects.find(p=>p.id===selectedId)||currentProject(),docs=projectDocs(project.id);
  const projects=app.projects.map(p=>`<button class="compact-menu-item ${p.id===project.id?'active':''}" data-compact-project="${p.id}">${p.cover?.startsWith('data:image/')?`<img src="${p.cover}" style="width:34px;height:34px;object-fit:contain;border-radius:7px;background:#40354d">`:'<span>▦</span>'}<strong>${html(p.name)}</strong>${p.id===project.id?' ✓':''}</button>`).join('');
@@ -2779,6 +2781,7 @@ function renderDocumentTabs(){
   return `<div class="document-tab ${active?'active':''}" role="tab" aria-selected="${active}" data-tab-id="${html(tab.id)}" tabindex="${active?'0':'-1'}" title="${html((project?.name||'Проект')+' · '+doc.title)}"><span class="document-tab-type" aria-hidden="true">${doc.type==='card'?'▣':'▧'}</span><span class="document-tab-label">${html(doc.title||'Без названия')}</span><span class="document-tab-close" role="button" tabindex="0" aria-label="Закрыть ${html(doc.title||'документ')}" title="Закрыть вкладку">×</span></div>`;
  }).join('');
  list.scrollLeft=oldScroll;
+ renderMobileDocumentTabs();
  requestAnimationFrame(ensureActiveTabOnScreen);
 }
 function openDocumentTab(source){
@@ -2821,6 +2824,57 @@ async function closeDocumentTab(id){
  if(documentTabSession.activeId===id){const next=documentTabSession.tabs[now]||documentTabSession.tabs[now-1];documentTabSession.activeId='home';if(next)activateDocumentTab(next.id);else showHome('workspace')}
  renderDocumentTabs();return true;
 }
+// Mobile is another view of the resident tab session; document lifecycle stays shared.
+function closeDocumentTabsMenu(restoreFocus=false){
+ const menu=$('#documentTabsMenu'),toggle=$('#documentTabsMenuToggle');
+ if(!menu||menu.classList.contains('hidden'))return;
+ const ownedFocus=menu.contains(document.activeElement);
+ menu.classList.add('hidden');toggle.setAttribute('aria-expanded','false');
+ if((restoreFocus||ownedFocus)&&document.activeElement!==$('#inlineText'))toggle.focus();
+}
+function renderMobileDocumentTabs(){
+ const tab=liveDocumentTab(),toggle=$('#documentTabsMenuToggle');
+ $('#documentTabsMenuLabel').textContent=tab?(tab.doc.title||'Без названия'):'Документы'+(documentTabSession.tabs.length?' · '+documentTabSession.tabs.length:'');
+ $('#documentTabsMenuType').textContent=tab?(tab.doc.type==='card'?'▣':'▧'):'';
+ toggle.setAttribute('aria-label','Открытые документы: '+$('#documentTabsMenuLabel').textContent);
+ toggle.title=$('#documentTabsMenuLabel').textContent;
+ const list=$('#documentTabsMenuList');
+ const focused=document.activeElement?.closest('[data-mobile-tab-id]');
+ const focusId=focused?.dataset.mobileTabId,wasClose=document.activeElement?.matches('[data-mobile-tab-close]');
+ list.innerHTML=documentTabSession.tabs.map(t=>{
+  const active=t.id===documentTabSession.activeId,title=html(t.doc.title||'Без названия');
+  return `<li data-mobile-tab-id="${html(t.id)}" class="${active?'active':''}"><button type="button" data-mobile-tab-activate aria-current="${active?'page':'false'}"><span aria-hidden="true">${t.doc.type==='card'?'▣':'▧'}</span><span class="document-tabs-menu-title">${title}</span>${active?'<span aria-hidden="true">✓</span>':''}</button><button type="button" data-mobile-tab-close aria-label="Закрыть ${title}">×</button></li>`;
+ }).join('')||'<li class="document-tabs-menu-empty">Нет открытых документов</li>';
+ if(focusId){const row=[...list.children].find(r=>r.dataset.mobileTabId===focusId)||list.firstElementChild;row?.querySelector(wasClose?'[data-mobile-tab-close]':'button')?.focus();if(!documentTabSession.tabs.length)toggle.focus()}
+}
+function openDocumentTabsMenu(){
+ if(!matchMedia('(max-width:760px)').matches)return;
+ // Only visibility changes here: no capture, commit or document save.
+ renderMobileDocumentTabs();
+ $('#documentTabsMenu').classList.remove('hidden');
+ $('#documentTabsMenuToggle').setAttribute('aria-expanded','true');
+ const r=$('#documentTabsMenuToggle').getBoundingClientRect();
+ $('#documentTabsMenu').style.top=r.bottom+'px';
+ $('#documentTabsMenu').style.maxHeight=Math.max(0,(window.visualViewport?.height||innerHeight)-r.bottom-8)+'px';
+}
+// Browsing the switcher must not blur/finalize an active inline text edit.
+for(const id of ['documentTabsMenuToggle','documentTabsMenuClose'])$('#'+id).addEventListener('pointerdown',ev=>{if(app.editingId)ev.preventDefault()});
+$('#documentTabsMenuToggle').onclick=()=>$('#documentTabsMenu').classList.contains('hidden')?openDocumentTabsMenu():closeDocumentTabsMenu(true);
+$('#documentTabsMenuToggle').addEventListener('keydown',ev=>{if(ev.key==='ArrowDown'){ev.preventDefault();openDocumentTabsMenu();$('#documentTabsMenuList button')?.focus()}});
+$('#documentTabsMenuClose').onclick=()=>closeDocumentTabsMenu(true);
+$('#documentTabsMenuAdd').onclick=()=>{closeDocumentTabsMenu(true);openTabPicker()};
+$('#documentTabsMenuList').onclick=async ev=>{
+ const row=ev.target.closest('[data-mobile-tab-id]');if(!row)return;
+ if(ev.target.closest('[data-mobile-tab-close]')){await closeDocumentTab(row.dataset.mobileTabId);return}
+ if(ev.target.closest('[data-mobile-tab-activate]')){closeDocumentTabsMenu(true);activateDocumentTab(row.dataset.mobileTabId)}
+};
+document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#documentTabsMenu,#documentTabsMenuToggle'))closeDocumentTabsMenu()},true);
+document.addEventListener('focusin',ev=>{if(!ev.target.closest('#documentTabsMenu,#documentTabsMenuToggle'))closeDocumentTabsMenu()},true);
+document.addEventListener('keydown',ev=>{
+ if(ev.key==='Escape'&&!$('#documentTabsMenu').classList.contains('hidden')){ev.preventDefault();ev.stopImmediatePropagation();closeDocumentTabsMenu(true)}
+},true);
+window.addEventListener('resize',()=>closeDocumentTabsMenu());
+window.visualViewport?.addEventListener('resize',()=>closeDocumentTabsMenu());
 let v41TabGesture=null;
 $('#documentTabsScroll').addEventListener('pointerdown',ev=>{if(ev.pointerType==='touch')v41TabGesture={id:ev.pointerId,x:ev.clientX,y:ev.clientY,moved:false};},{passive:true});
 $('#documentTabsScroll').addEventListener('pointermove',ev=>{if(v41TabGesture?.id===ev.pointerId&&Math.abs(ev.clientX-v41TabGesture.x)>9)v41TabGesture.moved=true;},{passive:true});
@@ -3022,7 +3076,10 @@ const mobileMediaQuery=window.matchMedia('(max-width:760px)');
 mobileMediaQuery.addEventListener?.('change',()=>{relocateMobileHistory();if(!mobileMediaQuery.matches){closeMobileOverlays();document.body.classList.remove('mobile-panel-visible')}});
 relocateMobileHistory();
 // Menu handlers already own visibility; track it for CSS so the selection tray does not obscure open sheets.
-const mobileOverlayObserver=new MutationObserver(()=>syncMobileOverlayState());
+const mobileOverlayObserver=new MutationObserver(changes=>{
+ syncMobileOverlayState();
+ if(changes.some(({target})=>['mobileLayersSheet','rightPanel'].includes(target.id)?target.classList.contains('open'):!target.classList.contains('hidden')))closeDocumentTabsMenu();
+});
 for(const el of Object.values(mobileOverlayNodes()))mobileOverlayObserver.observe(el,{attributes:true,attributeFilter:['class']});
 
 // v0.36 · two-tier mobile properties. The desktop inspector remains untouched.

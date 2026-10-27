@@ -89,16 +89,30 @@ test('offline reload, editing, IndexedDB, JSON/ZIP export/import and reopening a
   expect((await records(next, 'docs')).some(x => x.id !== doc.id && x.elements.length === 1)).toBe(true);
 });
 
-test('complete update waits for explicit click, saves pending edits and retains IndexedDB', async ({ page, context }) => {
-  const old = await ready(page); await createDocument(page, 'Update document'); await addShape(page);
+for (const mobile of [false, true]) test(`complete update waits for explicit click, saves pending edits and retains IndexedDB mobile=${mobile}`, async ({ page, context }, testInfo) => {
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1366, height: 768 });
+  async function insertShape(target) {
+    if (mobile && target === page) { if (await target.locator('#mobileContext').isVisible()) await target.locator('#mobileConfirm').click(); await target.locator('[data-mobile=shapes]:visible').click(); await target.locator('[data-tray-shape=basic0]').click(); } else await addShape(target);
+  }
+  const old = await ready(page); await createDocument(page, 'Update document'); await insertShape(page);
   const doc = await savedDocument(page, 'Update document', 1);
   const other = await context.newPage(); await ready(other);
   await createDocument(other, 'Other window'); await addShape(other);
   await savedDocument(other, 'Other window', 1);
   await deploy('next'); await update(page);
   await expect(page.locator('#pwaStatus')).toContainText('Доступна новая версия');
+  if (mobile) {
+    await expect(page.locator('#pwaStatus')).toBeHidden();
+    await expect(page.locator('#pwaToggle')).toBeHidden();
+    expect(await page.locator('html').evaluate(el => el.style.getPropertyValue('--pwa-notice-height'))).toBe('0px');
+    await page.locator('#documentTabsHome').click();
+    await expect(page.locator('#homePwaStatus #pwaToggle')).toHaveText('Версия ↑');
+    await page.screenshot({ path: testInfo.outputPath('mobile-home-pwa.png') });
+    await page.locator('#homeEditorBtn').click();
+  } else await page.screenshot({ path: testInfo.outputPath('desktop-tabs-pwa.png') });
   expect(await page.locator('meta[name=test-deploy]').count()).toBe(0);
-  await addShape(page); // Do not wait for debounce; update must confirm this save.
+  await insertShape(page); // Do not wait for debounce; update must confirm this save.
+  if (mobile) await page.locator('#documentTabsHome').click();
   await page.locator('#pwaUpdate').click();
   await expect(page.locator('meta[name=test-deploy]')).toHaveAttribute('content', 'next');
   await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
@@ -142,7 +156,7 @@ test('save failure postpones update and keeps editing state', async ({ page }) =
   expect((await exportedDocument(page)).elements).toHaveLength(2);
 });
 
-for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }]) test(`PWA compact lifecycle and safe retry after modified HTTP HTML ${viewport.width}x${viewport.height}`, async ({ page, context }) => {
+for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }]) test(`PWA compact lifecycle and safe retry after modified HTTP HTML ${viewport.width}x${viewport.height}`, async ({ page, context }, testInfo) => {
   await page.setViewportSize(viewport);
   await page.clock.install();
   const filename = join(site, 'index.html');
@@ -155,23 +169,26 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
   await expect(page.locator('#pwaRetry')).toBeEnabled();
   expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations().then(x => x.length))).toBe(0);
   await createDocument(page, 'Mobile retry');
-  async function unblocked() {
-    const geometry = await page.locator('#pwaStatus').evaluate(panel => {
-      const box = panel.getBoundingClientRect();
-      const controls = ['#documentTabs', '.topbar', '#stageScroller', '#mobileToolbars'].map(selector => document.querySelector(selector)).filter(node => node?.getClientRects().length);
-      return { left: box.left, right: box.right, height: box.height, overlap: controls.some(node => {
-        const r = node.getBoundingClientRect(); return r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
-      }), overflow: document.documentElement.scrollWidth > innerWidth };
-    });
-    expect(geometry.left).toBeGreaterThanOrEqual(0); expect(geometry.right).toBeLessThanOrEqual(viewport.width);
-    expect(geometry.height).toBeLessThanOrEqual(132); expect(geometry.overlap).toBe(false); expect(geometry.overflow).toBe(false);
+  async function editorWithoutPWA() {
+    await expect(page.locator('#pwaToggle')).toBeHidden();
+    await expect(page.locator('#pwaStatus')).toBeHidden();
+    expect(await page.locator('html').evaluate(el => el.style.getPropertyValue('--pwa-notice-height'))).toBe('0px');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    const top = await page.locator('#app').evaluate(el => el.getBoundingClientRect().top);
+    expect(top).toBe(42);
   }
-  await unblocked();
+  await editorWithoutPWA();
+  await page.locator('#documentTabsHome').click();
+  await expect(page.locator('#homePwaStatus #pwaToggle')).toBeVisible();
+  const controls = await page.locator('.home-topbar button').evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right }; }));
+  for (const r of controls) { expect(r.left).toBeGreaterThanOrEqual(0); expect(r.right).toBeLessThanOrEqual(viewport.width); }
+  await page.screenshot({ path: testInfo.outputPath('mobile-home-error.png') });
+  await expect(page.locator('#pwaStatus')).toBeVisible();
   await page.locator('#pwaDetailsToggle').click();
   await expect(page.locator('#pwaDetails')).toContainText('SHA-256');
-  await unblocked();
   await page.locator('#pwaClose').click(); await expect(page.locator('#pwaStatus')).toBeHidden();
-  await page.locator('#documentTabsHome').click(); await expect(page.locator('#homeScreen')).toBeVisible();
+  await page.locator('#homeEditorBtn').click(); await editorWithoutPWA();
+  await page.locator('#documentTabsHome').click();
   await page.locator('#pwaToggle').click(); await page.locator('#pwaDetailsToggle').click();
   await expect(page.locator('#pwaDetails')).toBeVisible();
   await page.evaluate(async () => { await (await caches.open('unrelated-working-cache')).put('/keep', new Response('keep')); });

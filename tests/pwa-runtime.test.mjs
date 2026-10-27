@@ -37,30 +37,32 @@ test('activation and late updatefound are observed', async () => {
 });
 
 // A small DOM/worker harness keeps state transitions independent of the browser.
-function runtime(t, reg) {
+function runtime(t, reg, small = false) {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const nodes = [];
   class Element extends EventTarget {
-    constructor() { super(); this.dataset = {}; this.style = { setProperty() {} }; this.hidden = false; }
-    append(...children) { nodes.push(...children); }
+    constructor() { super(); this.dataset = {}; this.style = { setProperty(name, value) { this[name] = value; } }; this.hidden = false; }
+    append(...children) { for (const child of children) { child.parentNode = this; if (!nodes.includes(child)) nodes.push(child); } }
     setAttribute(name, value) { this[name] = String(value); }
     contains() { return false; }
     remove() { this.removed = true; }
   }
-  const tabs = new Element();
+  const tabs = new Element(), homeHost = new Element();
+  const media = Object.assign(new EventTarget(), { matches: small });
+  const win = Object.assign(new EventTarget(), { matchMedia: () => media });
   const document = Object.assign(new EventTarget(), {
     createElement: () => new Element(), body: new Element(), head: new Element(), documentElement: new Element(),
-    getElementById: id => id === 'documentTabs' ? tabs : nodes.find(node => node.id === id),
+    getElementById: id => id === 'documentTabs' ? tabs : id === 'homePwaStatus' ? homeHost : nodes.find(node => node.id === id),
   });
   const serviceWorker = Object.assign(new EventTarget(), { register: t.mock.fn(async () => reg) });
   const reload = t.mock.fn(), prepare = t.mock.fn(async () => {}), resume = t.mock.fn();
-  for (const [key, value] of Object.entries({ document, navigator: { serviceWorker, onLine: true }, window: new EventTarget(), location: { reload } })) {
+  for (const [key, value] of Object.entries({ document, navigator: { serviceWorker, onLine: true }, window: win, location: { reload } })) {
     const old = Object.getOwnPropertyDescriptor(globalThis, key);
     Object.defineProperty(globalThis, key, { configurable: true, value });
     t.after(() => old ? Object.defineProperty(globalThis, key, old) : delete globalThis[key]);
   }
   installNetlifyPWA({ prepare, resume });
-  return { get: id => document.getElementById(id), serviceWorker, reload, prepare, resume };
+  return { get: id => document.getElementById(id), serviceWorker, reload, prepare, resume, document, media, tabs, homeHost, screen(screen) { const event = new Event('karto-screen-change'); event.detail = { screen }; document.dispatchEvent(event); } };
 }
 function worker(ready, version = 'old') {
   return Object.assign(new EventTarget(), { state: 'activated', postMessage(message, ports) {
@@ -139,4 +141,48 @@ test('waiting update requires explicit click and failed save postpones activatio
   assert.equal(post.mock.calls.some(call => call.arguments[0].type === 'ACTIVATE_UPDATE'), false);
   assert.equal(ui.reload.mock.callCount(), 0);
   assert.equal(ui.resume.mock.callCount(), 1);
+});
+
+
+test('mobile error and retry survive editor visits with zero reserved height', async t => {
+  const reg = Object.assign(new EventTarget(), { active: worker(false), update: async () => {} });
+  const ui = runtime(t, reg, true);
+  await settle();
+  assert.equal(ui.get('pwaToggle').parentNode, ui.homeHost);
+  assert.equal(ui.get('pwaRetry').hidden, false);
+  ui.screen('editor');
+  assert.equal(ui.get('pwaToggle').hidden, true);
+  assert.equal(ui.get('pwaStatus').hidden, true);
+  assert.equal(ui.document.documentElement.style['--pwa-notice-height'], '0px');
+  ui.serviceWorker.dispatchEvent(new Event('controllerchange')); await settle();
+  assert.equal(ui.get('pwaStatus').hidden, true);
+  ui.screen('home');
+  assert.equal(ui.get('pwaStatus').hidden, false);
+  assert.equal(ui.get('pwaToggle').textContent, 'Офлайн !');
+  reg.active = worker(true);
+  ui.get('pwaRetry').onclick(); await settle();
+  assert.equal(ui.get('pwaStatus').dataset.offlineReady, 'true');
+  ui.media.matches = false; ui.media.dispatchEvent(new Event('change'));
+  ui.screen('editor');
+  assert.equal(ui.get('pwaToggle').parentNode, ui.tabs);
+  assert.equal(ui.get('pwaToggle').hidden, false);
+});
+
+test('waiting update arriving in mobile editor stays hidden and requires saved documents on home', async t => {
+  const reg = Object.assign(new EventTarget(), { active: worker(true) }), ui = runtime(t, reg, true);
+  await settle(); ui.screen('editor');
+  reg.waiting = worker(true, 'next');
+  const post = t.mock.method(reg.waiting, 'postMessage');
+  ui.serviceWorker.dispatchEvent(new Event('controllerchange')); await settle();
+  assert.equal(ui.get('pwaStatus').hidden, true);
+  assert.equal(ui.get('pwaToggle').textContent, 'Версия ↑');
+  assert.equal(ui.document.documentElement.style['--pwa-notice-height'], '0px');
+  ui.screen('home');
+  assert.equal(ui.get('pwaStatus').hidden, false);
+  assert.equal(ui.get('pwaUpdate').hidden, false);
+  ui.prepare.mock.mockImplementation(async () => { throw Error('save failed'); });
+  await ui.get('pwaUpdate').onclick();
+  assert.equal(ui.prepare.mock.callCount(), 1);
+  assert.equal(post.mock.calls.some(c => c.arguments[0].type === 'ACTIVATE_UPDATE'), false);
+  assert.equal(ui.reload.mock.callCount(), 0);
 });

@@ -2,6 +2,16 @@ const { PNG } = require('pngjs');
 const { test, expect, openHome, createDocument, importPayload, records, openLibraryDocument, exportedDocument, exportPNG, canvasPoint } = require('./helpers');
 
 test.use({ serviceWorkers: 'block' });
+const editorUIState = () => ({
+  focus: { tag: document.activeElement?.tagName, id: document.activeElement?.id, className: document.activeElement?.className, editable: document.activeElement?.isContentEditable },
+  selected: [...document.querySelectorAll('#layers .layer.selected')].map(e => e.dataset.layer),
+  chooser: document.querySelector('#fxChooser')?.className,
+  rename: !!document.querySelector('#layers .layer-rename-input'),
+  tools: [...document.querySelectorAll('#dockMarquee.selected,#dockPen.selected,#dockSelect.selected')].map(e => e.id),
+});
+test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) await info.attach('region-ui-diagnostics', { body: JSON.stringify(await page.evaluate(editorUIState)), contentType: 'application/json' });
+});
 async function open(page, grouped = false) {
   await page.addInitScript(() => {
     window.regionWrites = [];
@@ -37,7 +47,18 @@ async function addRegion(page) {
 }
 const history = page => page.locator('#historyEntries [data-history-index]').evaluateAll(rows => ({ length: rows.length, index: rows.findIndex(r => r.getAttribute('aria-current') === 'step') }));
 const selected = page => page.locator('#layers .layer.selected').getAttribute('data-layer');
-async function selectLayer(page, id) { await page.locator(`#layers [data-layer="${id}"] .layer-name`).click(); }
+async function selectLayer(page, id) {
+  await page.locator(`#layers [data-layer="${id}"] .layer-name`).click();
+  await expect(page.locator('#layers .layer.selected')).toHaveAttribute('data-layer', id);
+  await expect(page.locator('#layers .layer-rename-input')).toHaveCount(0);
+}
+async function openLayerEffectChooser(page, id) {
+  await expect(page.locator('#layers .layer.selected')).toHaveAttribute('data-layer', id);
+  await expect(page.locator('[data-fx-show]')).not.toHaveAttribute('data-fx-region', 'true');
+  await expect(page.locator('#fxChooser')).toBeHidden();
+  await page.locator('[data-fx-show]').click();
+  await expect(page.locator('#fxChooser')).toBeVisible();
+}
 
 test('region permits real canvas selection and movement, including after lock and reselection', async ({ page }) => {
   await open(page); await addRegion(page);
@@ -103,14 +124,18 @@ test('opening and cancelling selection effects is read only', async ({ page }) =
 });
 
 test('existing region effects and parameters each keep their own history; new edits invalidate Redo', async ({ page }) => {
+  await page.clock.install();
   await open(page); await addRegion(page);
   const first = await exportedDocument(page), region = first.elements[2], h = await history(page);
-  await page.locator('[data-fx-show]').click(); await page.locator('[data-fx-add="noise"]').click();
+  await openLayerEffectChooser(page, region.id); await page.locator('[data-fx-add="noise"]').click();
   const second = await exportedDocument(page);
   expect(second.elements[2].effects.map(f => f.type)).toEqual(['gaussianBlur', 'noise']);
   expect(await history(page)).toEqual({ length: h.length + 1, index: h.index + 1 });
   await page.locator('#undoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(first.elements);
   await page.locator('#redoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(second.elements);
+  // Keep these real pointer actions within the rename double-click interval.
+  // Reload can advance the browser clock beyond the test runner's wall time.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   await selectLayer(page, region.id);
   const radius = page.locator(`[data-fx-field="${region.effects[0].id}"][data-fx-key="radius"]`);
   await radius.fill('18'); await radius.press('Tab');
@@ -118,9 +143,10 @@ test('existing region effects and parameters each keep their own history; new ed
   await page.locator('#undoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(second.elements);
   await page.locator('#undoBtn').click();
   await selectLayer(page, region.id);
-  await page.locator('[data-fx-show]').click(); await page.locator('[data-fx-add="layerBlur"]').click();
+  await openLayerEffectChooser(page, region.id); await page.locator('[data-fx-add="layerBlur"]').click();
   expect((await exportedDocument(page)).elements[2].effects.map(f => f.type)).toEqual(['gaussianBlur', 'layerBlur']);
   await expect(page.locator('#redoBtn')).toBeDisabled();
+  await page.clock.resume();
 });
 
 test('selected ordinary layer stays unchanged by region command; object properties keep their semantics', async ({ page }) => {
@@ -138,6 +164,7 @@ test('selected ordinary layer stays unchanged by region command; object properti
 });
 
 test('masked PNG survives Redo, confirmed save, reload and JSON import; old regions remain editable', async ({ page }) => {
+  await page.clock.install();
   const doc = await open(page); const plain = await exportPNG(page);
   await addRegion(page); const added = await exportedDocument(page), png = await exportPNG(page);
   expect(png.image.data.equals(plain.image.data)).toBe(false);
@@ -157,12 +184,26 @@ test('masked PNG survives Redo, confirmed save, reload and JSON import; old regi
   expect(roundtrip.elements.map(e => ({ ...e, id: null }))).toEqual(added.elements.map(e => ({ ...e, id: null })));
   expect((await exportPNG(page)).image.data).toEqual(png.image.data);
   const region = roundtrip.elements.find(e => e.isFxRegion);
+  // Keep these real pointer actions within the rename double-click interval.
+  // Reload can advance the browser clock beyond the test runner's wall time.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   await selectLayer(page, region.id); await page.locator(`#layers [data-layeract="visibility"][data-id="${region.id}"]`).click();
   expect((await exportPNG(page)).image.data).toEqual(plain.image.data);
   await page.locator(`#layers [data-layeract="visibility"][data-id="${region.id}"]`).click();
   expect((await exportPNG(page)).image.data).toEqual(png.image.data);
-  await selectLayer(page, region.id); await page.keyboard.press('Delete');
-  expect((await exportedDocument(page)).elements).toHaveLength(2);
+  await selectLayer(page, region.id);
+  const beforeDelete = await exportedDocument(page), deleteHistory = await history(page);
+  expect(await page.evaluate(() => document.activeElement.matches('input,textarea,select,[contenteditable="true"]') || document.activeElement.isContentEditable)).toBe(false);
+  await expect(page.locator('#dockSelect')).toHaveClass(/selected/);
+  await expect(page.locator('#inlineText')).toBeHidden();
+  await page.keyboard.press('Delete');
+  const remaining = beforeDelete.elements.filter(e => e.id !== region.id);
+  expect(remaining).toHaveLength(2);
+  expect((await exportedDocument(page)).elements).toEqual(remaining);
+  expect(await history(page)).toEqual({ length: deleteHistory.length + 1, index: deleteHistory.index + 1 });
+  await page.locator('#undoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(beforeDelete.elements);
+  await page.locator('#redoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(remaining);
+  await page.clock.resume();
 });
 
 for (const active of [false, true]) test(`mobile chooser adds one atomic region effect (ordinary object selected: ${active})`, async ({ page }) => {
@@ -224,4 +265,17 @@ test('region layer can be reordered and restored with ordinary history', async (
   await page.mouse.move(to.x + 90, to.y + to.height - 3, { steps: 12 }); await page.mouse.up();
   expect((await exportedDocument(page)).elements).toEqual([{ ...region, groupId: null }, ...before.elements.slice(0, 2)]);
   await page.locator('#undoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(before.elements);
+});
+
+test('consecutive layer-name clicks still rename the effect layer without deleting it', async ({ page }) => {
+  await open(page); await addRegion(page);
+  const before = await exportedDocument(page), region = before.elements[2];
+  await page.locator(`#layers [data-layer="${region.id}"] .layer-name`).dblclick();
+  const input = page.locator('#layers .layer-rename-input');
+  await expect(input).toBeFocused();
+  await input.press('Delete');
+  await expect(input).toHaveValue('');
+  expect((await exportedDocument(page)).elements).toEqual(before.elements);
+  await input.fill('Renamed effect'); await input.press('Enter');
+  expect((await exportedDocument(page)).elements).toEqual([...before.elements.slice(0, 2), { ...region, name: 'Renamed effect' }]);
 });

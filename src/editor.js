@@ -715,6 +715,11 @@ function renameLayerFromName(el){
 }
 function layerInteraction(root){
  let lastRenameDown=null,renamingUntil=0;
+ // A rename double click must be consecutive: inspector, history and layer
+ // controls interrupt it, even when the same name is clicked again within 540 ms.
+ document.addEventListener('pointerdown',ev=>{
+  if(!root.contains(ev.target)||!ev.target.closest('[data-rename]'))lastRenameDown=null;
+ },true);
  root.addEventListener('pointerdown',ev=>{if(root.id==='mobileLayerList'&&(mobileLayerMulti||ev.pointerType==='touch'))return;const n=ev.target.closest('[data-rename]');if(!n)return;const id=n.dataset.rename,now=performance.now();if(lastRenameDown?.id===id&&now-lastRenameDown.time<540){ev.preventDefault();ev.stopPropagation();renamingUntil=now+600;renameLayerFromName(n);lastRenameDown=null;return}lastRenameDown={id,time:now}},true);
  root.addEventListener('dblclick',ev=>{const name=ev.target.closest('[data-rename]');if(name){ev.preventDefault();renameLayerFromName(name)}});
  root.addEventListener('click',ev=>{

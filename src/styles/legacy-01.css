@@ -1475,3 +1475,9 @@ html,body{background:#1e1f27!important;}
  #homePwaStatus:empty{display:none}
  #homePwaStatus:has(button)+.home-editor-btn{margin-left:0;padding:9px 8px;gap:5px;font-size:12px}
 }
+
+/* Inline text session exit, positioned against the actual visual viewport. */
+.inline-text-done{position:fixed;z-index:320;padding:4px max(4px,env(safe-area-inset-right)) max(4px,env(safe-area-inset-bottom)) max(4px,env(safe-area-inset-left));border-radius:10px;background:#20202b;box-shadow:0 2px 10px #0005}
+.inline-text-done button{min-height:44px;min-width:96px;border:0;border-radius:7px;background:#7457ed;color:#fff;font:600 15px system-ui;cursor:pointer}
+.inline-text-done.hidden{display:none!important}
+@media(min-width:761px){.inline-text-done{display:none!important}}

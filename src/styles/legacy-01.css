@@ -1355,13 +1355,12 @@ html,body{background:#1e1f27!important;}
  #quickBubble[data-mobile-v36=true] button.hidden{display:none!important}
  #quickBubble[data-mobile-v36=true] button svg{width:19px!important;height:19px!important;display:block}
  .mobile-toolbars{background:#25252a!important}
- #mobileToolbars.keyboard-open,.karto-keyboard-open #mobileToolbars{display:none!important}
- .karto-keyboard-open #app{height:calc(var(--v41-visual-height,100dvh) - var(--document-tab-height))!important;min-height:0!important}
+ .karto-keyboard-open #app{height:var(--v41-editor-height,calc(100dvh - var(--document-tab-height)))!important;box-sizing:border-box!important;flex-shrink:0!important;min-height:0!important}
  .karto-keyboard-open #stageScroller{min-height:0!important}
- .karto-keyboard-open .toast,.karto-keyboard-open #mobileContext{display:none!important}
+ .karto-keyboard-open .toast{display:none!important}
  #mobileContext:not(.hidden){display:flex!important;align-items:stretch!important;min-width:0!important;gap:0!important;flex:1 1 0!important;width:auto!important;overflow-x:auto!important;padding-right:8px!important;}
  #mobileContext.hidden{display:none!important;}
- #mobileConfirm{position:relative!important;z-index:5!important;flex:0 0 48px!important;margin:4px 6px 4px 0!important;align-self:center!important;}
+ #mobileConfirm{position:relative!important;z-index:5!important;flex:0 0 44px!important;width:44px!important;height:44px!important;min-width:44px!important;min-height:44px!important;margin:3px 6px 3px 0!important;align-self:center!important;}
  #mobileContext>button:not(.mp-context-done){flex:0 0 auto!important;min-width:64px!important;}
 
  #mobileToolbars:has(#mobileContext:not(.hidden)){overflow:hidden}
@@ -1474,4 +1473,12 @@ html,body{background:#1e1f27!important;}
  #homePwaStatus{flex:0 0 auto;margin-left:auto}
  #homePwaStatus:empty{display:none}
  #homePwaStatus:has(button)+.home-editor-btn{margin-left:0;padding:9px 8px;gap:5px;font-size:12px}
+}
+
+/* The existing text toolbar stays in flow at the measured visual viewport bottom. */
+@media(max-width:760px){
+ body:has(#mobileContext [data-mobile="edit"]) #mobilePropertyUI.mp-open,body:has(#mobileContext [data-mobile="edit"]) #mobilePropertyUI.mp-open:has(>.mp-sheet){bottom:var(--mobile-toolbar-anchor,50px)!important;padding-bottom:0!important}
+ body.karto-keyboard-open #mobilePropertyUI .mp-sheet{max-height:max(80px,calc(var(--v41-visual-height) - 204px))!important;min-height:0!important;display:flex;flex-direction:column}
+ body.karto-keyboard-open #mobilePropertyUI .mp-body{min-height:0!important;overflow-y:auto!important}
+ body.karto-keyboard-open #stageScroller{touch-action:none}
 }

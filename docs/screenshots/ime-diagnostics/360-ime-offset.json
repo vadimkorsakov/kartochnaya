@@ -2,6 +2,7 @@
   "schema": 1,
   "units": "CSS px; DOMRect and visualBottom relative to layout viewport",
   "viewport": {
+    "policy": "width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,interactive-widget=resizes-content",
     "innerHeight": 640,
     "clientHeight": 640,
     "scrollY": 0,

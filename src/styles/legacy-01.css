@@ -1355,7 +1355,7 @@ html,body{background:#1e1f27!important;}
  #quickBubble[data-mobile-v36=true] button.hidden{display:none!important}
  #quickBubble[data-mobile-v36=true] button svg{width:19px!important;height:19px!important;display:block}
  .mobile-toolbars{background:#25252a!important}
- .karto-keyboard-open #app{height:calc(var(--v41-visual-bottom,100dvh) - var(--document-tab-height))!important;min-height:0!important}
+ .karto-keyboard-open #app{height:var(--v41-editor-height,calc(100dvh - var(--document-tab-height)))!important;box-sizing:border-box!important;flex-shrink:0!important;min-height:0!important}
  .karto-keyboard-open #stageScroller{min-height:0!important}
  .karto-keyboard-open .toast{display:none!important}
  #mobileContext:not(.hidden){display:flex!important;align-items:stretch!important;min-width:0!important;gap:0!important;flex:1 1 0!important;width:auto!important;overflow-x:auto!important;padding-right:8px!important;}

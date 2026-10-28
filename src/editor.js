@@ -3064,14 +3064,15 @@ window.addEventListener('blur',()=>sideHeld.clear());
 // Browser navigation initiated by physical mouse buttons can bypass JavaScript event delivery.
 // Keep one same-document guard state so a browser Back transition can undo without leaving the editor.
 const NAV_GUARD='__kartochnaya_back_guard_v22';
-function rearmBackGuard(){try{if(!history.state?.[NAV_GUARD])history.pushState({...(history.state||{}),[NAV_GUARD]:true},'',location.href)}catch(err){}}
+function rearmBackGuard(){if(matchMedia('(max-width:760px)').matches&&!mobileBackPending())return;try{if(!history.state?.[NAV_GUARD])history.pushState({...(history.state||{}),[NAV_GUARD]:true},'',location.href)}catch(err){}}
 window.addEventListener('popstate',ev=>{
+ if(matchMedia('(max-width:760px)').matches){if(!ev.state?.[NAV_GUARD]){mobileBack();rearmBackGuard()}return}
  if(homeVisible())return;
  if(ev.state?.[NAV_GUARD])return;
  undo(-1);
  rearmBackGuard();
 });
-rearmBackGuard();
+requestAnimationFrame(rearmBackGuard);
 
 // Project-scoped removal and multi-project backup.
 async function deleteProject(id){
@@ -3484,14 +3485,42 @@ mobileV36.addEventListener('change',ev=>{const t=ev.target;
 });
 // Trigger mobile toolbox actions before the legacy bubble handler handles "more".
 $('#quickBubble').addEventListener('click',ev=>{if(mobileV36Small()&&ev.target.closest('[data-quick=more]')){ev.stopImmediatePropagation();mobileV36Open('more',true)}},true);
-$('#mobileConfirm').onclick=()=>{if(app.editingId){closeInlineText();return}if(mobileV36State.tool)mobileV36Close();else if(active()?.type!=='text')setSelected([])};
-// Only web-delivered Back/Escape events are handled; browser history stays native.
+$('#mobileConfirm').onclick=()=>{if(app.editingId){closeInlineText();return}if(mobileV36State.tool)mobileV36Back();else setSelected([])};
+// One same-document sentinel is shared with the desktop guard, and armed only
+// while mobile UI owns Back. Once all levels are closed, navigation is not rearmed.
+let mobileImeVisible=false,mobileViewportMaxHeight=innerHeight;
+function mobileTopPanel(){
+ const dialog=$$('.dialog:not(.hidden)').at(-1);if(dialog)return ()=>{dialog.classList.add('hidden');if(!$$('.dialog:not(.hidden)').length)$('#shade').classList.add('hidden')};
+ if(!$('#documentTabsMenu').classList.contains('hidden'))return ()=>closeDocumentTabsMenu(true);
+ if(mobileV36State.tool)return ()=>mobileV36Back();
+ if(app.mobileLayersOpen)return ()=>toggleMobileLayers(false);
+ if($('#rightPanel').classList.contains('open'))return ()=>hideInspector();
+ const overlay=Object.entries(mobileOverlayNodes()).find(([key,el])=>!['layers','inspector'].includes(key)&&!el.classList.contains('hidden'));
+ if(overlay)return ()=>{overlay[1].classList.add('hidden');syncMobileOverlayState()};
+ for(const id of ['editorProjectMenu','textModeMenu','mobileLayerActionMenu']){const el=$('#'+id);if(el&&!el.classList.contains('hidden'))return ()=>el.classList.add('hidden')};
+ if(app.marqueeTool&&!app.mobileSelectionMenuDismissed)return ()=>{app.mobileSelectionMenuDismissed=true;updateSelectionToolbar()};
+ if(app.inkTool)return ()=>inkStop();
+ if(!$('#inkPopover').classList.contains('hidden'))return ()=>{inkStop();$('#inkPopover').classList.add('hidden')};
+ if(!$('#fillPopover').classList.contains('hidden'))return ()=>closeFillPopover();
+ return null;
+}
+function mobileBackPending(){return !homeVisible()&&(mobileImeVisible||!!app.editingId||!!mobileTopPanel()||!!app.selectedIds.length)}
+function mobileBack(){
+ if(homeVisible())return false;
+ if(mobileImeVisible){mobileImeVisible=false;const focused=document.activeElement;if(focused?.matches('input,textarea,select'))focused.blur();return true}
+ const panel=mobileTopPanel();
+ if(panel&&(!$('#documentTabsMenu').classList.contains('hidden')||$$('.dialog:not(.hidden)').length)){panel();return true}
+ if(app.editingId)closeInlineText();
+ if(panel){panel();return true}
+ if(app.selectedIds.length){setSelected([]);return true}
+ return false;
+}
 window.addEventListener('keydown',ev=>{
- if(!mobileV36Small()||!['Escape','BrowserBack','GoBack'].includes(ev.key)||!$('#documentTabsMenu').classList.contains('hidden'))return;
- if(app.editingId){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return}
- if(mobileV36State.tool){ev.preventDefault();ev.stopImmediatePropagation();mobileV36Close();return}
- if(active()?.type==='text'){ev.preventDefault();ev.stopImmediatePropagation();setSelected([])}
+ if(!mobileV36Small()||!['Escape','BrowserBack','GoBack'].includes(ev.key))return;
+ if(mobileBack()){ev.preventDefault();ev.stopImmediatePropagation()}
 },true);
+const mobileBackObserver=new MutationObserver(()=>{if(mobileV36Small())rearmBackGuard()});
+for(const root of [$('#app'),$('#shade'),$('#mobilePropertyUI'),$('#documentTabsMenu')])mobileBackObserver.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
 // Draw mobile-only text enhancements through the same Canvas path used for PNG export.
 const mobileV36BaseDrawText=drawTextGlyphs;
 drawTextGlyphs=function(c,e,method='fill'){
@@ -3643,12 +3672,17 @@ for(const type of ['click','dblclick'])v39Stage.addEventListener(type,ev=>{if(v3
 // v0.41: measure the actual visual viewport while the Android IME is showing.
 let inlineViewportFrame=null;
 function v41KeyboardViewport(){
+ const vv=window.visualViewport,typing=!!document.activeElement?.matches('input,textarea,select');
+ if(!typing)mobileViewportMaxHeight=innerHeight;
+ mobileImeVisible=typing&&Math.max(innerHeight,mobileViewportMaxHeight)-((vv?.offsetTop||0)+(vv?.height||innerHeight))>100;
  const editing=!!app.editingId&&matchMedia('(max-width:760px)').matches,root=document.documentElement;
  document.body.classList.toggle('karto-keyboard-open',editing);
  if(editing){const vv=window.visualViewport;
   root.style.setProperty('--v41-visual-height',(vv?.height||innerHeight)+'px');
-  root.style.setProperty('--v41-visual-bottom',((vv?.offsetTop||0)+(vv?.height||innerHeight))+'px');
- }else{root.style.removeProperty('--v41-visual-height');root.style.removeProperty('--v41-visual-bottom')}
+  const bottom=(vv?.offsetTop||0)+(vv?.height||innerHeight);
+  root.style.setProperty('--v41-visual-bottom',bottom+'px');
+  root.style.setProperty('--v41-editor-height',Math.max(0,bottom-$('#app').getBoundingClientRect().top)+'px');
+ }else{root.style.removeProperty('--v41-visual-height');root.style.removeProperty('--v41-visual-bottom');root.style.removeProperty('--v41-editor-height')}
  if(inlineViewportFrame!==null)cancelAnimationFrame(inlineViewportFrame);
  inlineViewportFrame=requestAnimationFrame(()=>{inlineViewportFrame=null;syncMobileToolbarAnchor();if(app.editingId){positionInlineText();if(mobileV36State.tool)mobileV36ApplyView();revealInlineText()}else if(mobileV36Text()&&mobileV36State.tool)mobileV36ApplyView()});
 }

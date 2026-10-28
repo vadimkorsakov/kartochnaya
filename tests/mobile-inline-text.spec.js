@@ -39,20 +39,22 @@ async function visibleExit(page) {
   await expect(page.locator(done)).toBeVisible();
   await expect(page.locator('#mobileContext [data-mobile=font]')).toBeVisible();
   await expect(page.locator('#inlineTextDone')).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => {
+  try { await expect.poll(() => page.evaluate(() => {
     const r = document.querySelector('#mobileConfirm').getBoundingClientRect(), bar = document.querySelector('#mobileToolbars').getBoundingClientRect();
     const t = document.querySelector('#inlineText').getBoundingClientRect(), c = document.querySelector('#mobileContext').getBoundingClientRect(), v = window.visualViewport;
     return { inside: r.left >= 0 && bar.top >= (v?.offsetTop || 0) && r.right <= innerWidth && bar.bottom <= (v?.offsetTop || 0) + (v?.height || innerHeight) + 1,
       overlap: r.left < t.right && r.right > t.left && r.top < t.bottom && r.bottom > t.top,
-      touch: r.width >= 44 && r.height >= 44, compact: bar.height <= 50 && c.right <= r.left,
+      gap: Math.abs((v?.offsetTop||0)+(v?.height||innerHeight)-bar.bottom)<=4, touch: r.width >= 44 && r.height >= 44, compact: bar.height <= 50 && c.right <= r.left,
       hit: !!document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('#mobileConfirm') };
-  })).toEqual({ inside: true, overlap: false, touch: true, compact: true, hit: true });
+  })).toEqual({ inside: true, overlap: false, gap: true, touch: true, compact: true, hit: true }); } catch(error) {
+    await test.info().attach('failed-viewport-geometry.json',{body:JSON.stringify(await page.evaluate(()=>({height:visualViewport?.height,offsetTop:visualViewport?.offsetTop,pageTop:visualViewport?.pageTop,innerHeight,rects:['app','stageScroller','mobileToolbars'].map(id=>({id,rect:document.getElementById(id).getBoundingClientRect().toJSON()})),variables:getComputedStyle(document.documentElement).getPropertyValue('--v41-editor-height')})),null,2),contentType:'application/json'}); throw error;
+  }
 }
 async function mockViewport(page, viewport) {
   await page.addInitScript(({ width, height }) => {
     const vv = new EventTarget(); Object.assign(vv, { height, width, offsetTop: 0, offsetLeft: 0, scale: 1 });
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: vv });
-    window.imeViewport = values => { Object.assign(vv, values); vv.dispatchEvent(new Event('resize')); vv.dispatchEvent(new Event('scroll')); window.dispatchEvent(new Event('resize')); };
+    window.imeViewport = values => { Object.assign(vv, values); vv.pageTop=vv.offsetTop+scrollY; vv.dispatchEvent(new Event('resize')); vv.dispatchEvent(new Event('scroll')); window.dispatchEvent(new Event('resize')); };
   }, viewport);
 }
 async function zoomTo29(page) {
@@ -112,7 +114,6 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
     await page.locator(done).tap(); await expect(page.locator(editor)).toBeHidden();
     await expect(page.locator('#mobileContext [data-mobile=edit]')).toBeVisible();
     await expect(page.locator('#mobileLayerList [data-layer=title]')).toHaveClass(/selected/);
-    await page.locator(done).tap(); await expect(page.locator('#mobileContext [data-mobile=edit]')).toBeVisible();
     await page.screenshot({ path: info.outputPath('03-confirmed-selection.png') });
     expect(text(await exportedDocument(page))).toContain('ввод'); expect(await history(page)).toBe(h + 1);
     await page.locator('#undoBtn').tap(); expect(text(await exportedDocument(page))).toBe('Graph title');
@@ -170,9 +171,9 @@ test.describe('mobile inline integration', () => {
   test('mobile Escape saves, another Escape closes properties, then clears text selection', async ({ page }) => {
     await open(page); await edit(page); await page.locator(editor).fill('Back сохраняет');
     await page.locator('#mobileContext [data-mobile=size]').tap(); await page.keyboard.press('Escape');
-    await expect(page.locator(editor)).toBeHidden(); await expect(page.locator('#mobilePropertyUI')).toBeVisible();
+    await expect(page.locator(editor)).toBeHidden(); await expect(page.locator('#mobilePropertyUI')).toBeHidden();
     expect(text(await exportedDocument(page))).toBe('Back сохраняет');
-    await page.keyboard.press('Escape'); await expect(page.locator('#mobilePropertyUI')).toBeHidden(); await expect(page.locator('#mobileContext')).toBeVisible();
+    await expect(page.locator('#mobilePropertyUI')).toBeHidden(); await expect(page.locator('#mobileContext')).toBeVisible();
     await page.keyboard.press('Escape'); await expect(page.locator('#mobilePrimary')).toBeVisible();
   });
   test('switching text layers refreshes actions; a later empty canvas tap clears selection', async ({ page }) => {
@@ -205,6 +206,68 @@ test.describe('mobile inline integration', () => {
     await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     await expect(page.locator(editor)).toBeVisible(); expect(await history(page)).toBe(h);
     await page.locator(editor).press('ControlOrMeta+Enter'); expect(await history(page)).toBe(h+1);
+  });
+  test('real browser Back consumes one mobile UI level and never undoes confirmed text', async ({ page }, info) => {
+    await mockViewport(page, {width:390,height:844}); await open(page); await edit(page);
+    await page.locator(editor).fill('Back не отменяет');
+    await page.evaluate(()=>imeViewport({height:500,offsetTop:12})); await visibleExit(page);
+    const h=await history(page);
+    await page.evaluate(()=>history.back());
+    await expect(page.locator(editor)).not.toBeFocused(); await expect(page.locator(editor)).toBeVisible();
+    expect(await history(page)).toBe(h);
+    await page.evaluate(()=>imeViewport({height:844,offsetTop:0}));
+    await page.evaluate(()=>history.back());
+    await expect(page.locator('#mobilePrimary')).toBeVisible(); expect(text(await exportedDocument(page))).toBe('Back не отменяет');
+    expect(await history(page)).toBe(h+1);
+    const count=await page.evaluate(()=>history.length);
+    await page.evaluate(()=>dispatchEvent(new PopStateEvent('popstate',{state:null})));
+    expect(await history(page)).toBe(h+1); expect(await page.evaluate(()=>history.length)).toBe(count);
+    await select(page); await page.locator('#mobileContext [data-mobile=color]').tap();
+    await page.locator('[data-mp-action=expand]').tap();
+    await page.evaluate(()=>history.back()); await expect(page.locator('#mobilePropertyUI .mp-pill')).toBeVisible();
+    await page.evaluate(()=>history.back()); await expect(page.locator('#mobilePropertyUI')).toBeHidden();
+    await page.evaluate(()=>history.back()); await expect(page.locator('#mobilePrimary')).toBeVisible();
+  });
+  test('second confirmation clears context without another history entry; geometry follows actual app origin', async ({page},info)=>{
+    await mockViewport(page,{width:390,height:844}); await open(page); await edit(page); await page.locator(editor).fill('Два подтверждения');
+    await page.locator('#app').evaluate(el=>el.style.marginTop='25px');
+    await page.evaluate(()=>imeViewport({height:500,offsetTop:18})); await visibleExit(page);
+    await page.locator('#app').evaluate(el=>el.style.marginTop=''); await page.evaluate(()=>imeViewport({height:500,offsetTop:18})); await visibleExit(page);
+    const geometry=await page.evaluate(()=>{const rect=id=>document.querySelector(id).getBoundingClientRect().toJSON();const vv=visualViewport;return {app:rect('#app'),stage:rect('#stageScroller'),toolbar:rect('#mobileToolbars'),height:vv.height,offsetTop:vv.offsetTop,pageTop:vv.pageTop,innerHeight,gap:vv.offsetTop+vv.height-document.querySelector('#mobileToolbars').getBoundingClientRect().bottom}});
+    await info.attach('viewport-geometry.json',{body:JSON.stringify(geometry,null,2),contentType:'application/json'});
+    const label=await page.addStyleTag({content:`body::after{content:'Application gap: ${geometry.gap.toFixed(1)} CSS px | browser UI not emulated';position:fixed;top:90px;left:4px;background:#111;color:white;font:11px monospace;z-index:10000;padding:3px;pointer-events:none}`});
+    await page.screenshot({path:info.outputPath('ime-gap.png')}); await label.evaluate(el=>el.remove());
+    await page.locator(done).tap(); const h=await history(page); await expect(page.locator('#mobileContext')).toBeVisible();
+    await page.screenshot({path:info.outputPath('first-confirm.png')});
+    await page.locator(done).tap(); await expect(page.locator('#mobilePrimary')).toBeVisible();
+    expect(await history(page)).toBe(h); expect(text(await exportedDocument(page))).toBe('Два подтверждения');
+    await page.screenshot({path:info.outputPath('second-confirm.png')});
+  });
+  for (const kind of ['rect','image']) test(`confirmation and Back close ${kind} context, not history`,async({page},info)=>{
+    await open(page); await page.keyboard.press('Escape');
+    if(kind==='image'){
+      const input=page.locator('#imageInput');
+      await page.locator('[data-mobile=image]:visible').tap();
+      await input.setInputFiles({name:'image.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" fill="red"/></svg>')});
+    }else{
+      await page.locator('[data-mobile=shapes]:visible').tap();await page.locator('[data-tray-shape=basic0]').tap();
+    }
+    await expect(page.locator('#mobileContext')).toBeVisible();const h=await history(page),d=await exportedDocument(page);
+    await page.screenshot({path:info.outputPath(`${kind}-before-back.png`)});
+    await page.evaluate(()=>history.back());await expect(page.locator('#mobilePrimary')).toBeVisible();
+    await page.screenshot({path:info.outputPath(`${kind}-after-back.png`)});
+    expect(await history(page)).toBe(h);expect((await exportedDocument(page)).elements).toEqual(d.elements);
+    const id=d.elements.at(-1).id;await select(page,id);await page.locator(done).tap();await expect(page.locator('#mobilePrimary')).toBeVisible();expect(await history(page)).toBe(h);
+  });
+  test('Back closes brush, selection, layers and the upper dialog one level at a time',async({page})=>{
+    await open(page);await page.keyboard.press('Escape');const h=await history(page);
+    await page.keyboard.press('b');await expect(page.locator('#inkPopover')).not.toHaveClass(/hidden/);await page.evaluate(()=>history.back());
+    await expect(page.locator('#inkPopover')).toHaveClass(/hidden/);
+    await page.locator('[data-mobile=marquee]:visible').tap();await expect(page.locator('#selectionToolbar')).toBeVisible();
+    await page.evaluate(()=>history.back());await expect(page.locator('#selectionToolbar')).toBeHidden();
+    await page.locator('[data-mobile=layers]:visible').tap();await page.evaluate(()=>history.back());await expect(page.locator('#mobileLayersSheet')).not.toHaveClass(/open/);
+    await page.locator('#documentTabsPlus').tap();await expect(page.locator('#tabPickerDialog')).toBeVisible();
+    await page.evaluate(()=>history.back());await expect(page.locator('#tabPickerDialog')).toBeHidden();expect(await history(page)).toBe(h);
   });
   test('toolbar Undo finalizes the active session before restoring history', async ({ page }) => {
     await open(page); await edit(page); await page.locator(editor).fill('Первый сеанс'); await page.locator(done).tap();

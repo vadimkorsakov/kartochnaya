@@ -1,0 +1,60 @@
+const { test, expect, openHome, importPayload, records, openLibraryDocument, exportedDocument } = require('./helpers');
+const fixture = require('./fixtures/canvas-graph.json');
+
+for (const mobile of [false, true]) test.describe(mobile ? 'font categories mobile 360' : 'font categories desktop', () => {
+  test.use({ viewport: mobile ? { width: 360, height: 640 } : { width: 1280, height: 900 }, hasTouch: mobile, isMobile: mobile });
+  test('categories, search and reopening leave document and history unchanged', async ({ page }) => {
+    await openHome(page);
+    const payload = structuredClone(fixture);
+    payload.documents = [payload.documents[0]];
+    payload.documents[0].elements.find(e => e.id === 'title').fontFamily = 'Missing Project Font';
+    await importPayload(page, payload);
+    await expect(page.locator('#toast')).toContainText('Импортировано проектов');
+    const doc = (await records(page, 'docs')).find(d => d.elements.some(e => e.id === 'title'));
+    await openLibraryDocument(page, doc.id);
+    if (mobile) {
+      await page.locator('[data-mobile=layers]:visible').click();
+      await page.locator('#mobileLayerList [data-layer="title"] .layer-name').click();
+      await page.locator('#mobileLayersClose').click();
+    } else await page.locator('#layers [data-layer="title"] .layer-name').click();
+    const before = await exportedDocument(page);
+    const history = () => page.locator('#historyEntries').innerHTML();
+    const historyBefore = await history();
+    const toggle = () => page.locator(mobile ? '#mobileContext [data-mobile=font]' : '[data-font-open]').click();
+    const open = async () => { await toggle(); if (mobile) await page.locator('[data-mp-action=expand]').click(); };
+    await open();
+    const root = page.locator(mobile ? '.mp-font-sheet' : '.font-family-menu:not(.hidden)');
+    const category = root.getByRole('combobox', { name: 'Категория шрифтов' });
+    const search = root.locator('input[type=search]');
+    const rows = root.locator(mobile ? '[data-mp-font]' : '[data-font-option]');
+    await expect(category).toHaveValue('all');
+    await expect(category.locator('option')).toHaveText(['Все шрифты', 'Пользовательские', 'Шрифты проекта']);
+    await expect(rows.filter({ hasText: 'Georgia' })).toHaveCount(1);
+    await category.selectOption('custom');
+    await expect(rows).toHaveCount(0);
+    await expect(root).toContainText('В этой категории нет шрифтов');
+    await category.selectOption('project');
+    await expect(rows.filter({ hasText: 'Missing Project Font' })).toContainText('Недоступен');
+    if (!mobile) await expect(rows.filter({ hasText: 'Missing Project Font' })).toBeDisabled();
+    await search.fill('missing');
+    await expect(rows).toHaveCount(1);
+    await category.selectOption('all');
+    await expect(rows).toHaveCount(0);
+    await search.fill('Georgia');
+    await expect(rows).toHaveCount(1);
+    await category.selectOption('project');
+    await expect(rows).toHaveCount(0);
+    await search.fill('');
+    await toggle();
+    await open();
+    await expect(category).toHaveValue('project');
+    await expect(category).toBeVisible();
+    expect(await root.locator('.v41-font-filters').evaluate(el => {
+      const r = el.getBoundingClientRect();
+      return el.scrollWidth <= el.clientWidth && r.left >= 0 && r.right <= innerWidth;
+    })).toBe(true);
+    if (mobile) expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await exportedDocument(page)).toEqual(before);
+    expect(await history()).toBe(historyBefore);
+  });
+});

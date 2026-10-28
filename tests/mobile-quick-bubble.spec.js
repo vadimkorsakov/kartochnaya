@@ -39,9 +39,12 @@ async function above(page, element) {
     const g = await geometry(page, element);
     return Math.round(g.selection.top - g.bubble.bottom);
   }).toBe(8);
+  await expect.poll(async () => {
+    const g = await geometry(page, element);
+    return Math.abs((g.bubble.left + g.bubble.right - g.selection.left - g.selection.right) / 2);
+  }).toBeLessThan(1);
   const g = await geometry(page, element);
   safe(g);
-  expect(Math.abs((g.bubble.left + g.bubble.right - g.selection.left - g.selection.right) / 2)).toBeLessThan(1);
   return g;
 }
 

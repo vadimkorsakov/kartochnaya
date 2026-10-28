@@ -429,13 +429,28 @@ body.alt-held .layer-clip-hit:hover{background:#ac88ff!important;box-shadow:0 0 
 .fx-chooser{display:grid;gap:3px;background:#292930;padding:7px;border:1px solid #5a5567;border-radius:10px;margin:9px 0 11px;max-height:300px;overflow-y:auto}
 .fx-choice{border:0;background:transparent;color:#f5f1fa;padding:10px 9px;display:flex;align-items:center;gap:11px;border-radius:6px;text-align:left;cursor:pointer;font-size:12px}
 .fx-choice:hover,.fx-choice:focus{background:#554772}.fx-choice svg{width:20px;height:20px;flex:none}
-.fx-card{border:1px solid #48444f;border-radius:9px;margin:8px 0;background:#303039;overflow:hidden}
-.fx-card-head{display:flex;align-items:center;gap:5px;padding:6px;min-height:40px}
-.fx-card-head strong{font-size:12px;flex:1;min-width:0;color:#f1eff7;cursor:pointer;font-weight:600}
-.fx-card-head button{background:transparent;border:0;color:#bcb8c7;display:grid;place-items:center;border-radius:5px;cursor:pointer;width:25px;height:25px;padding:4px}
+.fx-list{display:grid;gap:0;min-width:0}
+.fx-card{border-bottom:1px solid #48444f;min-width:0}
+.fx-card-head{display:flex;align-items:center;gap:3px;height:38px;min-width:0}
+.fx-card-head button{background:transparent;border:0;color:#bcb8c7;display:grid;place-items:center;border-radius:5px;cursor:pointer;width:28px;height:28px;flex:none;padding:5px}
 .fx-card-head button svg{width:17px;height:17px}
-.fx-card-head button:hover{background:#514a5b;color:#fff}.fx-card-head button.on{color:#b5a2ff}
-.fx-card-head .fx-drag{font-size:14px;cursor:grab;color:#aaa4b6;width:15px}
+.fx-card-head button.fx-name{display:block;flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f1eff7;font-size:12px;font-weight:500}
+.fx-card-head button:hover,.fx-card-head button[aria-expanded=true]{background:#514a5b;color:#fff}
+.fx-card-head button:focus-visible,.fx-popover button:focus-visible,.fx-menu button:focus-visible{outline:2px solid #b4a8e4;outline-offset:-2px}
+.fx-card-head button.on{color:#b5a2ff}
+.fx-popover,.fx-menu{position:fixed;z-index:35;background:#2b2b30;color:#f0eef6;border:1px solid #51505b;border-radius:10px;box-shadow:0 12px 40px #08080c77;max-width:calc(100vw - 16px)}
+.fx-popover{width:340px;display:flex;flex-direction:column;overflow:hidden}
+.fx-popover-head{display:flex;align-items:center;gap:12px;padding:10px 12px;flex:none;font-size:13px}
+.fx-popover-head strong{flex:1;min-width:0}
+.fx-popover-head button{border:0;background:transparent;color:inherit;border-radius:5px;cursor:pointer;width:28px;height:28px;padding:5px}
+.fx-popover-head button:hover{background:#514a5b}
+.fx-popover-head svg{width:18px;height:18px}
+.fx-popover .fx-details{overflow-y:auto;min-height:0;padding:12px}
+.fx-menu{width:220px;padding:5px;overflow-y:auto}
+.fx-menu button{display:block;width:100%;padding:9px 10px;border:0;border-radius:5px;background:transparent;color:inherit;text-align:left;font-size:12px;cursor:pointer}
+.fx-menu button:hover:not(:disabled){background:#514a5b}
+.fx-menu button:disabled{opacity:.35;cursor:default}
+@media(max-width:760px){.fx-popover,.fx-menu{display:none!important}}
 .fx-details{padding:10px;border-top:1px solid #514b56;display:grid;gap:9px}
 .fx-details label{font-size:11px;color:#c2c0cb;display:grid;gap:5px;margin:0}
 .fx-details .cols2{gap:8px}.fx-details input,.fx-details select{background:#252630;border:1px solid #5b5964;color:#f8f6fc;min-width:0;width:100%;border-radius:6px;padding:7px;font-size:12px}

@@ -617,7 +617,32 @@ const colorField=(label,key,v)=>`<label>${label}<span class="color-control"><inp
 const sliderField=(label,key,v,min,max,step=1)=>`<label>${label} <span class="range-value">${fmt(v)}</span><input data-key="${key}" type="range" value="${v}" min="${min}" max="${max}" step="${step}"></label>`;
 const selectField=(label,key,v,opts)=>`<label>${label}<select data-key="${key}">${opts.map(([key,txt])=>`<option value="${html(key)}" ${String(v)===String(key)?'selected':''}>${html(txt)}</option>`).join('')}</select></label>`;
 
-const propertySection=(title,inside,icon='settings')=>`<section class="ins-section"><div class="ins-section-head">${uiIcon(icon)}<strong>${title}</strong></div><div class="ins-section-body">${inside}</div></section>`;
+const inspectorSectionsStorageKey='kartochnaya-ui-inspector-sections-v1';
+const collapsedInspectorSections=(()=>{
+ try{
+  const stored=JSON.parse(localStorage.getItem(inspectorSectionsStorageKey));
+  return new Set(Array.isArray(stored)?stored.filter(title=>typeof title==='string'):[]);
+ }catch{return new Set()}
+})();
+const propertySection=(title,inside,icon='settings')=>{
+ if(matchMedia('(max-width:760px)').matches)return `<section class="ins-section"><div class="ins-section-head">${uiIcon(icon)}<strong>${title}</strong></div><div class="ins-section-body">${inside}</div></section>`;
+ const expanded=!collapsedInspectorSections.has(title);
+ return `<section class="ins-section${expanded?'':' ins-section-collapsed'}"><button type="button" class="ins-section-head ins-section-toggle" data-ins-section="${html(title)}" aria-expanded="${expanded}">${uiIcon(icon)}<strong>${title}</strong><span class="ins-section-arrow" aria-hidden="true"></span></button><div class="ins-section-body"${expanded?'':' hidden'}>${inside}</div></section>`;
+};
+for(const type of ['keydown','keyup'])$('#inspector').addEventListener(type,ev=>{
+ if(ev.target.closest('button[data-ins-section]')&&['Enter',' '].includes(ev.key)&&matchMedia('(min-width:761px)').matches)ev.stopPropagation();
+});
+$('#inspector').addEventListener('click',ev=>{
+ const button=ev.target.closest('button[data-ins-section]');
+ if(!button||matchMedia('(max-width:760px)').matches)return;
+ const expanded=button.getAttribute('aria-expanded')!=='true',section=button.closest('.ins-section');
+ button.setAttribute('aria-expanded',String(expanded));
+ section.classList.toggle('ins-section-collapsed',!expanded);
+ section.querySelector('.ins-section-body').hidden=!expanded;
+ if(expanded)collapsedInspectorSections.delete(button.dataset.insSection);
+ else collapsedInspectorSections.add(button.dataset.insSection);
+ try{localStorage.setItem(inspectorSectionsStorageKey,JSON.stringify([...collapsedInspectorSections]))}catch{}
+});
 const compactNum=(hint,key,val,opts={})=>`<label class="compact-field" title="${hint}"><span class="field-glyph">${hint}</span><input data-key="${key}" type="number" value="${fmt(val??0)}" min="${opts.min??-100000}" max="${opts.max??100000}" step="${opts.step??1}" aria-label="${hint}"></label>`;
 const alignBar=(which='all')=>`<div class="alignbar">${[['left','alignLeft','По левому краю'],['hcenter','alignCenter','По центру горизонтали'],['right','alignRight','По правому краю'],['top','alignTop','По верхнему краю'],['vcenter','alignMiddle','По центру вертикали'],['bottom','alignBottom','По нижнему краю']].filter((a,i)=>which==='all'||(which==='text'?true:i<3)).map(([key,icon,title],i)=>`<button class="align-icon" data-align="${key}" title="${title}">${uiIcon(icon)}</button>`).join('')}</div>`;
 const fillRow=(label,key,value,kind='solid')=>`<button type="button" class="fill-row" data-fill-open="${key}"><span class="fill-preview" style="background:${kind==='gradient'?`linear-gradient(90deg,${html(active()?.fill||'#888')},${html(active()?.fill2||'#ccc')})`:kind==='image'?'repeating-conic-gradient(#999 0 25%,#555 0 50%) 0 / 12px 12px':kind==='none'?'linear-gradient(135deg,transparent 45%,#ed5a70 46%,#ed5a70 54%,transparent 55%)':html(value||'#ffffff')}"></span><span class="fill-label">${label}</span><span class="fill-value">${kind==='image'?'Изображение':kind==='gradient'?(active()?.gradientMode==='radial'?'Радиальный':'Линейный'):kind==='none'?'Без заливки':String(value||'#ffffff').toUpperCase()}</span>${uiIcon('settings')}</button>`;

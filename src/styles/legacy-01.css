@@ -1146,9 +1146,7 @@ body{padding-top:var(--document-tab-height)}
   #mobilePropertyUI .mp-scrollarea{max-height:24dvh;overflow:auto}
   #mobilePropertyUI .mp-sheet .mp-body{touch-action:pan-y}
   .stage-scroller{transition:margin-bottom .22s ease}
-  #quickBubble[data-mobile-v36=true]{gap:3px;max-width:196px!important;padding:4px 7px!important;border-radius:30px}
   #quickBubble[data-mobile-v36=true] [data-quick]:not([data-quick=duplicate]):not([data-quick=delete]):not([data-quick=lock]):not([data-quick=more]){display:none!important}
-  #quickBubble[data-mobile-v36=true] button{width:34px!important;height:32px!important;min-width:34px!important;border-radius:50%!important}
   body:has(#mobilePropertyUI.mp-open) .toast{bottom:calc(150px + env(safe-area-inset-bottom))!important;pointer-events:none}
 }
 
@@ -1230,9 +1228,6 @@ body{padding-top:var(--document-tab-height)}
   #mobilePropertyUI .mp-color-editor:has([data-mp-stop]) .mp-line .mp-swatch{height:24px!important;width:24px!important;flex:0 0 24px!important}
   #mobilePropertyUI .mp-color-editor:has([data-mp-stop]) .mp-circle{height:26px!important;width:26px!important}
   #mobilePropertyUI .mp-color-editor:has([data-mp-stop]) .mp-gradient-chip{height:25px!important;min-height:25px!important}
-  .quick-bubble{height:32px!important;max-height:32px!important;min-height:32px!important;padding:2px 4px!important;gap:3px!important;border-radius:22px!important;overflow:visible!important}
-  .quick-bubble button{height:28px!important;width:28px!important;min-width:28px!important;padding:2px!important;font-size:14px!important;border-radius:50%!important;line-height:24px!important}
-  .quick-bubble button svg{height:18px!important;width:18px!important}
   body:has(#mobilePropertyUI .mp-sheet) #quickBubble{display:none!important}
   body:has(#mobilePropertyUI .mp-sheet) .toast{display:none!important}
 }
@@ -1320,9 +1315,6 @@ body{padding-top:var(--document-tab-height)}
  #mobileLayerList .folder-toggle{flex-shrink:0;width:22px;height:28px;display:grid;place-items:center}
  #fitBtn{display:grid!important;place-items:center!important;padding:0!important;line-height:1!important}
  #fitBtn svg,#fitBtn img{width:19px!important;height:19px!important;display:block!important;margin:auto!important}
- #quickBubble[data-mobile-v36=true]{position:fixed!important;z-index:350!important;max-width:200px!important;padding:3px 7px!important;gap:5px!important;display:flex;align-items:center;justify-content:center}
- #quickBubble[data-mobile-v36=true] button{display:grid;place-items:center}
- #quickBubble[data-mobile-v36=true] button svg{width:17px;height:17px}
 }
 
 /* v0.41 — repaired mobile geometry, tabs, text editing and font categories */
@@ -1354,11 +1346,12 @@ html,body{background:#1e1f27!important;}
  .document-tab-label{overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important;}
  .document-tabs-plus{flex:0 0 42px!important;width:42px!important;min-width:42px!important;order:3;}
  .document-tabs-end{display:none!important}
- #quickBubble[data-mobile-v36=true]{box-sizing:border-box!important;height:44px!important;min-height:44px!important;max-height:44px!important;max-width:none!important;width:max-content!important;gap:5px!important;padding:6px 8px!important;border-radius:24px!important;overflow:hidden!important;display:flex!important;align-items:center!important;}
+ #quickBubble[data-mobile-v36=true]{box-sizing:border-box!important;position:fixed!important;z-index:350!important;transform:none!important;height:32px!important;min-height:32px!important;max-height:32px!important;max-width:none!important;width:max-content!important;gap:4px!important;padding:0 5px!important;border-radius:18px!important;overflow:hidden!important;display:flex!important;align-items:center!important;}
+ body.mobile-panel-visible #quickBubble[data-mobile-v36=true],
  #quickBubble[data-mobile-v36=true].hidden{display:none!important}
- #quickBubble[data-mobile-v36=true] button{box-sizing:border-box!important;width:30px!important;height:30px!important;min-width:30px!important;flex:0 0 30px!important;margin:0!important;padding:4px!important;display:grid!important;place-items:center!important;overflow:hidden!important}
+ #quickBubble[data-mobile-v36=true] button{box-sizing:border-box!important;width:30px!important;height:30px!important;min-width:30px!important;flex:0 0 30px!important;margin:0!important;padding:6px!important;border-radius:50%!important;font-size:14px!important;display:grid!important;place-items:center!important;overflow:hidden!important}
  #quickBubble[data-mobile-v36=true] button.hidden{display:none!important}
- #quickBubble[data-mobile-v36=true] button svg{width:19px!important;height:19px!important;display:block}
+ #quickBubble[data-mobile-v36=true] button svg{width:17px!important;height:17px!important;display:block}
  .mobile-toolbars{background:#25252a!important}
  .karto-keyboard-open #app{height:var(--v41-editor-height,calc(100dvh - var(--document-tab-height)))!important;box-sizing:border-box!important;flex-shrink:0!important;min-height:0!important}
  .karto-keyboard-open #stageScroller{min-height:0!important}

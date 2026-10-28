@@ -325,9 +325,9 @@ body.alt-held .inspector input[type=number],.inspector input[type=number].scrubb
 
 /* v0.7 · Figma-style editable gradient / multilayer controls */
 .cp-gradient-editor{margin:11px 0 15px;border:1px solid #51515b;background:#313139;border-radius:10px;padding:11px}
-.cp-gradient-mode{display:flex;align-items:center;gap:9px;margin-bottom:12px}
-.cp-gradient-mode label{font-size:11px;color:#c9c6d0;flex:1;display:grid;gap:5px}
-.cp-gradient-mode select{background:#45454f;color:#f3f2f7;border:1px solid #676674;border-radius:7px;padding:8px 7px;font:inherit;font-size:12px}
+.cp-gradient-mode{display:flex;align-items:flex-end;gap:9px;margin-bottom:12px}
+.cp-gradient-mode label{font-size:11px;color:#c9c6d0;flex:1;min-width:0;display:grid;gap:5px}
+.cp-gradient-mode select{width:100%;min-width:0;height:36px;box-sizing:border-box;background:#45454f;color:#f3f2f7;border:1px solid #676674;border-radius:7px;padding:8px 7px;font:inherit;font-size:12px}
 .cp-gradient-preview{position:relative;height:38px;margin:17px 5px 21px;border:1px solid #777482;border-radius:7px;cursor:crosshair;touch-action:none;background-color:#fff;background-image:repeating-conic-gradient(#9b9b9b 0 25%,#e4e4e4 0 50%);background-size:12px 12px;overflow:visible}
 .cp-gradient-preview .cp-gradient-paint{position:absolute;inset:0;border-radius:6px;pointer-events:none}
 .cp-gstop{position:absolute;top:-8px;width:17px;height:25px;transform:translateX(-50%);border-radius:4px;background:#222;box-shadow:0 0 0 1px #fff5,0 3px 6px #0008;cursor:ew-resize;touch-action:none;border:2px solid #e5e3e8;display:flex;align-items:flex-end;justify-content:center;padding:2px;z-index:2}
@@ -342,7 +342,7 @@ body.alt-held .inspector input[type=number],.inspector input[type=number].scrubb
 .cp-stop-row .stop-remove{padding:0;height:27px;width:25px;background:transparent;color:#e5d9e2;border:0;border-radius:5px;cursor:pointer;font-size:16px}
 .cp-stop-row .stop-remove:hover{background:#694657}
 .cp-stop-row .stop-remove:disabled{opacity:.25;cursor:not-allowed}
-.cp-grad-add{height:28px;border:1px solid #656473;background:#45454f;color:white;border-radius:6px;padding:0 9px;cursor:pointer;font-size:11px}
+.cp-grad-add{width:36px;height:36px;flex:0 0 36px;box-sizing:border-box;display:flex;align-items:center;justify-content:center;border:1px solid #656473;background:#45454f;color:white;border-radius:6px;padding:0;cursor:pointer;font-size:20px;line-height:1}
 .cp-stop-top{display:flex;justify-content:space-between;align-items:center;gap:7px;color:#eee;font-size:12px}
 .cp-hint{font-size:10px;line-height:1.4;color:#aaa8b3;margin-top:8px}
 .cp-gradient-active #cpSquare{height:171px}

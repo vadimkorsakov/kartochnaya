@@ -26,6 +26,27 @@ async function reopen(page, document, png) {
   expect((await exportPNG(page)).image.data).toEqual(png.image.data);
 }
 
+test('gradient add button is square and aligned to the right of the select', async ({page}) => {
+  await createGradient(page, 'Gradient controls layout');
+  const mode = page.locator('.cp-gradient-mode');
+  const select = page.locator('#cpGradientMode');
+  const add = page.locator('[data-gstop-add]');
+  await expect(add).toHaveText('+');
+  await expect(add).toHaveAttribute('title', 'Добавить точку');
+  await expect(add).toHaveAccessibleName('Добавить точку градиента');
+  for (const width of [null, '180px']) {
+    if (width) await mode.evaluate((element, value) => { element.style.width = value; }, width);
+    const row = await mode.boundingBox();
+    const field = await select.boundingBox();
+    const button = await add.boundingBox();
+    expect(Math.abs(button.width - button.height)).toBeLessThanOrEqual(1);
+    expect(button.x).toBeGreaterThan(field.x + field.width);
+    expect(Math.abs(button.y - field.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(button.y + button.height - field.y - field.height)).toBeLessThanOrEqual(1);
+    expect(button.x + button.width).toBeLessThanOrEqual(row.x + row.width + 1);
+  }
+});
+
 test('gradient endpoint colors and opacity persist through JSON, PNG and IndexedDB reopening', async ({page}) => {
   await createGradient(page, 'Gradient persistence');
   await closeFill(page);

@@ -1542,14 +1542,42 @@ function updateQuickBubble(){const bubble=$('#quickBubble');if(!bubble)return;
  const selected=picked();const onMobile=matchMedia('(max-width:760px)').matches;
  const show=onMobile&&!app.mobileLayersOpen&&selected.length>0&&!app.cropMode&&!app.editingId&&!$('#stageScroller').classList.contains('drag-over');
  bubble.classList.toggle('hidden',!show);if(!show)return;
- const box=selectionBounds(),cx=(box.x+box.right)/2,top=box.y;
- const host=$('#canvasHost');const w=host.clientWidth;const x=clamp(cx*app.zoom,60,Math.max(60,w-60));
- const hostRect=host.getBoundingClientRect();bubble.style.left=clamp(hostRect.left+x,108,Math.max(108,innerWidth-108))+'px';bubble.style.top=clamp(hostRect.top+Math.max(40,top*app.zoom-8),40,Math.max(40,$('#stageScroller').getBoundingClientRect().bottom-40))+'px';
  bubble.querySelector('[data-quick="edit"]').classList.toggle('hidden',active()?.type!=='text');
  bubble.querySelector('[data-quick="group"]').classList.toggle('hidden',selected.length<2||!!isOneGroup());
  bubble.querySelector('[data-quick="ungroup"]').classList.toggle('hidden',!isOneGroup());
  bubble.querySelector('[data-quick="multi"]').classList.toggle('active',app.multiMode);
  const lock=bubble.querySelector('[data-quick="lock"]');lock.innerHTML=uiIcon(selected.every(e=>isLayerLocked(e))?'unlock':'lock');lock.title=selected.every(e=>isLayerLocked(e))?'Разблокировать':'Заблокировать';
+ // Selection is painted on canvas: map its rotated bounds through the actual DOMRect.
+ const box=selectionBounds(),cr=canvas.getBoundingClientRect();
+ const sx=cr.width/app.doc.width,sy=cr.height/app.doc.height;
+ const selection=new DOMRect(cr.left+box.x*sx,cr.top+box.y*sy,(box.right-box.x)*sx,(box.bottom-box.y)*sy);
+ const stage=$('#stageScroller').getBoundingClientRect(),vv=window.visualViewport;
+ const toolbar=$('#mobileToolbars').getBoundingClientRect(),gap=8;
+ const left=Math.max(stage.left,vv?.offsetLeft||0)+gap;
+ const right=Math.min(stage.right,(vv?.offsetLeft||0)+(vv?.width||innerWidth))-gap;
+ const top=Math.max(stage.top,vv?.offsetTop||0)+gap;
+ const bottom=Math.min(stage.bottom,(vv?.offsetTop||0)+(vv?.height||innerHeight),toolbar.height?toolbar.top:Infinity)-gap;
+ const {width,height}=bubble.getBoundingClientRect();
+ if(!width||!height)return; // A conflicting panel may hide the bubble via CSS.
+ if(right-left<width||bottom-top<height){bubble.classList.add('hidden');return}
+ const x=clamp(selection.left+selection.width/2-width/2,left,right-width);
+ const above=selection.top-gap-height,below=selection.bottom+gap;
+ let y=above;
+ if(above<top||above+height>bottom){
+  if(below>=top&&below+height<=bottom)y=below;
+  else{
+   // Neither side fits: compare safe edge/side positions by overlap, then proximity.
+   const candidates=[];
+   for(const px of [x,left,right-width,clamp(selection.left-gap-width,left,right-width),clamp(selection.right+gap,left,right-width)])
+    for(const py of [clamp(above,top,bottom-height),clamp(below,top,bottom-height)]){
+     const overlap=Math.max(0,Math.min(px+width,selection.right)-Math.max(px,selection.left))*Math.max(0,Math.min(py+height,selection.bottom)-Math.max(py,selection.top));
+     candidates.push({x:px,y:py,overlap,distance:Math.hypot(px-x,py-above)});
+    }
+   candidates.sort((a,b)=>a.overlap-b.overlap||a.distance-b.distance);
+   bubble.style.left=candidates[0].x+'px';bubble.style.top=candidates[0].y+'px';return;
+  }
+ }
+ bubble.style.left=x+'px';bubble.style.top=y+'px';
 }
 function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
 function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');}
@@ -1598,6 +1626,12 @@ function revealInlineText(){
  const dx=r.left<left?r.left-left:r.right>right?Math.min(r.left-left,r.right-right):0;
  if(dx||dy){stage.scrollLeft+=dx;stage.scrollTop+=dy;positionInlineText()}
 }
+// Viewport changes include keyboard occlusion and orientation; scroll/paint cover selection and zoom.
+window.addEventListener('resize',updateQuickBubble,{passive:true});
+window.visualViewport?.addEventListener('resize',updateQuickBubble,{passive:true});
+window.visualViewport?.addEventListener('scroll',updateQuickBubble,{passive:true});
+const quickBubbleResize=new ResizeObserver(()=>updateQuickBubble());
+for(const node of [$('#stageScroller'),$('#mobileToolbars')])quickBubbleResize.observe(node);
 document.body.appendChild($('#quickBubble'));$('#stageScroller').addEventListener('scroll',()=>updateQuickBubble(),{passive:true});
 $('#stageScroller').addEventListener('scroll',()=>{if(app.editingId)positionInlineText()},{passive:true});window.addEventListener('resize',()=>{if(app.editingId)positionInlineText()});
 $('#quickBubble').addEventListener('pointerdown',ev=>ev.stopPropagation());

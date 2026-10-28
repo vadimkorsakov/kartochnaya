@@ -52,7 +52,7 @@ async function visibleExit(page) {
 }
 async function mockViewport(page, viewport) {
   await page.addInitScript(({ width, height }) => {
-    const vv = new EventTarget(); Object.assign(vv, { height, width, offsetTop: 0, offsetLeft: 0, scale: 1 });
+    const vv = new EventTarget(); Object.assign(vv, { height, width, offsetTop: 0, offsetLeft: 0, pageTop: 0, scale: 1 });
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: vv });
     window.imeViewport = values => { Object.assign(vv, values); vv.pageTop=vv.offsetTop+scrollY; vv.dispatchEvent(new Event('resize')); vv.dispatchEvent(new Event('scroll')); window.dispatchEvent(new Event('resize')); };
   }, viewport);
@@ -63,8 +63,79 @@ async function zoomTo29(page) {
 }
 for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }]) test.describe(`inline finish ${viewport.width}`, () => {
   test.use({ viewport, hasTouch: true, isMobile: true });
+  test('IME diagnostics measure the flex chain, detect a CSS gap and follow viewport lifecycle', async ({ page, context }, info) => {
+    await mockViewport(page, viewport);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await openHome(page, '/?debugIme=1');
+    await open(page, { large: true }); await zoomTo29(page); await edit(page);
+    await page.locator(editor).fill('Проверка текста при IME');
+    const report = () => page.locator('#imeDiagnostics pre').textContent().then(JSON.parse);
+    async function geometry() {
+      await visibleExit(page);
+      await expect.poll(async () => {
+        const d = await report(), r = d.elements;
+        return {
+          app: Math.abs(r['#app'].rect.bottom - d.viewport.visualBottom) <= 1,
+          body: Math.abs(r['.app-body'].rect.bottom - r['#app'].rect.bottom) <= 1,
+          column: Math.abs(r['.stage-column'].rect.bottom - r['.app-body'].rect.bottom) <= 1,
+          toolbar: Math.abs(d.gaps.appBottomToToolbar) <= 1 && Math.abs(d.gaps.visualBottomToToolbar) <= 4,
+          stage: r['#stageScroller'].rect.height > 0 && Math.abs(r['#stageScroller'].rect.bottom - r['#mobileToolbars'].rect.top) <= 1,
+          overflow: d.document.scrollHeight <= d.document.clientHeight,
+        };
+      }).toEqual({ app: true, body: true, column: true, toolbar: true, stage: true, overflow: true });
+      await expect(page.locator('#zoomLabel')).toHaveText('29%');
+    }
+    async function capture(name) {
+      await geometry();
+      await info.attach(`${name}.json`, { body: JSON.stringify(await report(), null, 2), contentType: 'application/json' });
+      const bottom = (await report()).viewport.visualBottom;
+      const boundary = await page.addStyleTag({ content: `body::after{content:'За границей VisualViewport: имитация IME и UI браузера';position:fixed;top:${bottom}px;left:0;right:0;bottom:0;z-index:10001;border-top:2px dashed #ffcf66;background:repeating-linear-gradient(135deg,#16171e,#16171e 8px,#22232c 8px,#22232c 16px);color:#ffcf66;font:11px/1.5 system-ui;text-align:center;pointer-events:none;overflow:hidden}` });
+      await page.screenshot({ path: info.outputPath(`${name}.png`) });
+      await boundary.evaluate(el => el.remove());
+    }
+    await page.evaluate(height => imeViewport({ height, offsetTop: 0 }), viewport.height - 260);
+    await capture('ime-open');
+    // Correct app height alone is insufficient: a constrained descendant can
+    // leave the real toolbar above the visual boundary. The probe must expose it.
+    await page.locator('.stage-column').evaluate(el => el.style.maxHeight = '150px');
+    await expect.poll(async () => (await report()).gaps.visualBottomToToolbar).toBeGreaterThan(50);
+    const constrained = await report();
+    expect(Math.abs(constrained.gaps.visualBottomToApp)).toBeLessThanOrEqual(1);
+    expect(parseFloat(constrained.variables['--v41-editor-height'])).toBeCloseTo(constrained.elements['#app'].rect.height, 0);
+    await info.attach('css-gap-detected.json', { body: JSON.stringify(constrained, null, 2), contentType: 'application/json' });
+    await page.locator('.stage-column').evaluate(el => el.style.maxHeight = '');
+    await geometry();
+    await page.evaluate(height => { for (let i = 0; i < 6; i++) imeViewport({ height, offsetTop: 24 }); }, viewport.height - 300);
+    await capture('ime-offset');
+    // Copying must preserve focus/IME and must not copy the edited text.
+    await page.locator('#imeDiagnostics summary').tap();
+    await geometry();
+    await page.getByRole('button', { name: 'Скопировать диагностику' }).tap();
+    await expect(page.locator('[data-ime-status]')).toHaveText('Скопировано');
+    await expect(page.locator(editor)).toBeFocused();
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied).not.toContain('Проверка текста при IME');
+    expect(JSON.parse(copied).viewport.visualViewport.offsetTop).toBe(24);
+    await page.locator('#imeDiagnostics summary').tap();
+    // Layout viewport and VisualViewport shrinking together, then rotation.
+    await page.setViewportSize({ width: viewport.width, height: viewport.height - 260 });
+    await page.evaluate(() => imeViewport({ height: innerHeight, offsetTop: 0 })); await geometry();
+    await page.setViewportSize({ width: viewport.height, height: viewport.width });
+    await page.evaluate(() => imeViewport({ width: innerWidth, height: innerHeight, offsetTop: 0 }));
+    await expect(page.locator('#zoomLabel')).toHaveText('29%');
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => imeViewport({ width: innerWidth, height: innerHeight, offsetTop: 0 }));
+    await page.locator(done).tap();
+    await expect(page.locator('body')).not.toHaveClass(/karto-keyboard-open/);
+    await expect.poll(async () => (await report()).variables['--v41-editor-height']).toBe('');
+    await capture('ime-closed');
+    await edit(page);
+    await page.evaluate(height => imeViewport({ height, offsetTop: 0 }), viewport.height - 260);
+    await capture('ime-reopened');
+  });
   test('Done commits several inputs once, unchanged and repeated blur do nothing; sessions invalidate redo', async ({ page }) => {
     const before = await open(page); const h = await history(page);
+    await expect(page.locator('#imeDiagnostics')).toHaveCount(0);
     await expect(page.locator('#inlineTextDone')).toHaveCount(0); await edit(page); await visibleExit(page);
     await page.locator(editor).fill('Первый ввод'); await page.locator(editor).fill('Окончательный\nтекст');
     expect(await history(page)).toBe(h);

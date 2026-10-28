@@ -1,0 +1,236 @@
+{
+  "schema": 1,
+  "units": "CSS px; DOMRect and visualBottom relative to layout viewport",
+  "viewport": {
+    "innerHeight": 844,
+    "clientHeight": 844,
+    "scrollY": 0,
+    "devicePixelRatio": 1,
+    "visualViewport": {
+      "height": 544,
+      "width": 390,
+      "offsetTop": 24,
+      "offsetLeft": 0,
+      "pageTop": 24,
+      "scale": 1
+    },
+    "visualBottom": 568
+  },
+  "keyboardLayout": true,
+  "variables": {
+    "--document-tab-height": "42px",
+    "--v41-visual-height": "544px",
+    "--v41-editor-height": "526px",
+    "--v41-visual-bottom": "568px",
+    "--mobile-toolbar-anchor": "326px"
+  },
+  "elements": {
+    "body": {
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 844,
+        "top": 0,
+        "right": 390,
+        "bottom": 844,
+        "left": 0
+      },
+      "css": {
+        "display": "block",
+        "position": "static",
+        "height": "844px",
+        "min-height": "0px",
+        "max-height": "none",
+        "flex": "0 1 auto",
+        "flex-shrink": "1",
+        "box-sizing": "border-box",
+        "padding-top": "42px",
+        "padding-bottom": "0px",
+        "margin-top": "0px",
+        "margin-bottom": "0px",
+        "bottom": "auto",
+        "overflow-y": "hidden"
+      }
+    },
+    "#app": {
+      "rect": {
+        "x": 0,
+        "y": 42,
+        "width": 390,
+        "height": 526,
+        "top": 42,
+        "right": 390,
+        "bottom": 568,
+        "left": 0
+      },
+      "css": {
+        "display": "flex",
+        "position": "static",
+        "height": "526px",
+        "min-height": "0px",
+        "max-height": "none",
+        "flex": "0 0 auto",
+        "flex-shrink": "0",
+        "box-sizing": "border-box",
+        "padding-top": "0px",
+        "padding-bottom": "0px",
+        "margin-top": "0px",
+        "margin-bottom": "0px",
+        "bottom": "auto",
+        "overflow-y": "visible"
+      }
+    },
+    ".app-body": {
+      "rect": {
+        "x": 0,
+        "y": 94,
+        "width": 390,
+        "height": 474,
+        "top": 94,
+        "right": 390,
+        "bottom": 568,
+        "left": 0
+      },
+      "css": {
+        "display": "flex",
+        "position": "relative",
+        "height": "474px",
+        "min-height": "0px",
+        "max-height": "none",
+        "flex": "1 1 0%",
+        "flex-shrink": "1",
+        "box-sizing": "border-box",
+        "padding-top": "0px",
+        "padding-bottom": "0px",
+        "margin-top": "0px",
+        "margin-bottom": "0px",
+        "bottom": "0px",
+        "overflow-y": "hidden"
+      }
+    },
+    ".stage-column": {
+      "rect": {
+        "x": 0,
+        "y": 94,
+        "width": 390,
+        "height": 474,
+        "top": 94,
+        "right": 390,
+        "bottom": 568,
+        "left": 0
+      },
+      "css": {
+        "display": "flex",
+        "position": "relative",
+        "height": "474px",
+        "min-height": "0px",
+        "max-height": "none",
+        "flex": "1 1 0%",
+        "flex-shrink": "1",
+        "box-sizing": "border-box",
+        "padding-top": "0px",
+        "padding-bottom": "0px",
+        "margin-top": "0px",
+        "margin-bottom": "0px",
+        "bottom": "0px",
+        "overflow-y": "visible"
+      }
+    },
+    "#stageScroller": {
+      "rect": {
+        "x": 0,
+        "y": 140,
+        "width": 390,
+        "height": 378,
+        "top": 140,
+        "right": 390,
+        "bottom": 518,
+        "left": 0
+      },
+      "css": {
+        "display": "block",
+        "position": "relative",
+        "height": "378px",
+        "min-height": "0px",
+        "max-height": "none",
+        "flex": "1 1 auto",
+        "flex-shrink": "1",
+        "box-sizing": "border-box",
+        "padding-top": "0px",
+        "padding-bottom": "0px",
+        "margin-top": "0px",
+        "margin-bottom": "0px",
+        "bottom": "0px",
+        "overflow-y": "auto"
+      }
+    },
+    "#mobileToolbars": {
+      "rect": {
+        "x": 0,
+        "y": 518,
+        "width": 390,
+        "height": 50,
+        "top": 518,
+        "right": 390,
+        "bottom": 568,
+        "left": 0
+      },
+      "css": {
+        "display": "flex",
+        "position": "relative",
+        "height": "50px",
+        "min-height": "50px",
+        "max-height": "none",
+        "flex": "0 0 auto",
+        "flex-shrink": "0",
+        "box-sizing": "border-box",
+        "padding-top": "0px",
+        "padding-bottom": "0px",
+        "margin-top": "0px",
+        "margin-bottom": "0px",
+        "bottom": "0px",
+        "overflow-y": "hidden"
+      }
+    },
+    "#mobileContext": {
+      "rect": {
+        "x": 0,
+        "y": 519,
+        "width": 340,
+        "height": 50,
+        "top": 519,
+        "right": 340,
+        "bottom": 569,
+        "left": 0
+      },
+      "css": {
+        "display": "flex",
+        "position": "static",
+        "height": "50px",
+        "min-height": "50px",
+        "max-height": "none",
+        "flex": "1 1 0px",
+        "flex-shrink": "1",
+        "box-sizing": "border-box",
+        "padding-top": "3px",
+        "padding-bottom": "3px",
+        "margin-top": "0px",
+        "margin-bottom": "0px",
+        "bottom": "auto",
+        "overflow-y": "auto"
+      }
+    }
+  },
+  "toolbarHeight": 50,
+  "gaps": {
+    "visualBottomToToolbar": 0,
+    "appBottomToToolbar": 0,
+    "visualBottomToApp": 0
+  },
+  "document": {
+    "clientHeight": 844,
+    "scrollHeight": 844,
+    "bodyScrollHeight": 844
+  }
+}

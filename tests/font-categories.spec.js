@@ -17,9 +17,9 @@ for (const mobile of [false, true]) test.describe(mobile ? 'font categories mobi
       await page.locator('#mobileLayerList [data-layer="title"] .layer-name').click();
       await page.locator('#mobileLayersClose').click();
     } else await page.locator('#layers [data-layer="title"] .layer-name').click();
-    const before = await exportedDocument(page);
+    let before = await exportedDocument(page);
     const history = () => page.locator('#historyEntries').innerHTML();
-    const historyBefore = await history();
+    let historyBefore = await history();
     const toggle = () => page.locator(mobile ? '#mobileContext [data-mobile=font]' : '[data-font-open]').click();
     const open = async () => { await toggle(); if (mobile) await page.locator('[data-mp-action=expand]').click(); };
     await open();
@@ -27,6 +27,36 @@ for (const mobile of [false, true]) test.describe(mobile ? 'font categories mobi
     const category = root.getByRole('combobox', { name: 'Категория шрифтов' });
     const search = root.locator('input[type=search]');
     const rows = root.locator(mobile ? '[data-mp-font]' : '[data-font-option]');
+    if (mobile) {
+      const line = await root.locator('.mp-font-categories').evaluate(el => [...el.children].map(c => { const r=c.getBoundingClientRect();return {top:r.top,height:r.height}; }));
+      expect(new Set(line.map(r=>r.top)).size).toBe(1);
+      const grab=root.locator('.mp-grab');
+      const swipe=async delta=>{const r=await grab.boundingBox();await page.mouse.move(r.x+r.width/2,r.y+2);await page.mouse.down();await page.mouse.move(r.x+r.width/2,r.y+2+delta,{steps:8});await page.mouse.up();};
+      await swipe(-60);await expect(root).toHaveClass(/mp-font-tall/);
+      await category.selectOption('project');await expect(root).toHaveClass(/mp-font-tall/);
+      await category.selectOption('all');
+      await rows.filter({hasText:'Georgia'}).click();await expect(root).toHaveClass(/mp-font-tall/);
+      await rows.filter({hasText:'Arial'}).click();
+      await page.keyboard.press('Control+z');await page.keyboard.press('Control+z');
+      expect((await exportedDocument(page)).elements).toEqual(before.elements);
+      await page.locator('[data-mobile=layers]:visible').click();
+      await page.locator('#mobileLayerList [data-layer="title"] .layer-name').click();
+      await page.locator('#mobileLayersClose').click();
+      await open();await swipe(-60);
+      await root.locator('.mp-font-scroll').evaluate(el=>{el.scrollTop=100;});await expect(root).toHaveClass(/mp-font-tall/);
+      await swipe(60);await expect(root).not.toHaveClass(/mp-font-tall/);
+      await grab.click();await expect(root).toHaveClass(/mp-font-tall/);
+      await grab.click();await expect(root).not.toHaveClass(/mp-font-tall/);
+      await root.getByRole('button',{name:'Поиск шрифта',exact:true}).click();
+      await expect(search).toBeFocused();
+      await grab.click();
+      await page.evaluate(()=>{window.savedFontViewport=window.visualViewport;Object.defineProperty(window,'visualViewport',{configurable:true,value:{height:360,width:360,offsetTop:10,offsetLeft:0,scale:1}});window.dispatchEvent(new Event('resize'));});
+      await expect.poll(()=>root.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=10&&r.bottom<=371;})).toBe(true);
+      await page.evaluate(()=>{Object.defineProperty(window,'visualViewport',{configurable:true,value:window.savedFontViewport});window.dispatchEvent(new Event('resize'));});
+      await root.getByRole('button',{name:'Закрыть поиск'}).click();
+      await grab.click();
+    }
+    before = await exportedDocument(page); historyBefore = await history();
     await expect(category).toHaveValue('all');
     await expect(category.locator('option')).toHaveText(['Все шрифты', 'Пользовательские', 'Шрифты проекта']);
     await expect(rows.filter({ hasText: 'Georgia' })).toHaveCount(1);
@@ -36,20 +66,27 @@ for (const mobile of [false, true]) test.describe(mobile ? 'font categories mobi
     await category.selectOption('project');
     await expect(rows.filter({ hasText: 'Missing Project Font' })).toContainText('Недоступен');
     if (!mobile) await expect(rows.filter({ hasText: 'Missing Project Font' })).toBeDisabled();
+    if (mobile) await root.getByRole('button', { name: 'Поиск шрифта', exact: true }).click();
     await search.fill('missing');
     await expect(rows).toHaveCount(1);
+    if (mobile) await root.getByRole('button', { name: 'Закрыть поиск' }).click();
     await category.selectOption('all');
     await expect(rows).toHaveCount(0);
+    if (mobile) await root.getByRole('button', { name: 'Поиск шрифта', exact: true }).click();
     await search.fill('Georgia');
     await expect(rows).toHaveCount(1);
+    if (mobile) await root.getByRole('button', { name: 'Закрыть поиск' }).click();
     await category.selectOption('project');
     await expect(rows).toHaveCount(0);
+    if (mobile) await root.getByRole('button', { name: 'Поиск шрифта', exact: true }).click();
     await search.fill('');
-    await toggle();
+    if (mobile) await root.getByRole('button', { name: 'Закрыть поиск' }).click();
+    if (mobile) await root.getByRole('button',{name:'Готово',exact:true}).click();
+    else await toggle();
     await open();
     await expect(category).toHaveValue('project');
     await expect(category).toBeVisible();
-    expect(await root.locator('.v41-font-filters').evaluate(el => {
+    expect(await root.locator(mobile ? '.mp-font-categories' : '.v41-font-filters').evaluate(el => {
       const r = el.getBoundingClientRect();
       return el.scrollWidth <= el.clientWidth && r.left >= 0 && r.right <= innerWidth;
     })).toBe(true);

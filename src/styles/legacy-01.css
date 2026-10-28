@@ -1480,3 +1480,16 @@ html,body{background:#1e1f27!important;}
  body.karto-keyboard-open #mobilePropertyUI .mp-body{min-height:0!important;overflow-y:auto!important}
  body.karto-keyboard-open #stageScroller{touch-action:none}
 }
+
+@media(max-width:760px){
+ #mobilePropertyUI .mp-font-sheet{height:min(34dvh,280px)!important;max-height:min(34dvh,280px,var(--font-height,280px))!important;}
+ #mobilePropertyUI .mp-font-sheet.mp-font-tall{height:var(--font-height)!important;max-height:var(--font-height)!important;}
+ #mobilePropertyUI .mp-font-sheet .mp-font-categories{display:flex;gap:6px;padding:0;margin:2px 0 4px!important;height:38px!important;min-height:38px!important;}
+ #mobilePropertyUI .mp-font-sheet .mp-font-categories select,#mobilePropertyUI .mp-font-sheet .mp-font-categories input{flex:1;width:0;min-width:0;height:38px!important;min-height:38px!important;}
+ #mobilePropertyUI .mp-font-sheet .mp-font-categories button{flex:0 0 38px;width:38px;height:38px!important;min-height:38px!important;display:grid;place-items:center;}
+ #mobilePropertyUI .mp-font-categories svg{width:18px;height:18px;}
+ #mobilePropertyUI .mp-font-sheet .mp-grab{position:relative;touch-action:none;cursor:pointer;}
+ #mobilePropertyUI .mp-font-sheet .mp-grab:before{content:"";position:absolute;inset:-12px -40px -28px;}
+ #mobilePropertyUI .mp-font-sheet .mp-grab:focus-visible{outline:2px solid #a48be9;outline-offset:3px;}
+ #mobilePropertyUI .mp-font-sheet .mp-font-scroll{overscroll-behavior:contain;touch-action:pan-y;}
+}

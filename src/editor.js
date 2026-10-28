@@ -3690,6 +3690,51 @@ window.addEventListener('resize',v41KeyboardViewport,{passive:true});
 window.visualViewport?.addEventListener('resize',v41KeyboardViewport,{passive:true});
 window.visualViewport?.addEventListener('scroll',v41KeyboardViewport,{passive:true});
 
+// Opt-in, geometry-only Android IME probe. Never read document or input contents.
+if(new URLSearchParams(location.search).get('debugIme')==='1'){
+ const probe=document.createElement('aside');probe.id='imeDiagnostics';
+ probe.setAttribute('aria-label','Диагностика IME');
+ probe.innerHTML='<details><summary>IME: <span data-ime-gap>измерение</span></summary><button type="button">Скопировать диагностику</button><span data-ime-status role="status"></span><pre></pre></details>';
+ document.body.appendChild(probe);
+ const selectors=['body','#app','.app-body','.stage-column','#stageScroller','#mobileToolbars','#mobileContext'];
+ const variables=['--document-tab-height','--v41-visual-height','--v41-editor-height','--v41-visual-bottom','--mobile-toolbar-anchor'];
+ const properties=['display','position','height','min-height','max-height','flex','flex-shrink','box-sizing','padding-top','padding-bottom','margin-top','margin-bottom','bottom','overflow-y'];
+ let frame=null;
+ function measure(){
+  const vv=window.visualViewport,root=document.documentElement,style=getComputedStyle(root);
+  const bottom=(vv?.offsetTop||0)+(vv?.height||innerHeight),elements={};
+  for(const selector of selectors){const el=document.querySelector(selector);if(!el)continue;
+   const css=getComputedStyle(el);
+   elements[selector]={rect:el.getBoundingClientRect().toJSON(),css:Object.fromEntries(properties.map(key=>[key,css.getPropertyValue(key)]))};
+  }
+  const bar=elements['#mobileToolbars'].rect,appRect=elements['#app'].rect;
+  return {schema:1,units:'CSS px; DOMRect and visualBottom relative to layout viewport',
+   viewport:{policy:document.querySelector('meta[name="viewport"]')?.content,innerHeight,clientHeight:root.clientHeight,scrollY,devicePixelRatio,
+    visualViewport:vv?{height:vv.height,width:vv.width,offsetTop:vv.offsetTop,offsetLeft:vv.offsetLeft,pageTop:vv.pageTop,scale:vv.scale}:null,visualBottom:bottom},
+   keyboardLayout:document.body.classList.contains('karto-keyboard-open'),
+   variables:Object.fromEntries(variables.map(key=>[key,style.getPropertyValue(key).trim()])),elements,
+   toolbarHeight:bar.height,gaps:{visualBottomToToolbar:bottom-bar.bottom,appBottomToToolbar:appRect.bottom-bar.bottom,visualBottomToApp:bottom-appRect.bottom},
+   document:{clientHeight:root.clientHeight,scrollHeight:root.scrollHeight,bodyScrollHeight:document.body.scrollHeight}};
+ }
+ function update(){frame=null;const data=measure();probe.querySelector('pre').textContent=JSON.stringify(data,null,2);
+  probe.querySelector('[data-ime-gap]').textContent='зазор '+data.gaps.visualBottomToToolbar.toFixed(1)+' px';
+ }
+ function schedule(){if(frame===null)frame=requestAnimationFrame(update)}
+ // Preserve the active textarea/caret and the current IME geometry when copying.
+ probe.addEventListener('pointerdown',ev=>{if(ev.target.closest('button,summary'))ev.preventDefault()});
+ probe.querySelector('button').addEventListener('click',async()=>{
+  const status=probe.querySelector('[data-ime-status]');
+  try{await navigator.clipboard.writeText(JSON.stringify(measure(),null,2));status.textContent='Скопировано'}
+  catch{status.textContent='Копирование недоступно; выделите JSON ниже'}
+ });
+ for(const target of [window,window.visualViewport].filter(Boolean))for(const type of ['resize','scroll'])target.addEventListener(type,schedule,{passive:true});
+ window.addEventListener('orientationchange',schedule,{passive:true});
+ const observer=new ResizeObserver(schedule);for(const selector of selectors)observer.observe(document.querySelector(selector));
+ const mutations=new MutationObserver(schedule);mutations.observe(document.body,{attributes:true,attributeFilter:['class']});
+ mutations.observe(document.documentElement,{attributes:true,attributeFilter:['style']});
+ schedule();
+}
+
 // v0.44: Editable text on geometrical boundaries. Old `textMode:path` documents remain readable.
 let boundaryPanelOpen=false;
 const boundarySmall=()=>matchMedia('(max-width:760px)').matches;

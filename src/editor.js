@@ -215,8 +215,8 @@ function v41FontsByCategory(category){
 }
 function v41FontUnavailable(name){return !fontFamilies().some(f=>f.toLowerCase()===name.toLowerCase());}
 function v41FontOptions(names,chosen){return names.map(f=>`<button type="button" class="font-family-item ${chosen===f?'current':''}" role="option" data-font-option="${html(f)}" ${v41FontUnavailable(f)?'disabled title="Семейство не установлено"':''} style="font-family:${html(JSON.stringify(f))}">${html(f)}<span>${v41FontUnavailable(f)?'Недоступен':app.fonts.some(x=>normaliseFont(x).family===f)?'Свой':'›'}</span></button>`).join('')||'<div class="v41-font-empty">В этой категории нет шрифтов</div>'}
-function fontSelectControl(e){const family=e?.fontFamily||'Arial';return `<div class="font-control"><span class="font-control-label">Семейство шрифта</span><button type="button" class="font-family-trigger" data-font-open="1" aria-haspopup="listbox" aria-expanded="false"><span style="font-family:${html(JSON.stringify(family))}">${html(family)}</span><span>⌄</span></button><div class="font-family-menu hidden" role="listbox"><div class="v41-font-filters">${v41FontCategories.map(([id,name])=>`<button type="button" data-font-filter="${id}" class="${v41DesktopFontCategory===id?'active':''}">${name}</button>`).join('')}</div><input class="v41-font-search" data-font-search="1" type="search" placeholder="Поиск шрифта" aria-label="Поиск шрифта"><div class="v41-font-list">${v41FontOptions(v41FontsByCategory(v41DesktopFontCategory),family)}</div></div></div>`}
-function v41RefreshDesktopFonts(menu){if(!menu)return;const term=(menu.querySelector('[data-font-search]')?.value||'').toLowerCase().trim();const selected=active()?.fontFamily||'Arial';menu.querySelector('.v41-font-list').innerHTML=v41FontOptions(v41FontsByCategory(v41DesktopFontCategory).filter(n=>n.toLowerCase().includes(term)),selected);menu.querySelectorAll('[data-font-filter]').forEach(b=>b.classList.toggle('active',b.dataset.fontFilter===v41DesktopFontCategory));}
+function fontSelectControl(e){const family=e?.fontFamily||'Arial';return `<div class="font-control"><span class="font-control-label">Семейство шрифта</span><button type="button" class="font-family-trigger" data-font-open="1" aria-haspopup="listbox" aria-expanded="false"><span style="font-family:${html(JSON.stringify(family))}">${html(family)}</span><span>⌄</span></button><div class="font-family-menu hidden" role="listbox"><div class="v41-font-filters"><label>Категория: <select data-font-filter="1" aria-label="Категория шрифтов">${v41FontCategories.map(([id,name])=>`<option value="${id}" ${v41DesktopFontCategory===id?'selected':''}>${name}</option>`).join('')}</select></label></div><input class="v41-font-search" data-font-search="1" type="search" placeholder="Поиск шрифта" aria-label="Поиск шрифта"><div class="v41-font-list">${v41FontOptions(v41FontsByCategory(v41DesktopFontCategory),family)}</div></div></div>`}
+function v41RefreshDesktopFonts(menu){if(!menu)return;const term=(menu.querySelector('[data-font-search]')?.value||'').toLowerCase().trim();const selected=active()?.fontFamily||'Arial';menu.querySelector('.v41-font-list').innerHTML=v41FontOptions(v41FontsByCategory(v41DesktopFontCategory).filter(n=>n.toLowerCase().includes(term)),selected);menu.querySelector('[data-font-filter]').value=v41DesktopFontCategory;}
 const fontResources=createFontResources({createFace:(...args)=>new FontFace(...args),fontSet:document.fonts});
 async function loadFontFace(f){normaliseFont(f);try{
  await prepareCanvasResources({images:[],fonts:[{family:f.family}]},{prepareFont:()=>fontResources.load(f)});
@@ -488,6 +488,7 @@ iconPaths.mask='M3 4h18v16H3z M3 20L21 4';
 iconPaths.blur='M12 2a6 6 0 0 1 6 6c0 5-8 9-8 12 M6 20c0-6 3-8 6-11';
 iconPaths.sun='M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.5 5.5l2 2 M16.5 16.5l2 2 M18.5 5.5l-2 2 M7.5 16.5l-2 2 M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8';
 iconPaths.grid='M3 3h6v6H3z M15 3h6v6h-6z M3 15h6v6H3z M15 15h6v6h-6z';
+iconPaths.search='M21 21l-6-6 M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14';
 iconPaths.plus='M12 5v14 M5 12h14';
 iconPaths.fit='M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5';
 iconPaths.pipette='M2 22l1-5L15 3a3 3 0 0 1 4 4L7 21z M14 5l5 5 M5 17l2 2 M11 7l6 6';
@@ -707,9 +708,10 @@ function applyFontFamily(family){const es=picked().filter(e=>e.type==='text');if
  commit();refreshInspector();refreshMobileTools();toast('Шрифт: '+family);
 }
 $('#inspector').addEventListener('click',ev=>{
- const filter=ev.target.closest('[data-font-filter]');if(filter){v41DesktopFontCategory=filter.dataset.fontFilter;v41RefreshDesktopFonts(filter.closest('.font-family-menu'));return}const trigger=ev.target.closest('[data-font-open]');if(trigger){ev.preventDefault();const menu=trigger.parentElement.querySelector('.font-family-menu');menu?.classList.toggle('hidden');trigger.setAttribute('aria-expanded',String(!menu.classList.contains('hidden')));return}
+ const trigger=ev.target.closest('[data-font-open]');if(trigger){ev.preventDefault();const menu=trigger.parentElement.querySelector('.font-family-menu');menu?.classList.toggle('hidden');trigger.setAttribute('aria-expanded',String(!menu.classList.contains('hidden')));return}
  const opt=ev.target.closest('[data-font-option]');if(opt){ev.preventDefault();applyFontFamily(opt.dataset.fontOption)}
 });
+$('#inspector').addEventListener('change',ev=>{if(ev.target.matches('[data-font-filter]')){v41DesktopFontCategory=ev.target.value;v41RefreshDesktopFonts(ev.target.closest('.font-family-menu'));}});
 $('#inspector').addEventListener('input',ev=>{if(ev.target.matches('[data-font-search]'))v41RefreshDesktopFonts(ev.target.closest('.font-family-menu'));});
 $('#inspector').addEventListener('mouseover',ev=>{const opt=ev.target.closest('[data-font-option]');if(opt&&(!ev.relatedTarget||!opt.contains(ev.relatedTarget)))previewFont(opt.dataset.fontOption)});
 $('#inspector').addEventListener('mouseout',ev=>{const menu=ev.target.closest('.font-family-menu');if(menu&&!menu.contains(ev.relatedTarget))clearFontPreview()});
@@ -3227,6 +3229,7 @@ function mobileV36ApplyView(){
 }
 function mobileV36Close(){
  cancelRegionEffects(); mobileV36FinishInteraction();
+ mobileV36State.fontTall=false;mobileV36State.fontSearch=false;
  mobileV36State.tool=null;mobileV36State.elementId=null;mobileV36State.expanded=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.fxColor=null;
  mobileV36.className='';mobileV36.innerHTML='';mobileV36ResetView();
  $$('#mobileContext button').forEach(b=>b.classList.remove('mobile-active'));
@@ -3256,7 +3259,7 @@ function mobileV36Open(tool,expanded){
  if(tool==='crop'){mobileV36Close();openMobileImageModes();return}
  if(mobileV36State.tool===tool&&expanded===undefined){mobileV36Close();return}
  closeMobileOverlays('mobileProperties');closeToolPopovers();
- if(mobileV36State.tool!==tool){mobileV36State.userViewAdjusted=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.effectId=null;mobileV36State.tab=tool==='position'?'sort':'solid'}
+ if(mobileV36State.tool!==tool){mobileV36State.fontTall=false;mobileV36State.fontSearch=false;mobileV36State.userViewAdjusted=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.effectId=null;mobileV36State.tab=tool==='position'?'sort':'solid'}
  mobileV36State.tool=tool;mobileV36State.elementId=app.selected;
  mobileV36State.expanded=expanded===undefined?!['font','size','color','opacity','nudge'].includes(tool):!!expanded;
  mobileV36Render();
@@ -3279,9 +3282,29 @@ function mobileV36Slider(key,val,min,max,step){return `<input data-mp-key="${key
 function mobileV36Pill(content){return `<div class="mp-pill">${content}</div>`}
 function mobileV36Sheet(title,content,opts={}){return `<section class="mp-sheet ${title==='Шрифт'?'mp-font-sheet':title==='Формат'?'mp-format-sheet':title==='Расположение'?'mp-position-sheet':title==='Интервалы'?'mp-spacing-sheet':title==='Обводка'?'mp-stroke-sheet':(opts.colorEditor?'mp-color-editor':'')}" role="dialog" aria-label="${mobileV36Escape(title)}"><div class="mp-grab"></div><div class="mp-head"><button data-mp-action="back" aria-label="Назад">${opts.back?'←':''}</button><strong>${mobileV36Escape(title)}</strong><button data-mp-action="done" aria-label="Готово">✓</button></div><div class="mp-body">${content}</div></section>`}
 function mobileV36Tabs(options,selected){return `<div class="mp-tabs">${options.map(([id,label])=>`<button data-mp-tab="${id}" class="${id===selected?'active':''}">${label}</button>`).join('')}</div>`}
+// Height gestures are confined to the font sheet handle and never reserve canvas space.
+function mobileFontHeight(){
+ const sheet=mobileV36.querySelector('.mp-font-sheet');if(!sheet)return;
+ const vv=window.visualViewport,top=vv?.offsetTop||0;
+ const bottom=Math.min(sheet.parentElement.getBoundingClientRect().bottom,(vv?.offsetTop||0)+(vv?.height||innerHeight));
+ sheet.style.transform=`translateY(-${Math.max(0,sheet.parentElement.getBoundingClientRect().bottom-bottom)}px)`;
+ const header=$('#app .topbar')?.getBoundingClientRect().bottom||top;
+ const available=Math.max(0,bottom-Math.max(top,header)-8);
+ sheet.style.setProperty('--font-height',Math.min((vv?.height||innerHeight)*.78,available)+'px');
+ sheet.classList.toggle('mp-font-tall',!!mobileV36State.fontTall);
+ const grab=sheet.querySelector('.mp-grab');grab.setAttribute('role','button');grab.setAttribute('tabindex','0');grab.setAttribute('aria-label','Раскрыть или свернуть список шрифтов');grab.setAttribute('aria-expanded',String(!!mobileV36State.fontTall));
+}
+let mobileFontGesture=null;
+mobileV36.addEventListener('pointerdown',ev=>{const grab=ev.target.closest('.mp-font-sheet .mp-grab');if(!grab)return;ev.preventDefault();ev.stopPropagation();grab.setPointerCapture(ev.pointerId);mobileFontGesture={id:ev.pointerId,y:ev.clientY};});
+mobileV36.addEventListener('pointerup',ev=>{if(!mobileFontGesture||mobileFontGesture.id!==ev.pointerId)return;const delta=ev.clientY-mobileFontGesture.y;mobileFontGesture=null;ev.preventDefault();ev.stopPropagation();if(Math.abs(delta)<8)mobileV36State.fontTall=!mobileV36State.fontTall;else if(Math.abs(delta)>=32)mobileV36State.fontTall=delta<0;mobileFontHeight();});
+mobileV36.addEventListener('pointercancel',()=>{mobileFontGesture=null;});
+mobileV36.addEventListener('keydown',ev=>{if(ev.target.matches('.mp-font-sheet .mp-grab')&&['Enter',' '].includes(ev.key)){ev.preventDefault();mobileV36State.fontTall=!mobileV36State.fontTall;mobileFontHeight();}});
+window.visualViewport?.addEventListener('resize',mobileFontHeight);
+window.visualViewport?.addEventListener('scroll',mobileFontHeight);
+window.addEventListener('resize',mobileFontHeight);
 function mobileV36FontPanel(){const e=active(),category=mobileV36State.fontCategory||'all',filter=mobileV36State.query.toLowerCase().trim();
  const renderList=list=>list.filter(x=>x.toLowerCase().includes(filter)).map(f=>`<button class="mp-font-row ${e.fontFamily===f?'active':''}" data-mp-font="${mobileV36Escape(f)}"><span><strong class="mp-previewfont" style="font-family:${mobileV36Escape(JSON.stringify(f))}">${mobileV36Escape(f)}</strong></span>${v41FontUnavailable(f)?'<small>Недоступен</small>':e.fontFamily===f?'✓':'›'}</button>${!v41FontUnavailable(f)&&mobileV36State.fontVariantFamily===f?`<div class="mp-variant-inline">${fontVariants(f).map(([v,n])=>`<button data-mp-variant="${mobileV36Escape(v)}" class="${(e.fontWeight+':'+(e.fontStyle||'normal'))===v?'active':''}">${mobileV36Escape(n)}</button>`).join('')}</div>`:''}`).join('')||'<div class="mp-dim">В этой категории нет шрифтов</div>';
- return mobileV36Sheet('Шрифт',`<div class="v41-font-filters mp-font-categories">${v41FontCategories.map(([id,label])=>`<button data-mp-font-category="${id}" class="${category===id?'active':''}">${label}</button>`).join('')}</div><div class="mp-source"><input data-mp-search="font" type="search" placeholder="Поиск шрифта" value="${mobileV36Escape(mobileV36State.query)}"><button data-mp-action="fontImport" style="white-space:nowrap">+ Загрузить</button></div><div class="mp-font-scroll">${renderList(v41FontsByCategory(category))}</div>`,{back:true})
+ return mobileV36Sheet('Шрифт',`<div class="mp-source mp-font-categories">${mobileV36State.fontSearch?`<input data-mp-search="font" type="search" aria-label="Поиск шрифта" placeholder="Поиск шрифта…" value="${mobileV36Escape(mobileV36State.query)}"><button data-mp-action="fontSearchClose" aria-label="Закрыть поиск">×</button>`:`<select data-mp-font-category="1" aria-label="Категория шрифтов">${v41FontCategories.map(([id,label])=>`<option value="${id}" ${category===id?'selected':''}>${label}</option>`).join('')}</select><button data-mp-action="fontSearch" aria-label="Поиск шрифта">${uiIcon('search')}</button>`}<button data-mp-action="fontImport" aria-label="Загрузить шрифт">+</button></div><div class="mp-font-scroll">${renderList(v41FontsByCategory(category))}</div>`,{back:true})
 }
 function mobileV36ColorPanel(){if(mobileV36State.sub==='colorEdit')return mobileV36ColorEditor();
  const presets=['#000000','#232323','#545454','#858585','#bababa','#ffffff','#ff4545','#ff849d','#ff76a8','#ad77ef','#7956eb','#4720ce','#0086c3','#04bce2','#69deed','#a4e8f2','#006b64','#16b38b','#46d47e','#b3ea2f','#d4fc15','#f3e43c','#ffbb43','#fa823b'];
@@ -3387,6 +3410,7 @@ function mobileV36Render(){
  if(!content){s.expanded=true;return mobileV36Render()}
  mobileV36.innerHTML=content;mobileV36.className='mp-open';
  $$('#mobileContext button').forEach(b=>b.classList.toggle('mobile-active',b.dataset.mobile===t));
+ mobileFontHeight();
  if(s.expanded||app.editingId)mobileV36ApplyView();else mobileV36ResetView();
  if(app.editingId){positionInlineText();requestAnimationFrame(revealInlineText)}
 }
@@ -3477,13 +3501,13 @@ mobileV36.addEventListener('click',ev=>{
   if(action==='done'){mobileV36Close();return}
   if(action==='back'){mobileV36Back();return}
   if(action==='expand'){mobileV36Expand();return}
+  if(action==='fontSearch'||action==='fontSearchClose'){mobileV36State.fontSearch=action==='fontSearch';mobileV36Render();mobileV36.querySelector(mobileV36State.fontSearch?'[data-mp-search=font]':'[data-mp-font-category]')?.focus();return}
   if(action==='fontImport'){$('#fontInput').click();return}
   if(action==='colorEdit'){mobileV36State.sub='colorEdit';mobileV36State.expanded=true;mobileV36InitColor();mobileV36Render();return}
   if(action==='aspect'){mobileV36State.aspectLock=!mobileV36State.aspectLock;mobileV36Render();return}
   if(action==='addStop'){const e=active();e.gradientStops||=[{pos:0,color:e.fill||'#7857de',alpha:100},{pos:100,color:e.fill2||'#ffffff',alpha:100}];gradientStops(e);gradientGeometry(e);if(e.gradientStops.length>=12){toast('Максимум 12 точек');return};const stop={id:uid(),pos:50,color:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value),alpha:100};e.gradientStops.push(stop);gradientStops(e);mobileV36State.activeStop=e.gradientStops.indexOf(stop);mobileV36Commit();mobileV36Render();return}
   if(action==='eyedropper'){mobileV36State.picking=true;mobileV36.className='';mobileV36.innerHTML='';mobileV36ResetView();toast('Пипетка: коснись нужного цвета на холсте');return}
  }
- if(b.dataset.mpFontCategory){mobileV36State.fontCategory=b.dataset.mpFontCategory;mobileV36Render();return}
  if(b.dataset.mpFont){const f=b.dataset.mpFont,same=active()?.fontFamily===f;if(v41FontUnavailable(f)){toast('Шрифт недоступен на этом устройстве');return}if(!same)applyFontFamily(f);mobileV36State.fontVariantFamily=(same&&mobileV36State.fontVariantFamily===f)?null:f;mobileV36Render();return}
  if(b.dataset.mpVariant){mobileV36Property('fontVariant',b.dataset.mpVariant,true);mobileV36Render();return}
  if(b.dataset.mpSwatch){mobileV36ApplyColor(b.dataset.mpSwatch,true);mobileV36Render();return}
@@ -3513,6 +3537,7 @@ mobileV36.addEventListener('input',ev=>{
  if(t.dataset.mpKey){const key=t.dataset.mpKey;if(mobileV36State.aspectLock&&['w','h'].includes(key)&&!t.dataset.mpAspectStart){t.dataset.mpAspectStart=JSON.stringify({w:active().w,h:active().h})}mobileV36Property(key,t.value,false);const sibling=[...mobileV36.querySelectorAll(`[data-mp-key="${key}"]`)].find(x=>x!==t);if(sibling)sibling.value=t.value;return}
 });
 mobileV36.addEventListener('change',ev=>{const t=ev.target;
+ if(t.matches('[data-mp-font-category]')){mobileV36State.fontCategory=t.value;mobileV36Render();mobileV36.querySelector('[data-mp-font-category]')?.focus();return}
  if(t.dataset.mpHue||t.dataset.mpHex){const color=t.dataset.mpHex?t.value:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value);mobileV36ApplyColor(color,true);requestAnimationFrame(()=>mobileV36Render());return}
  if(t.dataset.mpEffectColor||t.dataset.mpEffectKey){mobileV36Commit();return}
  if(t.dataset.mpKey){const e=active(),k=t.dataset.mpKey;let n=Number(t.value);if(mobileV36State.aspectLock&&['w','h'].includes(k)){let before;try{before=JSON.parse(t.dataset.mpAspectStart)}catch{before=null}if(before){const factor=n/Math.max(1,before[k]),other=k==='w'?'h':'w';e[other]=Math.max(1,Math.round(before[other]*factor*100)/100)}}mobileV36Property(k,t.value,true);if(['w','h','x','y','rotation'].includes(k))requestAnimationFrame(()=>mobileV36Render());return}

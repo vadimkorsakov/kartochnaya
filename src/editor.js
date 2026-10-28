@@ -3709,7 +3709,7 @@ if(new URLSearchParams(location.search).get('debugIme')==='1'){
   }
   const bar=elements['#mobileToolbars'].rect,appRect=elements['#app'].rect;
   return {schema:1,units:'CSS px; DOMRect and visualBottom relative to layout viewport',
-   viewport:{innerHeight,clientHeight:root.clientHeight,scrollY,devicePixelRatio,
+   viewport:{policy:document.querySelector('meta[name="viewport"]')?.content,innerHeight,clientHeight:root.clientHeight,scrollY,devicePixelRatio,
     visualViewport:vv?{height:vv.height,width:vv.width,offsetTop:vv.offsetTop,offsetLeft:vv.offsetLeft,pageTop:vv.pageTop,scale:vv.scale}:null,visualBottom:bottom},
    keyboardLayout:document.body.classList.contains('karto-keyboard-open'),
    variables:Object.fromEntries(variables.map(key=>[key,style.getPropertyValue(key).trim()])),elements,

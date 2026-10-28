@@ -202,6 +202,18 @@
  .ins-section-head{display:flex;align-items:center;gap:9px;height:49px;font-weight:750;font-size:13px;color:#f1f1f5}
  .ins-section-head svg{width:16px;height:16px;stroke:#b4a8e4;flex-shrink:0}
  .ins-section-body{display:grid;gap:9px}
+ @media(min-width:761px){
+  #inspector .ins-section-toggle{width:100%;padding:0;border:0;background:none;text-align:left;font-family:inherit;cursor:pointer}
+  #inspector .ins-section-toggle:focus-visible{outline:2px solid #b4a8e4;outline-offset:2px;border-radius:3px}
+  #inspector .ins-section-arrow{margin-left:auto;width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg)}
+  #inspector .ins-section-toggle[aria-expanded="false"] .ins-section-arrow{transform:rotate(-45deg)}
+  #inspector .ins-section-body[hidden]{display:none}
+  #inspector .ins-section-collapsed{padding-bottom:0}
+ }
+ @media(max-width:760px){
+  #inspector .ins-section-body[hidden]{display:grid}
+ }
+
  .ins-section-body .cols2{gap:8px}
  .ins-section-body .ins-caption{font-size:11px;color:#9a9aa7;line-height:1.45;margin:2px 0 4px}
  .ins-section-body label{display:flex;flex-direction:column;color:#a9a9b4;margin:0;gap:5px;font-size:11px;font-weight:500}

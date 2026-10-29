@@ -2,8 +2,8 @@
 
 PR: https://github.com/vadimkorsakov/kartochnaya/pull/55
 
-Ветка: `codex/pr55-brush-performance`  
-Проверенный SHA кода: `29e852bcad8c1ff83c81061f47fc619e29f3100c`  
+Ветка: `codex/pr55-brush-performance`
+Проверенный SHA кода: `29e852bcad8c1ff83c81061f47fc619e29f3100c`
 CI: https://github.com/vadimkorsakov/kartochnaya/actions/runs/40864761042
 
 **Готово:** движения кисти больше не запускают полную композицию документа.

@@ -285,6 +285,7 @@
 @media(min-width:761px){.stage-options .iconbtn{background:#46464e!important;border:1px solid #595964!important;color:#ecebf2!important}.stage-options .iconbtn:hover{background:#61586d!important}.stage-toolbar .zoom-percent{background:#474751!important;color:#f5f5fc!important}.layer-sort.sorting{background:#504560}.stage-column .top-ruler,.stage-column .left-ruler{background:#34343a!important}}
 
 /* v0.6: invisible chrome while cropping; over-canvas photo; fully custom color controls */
+#inkPreview{position:absolute;left:0;top:0;pointer-events:none;background:transparent;max-width:none;max-height:none;box-shadow:none}
 #cropPreview{position:absolute;z-index:3;pointer-events:auto;display:none!important;background:transparent;max-width:none;max-height:none;box-shadow:none;touch-action:none}
 .stage-column.crop-active #cropPreview{display:block!important}
 .stage-column.crop-active .desktop-dock{display:none!important}

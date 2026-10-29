@@ -1731,6 +1731,21 @@ function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDo
  else{c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack)}if(withSelection){drawSavedGuides(c);drawGuides(c);drawPixelSelectionOverlay(c);
 const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>!e.isFxRegion&&isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();if(app.cropMode)drawCropControls(c,e);drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(chosen),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);drawMobileNudgeMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
 function paint(){if(!app.doc)return;if(app.inkTool)inkMoveCursor(lastInkPointer);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);const ratio=app.renderScale||1;ctx.setTransform(app.zoom*ratio,0,0,app.zoom*ratio,0,0);paintDocument(ctx,app.doc,true);if(app.drag?.type==='newText'){const a=app.drag.start,b=app.drag.current||a;ctx.save();ctx.lineWidth=1/app.zoom;ctx.setLineDash([5/app.zoom,3/app.zoom]);ctx.strokeStyle='#ab8aff';ctx.fillStyle='#9a73ee22';ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.restore()}scheduleInkPreview();ctx.restore();paintCropPreview();updateQuickBubble()}
+// Give the quick-actions bubble its normal placement. If the resident arrows
+// would overlap it, move the arrows instead of pushing the bubble over selection.
+function mobileNudgeAvoidBubble(bubble){
+ const panel=$('#mobileNudge');
+ if(!panel||panel.classList.contains('hidden'))return;
+ const a=bubble.getBoundingClientRect(),b=panel.getBoundingClientRect(),gap=8;
+ if(a.right+gap<=b.left||b.right+gap<=a.left||a.bottom+gap<=b.top||b.bottom+gap<=a.top)return;
+ const stage=$('#stageScroller').getBoundingClientRect(),toolbar=$('#mobileToolbars').getBoundingClientRect(),vv=window.visualViewport;
+ const top=Math.max(stage.top,vv?.offsetTop||0)+gap;
+ const bottom=Math.min(stage.bottom,toolbar.top,(vv?.offsetTop||0)+(vv?.height||innerHeight))-gap;
+ const above=a.top-b.height-gap,below=a.bottom+gap;
+ if(above>=top)panel.style.top=above+'px';
+ else if(below+b.height<=bottom)panel.style.top=below+'px';
+ else bubble.classList.add('hidden'); // The small viewport cannot fit both controls safely.
+}
 function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if(!bubble)return;
  if(!app.doc||homeVisible()||$('#app').classList.contains('hidden')){bubble.classList.add('hidden');return}
  const selected=picked();const onMobile=matchMedia('(max-width:760px)').matches;
@@ -1750,7 +1765,7 @@ function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if
  const left=Math.max(stage.left,vv?.offsetLeft||0)+gap;
  const right=Math.min(stage.right,(vv?.offsetLeft||0)+(vv?.width||innerWidth))-gap;
  const top=Math.max(stage.top,vv?.offsetTop||0)+gap;
- const bottom=Math.min(stage.bottom,(vv?.offsetTop||0)+(vv?.height||innerHeight),toolbar.height?toolbar.top:Infinity,$('#mobileNudge:not(.hidden)')?.getBoundingClientRect().top??Infinity)-gap;
+ const bottom=Math.min(stage.bottom,(vv?.offsetTop||0)+(vv?.height||innerHeight),toolbar.height?toolbar.top:Infinity)-gap;
  const {width,height}=bubble.getBoundingClientRect();
  if(!width||!height)return; // A conflicting panel may hide the bubble via CSS.
  if(right-left<width||bottom-top<height){bubble.classList.add('hidden');return}
@@ -1768,10 +1783,10 @@ function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if
      candidates.push({x:px,y:py,overlap,distance:Math.hypot(px-x,py-above)});
     }
    candidates.sort((a,b)=>a.overlap-b.overlap||a.distance-b.distance);
-   bubble.style.left=candidates[0].x+'px';bubble.style.top=candidates[0].y+'px';return;
+   bubble.style.left=candidates[0].x+'px';bubble.style.top=candidates[0].y+'px';mobileNudgeAvoidBubble(bubble);return;
   }
  }
- bubble.style.left=x+'px';bubble.style.top=y+'px';
+ bubble.style.left=x+'px';bubble.style.top=y+'px';mobileNudgeAvoidBubble(bubble);
 }
 function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
 function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');}

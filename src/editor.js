@@ -1188,7 +1188,7 @@ function fxInspectorContent(e){if(regionEffectsRequest())e=null;if(!e&&app.pixel
  <button type="button" class="fx-add" data-fx-show="true" aria-expanded="false" aria-controls="fxChooser" aria-haspopup="dialog">${uiIcon('plus')}<span>Добавить эффект</span></button>`;
 }
 // Desktop effect surfaces are visit-local UI state, never part of a document snapshot.
-let fxPopoverState=null,fxMenuState=null,fxChooserState=null;
+let fxPopoverState=null,fxMenuState=null,fxChooserState=null,fxColorAnchor=null;
 const fxSelectionKey=()=>JSON.stringify(app.selectedIds);
 function fxSurfaceState(effectId){return {documentId:app.doc?.id,layerId:fxTarget()?.id,effectId,selectionKey:fxSelectionKey()}}
 function fxSurfaceEffect(state){return state&&state.documentId===app.doc?.id&&state.layerId===fxTarget()?.id&&state.selectionKey===fxSelectionKey()?fxTarget()?.effects?.find(f=>f.id===state.effectId):null}
@@ -1230,7 +1230,7 @@ function fxSyncSurfaces(reconcile=false){
    for(const field of $('#fxPopover').querySelectorAll('input[type=color]')){const b=field.parentElement.querySelector('[data-unified-color]');if(b)b.style.background=field.value;}}
  }
  if(fxMenuState&&(!desktop||!fxSurfaceEffect(fxMenuState)||!fxPositionSurface($('#fxMenu'),fxMenuState)))fxCloseMenu();
- fxUpdateSurfaceButtons();
+ positionEffectColorPopover();fxUpdateSurfaceButtons();
 }
 function fxOpenPopover(id,toggle=true){
  fxCloseChooser();fxCloseMenu();if(toggle&&fxPopoverState?.effectId===id&&fxSurfaceEffect(fxPopoverState)){fxClosePopover();return}
@@ -1249,6 +1249,8 @@ function fxOpenMenu(id){
  p.innerHTML=`<button type="button" role="menuitem" data-fx-move="${key}" data-dir="-1" ${idx===0?'disabled':''}>↑ Поднять эффект выше</button><button type="button" role="menuitem" data-fx-move="${key}" data-dir="1" ${idx===list.length-1?'disabled':''}>↓ Опустить эффект ниже</button>`;
  p.classList.remove('hidden');fxSyncSurfaces();p.querySelector('button:not(:disabled)')?.focus({preventScroll:true});
 }
+new MutationObserver(()=>positionEffectColorPopover()).observe($('#fxPopover'),{attributes:true,attributeFilter:['style','class']});
+new ResizeObserver(()=>positionEffectColorPopover()).observe($('#fillPopover'));
 new MutationObserver(()=>fxSyncSurfaces(true)).observe($('#inspector'),{childList:true,subtree:true});
 const fxSurfaceResizeObserver=new ResizeObserver(()=>fxSyncSurfaces());
 for(const p of [$('#fxPopover'),$('#fxMenu'),$('#fxChooser')])fxSurfaceResizeObserver.observe(p);
@@ -1261,7 +1263,7 @@ document.addEventListener('pointerdown',ev=>{
  if(!picker&&!app.pipetteArmed&&!ev.target.closest('#fxPopover,[data-fx-open],[data-fx-menu],#fxMenu'))fxClosePopover();
 },true);
 window.addEventListener('keydown',ev=>{
- if(ev.key==='Escape'&&(fxMenuState||fxPopoverState||fxChooserState)){ev.preventDefault();ev.stopImmediatePropagation();if(fxChooserState)fxCloseChooser(true);else if(fxMenuState)fxCloseMenu(true);else fxClosePopover(true)}
+ if(ev.key==='Escape'&&(fxMenuState||fxPopoverState||fxChooserState)){ev.preventDefault();ev.stopImmediatePropagation();if(fxColorAnchor&&!$('#fillPopover').classList.contains('hidden')){const button=fxColorAnchor.button;closeFillPopover();button?.focus({preventScroll:true})}else if(fxChooserState)fxCloseChooser(true);else if(fxMenuState)fxCloseMenu(true);else fxClosePopover(true)}
  else if(ev.target.closest('#fxMenu')&&['ArrowDown','ArrowUp','Home','End'].includes(ev.key)){
   ev.preventDefault();ev.stopImmediatePropagation();const buttons=[...$('#fxMenu').querySelectorAll('button:not(:disabled)')],i=buttons.indexOf(document.activeElement);
   buttons[ev.key==='Home'?0:ev.key==='End'?buttons.length-1:(i+(ev.key==='ArrowUp'?-1:1)+buttons.length)%buttons.length]?.focus();
@@ -2684,11 +2686,34 @@ $('#shapeTray').addEventListener('dragover',ev=>{if([...(ev.dataTransfer?.types|
 $('#shapeTray').addEventListener('dragleave',()=>$('#shapeTray').classList.remove('shape-file-hover'));
 $('#shapeTray').addEventListener('drop',ev=>{ev.preventDefault();$('#shapeTray').classList.remove('shape-file-hover');svgFilesToShapes(ev.dataTransfer?.files||[])});
 
-function closeFillPopover(){$('#fillPopover').classList.add('hidden');app.pipetteArmed=false;$('#stageScroller').classList.remove('pipette-mode');if(app.doc)paint()}
+function positionEffectColorPopover(){
+ if(!fxColorAnchor)return;
+ const p=$('#fillPopover'),parent=$('#fxPopover');
+ if(p.classList.contains('hidden'))return;
+ if(fxColorAnchor.surface!==fxPopoverState||!fxSurfaceEffect(fxPopoverState)||parent.classList.contains('hidden')||p.dataset.key!=='_effect'||p.dataset.effectId!==fxPopoverState.effectId){closeFillPopover();return}
+ const r=parent.getBoundingClientRect(),margin=8,gap=10,width=p.getBoundingClientRect().width;
+ const maxLeft=Math.max(margin,innerWidth-width-margin),left=r.left-width-gap,right=r.right+gap;
+ const candidates=[left,right].map(x=>clamp(x,margin,maxLeft));
+ // Prefer a clear left side, then a clear right side. On narrow screens use
+ // the viewport edge with the smallest horizontal overlap with the parent.
+ const overlap=x=>Math.max(0,Math.min(x+width,r.right)-Math.max(x,r.left));
+ const x=left>=margin?left:right<=maxLeft?right:candidates.sort((a,b)=>overlap(a)-overlap(b))[0];
+ const dock=$('.floating-docks'),d=dock?.getBoundingClientRect();let bottom=innerHeight-margin;
+ if(dock?.getClientRects().length&&x<d.right&&x+width>d.left)bottom=Math.min(bottom,d.top-gap);
+ p.style.maxHeight=Math.max(0,Math.min(innerHeight*.83,780,bottom-margin))+'px';
+ const height=p.getBoundingClientRect().height;
+ p.style.left=x+'px';p.style.top=clamp(r.top,margin,Math.max(margin,bottom-height))+'px';
+}
+function closeFillPopover(){const p=$('#fillPopover');
+ if(fxColorAnchor){if(p.contains(document.activeElement))document.activeElement.blur();fxColorAnchor=null;p.classList.remove('fx-color-popover');p.style.removeProperty('max-height')}
+ p.classList.add('hidden');app.pipetteArmed=false;$('#stageScroller').classList.remove('pipette-mode');if(app.doc)paint()}
 function openFillPopover(key,btn){const p=$('#fillPopover'),oldKey=p.dataset.key;
  if(!p.classList.contains('hidden')&&oldKey===key){closeFillPopover();return}
+ if(fxColorAnchor)closeFillPopover();
+ fxColorAnchor=key==='_effect'&&btn.closest('#fxPopover')?{surface:fxPopoverState,button:btn}:null;
+ p.classList.toggle('fx-color-popover',!!fxColorAnchor);
  p.dataset.key=key;p.dataset.format='HEX';if(active()?.fillType==='gradient'){gradientGeometry(active());p.dataset.stopId=gradientStops(active())[0]?.id||'';}renderFillPopover();p.classList.remove('hidden');
- refreshPickerVisual();paint();const b=btn.getBoundingClientRect();p.style.left=Math.max(12,b.left-375)+'px';p.style.top=Math.max(55,Math.min(b.top,innerHeight-p.offsetHeight-12))+'px';}
+ refreshPickerVisual();paint();if(fxColorAnchor){positionEffectColorPopover();return}const b=btn.getBoundingClientRect();p.style.left=Math.max(12,b.left-375)+'px';p.style.top=Math.max(55,Math.min(b.top,innerHeight-p.offsetHeight-12))+'px';}
 function targetFillValue(key){if(key==='_effect'){const f=active()?.effects?.find(v=>v.id===$('#fillPopover').dataset.effectId);return f?.[$('#fillPopover').dataset.effectField||'color']||'#7857de'}if(key==='_ink')return app.inkSettings.color;const e=active();if(key==='_docBackground')return app.doc.background;if(key==='fill'&&e?.type==='text'&&(e.fillType||'solid')==='solid')return e.textColor||'#000000';return e?.[key]||'#ffffff'}
 function syncTextFill(e){if(e?.type==='text'&&(e.fillType||'solid')==='solid')e.fill=e.textColor||'#000000'}
 function currentPickerKey(){const p=$('#fillPopover');return p.dataset.key==='fill'&&active()?.fillType==='gradient'?'gradientStop':p.dataset.key}
@@ -2730,7 +2755,7 @@ function refreshPickerVisual(updateChannels=true){const p=$('#fillPopover');if(p
  if(active()?.fillType==='gradient'){const paint=p.querySelector('.cp-gradient-paint');if(paint)paint.style.background=gradientCSS(active());for(const b of p.querySelectorAll('[data-gstop]')){const st=gradientStops(active()).find(st=>st.id===b.dataset.gstop);if(st){b.style.left=st.pos+'%';b.style.setProperty('--stop',hexAlpha(st.color,st.alpha));b.classList.toggle('active',st.id===getGradientStop()?.id)}}for(const row of p.querySelectorAll('[data-stop-row]')){const st=gradientStops(active()).find(st=>st.id===row.dataset.stopRow);if(st){row.classList.toggle('active',st.id===getGradientStop()?.id);const sw=row.querySelector('.stop-swatch');if(sw)sw.style.background=hexAlpha(st.color,st.alpha);const ae=row.querySelector('[data-stop-alpha]');if(ae&&document.activeElement!==ae)ae.value=Math.round(st.alpha);const he=row.querySelector('[data-stop-hex]');if(he&&document.activeElement!==he)he.value=st.color.toUpperCase()}}}
 }
 function fillPreviewMode(k){const e=active();return k!=='fill'?'solid':e?.fillType||'solid'}
-function repositionFillPopover(){const p=$('#fillPopover');if(p.classList.contains('hidden'))return;const anchor=$('#inspector [data-fill-open="'+p.dataset.key+'"]');const y=anchor?.getBoundingClientRect()?.top??220;
+function repositionFillPopover(){const p=$('#fillPopover');if(p.classList.contains('hidden'))return;if(fxColorAnchor){positionEffectColorPopover();return}const anchor=$('#inspector [data-fill-open="'+p.dataset.key+'"]');const y=anchor?.getBoundingClientRect()?.top??220;
  p.style.top=Math.max(54,Math.min(y,innerHeight-p.offsetHeight-12))+'px';}
 function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=active(),type=fillPreviewMode(key),colors=[...new Set([...(app.doc.palette||[]),app.doc.background,...app.doc.elements.flatMap(o=>[o.fill,o.fill2,o.stroke,o.textColor])].map(normalizeHex).filter(Boolean))].slice(0,40);
  const labels={_effect:'Цвет эффекта',_ink:'Цвет кисти / карандаша',_docBackground:'Фон холста',stroke:'Обводка',fill:'Заливка',textColor:'Цвет текста'};

@@ -440,6 +440,7 @@ body.alt-held .layer-clip-hit:hover{background:#ac88ff!important;box-shadow:0 0 
 .fx-card-head button.on{color:#b5a2ff}
 .fx-popover,.fx-menu,#fxChooser{position:fixed;z-index:35;background:#2b2b30;color:#f0eef6;border:1px solid #51505b;border-radius:10px;box-shadow:0 12px 40px #08080c77;max-width:calc(100vw - 16px)}
 #fxChooser{width:310px;margin:0;overflow-y:auto;overscroll-behavior:contain}
+.fill-popover.fx-color-popover{z-index:36}
 .fx-popover{width:340px;display:flex;flex-direction:column;overflow:hidden}
 .fx-popover-head{display:flex;align-items:center;gap:12px;padding:10px 12px;flex:none;font-size:13px}
 .fx-popover-head strong{flex:1;min-width:0}

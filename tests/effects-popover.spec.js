@@ -148,7 +148,8 @@ test('existing color picker edits effect and synchronizes HEX swatch through pop
   await hex.fill('#2255AA'); await hex.press('Tab');
   await expect(field(page, 'color2', 'text')).toHaveValue('#2255aa');
   expect((await exportedDocument(page)).elements[0].effects[7].color2).toBe('#2255aa');
-  await page.keyboard.press('Escape'); await expect(popover(page)).toBeHidden(); await expect(page.locator('#fillPopover')).toBeHidden();
+  await page.keyboard.press('Escape'); await expect(page.locator('#fillPopover')).toBeHidden(); await expect(popover(page)).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(popover(page)).toBeHidden();
   await page.locator('#undoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(before.elements);
 });
 
@@ -273,4 +274,99 @@ test('ordinary shadow color still uses the existing picker and Undo', async ({ p
   expect((await exportedDocument(page)).elements[0].effects[1].color).toBe('#2255aa');
   await page.keyboard.press('Escape'); await page.locator('#undoBtn').click();
   expect((await exportedDocument(page)).elements).toEqual(before.elements);
+});
+
+
+const colorPicker = page => page.locator('#fillPopover');
+async function openEffectColor(page, id = 'fx-7', key = 'color2') {
+  await show(page, id);
+  await popover(page).locator(`input[type=color][data-fx-key="${key}"]`).locator('..').locator('[data-unified-color]').click();
+  await expect(colorPicker(page)).toBeVisible();
+}
+async function colorGeometry(page, side) {
+  await expect(colorPicker(page)).toBeVisible(); await expect(popover(page)).toBeVisible();
+  const color = await colorPicker(page).boundingBox(), effect = await popover(page).boundingBox(), view = page.viewportSize();
+  for (const b of [color, effect]) {
+    expect(b.x).toBeGreaterThanOrEqual(0); expect(b.y).toBeGreaterThanOrEqual(0);
+    expect(b.x + b.width).toBeLessThanOrEqual(view.width); expect(b.y + b.height).toBeLessThanOrEqual(view.height);
+  }
+  if (side) {
+    const gap = side === 'left' ? effect.x - color.x - color.width : color.x - effect.x - effect.width;
+    expect(gap).toBeGreaterThanOrEqual(8); expect(gap).toBeLessThanOrEqual(12);
+  }
+  const dock = await page.locator('.floating-docks').boundingBox();
+  const overlap = (a,b) => Math.max(0, Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x))*Math.max(0,Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y));
+  expect(overlap(color,dock)).toBe(0);
+  return { color, effect };
+}
+
+test('effect color follows the measured parent on the left, resize and inspector scroll', async ({ page }) => {
+  await open(page, true); await openEffectColor(page, 'fx-3', 'color');
+  const initial = await colorGeometry(page, 'left');
+  expect(initial.color.y).toBeLessThanOrEqual(initial.effect.y);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect.poll(async () => (await colorPicker(page).boundingBox())?.x).not.toBe(initial.color.x);
+  await colorGeometry(page, 'left');
+  const before = await colorPicker(page).boundingBox();
+  await row(page, 'fx-3').evaluate(row => { const p=document.querySelector('#inspector');p.scrollTop+=row.getBoundingClientRect().top-p.getBoundingClientRect().top-2; });
+  await expect.poll(async () => (await colorPicker(page).boundingBox())?.y).not.toBe(before.y);
+  const aligned = await colorGeometry(page, 'left');
+  expect(aligned.color.y).toBeCloseTo(aligned.effect.y, 0);
+  await page.setViewportSize({ width: 1280, height: 560 }); await colorGeometry(page, 'left');
+});
+
+test('effect color uses right fallback and the least overlap when neither side fits', async ({ page }) => {
+  await open(page); await openEffectColor(page);
+  // Move the actual parent without moving its color button independently.
+  await popover(page).evaluate(p => p.style.left='30px');
+  await expect.poll(async () => (await colorPicker(page).boundingBox())?.x).toBe(380);
+  await colorGeometry(page, 'right');
+  await page.setViewportSize({ width: 800, height: 900 });
+  const {color,effect} = await colorGeometry(page);
+  const intersection = x => Math.max(0, Math.min(x+color.width,effect.x+effect.width)-Math.max(x,effect.x));
+  expect(intersection(color.x)).toBe(Math.min(intersection(8),intersection(800-color.width-8)));
+});
+
+for (const key of ['color','color2']) test(`bound picker edits only ${key} and keeps Undo/Redo and two-stage Escape`, async ({ page }) => {
+  await open(page);
+  // Establish a committed selection so Undo tests the color edit alone.
+  await show(page, 'fx-7'); await field(page, 'distance').fill('9'); await field(page, 'distance').press('Tab');
+  await page.keyboard.press('Escape');
+  const before=await exportedDocument(page), h=await history(page);
+  await openEffectColor(page, 'fx-7', key);
+  expect(await history(page)).toBe(h);
+  const hex=colorPicker(page).locator('[data-cp-part="0"]');
+  await hex.fill('#123456'); await hex.press('Tab');
+  const after=await exportedDocument(page);
+  expect(after.elements[0].effects[7]).toEqual({...before.elements[0].effects[7],[key]:'#123456'});
+  await hex.press('ControlOrMeta+z'); expect((await exportedDocument(page)).elements).toEqual(before.elements);
+  await hex.press('ControlOrMeta+Shift+z'); expect((await exportedDocument(page)).elements).toEqual(after.elements);
+  await page.keyboard.press('Escape'); await expect(colorPicker(page)).toBeHidden(); await expect(popover(page)).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(popover(page)).toBeHidden();
+});
+
+test('effect color closes with parent, effect switch, layer switch and invisible row', async ({ page }) => {
+  await open(page); await openEffectColor(page);
+  await popover(page).locator('[data-fx-close]').click(); await expect(colorPicker(page)).toBeHidden();
+  await openEffectColor(page); await show(page, 'fx-1'); await expect(colorPicker(page)).toBeHidden();
+  await page.keyboard.press('Escape'); await openEffectColor(page);
+  await page.locator('#layers [data-layer="other"] .layer-name').click(); await expect(colorPicker(page)).toBeHidden();
+  await page.locator('#layers [data-layer="text"] .layer-name').click(); await openEffectColor(page);
+  await page.locator('#inspector').evaluate(p=>p.scrollTop=0);
+  await expect(popover(page)).toBeHidden(); await expect(colorPicker(page)).toBeHidden();
+});
+
+test('ordinary fill picker retains its positioning after effect color closes', async ({ page }) => {
+  await open(page); await openEffectColor(page);
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+  const fill=page.locator('#inspector [data-fill-open="fill"]'); await fill.click();
+  await expect(colorPicker(page)).toBeVisible(); await expect(colorPicker(page)).not.toHaveClass(/fx-color-popover/);
+  expect(await colorPicker(page).evaluate(p=>p.style.maxHeight)).toBe('');
+  const button=await fill.boundingBox(), color=await colorPicker(page).boundingBox();
+  expect(color.x).toBe(Math.max(12,button.x-375));
+  const before=await exportedDocument(page), hex=colorPicker(page).locator('[data-cp-part="0"]');
+  await hex.fill('#123456');await hex.press('Tab');
+  const after=await exportedDocument(page);expect(after.elements[0].fill).toBe('#123456');
+  expect(after.elements[0].effects).toEqual(before.elements[0].effects);
+  await hex.press('ControlOrMeta+z');expect((await exportedDocument(page)).elements).toEqual(before.elements);
 });

@@ -535,10 +535,12 @@ function updateHistoryButtons(){const draft=app.penDraft;$('#undoBtn').disabled=
 const documentSaves=new Map();
 function saveState(id){if(!documentSaves.has(id))documentSaves.set(id,{revision:0,sequence:0,confirmed:0,pending:null,saved:null,error:null});return documentSaves.get(id)}
 function refreshSaveStatus(){
- const projectIds=new Set([...projectDocs(),...documentTabSession.tabs.map(t=>t.doc)].filter(d=>d.projectId===app.currentProjectId).map(d=>d.id));
+ const projectId=app.currentProjectId||app.doc?.projectId;
+ const tabDocs=typeof documentTabSession==='undefined'?[]:documentTabSession.tabs.map(t=>t.doc);
+ const projectIds=new Set([...(app.docs||[]),...tabDocs].filter(d=>d.projectId===projectId).map(d=>d.id));
  const emergency=!!app.doc&&(!app.db||[...documentSaves].some(([id,state])=>state.error&&(id===app.doc.id||projectIds.has(id))));
- $('#emergencyExportBtn').classList.toggle('hidden',!emergency);
- $('#saveStatus').closest('.stage-status').classList.toggle('has-emergency',emergency);
+ $('#emergencyExportBtn')?.classList?.toggle('hidden',!emergency);
+ $('#saveStatus')?.closest?.('.stage-status')?.classList?.toggle('has-emergency',emergency);
  if(!app.doc)return;
  if(app.historyPreviewOriginal){$('#saveStatus').textContent='Исходное состояние · предпросмотр';return}
  const state=saveState(app.doc.id);

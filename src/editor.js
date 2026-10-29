@@ -1729,9 +1729,9 @@ function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDo
  const t=c.getTransform(),nativeRegion=(t.a!==1||t.d!==1||t.b!==0||t.c!==0)&&stack.elements.some(e=>e.isFxRegion&&isLayerVisible(e,stack)&&(e.effects||[]).some(f=>f.type==='pixelate'&&f.enabled!==false));
  if(nativeRegion){const native=fxCanvas(d);paintDocument(native.getContext('2d'),stack);c.drawImage(native,0,0)}
  else{c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack)}if(withSelection){drawSavedGuides(c);drawGuides(c);drawPixelSelectionOverlay(c);
-const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>!e.isFxRegion&&isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();if(app.cropMode)drawCropControls(c,e);drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(chosen),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
+const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>!e.isFxRegion&&isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();if(app.cropMode)drawCropControls(c,e);drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(chosen),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);drawMobileNudgeMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
 function paint(){if(!app.doc)return;if(app.inkTool)inkMoveCursor(lastInkPointer);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);const ratio=app.renderScale||1;ctx.setTransform(app.zoom*ratio,0,0,app.zoom*ratio,0,0);paintDocument(ctx,app.doc,true);if(app.drag?.type==='newText'){const a=app.drag.start,b=app.drag.current||a;ctx.save();ctx.lineWidth=1/app.zoom;ctx.setLineDash([5/app.zoom,3/app.zoom]);ctx.strokeStyle='#ab8aff';ctx.fillStyle='#9a73ee22';ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.restore()}scheduleInkPreview();ctx.restore();paintCropPreview();updateQuickBubble()}
-function updateQuickBubble(){const bubble=$('#quickBubble');if(!bubble)return;
+function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if(!bubble)return;
  if(!app.doc||homeVisible()||$('#app').classList.contains('hidden')){bubble.classList.add('hidden');return}
  const selected=picked();const onMobile=matchMedia('(max-width:760px)').matches;
  const show=onMobile&&!app.mobileLayersOpen&&selected.length>0&&!app.cropMode&&!app.editingId&&!$('#stageScroller').classList.contains('drag-over');
@@ -1750,7 +1750,7 @@ function updateQuickBubble(){const bubble=$('#quickBubble');if(!bubble)return;
  const left=Math.max(stage.left,vv?.offsetLeft||0)+gap;
  const right=Math.min(stage.right,(vv?.offsetLeft||0)+(vv?.width||innerWidth))-gap;
  const top=Math.max(stage.top,vv?.offsetTop||0)+gap;
- const bottom=Math.min(stage.bottom,(vv?.offsetTop||0)+(vv?.height||innerHeight),toolbar.height?toolbar.top:Infinity)-gap;
+ const bottom=Math.min(stage.bottom,(vv?.offsetTop||0)+(vv?.height||innerHeight),toolbar.height?toolbar.top:Infinity,$('#mobileNudge:not(.hidden)')?.getBoundingClientRect().top??Infinity)-gap;
  const {width,height}=bubble.getBoundingClientRect();
  if(!width||!height)return; // A conflicting panel may hide the bubble via CSS.
  if(right-left<width||bottom-top<height){bubble.classList.add('hidden');return}
@@ -3054,7 +3054,7 @@ const documentTabSession={activeId:'home',lastDocumentId:null,tabs:[]};
 const DOCUMENT_TAB_FIELDS=['selected','selectedIds','selectedGroupIds','focusGroupId','groupIsolation','zoom','lastZoom','renderScale','history','historyNames','historyIndex','historyBase','historyPreviewOriginal','pixelSelection','pixelDraft','polyDraft','selectionTargetId','guides','showRulers','handTool','penTool','penDraft','penEditId','penNode','marqueeTool','marqueeKind','magicTolerance','insertTool','insertShape','inkTool','inkSettings','maskEditId','maskPaintColor','textToolMode','textDraft','textPathDraft','cropMode','cropBefore','multiMode','panelOpen','mobilePane','mobileLayersOpen','resourceFolderId','filter'];
 function liveDocumentTab(){return documentTabSession.tabs.find(t=>t.id===documentTabSession.activeId)||null}
 // These surfaces belong to the current editor visit, not a saved document view.
-function closeEditorTransientUI(){fxCloseMenu();fxClosePopover();cancelRegionEffects();
+function closeEditorTransientUI(){mobileNudgeClearMeasurements();$('#mobileNudge')?.classList.add('hidden');fxCloseMenu();fxClosePopover();cancelRegionEffects();
  mobileV36Close(); // F-06 settles actual changes and releases owned pointers/timers.
  closeMobileOverlays('mobileProperties');closeToolPopovers();closeMobileLayerMenu();
  if(!$('#fillPopover').classList.contains('hidden')||app.pipetteArmed)closeFillPopover();
@@ -3442,6 +3442,48 @@ const mobileV36State={elementId:null,tool:null,expanded:false,sub:'',query:'',ta
   baseView:null,openDoc:null,aspectLock:true,palette:[],photoPalette:[],hue:265,sat:0.75,value:0.95,activeStop:0,picking:false};
 const mobileV36=$('#mobilePropertyUI');
 const mobileV36Small=()=>window.matchMedia('(max-width:760px)').matches;
+// The resident arrows share the property panel's pointer ownership and history.
+const mobileNudge=document.createElement('div');
+mobileNudge.id='mobileNudge';mobileNudge.className='hidden';mobileNudge.setAttribute('role','group');mobileNudge.setAttribute('aria-label','Точное перемещение');
+function mobileNudgeButtons(){return [['left','←','влево'],['up','↑','вверх'],['down','↓','вниз'],['right','→','вправо']].map(([id,text,label])=>`<button type="button" data-mp-nudge="${id}" aria-label="Сдвинуть ${label}">${text}</button>`).join('')}
+mobileNudge.innerHTML=mobileNudgeButtons();document.body.appendChild(mobileNudge);
+let mobileNudgeMeasureDoc=null,mobileNudgeMeasureTimer=null;
+function mobileNudgeClearMeasurements(){clearTimeout(mobileNudgeMeasureTimer);mobileNudgeMeasureTimer=null;mobileNudgeMeasureDoc=null}
+function mobileNudgeSync(){
+ const panel=$('#mobileNudge');if(!panel)return;
+ const blockers=['mobilePropertyUI','mobileLayersSheet','rightPanel','mobileSeriesSheet','shapeTray','assetsPopover','selectionMenu','historyPopover','editorProjectMenu','mobileLayerActionMenu','fillPopover','boundaryFloatingPanel','inkPopover','textModeMenu','documentTabsMenu','shade'];
+ const blocked=blockers.some(id=>{const el=$('#'+id);return el&&el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'&&getComputedStyle(el).display!=='none'&&(id!=='mobilePropertyUI'||el.children.length)});
+ const show=mobileV36Small()&&app.doc&&!homeVisible()&&!$('#app').classList.contains('hidden')&&picked().some(e=>isLayerVisible(e)&&!e.isFxRegion)&&!app.cropMode&&!app.editingId&&!blocked;
+ panel.classList.toggle('hidden',!show);
+ if(show&&!panel.children.length)panel.innerHTML=mobileNudgeButtons();
+ if(!show){if(mobileV36Interaction?.target.closest('#mobileNudge'))mobileV36FinishInteraction();panel.replaceChildren();if(mobileNudgeMeasureDoc&&!(mobileV36State.tool==='nudge'&&!homeVisible()&&app.selectedIds.length)){mobileNudgeClearMeasurements();if(app.doc)requestAnimationFrame(paint)}return}
+ const vv=window.visualViewport,toolbar=$('#mobileToolbars').getBoundingClientRect();
+ panel.style.left=((vv?.offsetLeft||0)+(vv?.width||innerWidth)/2)+'px';
+ panel.style.top=(Math.min(toolbar.top,(vv?.offsetTop||0)+(vv?.height||innerHeight))-panel.getBoundingClientRect().height-8)+'px';
+ panel.querySelectorAll('button').forEach(b=>b.disabled=!picked().some(e=>!isLayerLocked(e)));
+}
+const mobileNudgeObserver=new MutationObserver(()=>mobileNudgeSync());
+for(const id of ['app','homeScreen','mobilePropertyUI','mobileLayersSheet','rightPanel','mobileSeriesSheet','shapeTray','assetsPopover','selectionMenu','historyPopover','editorProjectMenu','mobileLayerActionMenu','fillPopover','boundaryFloatingPanel','inkPopover','textModeMenu','documentTabsMenu','shade']){
+ const el=$('#'+id);if(el)mobileNudgeObserver.observe(el,{attributes:true,attributeFilter:['class'],childList:id==='mobilePropertyUI'});
+}
+function drawMobileNudgeMeasurements(c){
+ if(mobileNudgeMeasureDoc!==app.doc?.id||!mobileV36Small()||!app.selectedIds.length)return;
+ const selected=picked().filter(e=>!e.isFxRegion&&isLayerVisible(e)),a=selectionBounds(selected);if(!a)return;
+ const candidates=app.doc.elements.filter(e=>!app.selectedIds.includes(e.id)&&!e.isFxRegion&&isLayerVisible(e)).map(boundsOf);
+ const z=1/app.zoom,cx=(a.x+a.right)/2,cy=(a.y+a.bottom)/2;
+ const horizontal=candidates.filter(b=>b.y<a.bottom&&b.bottom>a.y),vertical=candidates.filter(b=>b.x<a.right&&b.right>a.x);
+ const left=horizontal.filter(b=>b.right<=a.x).sort((a,b)=>b.right-a.right)[0];
+ const right=horizontal.filter(b=>b.x>=a.right).sort((a,b)=>a.x-b.x)[0];
+ const up=vertical.filter(b=>b.bottom<=a.y).sort((a,b)=>b.bottom-a.bottom)[0];
+ const down=vertical.filter(b=>b.y>=a.bottom).sort((a,b)=>a.y-b.y)[0];
+ const overlap=(lo,hi,blo,bhi)=>(Math.max(lo,blo)+Math.min(hi,bhi))/2;
+ const hy=b=>b?overlap(a.y,a.bottom,b.y,b.bottom):cy,vx=b=>b?overlap(a.x,a.right,b.x,b.right):cx;
+ const lines=[[[left?.right??0,hy(left)],[a.x,hy(left)]],[[a.right,hy(right)],[right?.x??app.doc.width,hy(right)]],[[vx(up),up?.bottom??0],[vx(up),a.y]],[[vx(down),a.bottom],[vx(down),down?.y??app.doc.height]]];
+ c.save();c.strokeStyle='#ee4fa3';c.lineWidth=z;
+ for(const [[x1,y1],[x2,y2]] of lines){const horizontal=y1===y2;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);for(const [x,y] of [[x1,y1],[x2,y2]]){c.moveTo(x-(horizontal?0:4*z),y-(horizontal?4*z:0));c.lineTo(x+(horizontal?0:4*z),y+(horizontal?4*z:0))}c.stroke();drawLabel(c,String(Math.round(Math.hypot(x2-x1,y2-y1))), (x1+x2)/2,(y1+y2)/2)}
+ c.restore();
+}
+
 const mobileV36Text=()=>active()?.type==='text';
 const mobileV36Icons={edit:'✎',font:'Ff',size:'aA',color:'A̲',format:'B≡',spacing:'↕T',effects:'✧',opacity:'◐',layers:'▤',position:'▦',nudge:'✥',more:'•••',fit:'▣',crop:'▧',replace:'▤',stroke:'▱',round:'◜',settings:'⚙'};
 const mobileV36Label={edit:'Править',font:'Шрифт',size:'Размер',color:'Цвет',format:'Формат',spacing:'Интервал',effects:'Эффекты',opacity:'Прозрачн.',layers:'Слои',position:'Расположение',nudge:'Сдвинуть',more:'Ещё',fit:'Размещение',crop:'Обрезка',replace:'Заменить',stroke:'Обводка',round:'Скругление',settings:'Свойства'};
@@ -3670,7 +3712,7 @@ function mobileV36Render(){
   if(t==='font')content=mobileV36Pill(`<div class="mp-horizontal">${fontFamilies().map(mobileV36FontChip).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
   if(t==='size'||t==='opacity'){const key=t==='size'?'fontSize':'opacity',val=e[key]??100,min=t==='size'?1:0,max=t==='size'?500:100;content=mobileV36Pill(`${mobileV36Slider(key,val,min,max,1)}${mobileV36Stepper(key,val,min,max,1)}`)}
   if(t==='color')content=mobileV36Pill(`<button class="mp-circle mp-rainbow" data-mp-action="colorEdit">＋</button><div class="mp-swatches">${mobileV36Colors().map(mobileV36Swatch).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
-  if(t==='nudge')content=mobileV36Pill(`<div class="mp-grid" style="flex:1">${[['left','←'],['up','↑'],['down','↓'],['right','→']].map(([id,txt])=>`<button style="height:41px;font-size:20px" data-mp-nudge="${id}">${txt}</button>`).join('')}</div>`)
+  if(t==='nudge')content=mobileV36Pill(`<div class="mp-grid" style="flex:1">${mobileNudgeButtons()}</div>`)
  }else{
   if(t==='font')content=mobileV36FontPanel();
   else if(t==='color')content=mobileV36ColorPanel();
@@ -3742,25 +3784,42 @@ function mobileV36FinishInteraction(ev){
  // Clear ownership before release/commit; lostcapture and repeated cancel are inert.
  mobileV36Interaction=null;
  if(interaction.type==='nudge'){
-  clearTimeout(mobileV36NudgeTimer);clearInterval(mobileV36NudgeTimer);mobileV36NudgeTimer=null;
+  clearTimeout(mobileV36NudgeTimer);mobileV36NudgeTimer=null;
+  mobileNudgeMeasureTimer=setTimeout(()=>{mobileNudgeClearMeasurements();if(app.doc)paint()},850);
  }
  try{if(interaction.target.hasPointerCapture(interaction.pointerId))interaction.target.releasePointerCapture(interaction.pointerId)}catch{}
  if(app.doc?.id===interaction.documentId&&interaction.before!==mobileV36InteractionModel())mobileV36Commit();
 }
-function mobileV36Nudge(dir){
+function mobileV36Nudge(dir,step=1){
  const shift={left:[-1,0],right:[1,0],up:[0,-1],down:[0,1]}[dir],elements=picked().filter(x=>!isLayerLocked(x));
  if(!shift||!elements.length)return false;
- for(const e of elements){e.x+=shift[0];e.y+=shift[1]}
+ for(const e of elements){e.x+=shift[0]*step;e.y+=shift[1]*step}
+ clearTimeout(mobileNudgeMeasureTimer);mobileNudgeMeasureDoc=app.doc.id;
  paint();saveSoon();return true;
 }
 function mobileV36EndNudge(){if(mobileV36Interaction?.type==='nudge')mobileV36FinishInteraction()}
+function mobileV36StartNudge(ev){
+ const arrow=ev.target.closest('[data-mp-nudge]');if(!arrow)return false;
+ ev.preventDefault();if(ev.button!==0||arrow.disabled||!mobileV36BeginInteraction('nudge',ev,arrow))return true;
+ const owner=mobileV36Interaction,started=performance.now();
+ const repeat=()=>{
+  if(mobileV36Interaction!==owner)return;
+  const progress=clamp((performance.now()-started-350)/2400,0,1);
+  if(!mobileV36Nudge(arrow.dataset.mpNudge,1+Math.floor(3*progress))){mobileV36FinishInteraction();return}
+  mobileV36NudgeTimer=setTimeout(repeat,100-60*progress);
+ };
+ if(mobileV36Nudge(arrow.dataset.mpNudge))mobileV36NudgeTimer=setTimeout(repeat,350);
+ return true;
+}
+for(const root of [mobileV36,mobileNudge]){
+ for(const type of ['contextmenu','selectstart','dragstart'])root.addEventListener(type,ev=>{if(ev.target.closest('[data-mp-nudge]'))ev.preventDefault()});
+ root.addEventListener('click',ev=>{const arrow=ev.target.closest('[data-mp-nudge]');if(!arrow||!ev.isTrusted||ev.detail!==0||arrow.disabled)return;ev.preventDefault();if(mobileV36Interaction)return;if(mobileV36Nudge(arrow.dataset.mpNudge)){mobileV36Commit();mobileNudgeMeasureTimer=setTimeout(()=>{mobileNudgeClearMeasurements();paint()},850)}});
+}
+mobileNudge.addEventListener('pointerdown',mobileV36StartNudge);
+window.addEventListener('blur',()=>mobileV36FinishInteraction());
+document.addEventListener('visibilitychange',()=>{if(document.hidden)mobileV36FinishInteraction()});
 mobileV36.addEventListener('pointerdown',ev=>{
- const arrow=ev.target.closest('[data-mp-nudge]');
- if(arrow){
-  ev.preventDefault();if(!mobileV36BeginInteraction('nudge',ev,arrow))return;
-  if(mobileV36Nudge(arrow.dataset.mpNudge))mobileV36NudgeTimer=setTimeout(()=>{mobileV36NudgeTimer=setInterval(()=>mobileV36Nudge(arrow.dataset.mpNudge),70)},360);
-  return;
- }
+ if(mobileV36StartNudge(ev))return;
  const plane=ev.target.closest('[data-mp-plane]');
  if(plane){ev.preventDefault();if(mobileV36BeginInteraction('plane',ev,plane))mobileV36UpdatePlane({clientX:ev.clientX,clientY:ev.clientY,currentTarget:plane})}
 });

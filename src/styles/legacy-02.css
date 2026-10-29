@@ -4,3 +4,13 @@
 .stage-status.has-emergency #sizeLabel{display:none}
 #emergencyExportBtn{border:1px solid #efb46c;border-radius:6px;background:#fff0d9;color:#703900;padding:6px 10px;font-size:12px;font-weight:700;min-height:32px}
 @media(max-width:760px){.stage-status.has-emergency{flex-direction:column;align-items:flex-end}}
+
+/* Local touch protection applies to both resident and property-panel arrows. */
+[data-mp-nudge]{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none;}
+#mobileNudge{display:none;}
+@media(max-width:760px){
+ #mobileNudge:not(.hidden){position:fixed;z-index:55;display:flex;gap:4px;transform:translateX(-50%);padding:5px;border:1px solid #696374;border-radius:16px;background:#292630;box-shadow:0 4px 16px #0005;}
+ #mobileNudge button{width:42px;height:42px;font-size:22px;border:0;border-radius:10px;background:#423b50;color:#fff;}
+ #mobileNudge button:disabled{opacity:.4;}
+ #mobilePropertyUI [data-mp-nudge]{height:41px;font-size:20px;}
+}

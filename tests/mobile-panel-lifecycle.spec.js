@@ -123,8 +123,7 @@ for (const destination of ['home', 'tab']) test(`active F-06 interaction settles
   await mobileTab(page, docs[0].id);
   const before = await exportedDocument(page), h = await history(page);
   await page.evaluate(() => { panelWrites = []; });
-  await page.locator('#mobileContext [data-mobile="nudge"]').scrollIntoViewIfNeeded();
-  await page.locator('#mobileContext [data-mobile="nudge"]').tap();
+  await expect(page.locator('#mobileNudge')).toBeVisible();
   // Freeze repeat/debounce timers so actionability waits cannot add extra nudges.
   await page.clock.install({ time: new Date('2026-01-01T00:00:00Z') });
   await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));

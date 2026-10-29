@@ -2,7 +2,9 @@ const { readFile } = require('node:fs/promises');
 const { test, expect, openHome, createDocument, addShape, records, exportedDocument } = require('./helpers');
 
 async function noJSONControls(page) {
-  await expect(page.locator('button:visible, a:visible, input:visible').filter({ hasText: /JSON/i })).toHaveCount(0);
+  // The dedicated project import is intentionally visible on the workspace page.
+  // Legacy JSON export/navigation controls must remain hidden.
+  await expect(page.locator('button:visible:not(#projectJsonImportBtn), a:visible, input:visible').filter({ hasText: /JSON/i })).toHaveCount(0);
   for (const id of ['jsonInput', 'jsonExportBtn']) {
     await expect(page.locator('#' + id)).toBeHidden();
     await expect(page.locator('#' + id)).toHaveAttribute('tabindex', '-1');
@@ -18,6 +20,7 @@ test('backup home creates and verifies ZIP with no JSON controls or data changes
   await expect(page.locator('#homeDataPane')).toBeVisible();
   await page.locator('[data-home-nav="workspace"]').click();
   const before = await records(page, 'docs');
+  await expect(page.locator('#projectJsonImportBtn')).toBeVisible();
   await noJSONControls(page);
   await expect(page.locator('[data-home-nav="data"]')).toHaveText('Резервные копии');
   await page.locator('[data-home-nav="data"]').click();
@@ -26,6 +29,7 @@ test('backup home creates and verifies ZIP with no JSON controls or data changes
   await expect(page.locator('#homeDataPane .home-data-card')).toHaveCount(1);
   await expect(page.locator('#zipStorage')).toBeVisible();
   await expect(page.locator('#zipBackupDialog')).toBeHidden();
+  await expect(page.locator('#projectJsonImportBtn')).toBeHidden();
   await noJSONControls(page);
   expect(await records(page, 'docs')).toEqual(before);
   await page.locator('[data-home-nav="workspace"]').click();

@@ -1179,22 +1179,22 @@ function textFxDefaults(type){
 const fxCanvas=(d)=>{const c=document.createElement('canvas');c.width=d.width;c.height=d.height;return c};
 function fxDefault(type){if(TEXT_FX_IDS.has(type))return textFxDefaults(type);return {id:uid(),type,enabled:true,radius:type==='backgroundBlur'?25:type==='layerBlur'?24:type==='gaussianBlur'?32:12, x:5,y:6,spread:0,color:'#000000',opacity:38,size:1,density:85,amount:type==='texture'?65:38,frost:55,depth:55,light:65,refraction:55,dispersion:18,surfaceOpacity:type==='glass'?18:30,seed:Math.floor(Math.random()*99999),maskSrc:null}}
 function fxTarget(){return active()||picked()[0]||null}
-function fxInspectorContent(e){if(regionEffectsRequest())e=null;if(!e&&app.pixelSelection)return `<div class="fx-selection-note">Эффект создаст отдельный корректируемый слой поверх композиции и будет ограничен выделенной областью.</div><button type="button" class="fx-add" data-fx-show="true" data-fx-region="true">${uiIcon('plus')} Добавить эффект к области</button><div class="fx-chooser hidden" id="fxChooser">${FX_PRESETS.filter(([id])=>textFxAllowed(id,e)).map(([id,name,ico])=>`<button type="button" class="fx-choice" data-fx-add="${id}">${TEXT_FX_IDS.has(id)?`<span class="tf43-preview tf43-${id}">Ag</span>`:uiIcon(ico)} ${name}</button>`).join('')}</div>`;
+function fxInspectorContent(e){if(regionEffectsRequest())e=null;if(!e&&app.pixelSelection)return `<div class="fx-selection-note">Эффект создаст отдельный корректируемый слой поверх композиции и будет ограничен выделенной областью.</div><button type="button" class="fx-add" data-fx-show="true" aria-expanded="false" aria-controls="fxChooser" aria-haspopup="dialog" data-fx-region="true">${uiIcon('plus')} Добавить эффект к области</button>`;
  if(!e)return '<div class="ins-caption">Выбери слой или выдели область на холсте, чтобы добавить эффект.</div>';
  const items=e.effects||[];
  return `<div class="fx-toolbar"><p>${items.length?'Эффекты применяются сверху вниз':'Добавь эффект к слою или выделению'}</p><span style="font-size:11px">${items.length}/16</span></div>
  ${app.pixelSelection?'<div class="fx-selection-note">Новый эффект применится только внутри текущего выделения.</div>':''}
- <div class="fx-list">${items.map(f=>{const key=html(f.id),name=html(FX_TYPES[f.type]||'Эффект');return `<div class="fx-card ${f.enabled===false?'fx-disabled':''}" data-fx-row="${key}"><div class="fx-card-head"><button type="button" title="Показать/скрыть эффект" aria-label="Видимость: ${name}" aria-pressed="${f.enabled!==false}" data-fx-toggle="${key}" class="${f.enabled!==false?'on':''}">${uiIcon(f.enabled!==false?'eye':'eyeOff')}</button><button type="button" class="fx-name" data-fx-open="${key}" aria-expanded="false" aria-controls="fxPopover">${name}</button><button type="button" title="Настроить эффект" aria-label="Настроить: ${name}" data-fx-open="${key}" aria-expanded="false" aria-controls="fxPopover">${uiIcon('sliders')}</button><button type="button" title="Действия с эффектом" aria-label="Действия: ${name}" data-fx-menu="${key}" aria-haspopup="menu" aria-expanded="false" aria-controls="fxMenu">···</button></div></div>`}).join('')}</div>
- <button type="button" class="fx-add" data-fx-show="true">${uiIcon('plus')}<span>Добавить эффект</span></button>
- <div class="fx-chooser hidden" id="fxChooser">${FX_PRESETS.filter(([id])=>textFxAllowed(id,e)).map(([id,name,ico])=>`<button type="button" class="fx-choice" data-fx-add="${id}">${TEXT_FX_IDS.has(id)?`<span class="tf43-preview tf43-${id}">Ag</span>`:uiIcon(ico)} ${name}</button>`).join('')}</div>`;
+ <div class="fx-list">${items.map(f=>{const key=html(f.id),name=html(FX_TYPES[f.type]||'Эффект');return `<div class="fx-card ${f.enabled===false?'fx-disabled':''}" data-fx-row="${key}"><div class="fx-card-head"><button type="button" title="Показать/скрыть эффект" aria-label="Видимость: ${name}" aria-pressed="${f.enabled!==false}" data-fx-toggle="${key}" class="${f.enabled!==false?'on':''}">${uiIcon(f.enabled!==false?'eye':'eyeOff')}</button><button type="button" class="fx-name" data-fx-open="${key}" aria-expanded="false" aria-controls="fxPopover">${name}</button><button type="button" title="Удалить эффект" aria-label="Удалить: ${name}" data-fx-remove="${key}">${uiIcon('delete')}</button><button type="button" title="Действия с эффектом" aria-label="Действия: ${name}" data-fx-menu="${key}" aria-haspopup="menu" aria-expanded="false" aria-controls="fxMenu">···</button></div></div>`}).join('')}</div>
+ <button type="button" class="fx-add" data-fx-show="true" aria-expanded="false" aria-controls="fxChooser" aria-haspopup="dialog">${uiIcon('plus')}<span>Добавить эффект</span></button>`;
 }
 // Desktop effect surfaces are visit-local UI state, never part of a document snapshot.
-let fxPopoverState=null,fxMenuState=null;
+let fxPopoverState=null,fxMenuState=null,fxChooserState=null;
 const fxSelectionKey=()=>JSON.stringify(app.selectedIds);
 function fxSurfaceState(effectId){return {documentId:app.doc?.id,layerId:fxTarget()?.id,effectId,selectionKey:fxSelectionKey()}}
 function fxSurfaceEffect(state){return state&&state.documentId===app.doc?.id&&state.layerId===fxTarget()?.id&&state.selectionKey===fxSelectionKey()?fxTarget()?.effects?.find(f=>f.id===state.effectId):null}
 function fxSurfaceRow(state){return [...$('#inspector').querySelectorAll('[data-fx-row]')].find(row=>row.dataset.fxRow===state?.effectId)}
 function fxUpdateSurfaceButtons(){
+ for(const b of $('#inspector').querySelectorAll('[data-fx-show]'))b.setAttribute('aria-expanded',String(!!fxChooserState));
  for(const b of $('#inspector').querySelectorAll('[data-fx-open]'))b.setAttribute('aria-expanded',String(b.dataset.fxOpen===fxPopoverState?.effectId));
  for(const b of $('#inspector').querySelectorAll('[data-fx-menu]'))b.setAttribute('aria-expanded',String(b.dataset.fxMenu===fxMenuState?.effectId));
 }
@@ -1209,7 +1209,7 @@ function fxClosePopover(restoreFocus=false){
  if(restoreFocus)row?.querySelector('[data-fx-open]')?.focus();
 }
 function fxPositionSurface(surface,state){
- const row=fxSurfaceRow(state),inspector=$('#inspector');if(!row||!row.getClientRects().length)return false;
+ const row=state?.chooser?$('#inspector [data-fx-show]'):fxSurfaceRow(state),inspector=$('#inspector');if(!row||!row.getClientRects().length)return false;
  const r=row.getBoundingClientRect(),clip=inspector.getBoundingClientRect();
  if(r.bottom<=clip.top||r.top>=clip.bottom)return false;
  const gap=8,margin=8,width=surface.offsetWidth;
@@ -1218,11 +1218,12 @@ function fxPositionSurface(surface,state){
  const dock=$('.floating-docks'),dockRect=dock?.getBoundingClientRect();
  let bottom=innerHeight-margin;
  if(dock?.getClientRects().length&&left<dockRect.right&&left+width>dockRect.left)bottom=Math.min(bottom,dockRect.top-gap);
- surface.style.maxHeight=Math.max(0,bottom-margin)+'px';surface.style.left=left+'px';
+ surface.style.maxHeight=Math.min(state?.chooser?400:Infinity,Math.max(0,bottom-margin))+'px';surface.style.left=left+'px';
  surface.style.top=clamp(r.top,margin,Math.max(margin,bottom-surface.offsetHeight))+'px';return true;
 }
 function fxSyncSurfaces(reconcile=false){
  const desktop=matchMedia('(min-width:761px)').matches&&!app.maskEditId&&!collapsedInspectorSections.has('Эффекты');
+ if(fxChooserState&&(!desktop||fxChooserState.documentId!==app.doc?.id||fxChooserState.layerId!==fxTarget()?.id||fxChooserState.selectionKey!==fxSelectionKey()||!fxPositionSurface($('#fxChooser'),fxChooserState)))fxCloseChooser();
  if(fxPopoverState){const f=fxSurfaceEffect(fxPopoverState);
   if(!desktop||!f||!fxPositionSurface($('#fxPopover'),fxPopoverState))fxClosePopover();
   else {for(const field of $('#fxPopover').querySelectorAll('[data-fx-field]'))if(reconcile===true||document.activeElement!==field)field.value=f[field.dataset.fxKey]??0;
@@ -1232,7 +1233,7 @@ function fxSyncSurfaces(reconcile=false){
  fxUpdateSurfaceButtons();
 }
 function fxOpenPopover(id,toggle=true){
- fxCloseMenu();if(toggle&&fxPopoverState?.effectId===id&&fxSurfaceEffect(fxPopoverState)){fxClosePopover();return}
+ fxCloseChooser();fxCloseMenu();if(toggle&&fxPopoverState?.effectId===id&&fxSurfaceEffect(fxPopoverState)){fxClosePopover();return}
  fxClosePopover();const state=fxSurfaceState(id),f=fxSurfaceEffect(state);if(!f||matchMedia('(max-width:760px)').matches)return;
  const section=$('#inspector [data-ins-section="Эффекты"]');if(section?.getAttribute('aria-expanded')==='false')section.click();
  fxPopoverState=state;const p=$('#fxPopover');
@@ -1241,31 +1242,33 @@ function fxOpenPopover(id,toggle=true){
  p.querySelector('[data-fx-close]')?.focus({preventScroll:true});
 }
 function fxOpenMenu(id){
+ fxCloseChooser();
  if(fxMenuState?.effectId===id){fxCloseMenu();return}fxCloseMenu();
  const state=fxSurfaceState(id),list=fxTarget()?.effects||[],idx=list.findIndex(f=>f.id===id);if(idx<0)return;fxMenuState=state;
  const p=$('#fxMenu'),key=html(id);
- p.innerHTML=`<button type="button" role="menuitem" data-fx-move="${key}" data-dir="-1" ${idx===0?'disabled':''}>↑ Поднять эффект выше</button><button type="button" role="menuitem" data-fx-move="${key}" data-dir="1" ${idx===list.length-1?'disabled':''}>↓ Опустить эффект ниже</button><button type="button" role="menuitem" data-fx-remove="${key}">Удалить эффект</button>`;
+ p.innerHTML=`<button type="button" role="menuitem" data-fx-move="${key}" data-dir="-1" ${idx===0?'disabled':''}>↑ Поднять эффект выше</button><button type="button" role="menuitem" data-fx-move="${key}" data-dir="1" ${idx===list.length-1?'disabled':''}>↓ Опустить эффект ниже</button>`;
  p.classList.remove('hidden');fxSyncSurfaces();p.querySelector('button:not(:disabled)')?.focus({preventScroll:true});
 }
 new MutationObserver(()=>fxSyncSurfaces(true)).observe($('#inspector'),{childList:true,subtree:true});
 const fxSurfaceResizeObserver=new ResizeObserver(()=>fxSyncSurfaces());
-for(const p of [$('#fxPopover'),$('#fxMenu')])fxSurfaceResizeObserver.observe(p);
+for(const p of [$('#fxPopover'),$('#fxMenu'),$('#fxChooser')])fxSurfaceResizeObserver.observe(p);
 window.addEventListener('resize',fxSyncSurfaces,{passive:true});
-document.addEventListener('scroll',()=>{if(fxPopoverState||fxMenuState)fxSyncSurfaces()},{capture:true,passive:true});
+document.addEventListener('scroll',()=>{if(fxPopoverState||fxMenuState||fxChooserState)fxSyncSurfaces()},{capture:true,passive:true});
 document.addEventListener('pointerdown',ev=>{
+ if(!ev.target.closest('#fxChooser,[data-fx-show],#fxFromSelection'))fxCloseChooser();
  if(!ev.target.closest('#fxMenu,[data-fx-menu]'))fxCloseMenu();
  const picker=ev.target.closest('#fillPopover')&&$('#fillPopover').dataset.key==='_effect';
  if(!picker&&!app.pipetteArmed&&!ev.target.closest('#fxPopover,[data-fx-open],[data-fx-menu],#fxMenu'))fxClosePopover();
 },true);
 window.addEventListener('keydown',ev=>{
- if(ev.key==='Escape'&&(fxMenuState||fxPopoverState)){ev.preventDefault();ev.stopImmediatePropagation();if(fxMenuState)fxCloseMenu(true);else fxClosePopover(true)}
+ if(ev.key==='Escape'&&(fxMenuState||fxPopoverState||fxChooserState)){ev.preventDefault();ev.stopImmediatePropagation();if(fxChooserState)fxCloseChooser(true);else if(fxMenuState)fxCloseMenu(true);else fxClosePopover(true)}
  else if(ev.target.closest('#fxMenu')&&['ArrowDown','ArrowUp','Home','End'].includes(ev.key)){
   ev.preventDefault();ev.stopImmediatePropagation();const buttons=[...$('#fxMenu').querySelectorAll('button:not(:disabled)')],i=buttons.indexOf(document.activeElement);
   buttons[ev.key==='Home'?0:ev.key==='End'?buttons.length-1:(i+(ev.key==='ArrowUp'?-1:1)+buttons.length)%buttons.length]?.focus();
  }
 },true);
 $('#fxPopover').addEventListener('click',ev=>{if(ev.target.closest('[data-fx-close]'))fxClosePopover(true)});
-function fxControls(f){const id=html(f.id);const n=(label,key,min,max,step=1)=>`<label>${label}<input data-fx-field="${id}" data-fx-key="${key}" type="number" min="${min}" max="${max}" step="${step}" value="${fmt(f[key]??0)}"></label>`;
+function fxControls(f){const id=html(f.id);const n=(label,key,min,max,step=1)=>`<label class="tf43-slider">${label}<span class="tf43-pair"><input data-fx-field="${id}" data-fx-key="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${fmt(f[key]??0)}"><input data-fx-field="${id}" data-fx-key="${key}" type="number" min="${min}" max="${max}" step="${step}" value="${fmt(f[key]??0)}"></span></label>`;
  const color=`<label>Цвет тени<input data-fx-field="${id}" data-fx-key="color" type="color" value="${html(f.color||'#000000')}"></label>`;
  if(TEXT_FX_IDS.has(f.type)){
   const slider=(title,key,min,max,step=1)=>`<label class="tf43-slider">${title}<span class="tf43-pair"><input type="range" data-fx-field="${id}" data-fx-key="${key}" min="${min}" max="${max}" step="${step}" value="${html(f[key]??0)}"><input type="number" data-fx-field="${id}" data-fx-key="${key}" min="${min}" max="${max}" step="${step}" value="${html(f[key]??0)}"></span></label>`;
@@ -1277,18 +1280,34 @@ function fxControls(f){const id=html(f.id);const n=(label,key,min,max,step=1)=>`
   if(f.type==='textGlitch')return slider('Направление, °','direction',-180,180)+slider('Смещение, px','distance',0,100)+colour('Первый цвет','color')+colour('Второй цвет','color2');
  }
  if(f.type==='layerBlur'||f.type==='backgroundBlur'||f.type==='gaussianBlur')return n(f.type==='gaussianBlur'?'Радиус по Гауссу, px':'Радиус размытия, px','radius',0,300,.5)+(f.type==='backgroundBlur'?n('Видимость слоя, %','surfaceOpacity',0,100):'')+(f.type==='gaussianBlur'?'<p class="fx-helper">Для цензуры выдели область инструментом M, затем добавь этот эффект. Без выделения размывается весь выбранный слой.</p>':'<p class="fx-helper">Размытие фона действует на нижележащие слои.</p>');
- if(f.type==='innerShadow'||f.type==='dropShadow')return `<div class="cols2">${n('X, px','x',-500,500)}${n('Y, px','y',-500,500)}</div><div class="cols2">${n('Размытие, px','radius',0,150)}${n('Расширение, px','spread',0,40)}</div><div class="cols2">${color}${n('Непрозрачность, %','opacity',0,100)}</div>`;
- if(f.type==='noise')return `<div class="cols2">${n('Размер зерна, px','size',1,8)}${n('Плотность, %','density',0,100)}</div><div class="cols2">${n('Контраст зерна, %','amount',0,100)}${n('Прозрачность, %','opacity',0,100)}</div><p class="fx-helper">Мелкое пиксельное зерно, по умолчанию 1 px.</p>`;
- if(f.type==='texture')return `<div class="cols2">${n('Размер неровностей','size',1,24)}${n('Сила края, %','amount',0,100)}</div>${n('Прозрачность, %','opacity',0,100)}<p class="fx-helper">Шероховатые, состаренные края формы, как Texture в Figma.</p>`;
- if(f.type==='glass')return `<div class="cols2">${n('Матирование, %','frost',0,100)}${n('Глубина, %','depth',0,100)}</div><div class="cols2">${n('Свет, %','light',0,100)}${n('Преломление, %','refraction',0,100)}</div><div class="cols2">${n('Дисперсия, %','dispersion',0,100)}${n('Прозрачность поверхности, %','surfaceOpacity',0,100)}</div><p class="fx-helper">Лучше видно на прозрачной фигуре поверх контрастной фотографии.</p>`;
+ if(f.type==='innerShadow'||f.type==='dropShadow')return `${n('X, px','x',-500,500)}${n('Y, px','y',-500,500)}${n('Размытие, px','radius',0,150)}${n('Расширение, px','spread',0,40)}${color}${n('Непрозрачность, %','opacity',0,100)}`;
+ if(f.type==='noise')return `${n('Размер зерна, px','size',1,8)}${n('Плотность, %','density',0,100)}${n('Контраст зерна, %','amount',0,100)}${n('Прозрачность, %','opacity',0,100)}<p class="fx-helper">Мелкое пиксельное зерно, по умолчанию 1 px.</p>`;
+ if(f.type==='texture')return `${n('Размер неровностей','size',1,24)}${n('Сила края, %','amount',0,100)}${n('Прозрачность, %','opacity',0,100)}<p class="fx-helper">Шероховатые, состаренные края формы, как Texture в Figma.</p>`;
+ if(f.type==='glass')return `${n('Матирование, %','frost',0,100)}${n('Глубина, %','depth',0,100)}${n('Свет, %','light',0,100)}${n('Преломление, %','refraction',0,100)}${n('Дисперсия, %','dispersion',0,100)}${n('Прозрачность поверхности, %','surfaceOpacity',0,100)}<p class="fx-helper">Лучше видно на прозрачной фигуре поверх контрастной фотографии.</p>`;
  return '';
 }
-function fxShowChooser(region=false){const el=$('#fxChooser');if(!el)return;if(region&&el.classList.contains('hidden')){openSelectedRegionEffects();return}app.pendingRegionEffects=null;el.classList.toggle('hidden')}
+function fxCloseChooser(restoreFocus=false){
+ if(!fxChooserState)return;fxChooserState=null;app.pendingRegionEffects=null;
+ $('#fxChooser').classList.add('hidden');fxUpdateSurfaceButtons();
+ if(restoreFocus)$('#inspector [data-fx-show]')?.focus({preventScroll:true});
+}
+function fxShowChooser(region=false){
+ if(fxChooserState){fxCloseChooser();return}
+ if(region&&!regionEffectsRequest()){openSelectedRegionEffects();return}
+ if(matchMedia('(max-width:760px)').matches)return;
+ fxCloseMenu();fxClosePopover();
+ const e=regionEffectsRequest()?null:fxTarget(),el=$('#fxChooser');
+ el.innerHTML=FX_PRESETS.filter(([id])=>textFxAllowed(id,e)).map(([id,name,ico])=>`<button type="button" class="fx-choice" data-fx-add="${id}">${TEXT_FX_IDS.has(id)?`<span class="tf43-preview tf43-${id}">Ag</span>`:uiIcon(ico)} ${name}</button>`).join('');
+ fxChooserState={...fxSurfaceState(null),chooser:true};
+ el.classList.remove('hidden');$('#inspector [data-fx-show]')?.scrollIntoView({block:'nearest'});fxSyncSurfaces();
+ el.querySelector('button')?.focus({preventScroll:true});
+}
 // A chooser request is transient UI state, never a document/history entry.
 function regionEffectsRequest(){const r=app.pendingRegionEffects;return r?.documentId===app.doc?.id&&r.historyIndex===app.historyIndex?r:null}
-function cancelRegionEffects(){app.pendingRegionEffects=null;const chooser=$('#fxChooser');if(chooser)chooser.classList.add('hidden')}
+function cancelRegionEffects(){app.pendingRegionEffects=null;fxCloseChooser()}
 function fxAdd(type){if(!FX_TYPES[type]||!app.doc)return;
  const request=regionEffectsRequest(),maskSrc=request?.maskSrc||app.pixelSelection?.mask.toDataURL('image/png');
+ fxCloseChooser();
  let es=request?[]:picked();
  if(!es.length&&maskSrc){
   const e=defaultElement('rect');e.name='Эффект по выделению';e.x=0;e.y=0;e.w=app.doc.width;e.h=app.doc.height;e.fillType='none';e.isFxRegion=true;e.layerMaskSrc=maskSrc;
@@ -1518,7 +1537,7 @@ function paintWithEffects(c,e,d,backdropContext){if(e.layerMaskSrc&&!maskAlphaCa
 
 function bindFxEvents(root){
  for(const type of ['keydown','keyup'])root.addEventListener(type,ev=>{
-  if(['Enter',' '].includes(ev.key)&&ev.target.closest('[data-fx-open],[data-fx-menu],[data-fx-toggle],#fxMenu button,#fxPopover button'))ev.stopPropagation();
+  if(['Enter',' '].includes(ev.key)&&ev.target.closest('[data-fx-open],[data-fx-menu],[data-fx-toggle],[data-fx-remove],#fxChooser button,#fxMenu button,#fxPopover button'))ev.stopPropagation();
  });
  root.addEventListener('click',ev=>{
  const b=ev.target.closest('[data-fx-show],[data-fx-add],[data-fx-remove],[data-fx-toggle],[data-fx-open],[data-fx-menu],[data-fx-move]');if(!b||b.disabled)return;ev.stopPropagation();ev.preventDefault();
@@ -1536,7 +1555,7 @@ function bindFxEvents(root){
  root.addEventListener('input',ev=>fxUpdateField(ev.target,false));
  root.addEventListener('change',ev=>fxUpdateField(ev.target,true));
 }
-for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu')])bindFxEvents(root);
+for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser')])bindFxEvents(root);
 function openSelectedRegionEffects(){
  if(!app.pixelSelection){toast('Сначала выдели область');return}
  const request={documentId:app.doc.id,historyIndex:app.historyIndex,maskSrc:app.pixelSelection.mask.toDataURL('image/png')};
@@ -1545,7 +1564,7 @@ function openSelectedRegionEffects(){
   mobileV36Open('effects',true);
  }else{
   refreshInspector();showInspector('effects');
-  const chooser=$('#fxChooser');if(chooser)chooser.classList.remove('hidden');
+  fxShowChooser(true);
  }
 }
 $('#fxFromSelection').addEventListener('click',ev=>{ev.preventDefault();ev.stopPropagation();openSelectedRegionEffects()});
@@ -2594,7 +2613,7 @@ window.addEventListener('keydown',ev=>{if((ev.ctrlKey||ev.metaKey)&&!ev.altKey&&
 // Run editor undo ahead of focused panel inputs and their native undo manager.
 window.addEventListener('keydown',event=>{
  if(!app.doc||event.defaultPrevented)return;
- const target=event.target,insidePanel=!!target?.closest?.('#inspector,#rightPanel,#fxPopover,#fxMenu,#fillPopover,#inkPopover');
+ const target=event.target,insidePanel=!!target?.closest?.('#inspector,#rightPanel,#fxPopover,#fxMenu,#fxChooser,#fillPopover,#inkPopover');
  const ctrl=event.ctrlKey||event.metaKey,code=event.code;
  const undoCombo=(ctrl&&code==='KeyZ')||(!ctrl&&event.altKey&&code==='KeyZ');
  const redoCombo=ctrl&&(code==='KeyY'||(code==='KeyZ'&&event.shiftKey));

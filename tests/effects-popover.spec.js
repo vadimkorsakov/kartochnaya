@@ -23,12 +23,13 @@ const field = (page, key, type = 'number') => popover(page).locator(`input[type=
 const history = page => page.locator('#historyEntries').innerHTML();
 async function show(page, id) { await row(page, id).locator('.fx-name').click(); await expect(popover(page)).toBeVisible(); }
 async function menu(page, id) { await row(page, id).locator('[data-fx-menu]').click(); await expect(page.locator('#fxMenu')).toBeVisible(); }
-async function contained(page) {
-  const box = await popover(page).boundingBox(), viewport = page.viewportSize();
+async function contained(page, surface = popover(page)) {
+  await expect(surface).toBeVisible();
+  const box = await surface.boundingBox(), viewport = page.viewportSize();
   expect(box.x).toBeGreaterThanOrEqual(0); expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
-  expect(await popover(page).evaluate(p => p.scrollWidth <= p.clientWidth)).toBe(true);
+  expect(await surface.evaluate(p => p.scrollWidth <= p.clientWidth)).toBe(true);
   const dock = await page.locator('.floating-docks').boundingBox();
   expect(box.x < dock.x + dock.width && box.x + box.width > dock.x && box.y < dock.y + dock.height && box.y + box.height > dock.y).toBe(false);
 }
@@ -64,10 +65,13 @@ test('popover switches, is anchored on the left and closes outside without losin
 
 test('narrow desktop resize and inspector scroll keep surfaces within viewport', async ({ page }) => {
   await open(page, true); await page.setViewportSize({ width: 800, height: 560 });
-  await show(page, 'fx-8'); await contained(page);
+  await show(page, 'fx-0'); await contained(page);
   const original = await popover(page).boundingBox();
-  await row(page, 'fx-8').evaluate(row => { const p = document.querySelector('#inspector'); p.scrollTop += row.getBoundingClientRect().top - p.getBoundingClientRect().top - 2; });
+  await row(page, 'fx-0').evaluate(row => { const p = document.querySelector('#inspector'); p.scrollTop += row.getBoundingClientRect().top - p.getBoundingClientRect().top - 2; });
   await expect.poll(async () => (await popover(page).boundingBox())?.y).not.toBe(original.y);
+  await contained(page);
+  await show(page, 'fx-8');
+  await row(page, 'fx-8').evaluate(row => { const p = document.querySelector('#inspector'); p.scrollTop += row.getBoundingClientRect().top - p.getBoundingClientRect().top - 2; });
   await contained(page);
   await page.setViewportSize({ width: 920, height: 420 }); await contained(page);
   await page.keyboard.press('Escape');
@@ -83,7 +87,7 @@ test('adding opens settings and stays a single undo operation with no expanded U
   const before = await exportedDocument(page);
   await page.locator('[data-fx-show]').click(); await page.locator('[data-fx-add="gaussianBlur"]').click();
   await expect(page.locator('#fxPopoverTitle')).toHaveText('Размытие по Гауссу');
-  await expect(field(page, 'radius')).toBeVisible();
+  await expect(field(page, 'radius')).toBeVisible(); await expect(page.locator('#fxChooser')).toBeHidden();
   const added = await exportedDocument(page), effect = added.elements[0].effects.at(-1);
   expect(effect).not.toHaveProperty('expanded');
   await page.keyboard.press('Escape'); expect((await exportedDocument(page)).elements).toEqual(added.elements);
@@ -158,7 +162,10 @@ test('visibility, reorder and deletion preserve data and each undo correctly', a
   expect((await exportedDocument(page)).elements[0].effects.map(f => f.id)).toEqual(['fx-1', 'fx-0', ...before.elements[0].effects.slice(2).map(f => f.id)]);
   await page.locator('#undoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(before.elements);
   await page.locator('#layers [data-layer="text"] .layer-name').click();
-  await show(page, 'fx-1'); await menu(page, 'fx-1'); await page.locator('#fxMenu [data-fx-remove]').click();
+  await menu(page, 'fx-1'); await expect(page.locator('#fxMenu [data-fx-remove]')).toHaveCount(0);
+  await page.keyboard.press('Escape'); await show(page, 'fx-1');
+  const remove = row(page, 'fx-1').getByRole('button', { name: 'Удалить: Внешняя тень', exact: true });
+  await expect(remove).toBeVisible(); await remove.click();
   await expect(popover(page)).toBeHidden(); expect((await exportedDocument(page)).elements[0].effects).toHaveLength(types.length - 1);
   await page.locator('#undoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(before.elements);
   await page.locator('#layers [data-layer="text"] .layer-name').click();
@@ -184,7 +191,86 @@ test('mobile effects still use the bottom sheet and its existing parameter contr
   await page.locator('[data-mp-effect="textGlow"]').click();
   const number = page.locator('[data-mp-effect-type="textGlow"][data-mp-effect-key="intensity"][type="number"]');
   await number.fill('66'); await number.press('Tab');
-  await expect(popover(page)).toBeHidden();
+  await expect(popover(page)).toBeHidden(); await expect(page.locator('#fxChooser')).toBeHidden();
   await page.locator('[data-mp-action="done"]').click();
   expect((await exportedDocument(page)).elements[0].effects.find(f => f.type === 'textGlow').intensity).toBe(66);
+});
+
+
+test('chooser floats outside inspector without resizing sections; closing is read only', async ({ page }) => {
+  await open(page);
+  const add = page.locator('#inspector [data-fx-show]'), chooser = page.locator('#fxChooser');
+  await add.scrollIntoViewIfNeeded();
+  const sizes = () => page.locator('#inspector .ins-section').evaluateAll(nodes => nodes.map(n => ({ width: n.offsetWidth, height: n.offsetHeight })));
+  const before = await exportedDocument(page), h = await history(page), dimensions = await sizes();
+  expect(dimensions.length).toBeGreaterThan(0);
+  await add.click(); await expect(chooser).toBeVisible();
+  await expect(page.locator('#fxChooser')).toHaveCount(1); await expect(page.locator('#inspector #fxChooser')).toHaveCount(0);
+  await expect(chooser.locator('[data-fx-add]')).toHaveCount(13);
+  expect(await sizes()).toEqual(dimensions);
+  const a = await add.boundingBox(), b = await chooser.boundingBox();
+  expect(b.width).toBeGreaterThanOrEqual(280); expect(b.width).toBeLessThanOrEqual(340);
+  expect(b.x + b.width).toBeLessThan(a.x); await contained(page, chooser);
+  expect(await chooser.evaluate(p => p.scrollHeight > p.clientHeight)).toBe(true);
+  await add.click(); await expect(chooser).toBeHidden();
+  await add.click(); await page.keyboard.press('Escape'); await expect(chooser).toBeHidden(); await expect(add).toBeFocused();
+  await add.click(); await page.locator('#projectTitle').click(); await expect(chooser).toBeHidden();
+  expect(await exportedDocument(page)).toEqual(before); expect(await history(page)).toBe(h);
+  await page.setViewportSize({ width: 800, height: 420 });
+  await add.click(); await expect(chooser).toBeVisible(); await contained(page, chooser);
+  expect(await page.locator('#inspector').evaluate(p => p.scrollWidth <= p.clientWidth)).toBe(true);
+  await page.setViewportSize({ width: 920, height: 300 }); await contained(page, chooser);
+  await page.keyboard.press('Escape'); await add.click();
+  await page.locator('#layers [data-layer="other"] .layer-name').click(); await expect(chooser).toBeHidden();
+});
+
+const numericKeys = {
+  gaussianBlur: ['radius'], layerBlur: ['radius'], backgroundBlur: ['radius', 'surfaceOpacity'],
+  dropShadow: ['x', 'y', 'radius', 'spread', 'opacity'], innerShadow: ['x', 'y', 'radius', 'spread', 'opacity'],
+  noise: ['size', 'density', 'amount', 'opacity'], texture: ['size', 'amount', 'opacity'],
+  glass: ['frost', 'depth', 'light', 'refraction', 'dispersion', 'surfaceOpacity'],
+};
+for (const [type, keys] of Object.entries(numericKeys)) test(`${type} pairs all numeric parameters and records one Undo per slider gesture`, async ({ page }) => {
+  await open(page, true); const before = await exportedDocument(page), id = before.elements[0].effects.find(f => f.type === type).id;
+  await show(page, id);
+  await expect(popover(page).locator('input[type=number]')).toHaveCount(keys.length);
+  await expect(popover(page).locator('input[type=range]')).toHaveCount(keys.length);
+  for (const key of keys) {
+    const number = field(page, key), range = field(page, key, 'range');
+    for (const attr of ['min', 'max', 'step']) expect(await range.getAttribute(attr)).toBe(await number.getAttribute(attr));
+    await number.fill(key === 'x' || key === 'y' ? '-12.5' : key === 'radius' ? '12.5' : '3');
+    await expect(number).toBeFocused(); await number.press('Tab');
+    // Range inputs normalize values to their step; exact manual values remain in the document.
+    expect((await exportedDocument(page)).elements[0].effects.find(f => f.id === id)[key]).toBe(key === 'x' || key === 'y' ? -12.5 : key === 'radius' ? 12.5 : 3);
+    expect(await range.inputValue()).toBe(await range.evaluate(el => { const copy = el.cloneNode(); copy.value = el.parentElement.querySelector('input[type=number]').value; return copy.value; }));
+  }
+  const key = keys[0], range = field(page, key, 'range'), number = field(page, key);
+  await range.scrollIntoViewIfNeeded();
+  await range.evaluate(el => { window.fxRangeNode = el; });
+  const snapshot = await exportedDocument(page), h = await history(page);
+  const steps = () => page.locator('#historyEntries [data-history-index]').count(), count = await steps();
+  const box = await range.boundingBox(), y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width * .25, y); await page.mouse.down();
+  await page.mouse.move(box.x + box.width * .7, y, { steps: 12 });
+  await expect(range).toBeFocused();
+  await expect(number).toHaveValue(await range.inputValue());
+  expect(await history(page)).toBe(h); // Preview must not write history.
+  expect(await range.evaluate(el => el === window.fxRangeNode)).toBe(true);
+  await page.mouse.up();
+  expect(await steps()).toBe(count + 1);
+  const after = await exportedDocument(page); expect(after.elements).not.toEqual(snapshot.elements);
+  await range.press('ControlOrMeta+z'); expect((await exportedDocument(page)).elements).toEqual(snapshot.elements);
+  await expect(number).toHaveValue(String(snapshot.elements[0].effects.find(f => f.id === id)[key]));
+  await range.press('ControlOrMeta+Shift+z'); expect((await exportedDocument(page)).elements).toEqual(after.elements);
+});
+
+test('ordinary shadow color still uses the existing picker and Undo', async ({ page }) => {
+  await open(page); const before = await exportedDocument(page); await show(page, 'fx-1');
+  await popover(page).locator('[data-unified-color]').click();
+  const hex = page.locator('#fillPopover [data-cp-part="0"]');
+  await hex.fill('#2255AA'); await hex.press('Tab');
+  await expect(field(page, 'color', 'color')).toHaveValue('#2255aa');
+  expect((await exportedDocument(page)).elements[0].effects[1].color).toBe('#2255aa');
+  await page.keyboard.press('Escape'); await page.locator('#undoBtn').click();
+  expect((await exportedDocument(page)).elements).toEqual(before.elements);
 });

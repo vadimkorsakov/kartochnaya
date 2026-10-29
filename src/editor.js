@@ -1159,7 +1159,7 @@ function paintMaskedBase(c,e,d){
 /* v0.14: effects use independent alpha buffers. These stay editable in JSON, and
    the same composition is used by the viewport and the PNG export. */
 const FX_PRESETS=[
- ['layerBlur','Размытие слоя','blur'],['backgroundBlur','Размытие фона','layers'],['gaussianBlur','Размытие по Гауссу','blur'],
+ ['layerBlur','Размытие слоя','blur'],['backgroundBlur','Размытие фона','layers'],['gaussianBlur','Размытие по Гауссу','blur'],['pixelate','Пикселизация','grid'],
  ['innerShadow','Внутренняя тень','circle'],['dropShadow','Внешняя тень','sun'],
  ['noise','Шум','grid'],['texture','Текстура','image'],['glass','Стекло','opacity'],
  ['textGlow','Подсветка','sun'],['textEcho','Эхо','layers'],['textBackdrop','Фон','square'],['textCombine','Совмещение','layers'],['textGlitch','Искажение','zap']
@@ -1177,7 +1177,7 @@ function textFxDefaults(type){
 }
 
 const fxCanvas=(d)=>{const c=document.createElement('canvas');c.width=d.width;c.height=d.height;return c};
-function fxDefault(type){if(TEXT_FX_IDS.has(type))return textFxDefaults(type);return {id:uid(),type,enabled:true,radius:type==='backgroundBlur'?25:type==='layerBlur'?24:type==='gaussianBlur'?32:12, x:5,y:6,spread:0,color:'#000000',opacity:38,size:1,density:85,amount:type==='texture'?65:38,frost:55,depth:55,light:65,refraction:55,dispersion:18,surfaceOpacity:type==='glass'?18:30,seed:Math.floor(Math.random()*99999),maskSrc:null}}
+function fxDefault(type){if(TEXT_FX_IDS.has(type))return textFxDefaults(type);return {id:uid(),type,enabled:true,radius:type==='backgroundBlur'?25:type==='layerBlur'?24:type==='gaussianBlur'?32:12, x:5,y:6,spread:0,color:'#000000',opacity:38,size:1,...(type==='pixelate'?{blockSize:32}:{}),density:85,amount:type==='texture'?65:38,frost:55,depth:55,light:65,refraction:55,dispersion:18,surfaceOpacity:type==='glass'?18:30,seed:Math.floor(Math.random()*99999),maskSrc:null}}
 function fxTarget(){return active()||picked()[0]||null}
 function fxInspectorContent(e){if(regionEffectsRequest())e=null;if(!e&&app.pixelSelection)return `<div class="fx-selection-note">Эффект создаст отдельный корректируемый слой поверх композиции и будет ограничен выделенной областью.</div><button type="button" class="fx-add" data-fx-show="true" aria-expanded="false" aria-controls="fxChooser" aria-haspopup="dialog" data-fx-region="true">${uiIcon('plus')} Добавить эффект к области</button>`;
  if(!e)return '<div class="ins-caption">Выбери слой или выдели область на холсте, чтобы добавить эффект.</div>';
@@ -1281,6 +1281,7 @@ function fxControls(f){const id=html(f.id);const n=(label,key,min,max,step=1)=>`
   if(f.type==='textCombine')return slider('Толщина, px','thickness',0,30)+slider('Смещение, px','distance',0,100)+slider('Направление, °','direction',-180,180)+colour('Цвет контура','color');
   if(f.type==='textGlitch')return slider('Направление, °','direction',-180,180)+slider('Смещение, px','distance',0,100)+colour('Первый цвет','color')+colour('Второй цвет','color2');
  }
+ if(f.type==='pixelate')return n('Размер блока, px','blockSize',2,160);
  if(f.type==='layerBlur'||f.type==='backgroundBlur'||f.type==='gaussianBlur')return n(f.type==='gaussianBlur'?'Радиус по Гауссу, px':'Радиус размытия, px','radius',0,300,.5)+(f.type==='backgroundBlur'?n('Видимость слоя, %','surfaceOpacity',0,100):'')+(f.type==='gaussianBlur'?'<p class="fx-helper">Для цензуры выдели область инструментом M, затем добавь этот эффект. Без выделения размывается весь выбранный слой.</p>':'<p class="fx-helper">Размытие фона действует на нижележащие слои.</p>');
  if(f.type==='innerShadow'||f.type==='dropShadow')return `${n('X, px','x',-500,500)}${n('Y, px','y',-500,500)}${n('Размытие, px','radius',0,150)}${n('Расширение, px','spread',0,40)}${color}${n('Непрозрачность, %','opacity',0,100)}`;
  if(f.type==='noise')return `${n('Размер зерна, px','size',1,8)}${n('Плотность, %','density',0,100)}${n('Контраст зерна, %','amount',0,100)}${n('Прозрачность, %','opacity',0,100)}<p class="fx-helper">Мелкое пиксельное зерно, по умолчанию 1 px.</p>`;
@@ -1385,6 +1386,35 @@ function fxBlurBuffer(src,r,d){
  const bc=blurred.getContext('2d');bc.filter=`blur(${radius/ratio}px)`;bc.drawImage(small,0,0);bc.filter='none';
  const out=fxCanvas(d),p=out.getContext('2d');p.imageSmoothingQuality='high';p.drawImage(blurred,0,0,d.width,d.height);return out;
 }
+function fxPixelateBuffer(src,f,d){
+ const block=Math.round(clamp(Number(f.blockSize)||32,2,160));
+ // Each reduced pixel represents one document block, anchored at (0, 0).
+ const cols=Math.ceil(d.width/block),rows=Math.ceil(d.height/block);
+ const small=fxCanvas({width:cols,height:rows}),sc=small.getContext('2d');
+ sc.drawImage(src,0,0,d.width/block,d.height/block);
+ // Sample partial edge blocks separately rather than stretching the entire grid.
+ const x=(cols-1)*block,y=(rows-1)*block;
+ sc.clearRect(cols-1,0,1,rows);sc.drawImage(src,x,0,d.width-x,d.height,cols-1,0,1,d.height/block);
+ sc.clearRect(0,rows-1,cols,1);sc.drawImage(src,0,y,d.width,d.height-y,0,rows-1,d.width/block,1);
+ sc.clearRect(cols-1,rows-1,1,1);sc.drawImage(src,x,y,d.width-x,d.height-y,cols-1,rows-1,1,1);
+ {
+  // Normalize only the reduced block grid, never the full document pixels.
+  // RGB stays unpremultiplied; the original silhouette supplies exact alpha below.
+  const grid=sc.getImageData(0,0,cols,rows);for(let i=3;i<grid.data.length;i+=4)grid.data[i]=255;sc.putImageData(grid,0,0);
+ }
+ const out=fxCanvas(d),p=out.getContext('2d');
+ p.drawImage(src,0,0);p.globalCompositeOperation='source-in';
+ p.imageSmoothingEnabled=false;p.drawImage(small,0,0,cols*block,rows*block);
+ p.globalCompositeOperation='source-over';return out;
+}
+// Replace premultiplied RGBA under the mask. Add the two weighted terms so
+// antialiased edges keep their coverage instead of source-over darkening/halos.
+function fxReplaceRegion(c,modified,mask,d){
+ const selected=fxCanvas(d),p=selected.getContext('2d');p.drawImage(modified,0,0);
+ p.globalCompositeOperation='destination-in';p.drawImage(mask,0,0,d.width,d.height);
+ c.save();c.globalCompositeOperation='destination-out';c.drawImage(mask,0,0,d.width,d.height);
+ c.globalCompositeOperation='lighter';c.drawImage(selected,0,0);c.restore();
+}
 function fxMixed(original,modified,f,d){const m=fxSelectionMask(f,d);if(!m)return modified;const out=fxCanvas(d),p=out.getContext('2d');p.drawImage(original,0,0);p.globalCompositeOperation='destination-out';p.drawImage(m,0,0,d.width,d.height);p.globalCompositeOperation='source-over';const selected=fxCanvas(d),q=selected.getContext('2d');q.drawImage(modified,0,0);fxLimitMask(q,modified,f,d);p.drawImage(selected,0,0);return out}
 function fxShadowBuffer(raw,f,d,inner=false){const out=fxCanvas(d),c=out.getContext('2d'),color=f.color||'#000000',a=clamp(f.opacity??38,0,100)/100;
  // Generate colored silhouette, optionally expanding it by a few pixels.
@@ -1486,9 +1516,10 @@ function tf43Under(raw,e,f,d){
  fxLimitMask(c,raw,f,d);return out;
 }
 
-function fxComposeLayer(raw,e,d){let current=raw,under=[];
+function fxComposeLayer(raw,e,d,regionSource=false){let current=raw,under=[];
  for(const f of e.effects||[]){if(f.enabled===false||!FX_TYPES[f.type])continue;
-  if(f.type==='layerBlur'||(f.type==='gaussianBlur'&&!e.isFxRegion)){const modified=fxBlurBuffer(current,f.radius,d);current=fxMixed(current,modified,f,d)}
+  if(f.type==='layerBlur'||(f.type==='gaussianBlur'&&(!e.isFxRegion||regionSource))){const modified=fxBlurBuffer(current,f.radius,d);current=fxMixed(current,modified,f,d)}
+  else if(f.type==='pixelate'){const modified=fxPixelateBuffer(current,f,d);const mask=fxSelectionMask(f,d);if(mask){const mixed=fxCanvas(d),p=mixed.getContext('2d');p.drawImage(current,0,0);fxReplaceRegion(p,modified,mask,d);current=mixed}else current=modified}
   else if(f.type==='noise'){const modified=fxCanvas(d),p=modified.getContext('2d');p.drawImage(current,0,0);p.fillStyle=p.createPattern(fxNoisePattern(f),'repeat');p.globalCompositeOperation='source-atop';p.fillRect(0,0,d.width,d.height);p.globalCompositeOperation='source-over';current=fxMixed(current,modified,f,d)}
   else if(f.type==='texture'){const modified=fxTextureBuffer(current,f,d);current=fxMixed(current,modified,f,d)}
   else if(f.type==='innerShadow'){const sh=fxShadowBuffer(current,f,d,true),modified=fxCanvas(d),p=modified.getContext('2d');p.drawImage(current,0,0);p.drawImage(sh,0,0);current=fxMixed(current,modified,f,d)}
@@ -1525,6 +1556,17 @@ function fxBackgroundEffect(c,raw,e,d){
 }
 function paintWithEffects(c,e,d,backdropContext){if(e.layerMaskSrc&&!maskAlphaCanvas(e,d))return;const list=(e.effects||[]).filter(f=>f.enabled!==false&&FX_TYPES[f.type]);if(!list.length){paintMaskedBase(c,e,d);return}
  const raw=fxCanvas(d),p=raw.getContext('2d');
+ if(e.isFxRegion&&list.some(f=>f.type==='pixelate')){
+  const area=maskAlphaCanvas(e,d);if(!area)return;
+  // Read the uncut composition; selection coverage is applied once, after the stack.
+  p.drawImage(c.canvas,0,0,d.width,d.height);
+  const layer={...e,effects:list.map(f=>f.maskSrc===e.layerMaskSrc?{...f,maskSrc:null}:f)};
+  const background=layer.effects.filter(f=>['backgroundBlur','glass'].includes(f.type));
+  if(background.length){const shape=fxCanvas(d),g=shape.getContext('2d');g.drawImage(raw,0,0);fxClipLayer(g,area);fxBackgroundEffect(p,shape,{...layer,isFxRegion:false,effects:background},d)}
+  const {current,under}=fxComposeLayer(raw,layer,d,true);
+  let result=current;if(under.length){result=fxCanvas(d);const r=result.getContext('2d');for(const sh of under)r.drawImage(sh,0,0);r.drawImage(current,0,0)}
+  fxReplaceRegion(c,result,area,d);return;
+ }
  if(e.isFxRegion){p.drawImage(c.canvas,0,0,d.width,d.height);const area=layerMasks.read(e.layerMaskSrc,d).canvas;if(!area)return;{p.globalCompositeOperation='destination-in';p.drawImage(area,0,0,d.width,d.height);p.globalCompositeOperation='source-over'}}
  else paintMaskedBase(p,e,d);
  const {current,under}=fxComposeLayer(raw,e,d);
@@ -1671,7 +1713,11 @@ $('#dockMarquee').addEventListener('contextmenu',ev=>{ev.preventDefault();setMar
 $('#selectionMenu').addEventListener('click',ev=>{const b=ev.target.closest('[data-select-kind]');if(b)setSelectionKind(b.dataset.selectKind)});
 $('#maskFromSelection').onclick=applySelectionMask;$('#clearPixelSelection').onclick=clearPixelSelection;
 
-function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDoc(d);const stack=withSelection&&app.editingId?{...d,elements:d.elements.filter(e=>e.id!==app.editingId||e.textMode==='boundary')}:d;maskRenderDocuments.set(stack,model);c.save();c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack);if(withSelection){drawSavedGuides(c);drawGuides(c);drawPixelSelectionOverlay(c);
+function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDoc(d);const stack=withSelection&&app.editingId?{...d,elements:d.elements.filter(e=>e.id!==app.editingId||e.textMode==='boundary')}:d;maskRenderDocuments.set(stack,model);c.save();
+ // Regional pixelation must sample native document pixels, even in a scaled preview.
+ const t=c.getTransform(),nativeRegion=(t.a!==1||t.d!==1||t.b!==0||t.c!==0)&&stack.elements.some(e=>e.isFxRegion&&isLayerVisible(e,stack)&&(e.effects||[]).some(f=>f.type==='pixelate'&&f.enabled!==false));
+ if(nativeRegion){const native=fxCanvas(d);paintDocument(native.getContext('2d'),stack);c.drawImage(native,0,0)}
+ else{c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack)}if(withSelection){drawSavedGuides(c);drawGuides(c);drawPixelSelectionOverlay(c);
 const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>!e.isFxRegion&&isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();if(app.cropMode)drawCropControls(c,e);drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(chosen),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
 function paint(){if(!app.doc)return;if(app.inkTool)inkMoveCursor(lastInkPointer);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);const ratio=app.renderScale||1;ctx.setTransform(app.zoom*ratio,0,0,app.zoom*ratio,0,0);paintDocument(ctx,app.doc,true);if(app.drag?.type==='newText'){const a=app.drag.start,b=app.drag.current||a;ctx.save();ctx.lineWidth=1/app.zoom;ctx.setLineDash([5/app.zoom,3/app.zoom]);ctx.strokeStyle='#ab8aff';ctx.fillStyle='#9a73ee22';ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.restore()}inkOverlay(ctx);ctx.restore();paintCropPreview();updateQuickBubble()}
 function updateQuickBubble(){const bubble=$('#quickBubble');if(!bubble)return;
@@ -3530,12 +3576,12 @@ function mobileV36FormatPanel(){const e=active();
 function mobileV36SpacingPanel(){const e=active();const row=(label,k,min,max,step)=>`<label class="mp-field">${label}<div class="mp-line">${mobileV36Slider(k,e[k]??(k==='lineHeight'?1.15:0),min,max,step)}<input type="number" data-mp-key="${k}" value="${e[k]??(k==='lineHeight'?1.15:0)}" min="${min}" max="${max}" step="${step}" inputmode="decimal"></div></label>`;
  return mobileV36Sheet('Интервалы',`${row('Межбуквенный интервал','letterSpacing',-20,100,.5)}${row('Расстояние между строками','lineHeight',.5,4,.05)}<div class="mp-subtitle">Закрепить поле</div><div class="mp-grid three">${[['top','По верху'],['middle','По центру'],['bottom','По низу']].map(([id,label])=>`<button class="mp-choice mp-valign-btn ${e.verticalAlign===id?'active':''}" data-mp-valign="${id}" title="${label}" aria-label="${label}"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="1" stroke-opacity=".4"/><path d="${id==='top'?'M7 7h10M7 10h10':id==='middle'?'M7 10h10M7 13h10':'M7 14h10M7 17h10'}"/></svg></button>`).join('')}</div>`)}
 function mobileV36StrokePanel(){const e=active(),color=e.stroke||'#7857de';return mobileV36Sheet('Обводка',`<div class="mp-field">Толщина обводки<div class="mp-line">${mobileV36Slider('strokeWidth',e.strokeWidth||0,0,120,1)}<input type="number" data-mp-key="strokeWidth" value="${e.strokeWidth||0}" min="0" max="120"></div></div><div class="mp-subtitle">Цвет обводки</div><div class="mp-swatches" style="flex-wrap:wrap;overflow:visible">${[color,...mobileV36Colors()].filter((v,i,a)=>a.indexOf(v)===i).slice(0,18).map(c=>`<button class="mp-swatch ${c===color?'active':''}" data-mp-stroke-color="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div>`)}
-function mobileV36EffectPanel(){const e=regionEffectsRequest()?{}:active(),effects=e.effects||[];const defs=[['none','Без эффекта','Ag'],['dropShadow','Падающая тень','Ag'],['innerShadow','Внутренняя тень','Ag'],['glow','Подсветка / Неон','Ag'],['outline','Контур','Ag'],['background','Фон-плашка','Ag'],['curve','Изогнуть по дуге','Ag'],['gaussianBlur','По Гауссу','Ag'],['noise','Шум','Ag'],['textGlow','Подсветка','Ag'],['textEcho','Эхо','Ag'],['textBackdrop','Фон','Ag'],['textCombine','Совмещение','Ag'],['textGlitch','Искажение','Ag']].filter(([id])=>textFxAllowed(id,e)&&(!regionEffectsRequest()||FX_TYPES[id]));
+function mobileV36EffectPanel(){const e=regionEffectsRequest()?{}:active(),effects=e.effects||[];const defs=[['none','Без эффекта','Ag'],['dropShadow','Падающая тень','Ag'],['innerShadow','Внутренняя тень','Ag'],['glow','Подсветка / Неон','Ag'],['outline','Контур','Ag'],['background','Фон-плашка','Ag'],['curve','Изогнуть по дуге','Ag'],['gaussianBlur','По Гауссу','Ag'],['pixelate','Пикселизация','▦'],['noise','Шум','Ag'],['textGlow','Подсветка','Ag'],['textEcho','Эхо','Ag'],['textBackdrop','Фон','Ag'],['textCombine','Совмещение','Ag'],['textGlitch','Искажение','Ag']].filter(([id])=>textFxAllowed(id,e)&&(!regionEffectsRequest()||FX_TYPES[id]));
  const selected=mobileV36State.effectId;const cards=defs.map(([id,label,icon])=>{const on=id==='outline'?Number(e.strokeWidth)>0:id==='glow'?!!e.mobileGlow:id==='background'?!!e.mobileBackground:id==='curve'?!!e.mobileArcRadius:id==='none'?!effects.length&&!e.mobileGlow&&!e.mobileBackground&&!e.mobileArcRadius&&!e.strokeWidth:effects.some(x=>x.type===id&&x.enabled!==false);return `<button class="mp-effect-tile ${on?'active':''}" data-mp-effect="${id}" aria-pressed="${on}"><strong class="${TEXT_FX_IDS.has(id)?`tf43-preview tf43-${id}`:``}">${icon}</strong>${mobileV36Escape(label)}${on?'<span class="mp-config">☷</span>':''}</button>`}).join('');
  let controls='';
  if(mobileV36State.editEffect&&selected){
-  const fx=effects.find(x=>x.type===selected);let defs2=TEXT_FX_IDS.has(selected)?(selected==='textGlow'?[['Интенсивность','intensity',0,100,1],['Радиус','radius',1,90,1]]:selected==='textEcho'?[['Направление','direction',-180,180,1],['Смещение','distance',0,160,1]]:selected==='textBackdrop'?[['Округлость','roundness',0,100,1],['Распространение','spread',0,90,1],['Непрозрачность','opacity',0,100,1]]:selected==='textCombine'?[['Толщина','thickness',0,30,1],['Смещение','distance',0,100,1],['Направление','direction',-180,180,1]]:[['Направление','direction',-180,180,1],['Смещение','distance',0,100,1]]):selected==='curve'?[['Радиус изгиба','mobileArcRadius',-250,250,1]]:selected==='outline'?[['Толщина контура','strokeWidth',0,70,1]]:selected==='glow'?[['Свечение, px','mobileGlow',0,90,1]]:selected==='background'?[['Отступ, px','mobileBackgroundPadding',0,80,1]]:selected==='noise'?[['Плотность','density',0,100,1],['Сила','amount',0,100,1]]:selected==='dropShadow'||selected==='innerShadow'?[['Смещение X','x',-200,200,1],['Смещение Y','y',-200,200,1],['Размытие','radius',0,150,1],['Непрозрачность','opacity',0,100,1]]:[['Размытие, px','radius',0,300,1]];
-  controls=`<div class="mp-divider"></div><div class="mp-subtitle">Настройки · ${mobileV36Escape(defs.find(x=>x[0]===selected)?.[1]||selected)}</div>${defs2.map(([label,k,min,max,step])=>{const value=fx?.[k]??e[k]??0;return `<label class="mp-field">${label}<div class="mp-line"><input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"><input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"></div></label>`}).join('')}<div class="mp-line"><label>Цвет эффекта <input data-mp-effect-color="${selected}" data-mp-color-key="color" type="color" value="${fx?.color||e.mobileBackgroundColor||'#7857de'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color" aria-label="Редактор цвета эффекта">◉ HEX</button></label>${selected==='textGlitch'?`<label>Второй цвет <input data-mp-effect-color="${selected}" data-mp-color-key="color2" type="color" value="${fx?.color2||'#00f0f0'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color2" aria-label="Редактор второго цвета эффекта">◉ HEX</button></label>`:''}</div>`;
+  const fx=effects.find(x=>x.type===selected);let defs2=TEXT_FX_IDS.has(selected)?(selected==='textGlow'?[['Интенсивность','intensity',0,100,1],['Радиус','radius',1,90,1]]:selected==='textEcho'?[['Направление','direction',-180,180,1],['Смещение','distance',0,160,1]]:selected==='textBackdrop'?[['Округлость','roundness',0,100,1],['Распространение','spread',0,90,1],['Непрозрачность','opacity',0,100,1]]:selected==='textCombine'?[['Толщина','thickness',0,30,1],['Смещение','distance',0,100,1],['Направление','direction',-180,180,1]]:[['Направление','direction',-180,180,1],['Смещение','distance',0,100,1]]):selected==='pixelate'?[['Размер блока, px','blockSize',2,160,1]]:selected==='curve'?[['Радиус изгиба','mobileArcRadius',-250,250,1]]:selected==='outline'?[['Толщина контура','strokeWidth',0,70,1]]:selected==='glow'?[['Свечение, px','mobileGlow',0,90,1]]:selected==='background'?[['Отступ, px','mobileBackgroundPadding',0,80,1]]:selected==='noise'?[['Плотность','density',0,100,1],['Сила','amount',0,100,1]]:selected==='dropShadow'||selected==='innerShadow'?[['Смещение X','x',-200,200,1],['Смещение Y','y',-200,200,1],['Размытие','radius',0,150,1],['Непрозрачность','opacity',0,100,1]]:[['Размытие, px','radius',0,300,1]];
+  controls=`<div class="mp-divider"></div><div class="mp-subtitle">Настройки · ${mobileV36Escape(defs.find(x=>x[0]===selected)?.[1]||selected)}</div>${defs2.map(([label,k,min,max,step])=>{const value=fx?.[k]??e[k]??0;return `<label class="mp-field">${label}<div class="mp-line"><input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"><input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"></div></label>`}).join('')}${selected==='pixelate'?'':`<div class="mp-line"><label>Цвет эффекта <input data-mp-effect-color="${selected}" data-mp-color-key="color" type="color" value="${fx?.color||e.mobileBackgroundColor||'#7857de'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color" aria-label="Редактор цвета эффекта">◉ HEX</button></label>${selected==='textGlitch'?`<label>Второй цвет <input data-mp-effect-color="${selected}" data-mp-color-key="color2" type="color" value="${fx?.color2||'#00f0f0'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color2" aria-label="Редактор второго цвета эффекта">◉ HEX</button></label>`:''}</div>`}`;
  }
  return mobileV36Sheet('Эффекты',`<div class="mp-tile-scroll">${cards}</div>${controls}<div class="mp-dim">Первый тап применяет эффект, второй открывает параметры. Эффекты входят в историю действий.</div>`)}
 function mobileV36MorePanel(){

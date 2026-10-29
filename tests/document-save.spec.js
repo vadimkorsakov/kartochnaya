@@ -644,3 +644,112 @@ test("F05 workspace preparation waits for an actual new editor snapshot after pr
     "restored-f05-doc",
   ]);
 });
+
+const emergencyWarning = 'Аварийная копия содержит доступные данные из памяти. Полнота сохранения не гарантируется';
+async function emergencyCopy(page) {
+  const pending = page.waitForEvent('download');
+  page.once('dialog', async dialog => {
+    expect(dialog.message()).toBe(emergencyWarning);
+    await dialog.accept();
+  });
+  await page.getByRole('button', { name: 'Аварийный экспорт', exact: true }).click();
+  const download = await pending;
+  expect(await download.failure()).toBeNull();
+  expect(download.suggestedFilename()).toContain('аварийная копия');
+  return JSON.parse(await require('node:fs/promises').readFile(await download.path(), 'utf8'));
+}
+
+test('emergency export preserves failed open tabs and project data; штатный import adds a project', async ({ page }) => {
+  await observe(page);
+  await openHome(page);
+  const fixture = structuredClone(require('./fixtures/project-with-folders.json'));
+  fixture.fonts = [{ name: 'Emergency font', family: 'Emergency font', weight: '400', style: 'normal', data: 'data:font/ttf;base64,' + (await require('node:fs/promises').readFile(require('node:path').join(__dirname, 'fixtures/fonts/DejaVuSans.ttf'))).toString('base64') }];
+  await importPayload(page, fixture);
+  await expect(page.locator('#toast')).toContainText('Импортировано проектов: 1');
+  await createDocument(page, 'Emergency X');
+  await saved(page);
+  const x = await exportedDocument(page);
+  await home(page);
+  await createDocument(page, 'Emergency Y');
+  await saved(page);
+  const y = await exportedDocument(page);
+  await expect(page.locator('#emergencyExportBtn')).toBeHidden();
+  await page.evaluate(() => saveAudit.fail = true);
+  await addShape(page);
+  await expect(page.locator('#saveStatus')).toContainText('Ошибка сохранения');
+  await page.locator(`[data-tab-id="${x.id}"]`).click();
+  await addShape(page);
+  await expect(page.locator('#saveStatus')).toContainText('Ошибка сохранения');
+  // Reject every IDB transaction after failure, including reads: export must use memory only.
+  await page.evaluate(() => {
+    window.emergencyTransaction = IDBDatabase.prototype.transaction;
+    window.emergencyIDBCalls = 0;
+    IDBDatabase.prototype.transaction = function () { emergencyIDBCalls++; throw Error('No IDB during emergency export'); };
+  });
+  const copy = await emergencyCopy(page);
+  expect(await page.evaluate(() => emergencyIDBCalls)).toBe(0);
+  expect(copy.format).toBe('kartochnaya-project-v1');
+  expect(copy.documents.find(d => d.id === x.id).elements).toHaveLength(1);
+  expect(copy.documents.find(d => d.id === y.id).elements).toHaveLength(1);
+  expect(copy.documents).toHaveLength(3);
+  await page.evaluate(() => { IDBDatabase.prototype.transaction = emergencyTransaction; saveAudit.fail = false; });
+  await page.locator('#brandHomeBtn').click();
+  await expect(page.locator('#homeScreen')).toBeVisible();
+  const before = await records(page, 'projects');
+  expect(copy.project.resources).toEqual(before.find(p => p.id === copy.project.id).resources);
+  expect(copy.project.resourceFolders).toEqual(before.find(p => p.id === copy.project.id).resourceFolders);
+  expect(copy.fonts).toHaveLength(1);
+  expect(copy.fonts).toEqual(await records(page, 'fonts'));
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Импорт проекта JSON', exact: true }).click();
+  await (await chooser).setFiles({ name: 'emergency.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(copy)) });
+  await expect(page.locator('#toast')).toContainText('Импортировано проектов: 1');
+  expect(await records(page, 'projects')).toHaveLength(before.length + 1);
+  const after = await records(page, 'docs');
+  for (const doc of copy.documents) expect(after.some(d => d.id !== doc.id && d.title === doc.title && JSON.stringify(d.elements.map(({ id, ...element }) => element)) === JSON.stringify(doc.elements.map(({ id, ...element }) => element)))).toBeTruthy();
+  expect(after.some(d => d.id === x.id)).toBeTruthy();
+});
+
+test('emergency action is usable on phone with unavailable IndexedDB; cancel and preparation failure never report success', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(window, 'indexedDB', { get() { throw new DOMException('Synthetic denial', 'SecurityError'); } }));
+  await openHome(page);
+  await createDocument(page, 'Memory only');
+  await addShape(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const button = page.locator('#emergencyExportBtn');
+  await expect(button).toBeInViewport();
+  let downloads = 0;
+  page.on('download', () => downloads++);
+  page.once('dialog', dialog => dialog.dismiss());
+  await button.click();
+  expect(downloads).toBe(0);
+  const copy = await emergencyCopy(page);
+  expect(copy.documents[0].elements).toHaveLength(1);
+  // Fail JSON preparation without modifying application data or exposing internals.
+  await page.evaluate(() => {
+    const stringify = JSON.stringify;
+    JSON.stringify = function (value, ...args) {
+      if (value?.format === 'kartochnaya-project-v1') throw Error('Synthetic JSON failure');
+      return stringify(value, ...args);
+    };
+    console.error = error => { window.emergencyError = error.message; };
+  });
+  page.once('dialog', dialog => dialog.accept());
+  await button.click();
+  await expect(page.locator('#toast')).toHaveText('Ошибка подготовки JSON: Synthetic JSON failure');
+  expect(await page.evaluate(() => emergencyError)).toBe('Synthetic JSON failure');
+  expect(downloads).toBe(1);
+});
+
+test('emergency action disappears after the failed document saves normally', async ({ page }) => {
+  await observe(page); await openHome(page); await createDocument(page, 'Recovered'); await saved(page);
+  await page.evaluate(() => saveAudit.fail = true);
+  await addShape(page);
+  await expect(page.locator('#emergencyExportBtn')).toBeVisible();
+  await page.locator('#backupsBtn').click();
+  await expect(page.locator('#toast')).toContainText('Сохранение не подтверждено');
+  await expect(page.locator('#zipBackupDialog')).not.toBeVisible();
+  await page.evaluate(() => saveAudit.fail = false);
+  await addShape(page); await saved(page);
+  await expect(page.locator('#emergencyExportBtn')).toBeHidden();
+});

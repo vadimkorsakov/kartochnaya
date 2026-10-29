@@ -148,7 +148,7 @@ const canvas=$('#canvas'),ctx=canvas.getContext('2d'),imgCache=new Map();
 const rasterCache=new Map(); // data URL -> live offscreen canvas for immediate rendering of strokes
 function rememberRaster(src,cv){rasterCache.set(src,cv);if(rasterCache.size>24)rasterCache.delete(rasterCache.keys().next().value)}
 function toast(msg){const n=$('#toast');n.textContent=msg;n.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>n.classList.remove('show'),2900)}
-function storageWarning(error){console.warn('Локальное хранилище:',error);$('#saveStatus').textContent='Хранение недоступно · сохранение не подтверждено';toast('Локальное хранилище недоступно: невозможно подтвердить сохранение. Не закрывай приложение')}
+function storageWarning(error){console.warn('Локальное хранилище:',error);$('#saveStatus').textContent='Хранение недоступно · сохранение не подтверждено';refreshSaveStatus();toast('Локальное хранилище недоступно: невозможно подтвердить сохранение. Не закрывай приложение')}
 async function openDB(){try{return await openDatabase({onVersionChange:()=>{app.db=null;storageWarning('Соединение закрыто: база обновляется в другой вкладке')},onClose:()=>{app.db=null;storageWarning('Соединение закрыто браузером')}})}catch(error){storageWarning(error);return null}}
 const workspaceBarrier=createWorkspaceBarrier();
 let zipWorkspaceBusy=false,replacementFrozen=false,replacementSealed=false,replacementStopped=false;
@@ -534,7 +534,16 @@ function updateHistoryButtons(){const draft=app.penDraft;$('#undoBtn').disabled=
 // Revisions describe edits; snapshots describe writes; app.docs contains confirmed records.
 const documentSaves=new Map();
 function saveState(id){if(!documentSaves.has(id))documentSaves.set(id,{revision:0,sequence:0,confirmed:0,pending:null,saved:null,error:null});return documentSaves.get(id)}
-function refreshSaveStatus(){if(!app.doc)return;if(app.historyPreviewOriginal){$('#saveStatus').textContent='Исходное состояние · предпросмотр';return}const state=saveState(app.doc.id);$('#saveStatus').textContent=state.error?'Ошибка сохранения · не закрывай приложение':!app.db?'Хранение недоступно · сохранение не подтверждено':!state.pending&&state.saved===JSON.stringify(app.doc)?'Сохранено на этом устройстве':'Сохраняем…'}
+function refreshSaveStatus(){
+ const projectIds=new Set([...projectDocs(),...documentTabSession.tabs.map(t=>t.doc)].filter(d=>d.projectId===app.currentProjectId).map(d=>d.id));
+ const emergency=!!app.doc&&(!app.db||[...documentSaves].some(([id,state])=>state.error&&(id===app.doc.id||projectIds.has(id))));
+ $('#emergencyExportBtn').classList.toggle('hidden',!emergency);
+ $('#saveStatus').closest('.stage-status').classList.toggle('has-emergency',emergency);
+ if(!app.doc)return;
+ if(app.historyPreviewOriginal){$('#saveStatus').textContent='Исходное состояние · предпросмотр';return}
+ const state=saveState(app.doc.id);
+ $('#saveStatus').textContent=state.error?'Ошибка сохранения · не закрывай приложение':!app.db?'Хранение недоступно · сохранение не подтверждено':!state.pending&&state.saved===JSON.stringify(app.doc)?'Сохранено на этом устройстве':'Сохраняем…';
+}
 function confirmDocument(rec){const i=app.docs.findIndex(x=>x.id===rec.id);if(i<0)app.docs.push(rec);else app.docs[i]=rec}
 // One FIFO per document, including work waiting before dbOp creates a transaction.
 // saved is the equivalent display snapshot of the last confirmed record; never
@@ -2337,12 +2346,18 @@ async function zipOriginal_exportPNG(){
 }
 function exportJSON(){syncCurrentSlide();const payload={format:'kartochnaya-v1',document:app.doc,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts,exportedAt:new Date().toISOString()};const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});downloadBlob(blob,niceName(app.doc.title)+'.json')}
 function exportProjectDocuments(id=app.currentProjectId){const records=new Map(projectDocs(id).map(d=>[d.id,clone(d)]));for(const tab of documentTabSession.tabs)if(tab.doc.projectId===id)records.set(tab.id,clone(tab.doc));if(app.doc?.projectId===id){syncCurrentSlide();records.set(app.doc.id,clone(app.doc))}return [...records.values()]}
-async function exportProjectBackup(){
- await flushSave();const project=currentProject();if(!project)return;
+async function exportProjectBackup({emergency=false}={}){
+ if(emergency){if(!confirm('Аварийная копия содержит доступные данные из памяти. Полнота сохранения не гарантируется'))return}
+ else if(!await flushSave())return;
+ try{
+ const project=currentProject();if(!project)throw Error('Текущий проект недоступен');
  const documents=exportProjectDocuments();
  const archive={format:'kartochnaya-project-v1',version:'0.19',exportedAt:new Date().toISOString(),project:clone(project),documents,shapeCatalog:shapeCatalogSnapshot(),fonts:app.fonts.map(f=>clone(f))};
- downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(project.name)+' - проект Карточной.json');toast('Файл JSON проекта подготовлен');
+ downloadBlob(new Blob([JSON.stringify(archive)],{type:'application/json'}),niceName(project.name)+(emergency?' - аварийная копия':' - проект Карточной')+'.json');toast(emergency?'Аварийный JSON проекта подготовлен':'Файл JSON проекта подготовлен');
+ }catch(error){console.error(error);toast('Ошибка подготовки JSON: '+error.message)}
 }
+$('#emergencyExportBtn').onclick=()=>exportProjectBackup({emergency:true});
+$('#projectJsonImportBtn').onclick=()=>$('#jsonInput').click();
 // One editor instance serializes project operations; the UI cannot change context mid-commit.
 let projectOperation=false,deletingProjectId=null;
 const deletedProjectIds=new Set();

@@ -34,12 +34,20 @@ async function observe(page) {
     }
   });
 }
-async function open(page, { graph = false, locked = false, fill } = {}) {
+async function open(page, { graph = false, locked = false, fill, distances = false } = {}) {
   await observe(page); await openHome(page);
   const payload = structuredClone(graphFixture); payload.documents = [payload.documents[0]];
   if (!graph) {
     payload.documents[0].groups = [];
     payload.documents[0].elements = [{ ...payload.documents[0].elements[3], x: 40, y: 40, w: 80, h: 80, locked }];
+  }
+  if (distances) {
+    const base = payload.documents[0].elements[0];
+    payload.documents[0].elements.push(
+      { ...base, id: 'nearest', x: 160, y: 50, w: 20, h: 20, rotation: 90 },
+      { ...base, id: 'hidden-near', x: 130, visible: false },
+      { ...base, id: 'off-axis', x: 125, y: 180, w: 10, h: 10 }
+    );
   }
   if (fill) payload.documents[0].elements[0].fill = fill;
   await importPayload(page, payload);
@@ -161,11 +169,11 @@ test('foreign pointerup/cancel and second down cannot steal a held nudge', async
   await pointer(page, '#mobilePropertyUI', 'lostpointercapture', 11);
   await pointer(page, '#mobilePropertyUI', 'pointercancel', 12);
   expect(await history(page)).toEqual(h); expect((await audit(page)).saves).toBe(0);
-  await page.clock.runFor(640); // 1 immediate + 4 repeats at 430, 500, 570, 640.
-  expect((await exportedDocument(page)).elements[0].x).toBe(45);
+  await page.clock.runFor(640); // 1 immediate + 3 early repeats, before acceleration changes step size.
+  expect((await exportedDocument(page)).elements[0].x).toBe(44);
   await pointer(page, '#mobilePropertyUI', 'pointercancel', 11);
-  expect((await exportedDocument(page)).elements[0].x).toBe(45);
-  await page.clock.runFor(700); expect((await exportedDocument(page)).elements[0].x).toBe(45);
+  expect((await exportedDocument(page)).elements[0].x).toBe(44);
+  await page.clock.runFor(700); expect((await exportedDocument(page)).elements[0].x).toBe(44);
   expect((await history(page)).length).toBe(h.length + 1);
 });
 
@@ -317,8 +325,8 @@ for (const kind of ['tap', 'hold', 'color cancel']) test(`baseline control: ${ki
     await tool(page, 'nudge'); await freezeClock(page); await pointer(page, '[data-mp-nudge="right"]', 'pointerdown', 21);
     if (kind === 'hold') await page.clock.runFor(640);
     await pointer(page, '[data-mp-nudge="right"]', 'pointerup', 21);
-    expect((await exportedDocument(page)).elements[0].x).toBe(kind === 'hold' ? 45 : 41);
-    await page.clock.runFor(700); expect((await exportedDocument(page)).elements[0].x).toBe(kind === 'hold' ? 45 : 41);
+    expect((await exportedDocument(page)).elements[0].x).toBe(kind === 'hold' ? 44 : 41);
+    await page.clock.runFor(700); expect((await exportedDocument(page)).elements[0].x).toBe(kind === 'hold' ? 44 : 41);
     await page.clock.resume();
   }
   expect(await history(page)).toEqual({ length: h.length + 1, index: h.index + 1 });
@@ -479,4 +487,91 @@ for (const mode of ['gradient', 'effect']) test(`color cancellation retains ${mo
   expect((await audit(page)).saves).toBe(1); expect((await history(page)).length).toBe(h.length + 1);
   expect((await exportedDocument(page)).elements).toEqual(after.elements);
   await page.locator('[data-mp-action="done"]').tap(); await undoRedo(page, before, after); await reload(page, after);
+});
+
+
+const residentRight = '#mobileNudge [data-mp-nudge="right"]';
+test('resident arrows follow selection, menus, properties, viewport and home', async ({ page }) => {
+  await open(page); await expect(page.locator('#mobileNudge')).toBeVisible();
+  const panel = await page.locator('#mobileNudge').boundingBox(), toolbar = await page.locator('#mobileToolbars').boundingBox();
+  expect(panel.y + panel.height).toBeLessThan(toolbar.y);
+  await color(page); await expect(page.locator('#mobileNudge')).toBeHidden();
+  await page.locator('[data-mp-action="done"]').tap(); await expect(page.locator('#mobileNudge')).toBeVisible();
+  await page.locator('#historyToggle').tap(); await expect(page.locator('#mobileNudge')).toBeHidden();
+  await page.locator('#historyToggle').tap(); await expect(page.locator('#mobileNudge')).toBeVisible();
+  await page.setViewportSize({ width: 800, height: 844 }); await expect(page.locator('#mobileNudge')).toBeHidden();
+  await page.setViewportSize({ width: 390, height: 844 }); await expect(page.locator('#mobileNudge')).toBeVisible();
+  await page.locator('#documentTabsHome').tap(); await expect(page.locator('#mobileNudge')).toBeHidden();
+  await page.locator('#homeEditorBtn').tap(); await expect(page.locator('#mobileNudge')).toBeVisible();
+  await page.locator('#mobileConfirm').tap(); await expect(page.locator('#mobileNudge')).toBeHidden();
+});
+
+test('resident tap is one document pixel at any zoom with one undo and redo', async ({ page }) => {
+  await open(page); const before = await exportedDocument(page), h = await history(page);
+  await page.locator(residentRight).tap(); const after = await exportedDocument(page);
+  expect(after.elements[0].x).toBe(before.elements[0].x + 1);
+  expect(after.elements[0].y).toBe(before.elements[0].y);
+  expect((await history(page)).length).toBe(h.length + 1);
+  await undoRedo(page, before, after);
+  await page.locator(residentRight).focus(); await page.locator(residentRight).press('Enter');
+  expect((await exportedDocument(page)).elements[0].x).toBe(after.elements[0].x + 1);
+});
+
+test('resident hold accelerates gradually, stops immediately and resets on next press', async ({ page }) => {
+  await open(page); await freezeClock(page); const h = await history(page);
+  await pointer(page, residentRight, 'pointerdown', 70);
+  const x = async () => (await exportedDocument(page)).elements[0].x;
+  expect(await x()).toBe(41); await page.clock.runFor(349); expect(await x()).toBe(41);
+  await page.clock.runFor(1); expect(await x()).toBe(42);
+  await page.clock.runFor(600); const early = await x();
+  await page.clock.runFor(600); const middle = await x();
+  await page.clock.runFor(600); const late = await x();
+  expect(middle - early).toBeGreaterThan(early - 42); expect(late - middle).toBeGreaterThan(middle - early);
+  await pointer(page, 'body', 'pointerup', 70); await page.clock.runFor(1000); expect(await x()).toBe(late);
+  expect((await history(page)).length).toBe(h.length + 1);
+  await pointer(page, residentRight, 'pointerdown', 71); expect(await x()).toBe(late + 1);
+  await page.clock.runFor(349); expect(await x()).toBe(late + 1); await pointer(page, 'body', 'pointercancel', 71);
+});
+
+test('resident long press prevents selection, callout, context menu and dragging locally', async ({ page }) => {
+  await open(page); await freezeClock(page); const t = await touch(page, residentRight);
+  await page.clock.runFor(1400);
+  expect(await page.evaluate(() => getSelection().toString())).toBe('');
+  const protection = await page.locator(residentRight).evaluate(el => {
+    const css = getComputedStyle(el);
+    return { select: css.userSelect, touch: css.touchAction, label: el.getAttribute('aria-label'), prevented: ['contextmenu', 'selectstart', 'dragstart'].map(type => !el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }))) };
+  });
+  expect(protection).toEqual({ select: 'none', touch: 'none', label: 'Сдвинуть вправо', prevented: [true, true, true] });
+  await t.end();
+  expect(await page.locator('#projectTitle').evaluate(el => el.dispatchEvent(new Event('selectstart', { bubbles: true, cancelable: true })))).toBe(true);
+});
+
+test('resident measurements use nearest projected visible bounds and expire without model data', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.measureLabels = [];
+    const fillText = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function(text, ...args) { if (this.canvas.id === 'canvas') measureLabels.push(String(text)); return fillText.call(this, text, ...args); };
+  });
+  await open(page, { distances: true }); await freezeClock(page);
+  await pointer(page, residentRight, 'pointerdown', 72);
+  expect(await page.evaluate(() => measureLabels.slice(-4))).toEqual(['41', '39', '40', '120']);
+  await pointer(page, 'body', 'pointerup', 72);
+  const after = await exportedDocument(page); expect(JSON.stringify(after)).not.toMatch(/measure|nudge/i);
+  await page.evaluate(() => { measureLabels = []; }); await page.clock.runFor(851);
+  expect(await page.evaluate(() => measureLabels)).not.toEqual(expect.arrayContaining(['39', '120']));
+});
+
+test('resident cancellation, foreign touch, lost capture, blur and locked layers preserve ownership', async ({ page }) => {
+  await open(page); await freezeClock(page); const before = await exportedDocument(page), h = await history(page);
+  await pointer(page, residentRight, 'pointerdown', 73);
+  await pointer(page, residentRight, 'pointerdown', 74); await pointer(page, 'body', 'pointercancel', 74);
+  expect((await history(page)).length).toBe(h.length);
+  await pointer(page, residentRight, 'lostpointercapture', 73); await page.clock.runFor(900);
+  expect((await exportedDocument(page)).elements[0].x).toBe(41); expect((await history(page)).length).toBe(h.length + 1);
+  await undoRedo(page, before, await exportedDocument(page));
+  await pointer(page, residentRight, 'pointerdown', 75); await page.evaluate(() => window.dispatchEvent(new Event('blur'))); await page.clock.runFor(900);
+  expect((await exportedDocument(page)).elements[0].x).toBe(42);
+  await page.locator('#quickBubble [data-quick="lock"]').tap(); await expect(page.locator(residentRight)).toBeDisabled();
+  await pointer(page, residentRight, 'pointerdown', 76); await page.clock.runFor(900);
+  expect((await exportedDocument(page)).elements[0].x).toBe(42);
 });

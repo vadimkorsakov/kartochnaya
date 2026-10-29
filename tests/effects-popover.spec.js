@@ -1,11 +1,11 @@
 const { test, expect, openHome, importPayload, records, openLibraryDocument, exportedDocument, exportPNG } = require('./helpers');
 
 test.use({ serviceWorkers: 'block' });
-const types = ['layerBlur', 'dropShadow', 'noise', 'textGlow', 'textEcho', 'textBackdrop', 'textCombine', 'textGlitch', 'glass'];
+const types = ['layerBlur', 'dropShadow', 'noise', 'textGlow', 'textEcho', 'textBackdrop', 'textCombine', 'textGlitch', 'glass', 'pixelate'];
 async function open(page, many = false) {
   await openHome(page);
-  const effects = (many ? [...types, 'texture', 'innerShadow', 'gaussianBlur', 'backgroundBlur', 'noise', 'noise', 'noise'] : types).map((type, i) => ({
-    id: `fx-${i}`, type, enabled: true, expanded: i % 2 === 0, radius: 4, x: 2, y: 3, spread: 3, opacity: 80,
+  const effects = (many ? [...types, 'texture', 'innerShadow', 'gaussianBlur', 'backgroundBlur', 'noise', 'noise'] : types).map((type, i) => ({
+    id: `fx-${i}`, type, enabled: true, blockSize: 32, expanded: i % 2 === 0, radius: 4, x: 2, y: 3, spread: 3, opacity: 80,
     color: '#a477ff', color2: '#00f0f0', intensity: 55, direction: 42, distance: 8, thickness: 3, roundness: 35,
     size: 1, density: 50, amount: 30, frost: 55, depth: 55, light: 65, refraction: 55, dispersion: 18, surfaceOpacity: 30, seed: 123,
   }));
@@ -48,7 +48,7 @@ test('compact rows fit inspector; UI toggles and menus preserve JSON and history
   await popover(page).getByRole('button', { name: 'Закрыть настройки эффекта' }).press('Space'); await expect(popover(page)).toBeHidden();
   await menu(page, 'fx-0'); await expect(page.locator('#fxMenu [data-dir="-1"]')).toBeDisabled();
   await row(page, 'fx-0').locator('[data-fx-menu]').click(); await expect(page.locator('#fxMenu')).toBeHidden();
-  await menu(page, 'fx-8'); await expect(page.locator('#fxMenu [data-dir="1"]')).toBeDisabled();
+  await menu(page, `fx-${types.length - 1}`); await expect(page.locator('#fxMenu [data-dir="1"]')).toBeDisabled();
   await page.keyboard.press('Escape'); await expect(page.locator('#fxMenu')).toBeHidden();
   expect(await exportedDocument(page)).toEqual(before); expect(await history(page)).toBe(h);
 });
@@ -207,7 +207,7 @@ test('chooser floats outside inspector without resizing sections; closing is rea
   expect(dimensions.length).toBeGreaterThan(0);
   await add.click(); await expect(chooser).toBeVisible();
   await expect(page.locator('#fxChooser')).toHaveCount(1); await expect(page.locator('#inspector #fxChooser')).toHaveCount(0);
-  await expect(chooser.locator('[data-fx-add]')).toHaveCount(13);
+  await expect(chooser.locator('[data-fx-add]')).toHaveCount(14);
   expect(await sizes()).toEqual(dimensions);
   const a = await add.boundingBox(), b = await chooser.boundingBox();
   expect(b.width).toBeGreaterThanOrEqual(280); expect(b.width).toBeLessThanOrEqual(340);
@@ -226,7 +226,7 @@ test('chooser floats outside inspector without resizing sections; closing is rea
 });
 
 const numericKeys = {
-  gaussianBlur: ['radius'], layerBlur: ['radius'], backgroundBlur: ['radius', 'surfaceOpacity'],
+  pixelate: ['blockSize'], gaussianBlur: ['radius'], layerBlur: ['radius'], backgroundBlur: ['radius', 'surfaceOpacity'],
   dropShadow: ['x', 'y', 'radius', 'spread', 'opacity'], innerShadow: ['x', 'y', 'radius', 'spread', 'opacity'],
   noise: ['size', 'density', 'amount', 'opacity'], texture: ['size', 'amount', 'opacity'],
   glass: ['frost', 'depth', 'light', 'refraction', 'dispersion', 'surfaceOpacity'],

@@ -43,7 +43,10 @@ async function selection(page) {
 }
 async function addRegion(page) {
   await selection(page); await page.locator('#fxFromSelection').click();
+  await expect(page.locator('#inspector #fxChooser')).toHaveCount(0);
   await page.locator('[data-fx-add="gaussianBlur"]').click();
+  await expect(page.locator('#fxChooser')).toBeHidden();
+  await expect(page.locator('#fxPopover')).toBeVisible();
 }
 const history = page => page.locator('#historyEntries [data-history-index]').evaluateAll(rows => ({ length: rows.length, index: rows.findIndex(r => r.getAttribute('aria-current') === 'step') }));
 const selected = page => page.locator('#layers .layer.selected').getAttribute('data-layer');
@@ -137,7 +140,8 @@ test('existing region effects and parameters each keep their own history; new ed
   // Reload can advance the browser clock beyond the test runner's wall time.
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   await selectLayer(page, region.id);
-  const radius = page.locator(`[data-fx-field="${region.effects[0].id}"][data-fx-key="radius"]`);
+  await page.locator(`[data-fx-row="${region.effects[0].id}"] .fx-name`).click();
+  const radius = page.locator(`#fxPopover [data-fx-field="${region.effects[0].id}"][data-fx-key="radius"][type="number"]`);
   await radius.fill('18'); await radius.press('Tab');
   expect((await exportedDocument(page)).elements[2].effects[0].radius).toBe(18);
   await page.locator('#undoBtn').click(); expect((await exportedDocument(page)).elements).toEqual(second.elements);

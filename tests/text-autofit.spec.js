@@ -71,6 +71,36 @@ test('double click on an edge fits text box to its content with a single Undo', 
   await expect(page.locator('#inlineText')).toBeFocused();
 });
 
+test('fixed-size text keeps its Canvas line breaks while editing near the wrap boundary', async ({ page }) => {
+  await drawTextFrame(page, 'подбор шрифта для текстовой карточки');
+  await page.locator('#inspector [data-text-auto-font]').uncheck();
+  const size = page.locator('#inspector [data-key="fontSize"]');
+  await size.fill('24'); await size.press('Enter');
+  const targetWidth = await page.evaluate(() => {
+    const c = document.createElement('canvas').getContext('2d');
+    c.font = 'normal 400 24px Arial';
+    return Math.ceil(c.measureText('подбор шрифта для').width) + 4;
+  });
+  const width = page.locator('#inspector [data-key="w"]');
+  await width.fill(String(targetWidth)); await width.press('Enter');
+  const height = page.locator('#inspector [data-key="h"]');
+  await height.fill('62'); await height.press('Enter');
+  const layer = (await exportedDocument(page)).elements[0];
+  const p = await canvasPoint(page, layer.x + Math.min(layer.w / 2, 60), layer.y + 20);
+  await page.mouse.dblclick(p.x, p.y);
+  await expect(page.locator('#inlineText')).toBeFocused();
+  const metrics = await page.locator('#inlineText').evaluate(el => ({
+    clientWidth: el.clientWidth, scrollWidth: el.scrollWidth,
+    clientHeight: el.clientHeight, scrollHeight: el.scrollHeight,
+    scrollbarWidth: getComputedStyle(el).scrollbarWidth
+  }));
+  expect(metrics.scrollbarWidth).toBe('none');
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
+  expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight);
+  await page.locator('#inlineText').press('ControlOrMeta+Enter');
+  expect((await exportedDocument(page)).elements[0].text).toBe(layer.text);
+});
+
 test('auto font adjusts when text changes; empty text keeps a persistent frame', async ({ page }) => {
   await openHome(page); await createDocument(page, 'Live sizing');
   await page.keyboard.press('t');

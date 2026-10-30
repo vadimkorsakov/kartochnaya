@@ -1,4 +1,4 @@
-const { test, expect, openHome, createDocument, canvasPoint, exportedDocument, addShape, importPayload, openLibraryDocument } = require('./helpers');
+const { test, expect, openHome, createDocument, canvasPoint, exportedDocument, addShape, importPayload, openLibraryDocument, records } = require('./helpers');
 const graph = require('./fixtures/canvas-graph.json');
 
 async function textDocument(page) {
@@ -92,7 +92,9 @@ test.describe('mobile numeric properties', () => {
     const fixture = structuredClone(graph);
     fixture.documents = [fixture.documents[0]];
     await importPayload(page, fixture);
-    await openLibraryDocument(page, 'graph-template');
+    const doc = (await records(page, 'docs')).find(d => d.title === 'Graph template');
+    expect(doc).toBeTruthy();
+    await openLibraryDocument(page, doc.id);
     await page.locator('#mobileToolbars [data-mobile="layers"]:visible').tap();
     await page.locator('#mobileLayerList [data-layer="title"] .layer-name').tap();
     await page.locator('#mobileLayersClose').tap();
@@ -105,8 +107,8 @@ test.describe('mobile numeric properties', () => {
     await size.press('Enter');
     await expect(size).not.toBeFocused();
     await expect(page.locator('#mobilePropertyUI')).toHaveClass(/mp-open/);
-    const doc = await exportedDocument(page);
-    expect(doc.elements.find(e => e.id === 'title').fontSize).toBe(old + 2);
+    const updated = await exportedDocument(page);
+    expect(updated.elements.find(e => e.id === 'title').fontSize).toBe(old + 2);
     expect(await steps(page)).toBe(count + 1);
   });
 });

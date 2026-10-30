@@ -3908,7 +3908,8 @@ mobileV36.addEventListener('change',ev=>{const t=ev.target;
 // inspector/effect/mobile history transaction. Enter also releases focus so
 // the next arrow key moves the selected layer rather than stepping the input.
 const numericEditLastValue=new WeakMap();
-const numericEditValid=field=>field.value.trim()!==''&&Number.isFinite(field.valueAsNumber)&&field.validity.valid;
+// Step mismatch is intentional: manual numeric values may be fractional even when slider/arrow steps are whole numbers.
+const numericEditValid=field=>field.value.trim()!==''&&Number.isFinite(field.valueAsNumber)&&!field.validity.badInput&&!field.validity.rangeUnderflow&&!field.validity.rangeOverflow;
 for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),mobileV36]){
  root.addEventListener('focusin',ev=>{const field=ev.target;if(field.matches?.('input[type="number"]'))numericEditLastValue.set(field,field.value)});
  root.addEventListener('input',ev=>{

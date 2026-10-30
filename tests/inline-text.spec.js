@@ -76,7 +76,7 @@ test('Canvas font metrics fit without scrollbars and genuine overflow remains sc
   // A full-width line at the Canvas wrap boundary catches border-induced reflow.
   const line = await page.locator(editor).evaluate(el => {
     const c = document.createElement('canvas').getContext('2d'), s = getComputedStyle(el);
-    c.font = s.font; let text = '';
+    c.font = `${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`; let text = '';
     while (c.measureText(text + 'M').width <= el.clientWidth) text += 'M';
     while (c.measureText(text + 'i').width <= el.clientWidth) text += 'i';
     return text;

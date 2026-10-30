@@ -919,12 +919,51 @@ function imageInside(c,e){const g=imageGeometry(e);if(!g){c.fillStyle='#dee2ee';
 const {im,dw,dh,dx,dy}=g;c.save();c.translate(dx+dw/2,dy+dh/2);c.rotate((e.cropRotation||0)*Math.PI/180);c.drawImage(im,-dw/2,-dh/2,dw,dh);c.restore()}
 
 function fontString(e){const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;const family=preview?.family||e.fontFamily||'Arial';const weight=preview?.weight||e.fontWeight||'400';return `${preview?.style||e.fontStyle||'normal'} ${weight} ${Math.max(1,e.fontSize||24)}px "${family.replaceAll('\"','')}"`}
-function wrapLines(c,e){const content=String(e.text??'').replace(/\r/g,'');const maxW=Math.max(10,e.w);const lines=[];const spacing=e.letterSpacing||0;const measure=t=>c.measureText(t).width+Math.max(0,t.length-1)*spacing;for(const paragraph of content.split('\n')){if(paragraph===''){lines.push('');continue}let line='';for(const word of paragraph.split(/(\s+)/)){if(!word)continue;const trial=line+word;if(measure(trial)<=maxW||!line){line=trial;while(measure(line)>maxW&&line.length>1){let count=line.length-1;while(count>1&&measure(line.slice(0,count))>maxW)count--;lines.push(line.slice(0,count));line=line.slice(count)}}else{lines.push(line.trimEnd());line=word.trimStart()}}lines.push(line.trimEnd())}return lines}
+function legacyWrapLines(c,e){const content=String(e.text??'').replace(/\r/g,'');const maxW=Math.max(10,e.w);const lines=[];const spacing=e.letterSpacing||0;const measure=t=>c.measureText(t).width+Math.max(0,t.length-1)*spacing;for(const paragraph of content.split('\n')){if(paragraph===''){lines.push('');continue}let line='';for(const word of paragraph.split(/(\s+)/)){if(!word)continue;const trial=line+word;if(measure(trial)<=maxW||!line){line=trial;while(measure(line)>maxW&&line.length>1){let count=line.length-1;while(count>1&&measure(line.slice(0,count))>maxW)count--;lines.push(line.slice(0,count));line=line.slice(count)}}else{lines.push(line.trimEnd());line=word.trimStart()}}lines.push(line.trimEnd())}return lines}
+
+// Use the native editor's CSS line breaker at document scale. Canvas, fitting and
+// PNG export consume these same rows; zoom only transforms their presentation.
+const textLayoutProbe=document.createElement('div');
+textLayoutProbe.setAttribute('aria-hidden','true');
+textLayoutProbe.style.cssText='position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none;contain:layout style;white-space:pre-wrap;overflow-wrap:break-word;word-break:normal;padding:0;border:0;box-sizing:content-box;min-width:0;font-kerning:normal;tab-size:8;text-align:left';
+document.body.append(textLayoutProbe);
+const textLayoutCache=new Map();
+document.fonts.addEventListener('loadingdone',()=>textLayoutCache.clear());
+function wrapLines(c,e){
+ if(e.textMode&&e.textMode!=='horizontal')return legacyWrapLines(c,e);
+ const text=String(e.text??'').replace(/\r/g,''),font=fontString(e),width=Math.max(1,e.w),spacing=Number(e.letterSpacing)||0;
+ const key=JSON.stringify([text,font,width,spacing,document.fonts.size]);
+ if(textLayoutCache.has(key))return textLayoutCache.get(key);
+ Object.assign(textLayoutProbe.style,{font,fontKerning:'normal',width:width+'px',letterSpacing:spacing+'px',lineHeight:'1.15'});
+ const lines=[];
+ for(const paragraph of text.split('\n')){
+  if(!paragraph){lines.push('');continue}
+  textLayoutProbe.textContent=paragraph;
+  const node=textLayoutProbe.firstChild,range=document.createRange();
+  let start=0,row=0,firstCenter=null;
+  // Range geometry follows shaping, Unicode break opportunities and long-word
+  // fallback exactly as the textarea does, without inserting characters in it.
+  for(let i=0;i<paragraph.length;){
+   const end=i+String.fromCodePoint(paragraph.codePointAt(i)).length;
+   range.setStart(node,i);range.setEnd(node,end);
+   const rect=range.getBoundingClientRect(),center=rect.top+rect.height/2;
+   if(firstCenter===null)firstCenter=center;
+   // Fallback fonts can have different ascent/descent within the same row.
+   const nextRow=Math.round((center-firstCenter)/(Math.max(1,e.fontSize||24)*1.15));
+   if(nextRow!==row){lines.push(paragraph.slice(start,i).trimEnd());start=i}
+   row=nextRow;i=end;
+  }
+  lines.push(paragraph.slice(start).trimEnd());
+ }
+ textLayoutProbe.textContent='';
+ if(textLayoutCache.size>=256)textLayoutCache.clear();
+ textLayoutCache.set(key,lines);return lines;
+}
 
 // Horizontal text layout uses Canvas metrics both for exporting and auto fitting.
 // Older documents omit autoFontSize and therefore keep their historical sizing.
 const textFitContext=document.createElement('canvas').getContext('2d');
-function measuredTextWidth(c,e,line){return c.measureText(line).width+Math.max(0,line.length-1)*(e.letterSpacing||0)}
+function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
 function autoFitTextFont(e){
  if(!e?.autoFontSize||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||!String(e.text||'').length)return false;
  const before=e.fontSize,lh=Math.max(.5,Number(e.lineHeight)||1.15),maxW=Math.max(10,e.w)-1,maxH=Math.max(1,e.h)-1;
@@ -1041,10 +1080,10 @@ function drawTextPathDraft(c){const dr=app.textPathDraft;if(!dr?.nodes.length)re
 function drawTextGlyphs(c,e,method='fill'){
  if(e.textMode==='path'&&method==='fill'&&paintTextOnPath(c,e))return;
  if(e.textMode==='vertical'){c.save();c.font=fontString(e);c.textBaseline='top';c.textAlign='center';const sz=e.fontSize||24,step=sz*(e.lineHeight||1.15);let y=0;let x=sz/2;for(const ch of String(e.text||'')){if(ch==='\n'||y+step>e.h){x+=step;y=0;if(ch==='\n')continue}if(x>e.w)break;if(method==='stroke')c.strokeText(ch,x,y);else c.fillText(ch,x,y);y+=step}c.restore();return}
- c.font=fontString(e);c.textBaseline='top';c.textAlign=e.textAlign||'left';const lh=(e.lineHeight||1.15)*(e.fontSize||24),lines=wrapLines(c,e),blockH=lines.length*lh,offsetY=e.verticalAlign==='middle'?Math.max(0,(e.h-blockH)/2):e.verticalAlign==='bottom'?Math.max(0,e.h-blockH):0;
- c.save();c.beginPath();c.rect(-Math.max(0,e.strokeWidth||0),-Math.max(0,e.strokeWidth||0),e.w+2*Math.max(0,e.strokeWidth||0),e.h+2*Math.max(0,e.strokeWidth||0));c.clip();
+ c.save();c.font=fontString(e);c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';c.textBaseline='top';c.textAlign=e.textAlign||'left';const lh=(e.lineHeight||1.15)*(e.fontSize||24),lines=wrapLines(c,e),blockH=lines.length*lh,offsetY=e.verticalAlign==='middle'?Math.max(0,(e.h-blockH)/2):e.verticalAlign==='bottom'?Math.max(0,e.h-blockH):0;
+ c.beginPath();c.rect(-Math.max(0,e.strokeWidth||0),-Math.max(0,e.strokeWidth||0),e.w+2*Math.max(0,e.strokeWidth||0),e.h+2*Math.max(0,e.strokeWidth||0));c.clip();
  const paint=(s,x,y)=>method==='stroke'?c.strokeText(s,x,y):c.fillText(s,x,y);
- for(let i=0;i<lines.length;i++){const y=i*lh+offsetY;if(y>e.h)break;const x=e.textAlign==='center'?e.w/2:e.textAlign==='right'?e.w:0;const t=lines[i];if((e.letterSpacing||0)!==0){const spacing=e.letterSpacing||0,textWidth=c.measureText(t).width+(t.length-1)*spacing;let bx=e.textAlign==='center'?e.w/2-textWidth/2:e.textAlign==='right'?e.w-textWidth:0;c.save();c.textAlign='left';for(const ch of t){paint(ch,bx,y);bx+=c.measureText(ch).width+spacing}c.restore()}else paint(t,x,y)}c.restore();
+ for(let i=0;i<lines.length;i++){const y=i*lh+offsetY;if(y>e.h)break;const x=e.textAlign==='center'?e.w/2:e.textAlign==='right'?e.w:0;const t=lines[i];paint(t,x,y)}c.restore();
 }
 function paintText(c,e){
  const kind=e.fillType||'solid';
@@ -1846,7 +1885,18 @@ function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if
  bubble.style.left=x+'px';bubble.style.top=y+'px';mobileNudgeAvoidBubble(bubble);
 }
 function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
-function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');}
+function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');
+ if(!e.textMode||e.textMode==='horizontal'){
+  editor.style.width=Math.max(1,e.w)+'px';editor.style.height=Math.max(1,e.h)+'px';
+  editor.style.minWidth='0';editor.style.minHeight='0';
+  editor.style.font=fontString(e);editor.style.fontKerning='normal';
+  editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)+'px';
+  editor.style.transformOrigin='0 0';
+  // Translate around the layer centre before applying rotation and document zoom.
+  const angle=(e.rotation||0)*Math.PI/180,dx=e.w/2,dy=e.h/2;
+  editor.style.transform=`scale(${app.zoom}) translate(${dx-dx*Math.cos(angle)+dy*Math.sin(angle)}px,${dy-dx*Math.sin(angle)-dy*Math.cos(angle)}px) rotate(${e.rotation||0}deg)`;
+ }else{editor.style.minWidth='';editor.style.minHeight='';editor.style.transformOrigin=''}
+}
 function closeInlineText(cancel=false){
  if(!app.editingId)return;
  // A numeric property input may own the IME; settle its change while the session still owns history.

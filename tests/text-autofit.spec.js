@@ -91,8 +91,9 @@ test('auto font adjusts when text changes; empty text keeps a persistent frame',
   expect(e.h).toBe(45);
 });
 
-test('legacy text has no automatic fitting; mobile can enable auto size', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test.describe('mobile auto sizing', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  test('legacy text has no automatic fitting; mobile can enable auto size', async ({ page }) => {
   await openHome(page);
   const data = structuredClone(fixture);
   data.documents = [data.documents[0]];
@@ -114,4 +115,5 @@ test('legacy text has no automatic fitting; mobile can enable auto size', async 
   const after = (await exportedDocument(page)).elements.find(x => x.id === 'title');
   expect(after.autoFontSize).toBe(true);
   expect(after.fontSize).toBeGreaterThan(0);
+  });
 });

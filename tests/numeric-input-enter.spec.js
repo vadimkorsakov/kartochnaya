@@ -59,11 +59,12 @@ test('effect number Enter commits without dismissing the settings popover', asyn
   await expect(page.locator('#fxPopover')).toBeVisible();
   const radius = page.locator('#fxPopover input[type="number"][data-fx-key="radius"]');
   const old = Number(await radius.inputValue()), count = await steps(page);
-  await radius.fill(String(old + 2));
+  // A manually typed fractional value must remain valid even if it mismatches the slider step.
+  await radius.fill(String(old + 2.25));
   await radius.press('Enter');
   await expect(page.locator('#fxPopover')).toBeVisible();
   await expect(page.locator('#canvas')).toBeFocused();
-  expect((await exportedDocument(page)).elements[0].effects[0].radius).toBe(old + 2);
+  expect((await exportedDocument(page)).elements[0].effects[0].radius).toBe(old + 2.25);
   expect(await steps(page)).toBe(count + 1);
 });
 

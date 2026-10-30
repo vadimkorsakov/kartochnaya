@@ -924,7 +924,7 @@ function createTextBoxFromDrag(dr){const p=dr.current||dr.start,mode=dr.mode||'h
  if(w<8||h<8){w=Math.max(w,250);h=Math.max(h,110);x=dr.start.x;y=dr.start.y}
  const e=defaultElement('text');e.name='Текст';e.text='';e.x=Math.round(x);e.y=Math.round(y);e.w=Math.max(12,Math.round(w));e.h=Math.max(12,Math.round(h));e.textMode=mode;
  if(mode==='path'){e.textPathPoints=[{x:0,y:.72},{x:.25,y:.15},{x:.5,y:.15},{x:.75,y:.72},{x:1,y:.72}];e.textPathOffset=0;e.textPathSide='above'}
- app.doc.elements.push(e);setSelected([e.id],true);commit('Создание текстового блока');refreshLayers();openInlineText();
+ app.doc.elements.push(e);setSelected([e.id],true);activateMove();commit('Создание текстового блока');refreshLayers();openInlineText();
 }
 // All path-text geometry uses editable cubic Bézier anchors. Legacy arrays of bare
 // x/y points are adapted without changing saved documents until the first edit.
@@ -2208,12 +2208,12 @@ function penOverlay(c){
 }
 
 // Hand tool: space + drag pans the stage, without selecting/moving a layer.
-$('#stageScroller').addEventListener('pointerdown',ev=>{if(!app.spaceDown||ev.button!==0)return;const stage=$('#stageScroller');app.handDrag={x:ev.clientX,y:ev.clientY,left:stage.scrollLeft,top:stage.scrollTop,id:ev.pointerId};stage.setPointerCapture(ev.pointerId);ev.preventDefault();ev.stopPropagation()},true);
+$('#stageScroller').addEventListener('pointerdown',ev=>{if(ev.target.closest('#inlineText')||!app.spaceDown||ev.button!==0)return;const stage=$('#stageScroller');app.handDrag={x:ev.clientX,y:ev.clientY,left:stage.scrollLeft,top:stage.scrollTop,id:ev.pointerId};stage.setPointerCapture(ev.pointerId);ev.preventDefault();ev.stopPropagation()},true);
 $('#stageScroller').addEventListener('pointermove',ev=>{if(!app.handDrag)return;const stage=$('#stageScroller'),a=app.handDrag;stage.scrollLeft=a.left-(ev.clientX-a.x);stage.scrollTop=a.top-(ev.clientY-a.y);ev.stopPropagation()},true);
 function finishPan(ev){if(app.handDrag?.id===ev.pointerId){app.handDrag=null;ev.stopPropagation()}}
 $('#stageScroller').addEventListener('pointerup',finishPan,true);$('#stageScroller').addEventListener('pointercancel',finishPan,true);
 const touchPointers=new Map();
-$('#stageScroller').addEventListener('pointerdown',ev=>{if(matchMedia('(max-width:760px)').matches&&ev.pointerType==='touch'&&(mobileV36State?.tool||app.mobileLayersOpen))return;if(!ev.target.closest('canvas')&&!app.cropMode){setSelected([]);hideInspector()}});
+$('#stageScroller').addEventListener('pointerdown',ev=>{if(matchMedia('(max-width:760px)').matches&&ev.pointerType==='touch'&&(mobileV36State?.tool||app.mobileLayersOpen))return;if(!ev.target.closest('canvas,#inlineText')&&!app.cropMode){setSelected([]);hideInspector()}});
 $('#layers').addEventListener('click',ev=>{if(ev.target.id==='layers')setSelected([])});
 canvas.addEventListener('pointerdown',ev=>{if(ev.button===2&&ev.pointerType==='mouse'&&app.inkTool==='brush'){ev.preventDefault();$('#brushContext').classList.add('hidden');if(ev.altKey){app.altBrushDrag={startX:ev.clientX,startY:ev.clientY,startSize:app.inkSettings.size,startHardness:app.inkSettings.hardness??100};canvas.setPointerCapture(ev.pointerId);$('#inkSizeBadge').classList.remove('hidden');inkMoveCursor(ev)}else showBrushContext(ev);return}if(ev.button!==0&&ev.pointerType==='mouse')return;touchPointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});if(touchPointers.size===2){const points=[...touchPointers.values()];inkCancel(true);const mid={x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2},dist=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);app.pinch={dist,zoom:app.zoom,mid};app.drag=null;for(const id of touchPointers.keys())try{canvas.setPointerCapture(id)}catch(e){};return}if(app.pinch)return;const p=clientDocPoint(ev),current=active();app.mouseDoc=p;if(app.inkTool==='brush'&&app.maskEditId&&maskPaintBegin(ev,p))return;if(app.inkTool&&inkDown(ev,p))return;if(penDown(ev,p))return;
 if(app.marqueeTool){

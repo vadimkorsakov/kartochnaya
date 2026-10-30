@@ -173,3 +173,26 @@ export function splitTextRuns(element, offset) {
 export function removeTextStyle(element, start, end, keys) {
   return applyTextStyle(element, start, end, Object.fromEntries(keys.map(k => [k, null])));
 }
+
+// Session-only snapshots accompany the browser's native (possibly grouped) undo.
+// They are never another persisted source of text and are released on editor close.
+const editSnapshot = element => ({ text: element.text, textRuns: normalizeRuns(element.text, element.textRuns, element) });
+export function createTextEditHistory(element) {
+  return { states: [editSnapshot(element)], index: 0 };
+}
+export function editTextWithHistory(element, history, text, { selection: hint, inputType } = {}) {
+  const direction = inputType === 'historyUndo' ? -1 : inputType === 'historyRedo' ? 1 : 0;
+  if (direction) {
+    for (let i = history.index + direction; i >= 0 && i < history.states.length; i += direction) {
+      const state = history.states[i];
+      if (state.text === text) return {
+        element: withRuns(element, text, normalizeRuns(text, state.textRuns, element)),
+        history: { states: history.states, index: i },
+      };
+    }
+  }
+  const next = updateText(element, text, hint);
+  if (next === element) return { element, history };
+  const states = [...history.states.slice(0, history.index + 1), editSnapshot(next)];
+  return { element: next, history: { states, index: states.length - 1 } };
+}

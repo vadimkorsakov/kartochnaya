@@ -33,6 +33,15 @@ for(const mobile of [false,true])test.describe(mobile?'rich text Android textare
     await expect.poll(async()=>element((await records(page,'docs')).find(d=>d.id===initial.id))).toEqual(changed);
     await page.reload();await expect(page.locator('#homeScreen')).toBeVisible();await openLibraryDocument(page,initial.id);expect(element(await exportedDocument(page))).toEqual(changed);
   });
+  test('native textarea undo/redo restores formatting after deleting all text',async({page})=>{
+    await seed(page);await edit(page,mobile);await page.locator('#inlineText').evaluate(el=>el.select());await page.keyboard.press('Backspace');
+    await page.keyboard.press('Control+z');await expect(page.locator('#inlineText')).toHaveValue('Graph title');
+    expect(element(await exportedDocument(page)).textRuns).toEqual(originalRuns);
+    await page.keyboard.press('Control+Shift+z');await expect(page.locator('#inlineText')).toHaveValue('');expect(element(await exportedDocument(page)).textRuns).toBeUndefined();
+    await page.keyboard.press('Control+z');
+    if(mobile)await page.locator('#mobileConfirm').tap();else await page.locator('#inlineText').press('ControlOrMeta+Enter');
+    expect(element(await exportedDocument(page)).textRuns).toEqual(originalRuns);
+  });
   test('Backspace in repeated text uses the pre-input caret',async({page})=>{
     await seed(page,true,true);await edit(page,mobile);await page.locator('#inlineText').evaluate(el=>el.setSelectionRange(2,2));await page.keyboard.press('Backspace');
     if(mobile)await page.locator('#mobileConfirm').tap();else await page.locator('#inlineText').press('ControlOrMeta+Enter');

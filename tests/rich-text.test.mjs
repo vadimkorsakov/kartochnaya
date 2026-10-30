@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { normalizeRuns, validateRuns, applyTextStyle, removeTextStyle, replaceText, updateText, clearTextFormatting, effectiveTextStyles, effectiveTextStyleAt, splitTextRuns, transformText } from '../src/model/rich-text.mjs';
+import { normalizeRuns, validateRuns, applyTextStyle, removeTextStyle, replaceText, updateText, clearTextFormatting, effectiveTextStyles, effectiveTextStyleAt, splitTextRuns, transformText, createTextEditHistory, editTextWithHistory } from '../src/model/rich-text.mjs';
 import { remapCanvasGraph, remapDocumentGraph, selectCanvasGraph } from '../src/model/canvas-graph.mjs';
 import { openDatabase, runStoreRequest } from '../src/storage/indexeddb.mjs';
 import { createBackup, readBackup } from '../src/backup/archive.mjs';
@@ -127,4 +127,19 @@ test('actual mobile case/list commands keep legacy text output and rich ranges o
     context.mobileV36Format('number');assert.equal(e.text,before);assert.deepEqual(e.textRuns,beforeRuns);
     if(!formatted)assert.equal(e.textRuns,undefined);
   }
+});
+
+
+test('native textarea undo/redo restores deleted formatting, grouped edits and branching',()=>{
+  const initial=rich();let element=initial,history=createTextEditHistory(element);
+  const edit=(text,inputType)=>{const next=editTextWithHistory(element,history,text,{inputType});element=next.element;history=next.history;canonical(element)};
+  edit('');assert.equal(element.textRuns,undefined);
+  edit(initial.text,'historyUndo');assert.deepEqual(element,initial);
+  edit('','historyRedo');assert.equal(element.textRuns,undefined);
+  edit(initial.text,'historyUndo');
+  edit(initial.text+'a');edit(initial.text+'ab');
+  edit(initial.text,'historyUndo');assert.deepEqual(element,initial);
+  edit(initial.text+'ab','historyRedo');assert.equal(element.text,initial.text+'ab');
+  edit(initial.text,'historyUndo');edit('Новое');assert.equal(history.states.at(-1).text,'Новое');assert.equal(history.states.some(s=>s.text===initial.text+'ab'),false);
+  assert.deepEqual(initial,rich());
 });

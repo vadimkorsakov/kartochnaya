@@ -3904,6 +3904,36 @@ mobileV36.addEventListener('change',ev=>{const t=ev.target;
  if(t.dataset.mpEffectColor||t.dataset.mpEffectKey){mobileV36Commit();return}
  if(t.dataset.mpKey){const e=active(),k=t.dataset.mpKey;let n=Number(t.value);if(mobileV36State.aspectLock&&['w','h'].includes(k)){let before;try{before=JSON.parse(t.dataset.mpAspectStart)}catch{before=null}if(before){const factor=n/Math.max(1,before[k]),other=k==='w'?'h':'w';e[other]=Math.max(1,Math.round(before[other]*factor*100)/100)}}mobileV36Property(k,t.value,true);if(['w','h','x','y','rotation'].includes(k))requestAnimationFrame(()=>mobileV36Render());return}
 });
+// Numeric property edits use native change-on-blur to finalize their existing
+// inspector/effect/mobile history transaction. Enter also releases focus so
+// the next arrow key moves the selected layer rather than stepping the input.
+const numericEditLastValue=new WeakMap();
+// Step mismatch is intentional: manual numeric values may be fractional even when slider/arrow steps are whole numbers.
+const numericEditValid=field=>field.value.trim()!==''&&Number.isFinite(field.valueAsNumber)&&!field.validity.badInput&&!field.validity.rangeUnderflow&&!field.validity.rangeOverflow;
+for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),mobileV36]){
+ root.addEventListener('focusin',ev=>{const field=ev.target;if(field.matches?.('input[type="number"]'))numericEditLastValue.set(field,field.value)});
+ root.addEventListener('input',ev=>{
+  const field=ev.target;if(!field.matches?.('input[type="number"]'))return;
+  // Empty/partial/out-of-range values must not reach Number('') => 0 in the
+  // existing live input handlers. Keep the last accepted live value instead.
+  if(!numericEditValid(field)){ev.stopPropagation();return}
+  numericEditLastValue.set(field,field.value);
+ },true);
+ root.addEventListener('change',ev=>{
+  const field=ev.target;if(!field.matches?.('input[type="number"]'))return;
+  if(!numericEditValid(field))field.value=numericEditLastValue.get(field)??'';
+  else numericEditLastValue.set(field,field.value);
+ },true);
+ root.addEventListener('keydown',ev=>{
+  const field=ev.target;
+  if(ev.key!=='Enter'||ev.isComposing||!field.matches?.('input[type="number"]'))return;
+  ev.preventDefault();ev.stopPropagation();
+  if(!numericEditValid(field))field.value=numericEditLastValue.get(field)??'';
+  // blur produces the same one change event as leaving the field by mouse.
+  field.blur();
+  if(!mobileV36Small()&&app.doc&&documentTabSession.activeId!=='home')canvas.focus({preventScroll:true});
+ },true);
+}
 // Trigger mobile toolbox actions before the legacy bubble handler handles "more".
 $('#quickBubble').addEventListener('click',ev=>{if(mobileV36Small()&&ev.target.closest('[data-quick=more]')){ev.stopImmediatePropagation();mobileV36Open('more',true)}},true);
 $('#mobileConfirm').onclick=()=>{if(app.editingId){closeInlineText();return}if(mobileV36State.tool)mobileV36Back();else setSelected([])};

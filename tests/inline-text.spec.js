@@ -69,6 +69,10 @@ test('mouse drag selects text without closing editing or changing layer geometry
 
 test('Canvas font metrics fit without scrollbars and genuine overflow remains scrollable across zoom', async ({ page }) => {
   await frame(page);
+  // The legacy overflow contract concerns fixed-size text, not the new auto-fit mode.
+  await finish(page);
+  await page.locator('#inspector [data-text-auto-font]').uncheck();
+  await reopen(page);
   // A full-width line at the Canvas wrap boundary catches border-induced reflow.
   const line = await page.locator(editor).evaluate(el => {
     const c = document.createElement('canvas').getContext('2d'), s = getComputedStyle(el);

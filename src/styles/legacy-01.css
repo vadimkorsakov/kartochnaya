@@ -1524,6 +1524,10 @@ html,body{background:#1e1f27!important;}
  #mobilePropertyUI .mp-font-sheet .mp-font-scroll{overscroll-behavior:contain;touch-action:pan-y;}
 }
 
+/* Keep native textarea scrolling available without reserving a scrollbar gutter.
+   A scrollbar narrowed the editable line and rewrapped text differently from Canvas. */
+.inline-text:not(.vertical-wysiwyg){scrollbar-width:none}
+.inline-text:not(.vertical-wysiwyg)::-webkit-scrollbar{width:0;height:0}
 /* Text box sizing: compact desktop inspector option and mobile size pill. */
 .text-auto-font{display:flex;align-items:center;gap:9px;margin:10px 0;padding:8px 10px;border:1px solid var(--stroke);border-radius:8px;cursor:pointer;font-size:12px}
 .text-auto-font input,.mp-auto-font input{accent-color:#7857de;flex-shrink:0}

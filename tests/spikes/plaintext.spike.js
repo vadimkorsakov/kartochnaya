@@ -460,3 +460,126 @@ test('controlled session history with native keyboard Undo/Redo (Gate 0B/4 limit
  }
  await testInfo.attach('controlled-history.json',{body:JSON.stringify({browser:browser.version(),passed:true,results,guards},null,2),contentType:'application/json'});
 });
+
+test('safe textarea fallback preserves confirmed state and exposes recovery blockers (Gate 0B/5)',async({page,browser},testInfo)=>{
+ const results=[];
+ const fresh=async(text='A',selection={anchor:text.length,focus:text.length},textRuns=[])=>{
+  const value={...base,text,textRuns};await mount(page,value);
+  await page.evaluate(({value,selection})=>{
+   document.querySelector('#host').focus();
+   spike.mount(value,{terminalBr:true,controlledEnter:true,controlledHistory:true,safeFallback:true,selection});
+   if(!value.text.includes('\r'))spike.applyMetricLineHeight();
+  },{value,selection});return value;
+ };
+ const state=()=>page.evaluate(()=>spike.fallbackState());
+ const fallback=()=>page.evaluate(()=>spike.requestFallback());
+ const input=async(type,data=null)=>page.evaluate(({type,data})=>{
+  const h=document.querySelector('#host');
+  const event=new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:type,data});
+  h.dispatchEvent(event);return event.defaultPrevented;
+ },{type,data});
+ // A: platform blocker, pinned explicitly. No fake exact textarea value or
+ // remapped caret is presented as passing the requested CRLF handoff.
+ for(const text of ['A\r\nБ','A\rБ']){
+  const value=await fresh(text,{anchor:3,focus:3},[{start:0,end:1,style:{fontWeight:'700'}}]);
+  const before=await state();expect(before.phase).toBe('recovery-required');
+  expect(before.reason).toContain('normalizes CR/CRLF');expect(before.confirmed.value).toEqual(value);
+  expect(before.confirmed.selection).toEqual({anchor:3,focus:3});expect(before.textarea.value).toBe('A\nБ');
+  expect(before.textarea.readOnly).toBe(true);expect(before.host.hidden).toBe(true);
+  expect(await page.locator('#host').getAttribute('contenteditable')).toBe('false');
+  await page.locator('#fallback').focus();await page.keyboard.type('Z');
+  expect((await state()).confirmed).toEqual(before.confirmed);expect((await state()).textarea.value).toBe('A\nБ');
+  expect(await fallback()).toEqual(await state());results.push({scenario:'A',blocker:before});
+ }
+ // B: real keyboard input, then handoff without a history transaction.
+ await fresh();await page.keyboard.type('X');await page.keyboard.press('Enter');
+ let before=await state();expect(before.confirmed.value.text).toBe('AX\n');expect(before.confirmed.history.states).toHaveLength(3);
+ let after=await fallback();expect(after.mode).toBe('textarea');expect(after.phase).toBe('fallback-ready');
+ expect(after.textarea.value).toBe('AX\n');expect(after.textarea.selection).toEqual({anchor:3,focus:3});
+ expect(after.confirmed).toEqual(before.confirmed);expect(after.switches).toBe(1);expect(after.replayNeeded).toBeNull();
+ expect(await fallback()).toEqual(after);
+ await page.evaluate(()=>document.querySelector('#host').dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertLineBreak'})));
+ expect(await state()).toEqual(after);
+ await page.keyboard.press('Control+z');expect((await state()).textarea.value).toBe('AX');
+ await page.keyboard.press('Control+Shift+z');expect((await state()).textarea.value).toBe('AX\n');
+ await page.keyboard.type('Z');after=await state();expect(after.confirmed.value.text).toBe('AX\nZ');
+ expect(after.textarea.selection).toEqual({anchor:4,focus:4});expect(after.confirmed.history.states).toHaveLength(4);
+ expect(await fallback()).toEqual(after);
+ await page.keyboard.press('Control+z');expect((await state()).textarea.value).toBe('AX\n');
+ await page.keyboard.press('Control+y');expect((await state()).textarea.value).toBe('AX\nZ');results.push({scenario:'B',after});
+ // Both directions of the UTF-16 emoji selection survive with the whole layer.
+ for(const selection of [{anchor:1,focus:3},{anchor:3,focus:1}]){
+  const value=await fresh('A😀B',selection,[{start:1,end:3,style:{fontSize:40,textColor:'#ff0000'}}]);
+  before=await state();after=await fallback();expect(after.confirmed.value).toEqual(value);
+  expect(after.confirmed.history).toEqual(before.confirmed.history);expect(after.textarea.selection).toEqual(selection);
+  await page.keyboard.type('Q');expect((await state()).confirmed.value.text).toBe('AQB');
+  await page.keyboard.press('Control+z');after=await state();expect(after.confirmed.value).toEqual(value);
+  expect(after.textarea.selection).toEqual(selection);results.push({scenario:'formatted',after});
+ }
+ await fresh();before=await state();expect(await input('formatBold')).toBe(true);after=await state();
+ expect(after.mode).toBe('textarea');expect(after.replayNeeded).toEqual({inputType:'formatBold',data:null});
+ expect(after.confirmed).toEqual(before.confirmed);expect(after.textarea.value).toBe('A');expect(await fallback()).toEqual(after);
+ results.push({scenario:'replay-needed',after});
+ // C: synchronous and delayed final input, plus no final input. These are only
+ // synthetic guards, never evidence for a real OS IME contract.
+ for(const finalInput of ['sync','delayed','absent']){
+  await fresh();before=await state();
+  const during=await page.evaluate(()=>{
+   const h=document.querySelector('#host');h.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
+   h.firstChild.firstChild.data='A文';spike.setSelection(2);
+   h.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertCompositionText',isComposing:true,data:'文'}));
+   const result=spike.requestFallback();const mountResult=spike.mount({text:'old'});
+   return {result,mountResult};
+  });
+  expect(during.mountResult).toBe(false);expect(during.result.phase).toBe('composing');
+  expect(during.result.host.hidden).toBe(false);expect(during.result.host.focused).toBe(true);
+  expect(during.result.host.html).toContain('A文');expect(during.result.confirmed).toEqual(before.confirmed);
+  await page.evaluate(finalInput=>{
+   const h=document.querySelector('#host');h.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'文'}));
+   const send=()=>h.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'文'}));
+   if(finalInput==='sync')send();if(finalInput==='delayed')setTimeout(send,10);
+  },finalInput);
+  await expect.poll(async()=>(await state()).phase).toBe('recovery-required');
+  if(finalInput==='delayed')await page.waitForTimeout(25);
+  after=await state();expect(after.host).toEqual(during.result.host);expect(after.confirmed).toEqual(before.confirmed);
+  await page.keyboard.press('Control+z');expect((await state()).host).toEqual(after.host);
+  results.push({scenario:'composition-'+finalInput,after});
+ }
+ // D: never copy, hide, overwrite or Undo unknown DOM / incomplete operations.
+ for(const kind of ['block','input-without-beforeinput','selection','pending','same-text-markup']){
+  await fresh();before=await state();
+  const html=await page.evaluate(kind=>{
+   const h=document.querySelector('#host');
+   if(kind==='block')h.innerHTML='<div>A未確認</div>';
+   if(kind==='input-without-beforeinput'){
+    h.firstChild.firstChild.data='A未確認';h.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'未確認'}));
+   }
+   if(kind==='selection')getSelection().setBaseAndExtent(document.body,0,document.body,0);
+   if(kind==='pending')h.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'insertText',data:'X'}));
+   if(kind==='same-text-markup')h.firstChild.style.fontWeight='700';
+   spike.requestFallback();return h.innerHTML;
+  },kind);
+  after=await state();expect(after.phase).toBe('recovery-required');expect(after.confirmed).toEqual(before.confirmed);
+  expect(after.host.hidden).toBe(false);expect(after.host.html).toBe(html);expect(after.textarea.hidden).toBe(true);
+  await page.keyboard.press('Control+z');await page.keyboard.press('Control+y');await input('historyUndo');
+  expect((await state()).confirmed).toEqual(before.confirmed);expect((await state()).host.html).toBe(html);
+  expect((await fallback()).switches).toBe(0);results.push({scenario:kind,after});
+  expect(await page.evaluate(()=>spike.cancel())).toBe(true);expect((await state()).confirmed.value.text).toBe('A');
+ }
+ // Even an unchanged composition DOM cannot prove a late final input absent.
+ await fresh();before=await state();
+ await page.evaluate(()=>{
+  const h=document.querySelector('#host');h.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
+  spike.requestFallback();h.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true}));
+ });
+ await expect.poll(async()=>(await state()).phase).toBe('recovery-required');
+ expect((await state()).host.hidden).toBe(false);expect((await state()).confirmed).toEqual(before.confirmed);
+ // A stray native textarea mutation also keeps both the unconfirmed value and
+ // the last trusted model; Ctrl+Z must not erase that unconfirmed value.
+ await fresh();await fallback();before=await state();
+ await page.evaluate(()=>{const t=document.querySelector('#fallback');t.value='A未確認';t.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText'}));});
+ after=await state();expect(after.phase).toBe('recovery-required');expect(after.textarea.value).toBe('A未確認');
+ expect(after.confirmed).toEqual(before.confirmed);await page.keyboard.press('Control+z');
+ expect((await state()).textarea.value).toBe('A未確認');results.push({scenario:'textarea-recovery',after});
+ await testInfo.attach('safe-fallback.json',{body:JSON.stringify({browser:browser.version(),passed:true,crlfExactHandoff:false,realIME:false,results},null,2),contentType:'application/json'});
+});

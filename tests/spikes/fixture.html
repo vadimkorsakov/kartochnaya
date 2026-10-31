@@ -6,6 +6,7 @@
 body{margin:40px} #host{white-space:pre-wrap;overflow-wrap:break-word;font-kerning:normal;outline:1px solid #ccc;transform-origin:0 0;min-height:60px}
 </style>
 <div id="host" contenteditable="plaintext-only" spellcheck="false"></div>
+<textarea id="fallback" hidden spellcheck="false" aria-label="Diagnostic fallback"></textarea>
 <script type="module">
 import * as surface from './surface.mjs';
 window.spike=surface;

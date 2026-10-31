@@ -3,10 +3,12 @@ import {richTextSpans,resolveRichTextStyle,richTextFont,createRichTextLayoutEngi
 import {replaceText} from '../../src/model/rich-text.mjs';
 import {createInlineHistory,recordInlineHistory,moveInlineHistory} from '../../src/model/inline-text-history.mjs';
 const host=document.querySelector('#host');
+const textarea=document.querySelector('#fallback');
 const ctx=document.createElement('canvas').getContext('2d');
 const engine=createRichTextLayoutEngine(ctx,document.fonts);
 let composing=false,layer,nativeTrace=false,controlledEnter=false,terminalMarker=false,metricLineHeight=false,pending=null,fallback=null,pasteText=null;
 let history=null,sessionSelection=null;
+let safe=null,confirmedHTML=null;
 export const historyState=()=>history?{length:history.states.length,index:history.index}:null;
 export const applications=[];
 export const controlledState=()=>({value:structuredClone(layer),fallback,applications:[...applications]});
@@ -17,17 +19,31 @@ for(const name of ['beforeinput','input','compositionstart','compositionupdate',
  events.push({type:name,inputType:e.inputType,cancelable:e.cancelable,isComposing:e.isComposing,...(nativeTrace?{data:e.data,...trace()}:{})});
  if(name==='compositionstart')composing=true;
  if(name==='compositionend')composing=false;
+ if(safe&&name==='compositionstart'){safe.phase='composing';safe.deferred=true;}
+ if(safe&&name==='compositionend'){
+  safe.phase='pending';
+  const session=safe;
+  // A timer cannot prove the absence of a later final input. This spike has
+  // no verified IME reconciliation contract: preserve the host for recovery.
+  setTimeout(()=>{if(safe===session&&safe.deferred&&!composing)stop('composition outcome has no verified input contract');},0);
+ }
 });
 // Opt-in stateful projection. Unknown operations stop reconciliation until an
 // explicit mount; the canonical value remains available for a textarea fallback.
-function stop(reason){pending=null;pasteText=null;fallback=reason;}
+function stop(reason){pending=null;pasteText=null;fallback=reason;if(safe){safe.phase='recovery-required';safe.reason=reason;}}
 host.addEventListener('paste',e=>{
  if(controlledEnter)pasteText=e.clipboardData?.getData('text/plain')??null;
 });
 function project(value,selection){
+ if(safe?.mode==='textarea'){
+  layer=structuredClone(value);textarea.value=layer.text;setTextareaSelection(selection);
+  safe.selection=selection;return;
+ }
+ const savedSafe=safe;
  const metric=metricLineHeight,savedHistory=history,savedSessionSelection=sessionSelection;
  mount(value,{terminalBr:terminalMarker,controlledEnter:true});
- history=savedHistory;sessionSelection=savedSessionSelection;
+ history=savedHistory;sessionSelection=savedSessionSelection;safe=savedSafe;
+ if(safe)safe.selection=selection;
  if(metric)applyMetricLineHeight();
  setSelection(selection.anchor,selection.focus);
 }
@@ -38,21 +54,29 @@ function commit(value,before,after){
  project(value,after);
 }
 function travel(direction){
- if(fallback||composing||pending)return;
- try{if(readText()!==layer.text){stop('DOM differs from canonical state');return;}}
+ if(fallback||composing||pending||safe?.phase==='recovery-required')return;
+ if(safe?.mode==='textarea'){
+  if(textarea.value!==layer.text){stop('unconfirmed textarea');return;}
+  const state=moveInlineHistory(history,direction);if(state)project(state.element,state.caret);return;
+ }
+ try{
+  if(readText()!==layer.text||(safe&&host.innerHTML!==confirmedHTML)){stop('DOM differs from canonical state');return;}
+  if(safe){if(!selectionInside())throw Error('selection outside host');readSelection();}
+ }
  catch{stop('unsupported DOM');return;}
  const state=moveInlineHistory(history,direction);
  if(state)project(state.element,state.caret);
 }
 export function cancel(){
- if(!history||composing)return false;
+ if(!history||composing||(safe&&layer.text.includes('\r')))return false;
  pending=null;
  const original=history.states[0].element,selection=sessionSelection;
  project(original,selection);
  history=createInlineHistory(original);recordInlineHistory(history,original,selection);
+ if(safe){safe.phase='confirmed';safe.reason=null;safe.deferred=false;safe.replayNeeded=null;safe.selection=selection;fallback=null;}
  return true;
 }
-host.addEventListener('keydown',e=>{
+function historyKey(e){
  if(!history)return;
  if(e.key==='Escape'){e.preventDefault();cancel();return;}
  const key=e.key.toLowerCase();
@@ -61,8 +85,20 @@ host.addEventListener('keydown',e=>{
   // Consequently this key cannot also produce native history beforeinput.
   e.preventDefault();travel(key==='y'||e.shiftKey?1:-1);
  }
-},{capture:true});
+}
+host.addEventListener('keydown',historyKey,{capture:true});
+textarea.addEventListener('keydown',historyKey,{capture:true});
 host.addEventListener('beforeinput',e=>{
+ if(safe){
+  if(safe.mode!=='wysiwyg'||safe.phase==='recovery-required'){if(e.cancelable&&!composing&&!e.isComposing)e.preventDefault();return;}
+  if(composing||e.isComposing){safe.deferred=true;safe.phase='composing';return;}
+  if(pending){if(e.cancelable)e.preventDefault();stop('overlapping beforeinput');return;}
+  if(!['insertLineBreak','insertText','insertFromPaste','deleteContentBackward','deleteContentForward','historyUndo','historyRedo'].includes(e.inputType)){
+   if(e.cancelable){e.preventDefault();safe.replayNeeded={inputType:e.inputType,data:e.data};requestFallback('canceled unsupported intent');}
+   else stop('noncancelable unsupported intent');
+   return;
+  }
+ }
  if(history&&['historyUndo','historyRedo'].includes(e.inputType)){
   if(!e.cancelable){stop('noncancelable history requires fallback');return;}
   e.preventDefault();
@@ -76,7 +112,7 @@ host.addEventListener('beforeinput',e=>{
  if(!selectionInside()){stop('selection outside host');return;}
  if(layer.text.includes('\r')){stop('legacy CR requires fallback');return;}
  let selection;
- try{if(readText()!==layer.text){stop('DOM differs from canonical state');return;}selection=readSelection();}
+ try{if(readText()!==layer.text||(safe&&host.innerHTML!==confirmedHTML)){stop('DOM differs from canonical state');return;}selection=readSelection();}
  catch{stop('unsupported DOM');return;}
  const start=Math.min(selection.anchor,selection.focus),end=Math.max(selection.anchor,selection.focus);
  // replaceText expands surrogate boundaries; refuse a split-pair caret rather
@@ -88,6 +124,7 @@ host.addEventListener('beforeinput',e=>{
   const next=replaceText(layer,start,end,'\n');
   commit(next,selection,{anchor:start+1,focus:start+1});
   applications.push({inputType:e.inputType,start,end,text:next.text});
+  if(safe)safe.phase='confirmed';
   // A canceled operation has no pending native edit, even if an input is sent.
   return;
  }
@@ -98,8 +135,10 @@ host.addEventListener('beforeinput',e=>{
  pasteText=null;
  if(e.inputType==='insertFromPaste'&&data===null){stop('paste without plaintext context');return;}
  pending={value:layer,selection,start,end,inputType:e.inputType,data};
+ if(safe)safe.phase='pending';
 });
 host.addEventListener('input',e=>{
+ if(safe&&(safe.mode!=='wysiwyg'||composing||e.isComposing||safe.deferred))return;
  if(!controlledEnter||fallback)return;
  const previous=pending;pending=null;
  if(composing||e.isComposing){stop('composition requires fallback');return;}
@@ -130,7 +169,79 @@ host.addEventListener('input',e=>{
   if(next.text!==text){stop('native UTF-16 edit mismatch');return;}
   commit(next,previous.selection,selection);
   applications.push({inputType:e.inputType,start,end,text:next.text});
+  if(safe)safe.phase='confirmed';
  }catch{stop('unsupported native DOM or selection');}
+});
+// Safe fallback owns no text model or history: all confirmed data stays in
+// layer + the existing inline history. Recovery never projects unverified DOM.
+function textareaSelection(){
+ const a=textarea.selectionStart,f=textarea.selectionEnd;
+ return textarea.selectionDirection==='backward'?{anchor:f,focus:a}:{anchor:a,focus:f};
+}
+function setTextareaSelection({anchor,focus}){
+ textarea.setSelectionRange(Math.min(anchor,focus),Math.max(anchor,focus),anchor>focus?'backward':'forward');
+}
+export function fallbackState(){
+ return safe?{...structuredClone(safe),pending:!!pending,composing,
+  confirmed:{value:structuredClone(layer),selection:structuredClone(safe.selection),history:structuredClone(history)},
+  textarea:{value:textarea.value,selection:textareaSelection(),hidden:textarea.hidden,readOnly:textarea.readOnly},
+  host:{html:host.innerHTML,hidden:host.hidden,focused:document.activeElement===host}}:null;
+}
+export function requestFallback(reason='explicit request'){
+ if(!safe)throw Error('safeFallback is opt-in');
+ if(safe.mode==='textarea'||safe.phase==='recovery-required')return fallbackState();
+ if(composing||safe.phase==='composing'){safe.deferred=true;safe.phase='composing';return fallbackState();}
+ if(safe.deferred){stop('composition outcome has no verified input contract');return fallbackState();}
+ if(pending){stop('pending browser operation');return fallbackState();}
+ let selection;
+ try{
+  if(readText()!==layer.text||host.innerHTML!==confirmedHTML)throw Error('unconfirmed DOM');
+  if(!selectionInside())throw Error('selection outside host');
+  selection=readSelection();
+ }catch(error){stop(error.message);return fallbackState();}
+ safe.phase='fallback-ready';safe.selection=selection;safe.reason=reason;safe.deferred=false;
+ textarea.value=layer.text;
+ if(textarea.value!==layer.text){stop('textarea value normalization');return fallbackState();}
+ setTextareaSelection(selection);
+ host.contentEditable='false';host.hidden=true;textarea.hidden=false;
+ safe.mode='textarea';safe.switches++;textarea.focus();
+ return fallbackState();
+}
+textarea.addEventListener('paste',e=>{pasteText=e.clipboardData?.getData('text/plain')??null;});
+for(const name of ['compositionstart','compositionend'])textarea.addEventListener(name,()=>{
+ composing=name==='compositionstart';
+ if(safe)stop('textarea composition requires recovery; native text preserved');
+});
+textarea.addEventListener('beforeinput',e=>{
+ if(!safe||safe.mode!=='textarea')return;
+ if(composing||e.isComposing){stop('textarea composition requires recovery');return;}
+ if(!e.cancelable){stop('noncancelable textarea operation');return;}
+ e.preventDefault();
+ if(safe.phase==='recovery-required')return;
+ if(textarea.value!==layer.text){stop('unconfirmed textarea');return;}
+ if(['historyUndo','historyRedo'].includes(e.inputType)){travel(e.inputType==='historyUndo'?-1:1);return;}
+ let inserted;
+ if(e.inputType==='insertText')inserted=e.data;
+ if(['insertLineBreak','insertParagraph'].includes(e.inputType))inserted='\n';
+ if(e.inputType==='insertFromPaste')inserted=e.dataTransfer?.getData('text/plain')??pasteText;
+ pasteText=null;
+ const before=textareaSelection();let start=Math.min(before.anchor,before.focus),end=Math.max(before.anchor,before.focus);
+ const split=i=>i>0&&i<layer.text.length&&/[\uD800-\uDBFF]/.test(layer.text[i-1])&&/[\uDC00-\uDFFF]/.test(layer.text[i]);
+ if(split(start)||split(end)){safe.replayNeeded={inputType:e.inputType};return;}
+ if(['deleteContentBackward','deleteContentForward'].includes(e.inputType)){
+  inserted='';
+  if(start===end){
+   if(e.inputType==='deleteContentBackward'){start=Math.max(0,start-1);if(split(start))start--;}
+   else {end=Math.min(layer.text.length,end+1);if(split(end))end++;}
+  }
+ }
+ if(typeof inserted!=='string'||inserted.includes('\r')){safe.replayNeeded={inputType:e.inputType,data:e.data};return;}
+ const next=replaceText(layer,start,end,inserted),caret=start+inserted.length;
+ commit(next,before,{anchor:caret,focus:caret});safe.phase='confirmed';
+ applications.push({inputType:e.inputType,start,end,text:next.text});
+});
+textarea.addEventListener('input',()=>{
+ if(safe&&textarea.value!==layer.text)stop('textarea input without verified contract');
 });
 // A deliberately restricted candidate grammar: Text/span and BR only. Unknown
 // block DOM fails explicitly instead of silently corrupting canonical offsets.
@@ -171,13 +282,28 @@ export function offsetToDomPoint(offset,affinity='downstream'){
 }
 export function readSelection(){const s=getSelection();return {anchor:domPointToOffset(s.anchorNode,s.anchorOffset),focus:domPointToOffset(s.focusNode,s.focusOffset)};}
 export function setSelection(anchor,focus=anchor){const a=offsetToDomPoint(anchor),f=offsetToDomPoint(focus);getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);}
-export function mount(value,{terminalBr=false,controlledEnter:controlled=false,controlledHistory=false,selection:initialSelection=null}={}){
+export function mount(value,{terminalBr=false,controlledEnter:controlled=false,controlledHistory=false,safeFallback=false,selection:initialSelection=null}={}){
  if(composing)return false;
  let saved=null;try{if(selectionInside())saved=readSelection();}catch{/* Explicit mount can recover unsupported DOM. */}
- history=null;sessionSelection=null;
+ history=null;sessionSelection=null;safe=null;
+ host.hidden=false;host.contentEditable=safeFallback&&value.text.includes('\r')?'false':'plaintext-only';textarea.hidden=true;textarea.readOnly=false;
  controlledEnter=controlled;terminalMarker=terminalBr;pending=null;fallback=null;pasteText=null;metricLineHeight=false;
  nativeTrace=terminalBr||controlled;
- layer=structuredClone(value);const base=resolveRichTextStyle(layer);
+ layer=structuredClone(value);
+ if(safeFallback){
+  if(!controlled||!controlledHistory)throw Error('safeFallback requires controlledEnter and controlledHistory');
+  safe={mode:'wysiwyg',phase:'confirmed',reason:null,replayNeeded:null,deferred:false,switches:0,selection:initialSelection||saved||{anchor:layer.text.length,focus:layer.text.length}};
+  if(layer.text.includes('\r')){
+   // Native textarea normalizes CR/CRLF. Keep the exact model and caret,
+   // expose the incompatibility, and refuse editing instead of a lossy handoff.
+   history=createInlineHistory(layer);sessionSelection=structuredClone(safe.selection);recordInlineHistory(history,layer,sessionSelection);
+   host.replaceChildren();host.contentEditable='false';host.hidden=true;
+   textarea.value=layer.text;textarea.readOnly=true;textarea.hidden=false;
+   stop('preflight: textarea normalizes CR/CRLF; exact value/UTF-16 handoff blocked');
+   return true;
+  }
+ }
+ const base=resolveRichTextStyle(layer);
  Object.assign(host.style,{width:layer.w+'px',height:layer.h+'px',font:richTextFont(base),lineHeight:String(layer.lineHeight||1.15),letterSpacing:base.letterSpacing+'px',textAlign:layer.textAlign||'left',transform:''});
  host.replaceChildren(...richTextSpans(layer).map(p=>{const el=document.createElement('span');el.textContent=p.text;Object.assign(el.style,{font:richTextFont(p.style),lineHeight:String(layer.lineHeight||1.15),letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});return el;}));
  if(!host.childNodes.length)host.append(document.createTextNode(''));
@@ -189,15 +315,18 @@ export function mount(value,{terminalBr=false,controlledEnter:controlled=false,c
   sessionSelection=readSelection();
   history=createInlineHistory(layer);recordInlineHistory(history,layer,sessionSelection);
  }
+ confirmedHTML=host.innerHTML;
+ if(safe)safe.selection=readSelection();
  return true;
 }
 export async function ready(){await Promise.all(['20px SpikeSans','700 20px SpikeSans','20px SpikeSerif'].map(font=>document.fonts.load(font)));await document.fonts.ready;}
 // Diagnostic CSS only: preserve the mounted text, spans and Canvas engine.
 export function applyMetricLineHeight(){
+ if(safe&&(composing||safe.phase==='recovery-required'||host.innerHTML!==confirmedHTML))return [];
  metricLineHeight=true;
  const styles=[resolveRichTextStyle(layer),...richTextSpans(layer).map(p=>p.style)];
  const elements=[host,...host.querySelectorAll(':scope > span')];
- return elements.map((element,i)=>{
+ const metrics=elements.map((element,i)=>{
   const style=styles[i];ctx.font=richTextFont(style);
   const m=ctx.measureText('Mg'),ascent=m.fontBoundingBoxAscent,descent=m.fontBoundingBoxDescent;
   if(!Number.isFinite(ascent)||!Number.isFinite(descent))throw Error('Font bounding metrics unavailable');
@@ -205,6 +334,8 @@ export function applyMetricLineHeight(){
   element.style.lineHeight=height+'px';
   return {font:ctx.font,fontSize:style.fontSize,ascent,descent,height,computed:getComputedStyle(element).lineHeight};
  });
+ confirmedHTML=host.innerHTML;
+ return metrics;
 }
 export function measure(){
  const layout=engine.layout(layer),origin=host.getBoundingClientRect(),dom=[],canvas=[];

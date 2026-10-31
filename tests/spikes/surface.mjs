@@ -1,14 +1,95 @@
 // Test-only candidate; never imported by the editor or persisted as HTML.
 import {richTextSpans,resolveRichTextStyle,richTextFont,createRichTextLayoutEngine} from '../../src/render/rich-text-layout.mjs';
+import {replaceText} from '../../src/model/rich-text.mjs';
 const host=document.querySelector('#host');
 const ctx=document.createElement('canvas').getContext('2d');
 const engine=createRichTextLayoutEngine(ctx,document.fonts);
-let composing=false,layer,nativeTrace=false;
+let composing=false,layer,nativeTrace=false,controlledEnter=false,terminalMarker=false,metricLineHeight=false,pending=null,fallback=null,pasteText=null;
+export const applications=[];
+export const controlledState=()=>({value:structuredClone(layer),fallback,applications:[...applications]});
+function trace(){try{return {html:host.innerHTML,text:readText(),selection:selectionInside()?readSelection():null};}catch{return {html:host.innerHTML,unsupported:true};}}
+function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
 export const events=[];
 for(const name of ['beforeinput','input','compositionstart','compositionupdate','compositionend'])host.addEventListener(name,e=>{
- events.push({type:name,inputType:e.inputType,cancelable:e.cancelable,isComposing:e.isComposing,...(nativeTrace?{data:e.data,html:host.innerHTML,text:readText(),selection:host.contains(getSelection().anchorNode)?readSelection():null}:{})});
+ events.push({type:name,inputType:e.inputType,cancelable:e.cancelable,isComposing:e.isComposing,...(nativeTrace?{data:e.data,...trace()}:{})});
  if(name==='compositionstart')composing=true;
  if(name==='compositionend')composing=false;
+});
+// Opt-in stateful projection. Unknown operations stop reconciliation until an
+// explicit mount; the canonical value remains available for a textarea fallback.
+function stop(reason){pending=null;pasteText=null;fallback=reason;}
+host.addEventListener('paste',e=>{
+ if(controlledEnter)pasteText=e.clipboardData?.getData('text/plain')??null;
+});
+function project(value,selection){
+ const metric=metricLineHeight;
+ mount(value,{terminalBr:terminalMarker,controlledEnter:true});
+ if(metric)applyMetricLineHeight();
+ setSelection(selection.anchor,selection.focus);
+}
+host.addEventListener('beforeinput',e=>{
+ if(!controlledEnter||fallback)return;
+ pending=null;
+ if(composing||e.isComposing){stop('composition requires fallback');return;}
+ if(!e.cancelable){stop('noncancelable beforeinput requires fallback');return;}
+ if(!selectionInside()){stop('selection outside host');return;}
+ if(layer.text.includes('\r')){stop('legacy CR requires fallback');return;}
+ let selection;
+ try{if(readText()!==layer.text){stop('DOM differs from canonical state');return;}selection=readSelection();}
+ catch{stop('unsupported DOM');return;}
+ const start=Math.min(selection.anchor,selection.focus),end=Math.max(selection.anchor,selection.focus);
+ // replaceText expands surrogate boundaries; refuse a split-pair caret rather
+ // than restoring an offset inconsistent with the required min(anchor,focus)+1.
+ const split=i=>i>0&&i<layer.text.length&&/[\uD800-\uDBFF]/.test(layer.text[i-1])&&/[\uDC00-\uDFFF]/.test(layer.text[i]);
+ if(split(start)||split(end)){stop('selection splits surrogate pair');return;}
+ if(e.inputType==='insertLineBreak'){
+  e.preventDefault();
+  const next=replaceText(layer,start,end,'\n');
+  project(next,{anchor:start+1,focus:start+1});
+  applications.push({inputType:e.inputType,start,end,text:next.text});
+  // A canceled operation has no pending native edit, even if an input is sent.
+  return;
+ }
+ if(!['insertText','insertFromPaste','deleteContentBackward','deleteContentForward'].includes(e.inputType)){
+  stop('unsupported inputType: '+e.inputType);return;
+ }
+ const data=e.inputType==='insertFromPaste'?(e.dataTransfer?.getData('text/plain')??pasteText):e.data;
+ pasteText=null;
+ if(e.inputType==='insertFromPaste'&&data===null){stop('paste without plaintext context');return;}
+ pending={value:layer,start,end,inputType:e.inputType,data};
+});
+host.addEventListener('input',e=>{
+ if(!controlledEnter||fallback)return;
+ const previous=pending;pending=null;
+ if(composing||e.isComposing){stop('composition requires fallback');return;}
+ // Never reapply a controlled Enter from input. No pending transaction means
+ // no native reconciliation (including a stray duplicate input event).
+ if(!previous){
+  try{if(readText()!==layer.text)stop('input without beforeinput context');}catch{stop('unsupported native DOM');}
+  return;
+ }
+ if(previous.inputType!==e.inputType){stop('input context mismatch');return;}
+ try{
+  const text=readText(),selection=readSelection(),old=previous.value.text;
+  let {start,end}=previous;
+  if(e.inputType.startsWith('delete')&&start===end){
+   const removed=old.length-text.length;
+   if(removed<0){stop('unsupported native deletion');return;}
+   if(e.inputType==='deleteContentBackward')start-=removed;else end+=removed;
+  }
+  const insertedEnd=text.length-(old.length-end);
+  if(start<0||end>old.length||insertedEnd<start||old.slice(0,start)!==text.slice(0,start)||old.slice(end)!==text.slice(insertedEnd)){
+   stop('native edit outside previous selection');return;
+  }
+  const inserted=text.slice(start,insertedEnd);
+  if((['insertText','insertFromPaste'].includes(e.inputType)&&inserted!==previous.data)||(e.inputType.startsWith('delete')&&inserted!=='')){
+   stop('native edit differs from input context');return;
+  }
+  const next=replaceText(previous.value,start,end,inserted);
+  if(next.text!==text){stop('native UTF-16 edit mismatch');return;}
+  project(next,selection);
+  applications.push({inputType:e.inputType,start,end,text:next.text});
+ }catch{stop('unsupported native DOM or selection');}
 });
 // A deliberately restricted candidate grammar: Text/span and BR only. Unknown
 // block DOM fails explicitly instead of silently corrupting canonical offsets.
@@ -49,10 +130,11 @@ export function offsetToDomPoint(offset,affinity='downstream'){
 }
 export function readSelection(){const s=getSelection();return {anchor:domPointToOffset(s.anchorNode,s.anchorOffset),focus:domPointToOffset(s.focusNode,s.focusOffset)};}
 export function setSelection(anchor,focus=anchor){const a=offsetToDomPoint(anchor),f=offsetToDomPoint(focus);getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);}
-export function mount(value,{terminalBr=false}={}){
+export function mount(value,{terminalBr=false,controlledEnter:controlled=false}={}){
  if(composing)return false;
- const saved=host.contains(getSelection().anchorNode)?readSelection():null;
- nativeTrace=terminalBr;
+ let saved=null;try{if(selectionInside())saved=readSelection();}catch{/* Explicit mount can recover unsupported DOM. */}
+ controlledEnter=controlled;terminalMarker=terminalBr;pending=null;fallback=null;pasteText=null;metricLineHeight=false;
+ nativeTrace=terminalBr||controlled;
  layer=structuredClone(value);const base=resolveRichTextStyle(layer);
  Object.assign(host.style,{width:layer.w+'px',height:layer.h+'px',font:richTextFont(base),lineHeight:String(layer.lineHeight||1.15),letterSpacing:base.letterSpacing+'px',textAlign:layer.textAlign||'left',transform:''});
  host.replaceChildren(...richTextSpans(layer).map(p=>{const el=document.createElement('span');el.textContent=p.text;Object.assign(el.style,{font:richTextFont(p.style),lineHeight:String(layer.lineHeight||1.15),letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});return el;}));
@@ -64,6 +146,7 @@ export function mount(value,{terminalBr=false}={}){
 export async function ready(){await Promise.all(['20px SpikeSans','700 20px SpikeSans','20px SpikeSerif'].map(font=>document.fonts.load(font)));await document.fonts.ready;}
 // Diagnostic CSS only: preserve the mounted text, spans and Canvas engine.
 export function applyMetricLineHeight(){
+ metricLineHeight=true;
  const styles=[resolveRichTextStyle(layer),...richTextSpans(layer).map(p=>p.style)];
  const elements=[host,...host.querySelectorAll(':scope > span')];
  return elements.map((element,i)=>{

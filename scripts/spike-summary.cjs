@@ -1,10 +1,14 @@
 // A successful diagnostic runner is deliberately distinct from passing a gate.
 const fs=require('node:fs');
 const report=JSON.parse(fs.readFileSync('test-results/spike-results.json','utf8'));
-const entries=[],nativeEntries=[];
+const entries=[],nativeEntries=[],controlledEntries=[];
 function walk(suite){
  for(const spec of suite.specs||[])for(const test of spec.tests||[])for(const result of test.results||[]){
   for(const a of result.attachments||[]){
+  if(a.name==='controlled-enter.json'){
+   const controlled=JSON.parse(a.body?Buffer.from(a.body,'base64').toString():fs.readFileSync(a.path,'utf8'));
+   controlledEntries.push({...controlled,browser:test.projectName,version:controlled.browser,status:result.status});
+  }
   if(a.name==='native-caret.json'){
    const native=JSON.parse(a.body?Buffer.from(a.body,'base64').toString():fs.readFileSync(a.path,'utf8'));
    nativeEntries.push({...native,browser:test.projectName,version:native.browser,status:result.status});
@@ -18,9 +22,10 @@ function walk(suite){
  for(const child of suite.suites||[])walk(child);
 }
 for(const suite of report.suites||[])walk(suite);
+if(controlledEntries.length!==2)throw Error('Expected Chromium and Firefox controlled-enter measurements; diagnostics incomplete');
 if(nativeEntries.length!==2)throw Error('Expected Chromium and Firefox native-caret measurements; diagnostics incomplete');
 if(entries.length!==2)throw Error('Expected Chromium and Firefox gate measurements; diagnostics incomplete');
-const executionPassed=report.stats.unexpected===0&&report.stats.skipped===0&&report.stats.expected===32;
+const executionPassed=report.stats.unexpected===0&&report.stats.skipped===0&&report.stats.expected===34;
 const overall=executionPassed&&entries.every(e=>e.gate0APassed);
 const markdown=[
  '### Plaintext-only diagnostic execution and gate verdict',
@@ -51,7 +56,14 @@ const nativeMarkdown=[
  ...nativeEntries.map(e=>`| ${e.browser} | ${e.results.filter(r=>r.passed).length}/${e.results.length} | ${e.softWrap.passed?'PASS':'FAIL'} | ${e.gate0B2Passed?'PASS (limited smoke)':'FAIL'} |`), '',
  'This limited result does not override strict Gate 0A/0B. Chromium insertLineBreak is pinned as a canonical-text blocker, not a passing save contract.', '',
 ].join('\n');
-console.log(markdown+metricMarkdown+nativeMarkdown);
-if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,markdown+metricMarkdown+nativeMarkdown);
-fs.writeFileSync('test-results/spike-gates.json',JSON.stringify({executionPassed,gate0APassed:overall,browsers:entries,native:nativeEntries},null,2)+'\n');
+const controlledMarkdown=[
+ '### Controlled Enter candidate (limited Gate 0B/3)', '',
+ '| Browser | Canonical text / UTF-16 / styles | Editor history |',
+ '| --- | --- | --- |',
+ ...controlledEntries.map(e=>`| ${e.browser} | ${e.status==='passed'&&e.passed?'PASS (limited smoke)':'FAIL'} | Not integrated |`), '',
+ 'Controlled Enter uses replaceText once; native Enter diagnostics above remain unchanged. Strict Gate 0A/0B and production integration are not approved. IME/unsupported input requires a preserving textarea fallback; Ctrl+Z requires existing editor history.', '',
+].join('\n');
+console.log(markdown+metricMarkdown+nativeMarkdown+controlledMarkdown);
+if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,markdown+metricMarkdown+nativeMarkdown+controlledMarkdown);
+fs.writeFileSync('test-results/spike-gates.json',JSON.stringify({executionPassed,gate0APassed:overall,browsers:entries,native:nativeEntries,controlled:controlledEntries},null,2)+'\n');
 if(!executionPassed)process.exitCode=1;

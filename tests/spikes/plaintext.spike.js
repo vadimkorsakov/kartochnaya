@@ -249,3 +249,111 @@ test('terminal BR native editing and metric soft-wrap (Gate 0B/2 diagnostic)',as
  expect(enter.enter.text).toBe(chromium?'A\n\n':'A\n');expect(enter.passed).toBe(!chromium);
  for(const result of results.filter(r=>r.method!=='Enter'||r.source!=='A'))expect(result.passed,JSON.stringify({source:result.source,method:result.method})).toBe(true);
 });
+
+test('controlled Enter canonical UTF-16 projection (Gate 0B/3 limited smoke)',async({page,browser},testInfo)=>{
+ whiteSpace='break-spaces';
+ const results=[];
+ const fresh=async(text,anchor=text.length,focus=anchor,textRuns=[])=>{
+  const value={...base,text,textRuns};await mount(page,value);
+  await page.evaluate(({value,anchor,focus})=>{
+   spike.mount(value,{terminalBr:true,controlledEnter:true});spike.applyMetricLineHeight();
+   document.querySelector('#host').focus();spike.setSelection(anchor,focus);spike.events.length=0;spike.applications.length=0;
+  },{value,anchor,focus});
+ };
+ const snapshot=()=>page.evaluate(()=>{
+  const s=getSelection(),h=document.querySelector('#host');
+  return {text:spike.readText(),selection:h.contains(s.anchorNode)&&h.contains(s.focusNode)?spike.readSelection():null,...spike.controlledState(),events:[...spike.events]};
+ });
+ const check=async(expected,offset)=>{
+  const state=await snapshot();
+  expect(state.fallback).toBeNull();expect(state.text).toBe(expected);expect(state.value.text).toBe(expected);
+  expect(state.selection).toEqual({anchor:offset,focus:offset});
+  expect(await page.evaluate(()=>{
+   const state=spike.controlledState(),saved=spike.readSelection();
+   for(let i=0;i<=state.value.text.length;i++)for(const affinity of ['upstream','downstream']){
+    const p=spike.offsetToDomPoint(i,affinity);getSelection().setBaseAndExtent(p.node,p.offset,p.node,p.offset);
+    if(spike.readSelection().anchor!==i||spike.readSelection().focus!==i)return false;
+   }
+   spike.setSelection(saved.anchor,saved.focus);
+   const h=document.querySelector('#host');
+   return !!h.querySelector(':scope > br[data-caret-sentinel]')===state.value.text.endsWith('\n')&&getComputedStyle(h).lineHeight==='24px';
+  })).toBe(true);
+  results.push({expected,offset,state});return state;
+ };
+ // Every Enter is asserted immediately, before a following letter or remount.
+ for(const [source,anchor,focus,expected,caret] of [
+  ['A',1,1,'A\n',2],['A\n',2,2,'A\n\n',3],['AB',1,1,'A\nB',2],
+  ['AB',0,2,'\n',1],['A😀B',1,3,'A\nB',2],['AB',2,0,'\n',1],
+ ]){
+  await fresh(source,anchor,focus);
+  if(anchor===focus&&anchor===source.length)await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');const enter=await check(expected,caret);
+  expect(enter.applications).toHaveLength(1);
+  expect(enter.events.filter(e=>e.type==='input')).toHaveLength(0);
+  // Even a duplicate input cannot execute the canceled operation again.
+  await page.evaluate(()=>document.querySelector('#host').dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertLineBreak'})));
+  expect((await snapshot()).applications).toHaveLength(1);
+  if(anchor===focus&&anchor===source.length){await page.keyboard.type('Z');await check(expected+'Z',caret+1);}
+ }
+ await fresh('A');
+ for(let i=1;i<=3;i++){await page.keyboard.press('Enter');await check('A'+'\n'.repeat(i),1+i);}
+ await page.keyboard.type('Z');await check('A\n\n\nZ',5);
+ for(const [source,offset,key,expected,caret] of [
+  ['A\nB',2,'Backspace','AB',1],['A\nB',1,'Delete','AB',1],
+  ['A\n\n',3,'Backspace','A\n',2],['A\n',1,'Delete','A',1],
+ ]){await fresh(source,offset);await page.keyboard.press(key);await check(expected,caret);}
+ // Native paste into the final empty row; retain actual clipboard behavior.
+ await fresh('A');await page.keyboard.press('Enter');await check('A\n',2);
+ await page.evaluate(()=>{const e=document.createElement('div');e.id='paste-source';e.contentEditable='true';e.innerHTML='<b>P</b><br>Q';document.body.append(e);});
+ await page.locator('#paste-source').click();await page.keyboard.press('Control+a');await page.keyboard.press('Control+c');
+ await page.locator('#host').focus();await page.evaluate(()=>spike.setSelection(2));await page.keyboard.press('Control+v');
+ await check('A\nP\nQ',5);expect(await page.locator('#host b').count()).toBe(0);
+ // Use the existing model itself as the formatting oracle, including inherited
+ // styles on LF/Z and the shifted right-hand run after emoji replacement.
+ const runs=[{start:0,end:3,style:{textColor:'#ff0000',fontWeight:'700'}},{start:3,end:4,style:{fontSize:40}}];
+ await fresh('A😀B',1,3,runs);
+ const expected=await page.evaluate(async()=>{const {replaceText}=await import('/src/model/rich-text.mjs');const initial=spike.controlledState().value;return replaceText(replaceText(initial,1,3,'\n'),2,2,'Z');});
+ await page.keyboard.press('Enter');await check('A\nB',2);await page.keyboard.type('Z');const styled=await check('A\nZB',3);
+ expect(styled.value).toEqual(expected);
+ expect(await page.locator('#host span').evaluateAll(es=>es.map(e=>({text:e.textContent,color:getComputedStyle(e).color,size:getComputedStyle(e).fontSize})))).toEqual([
+  {text:'A\nZ',color:'rgb(255, 0, 0)',size:'20px'},{text:'B',color:'rgb(0, 0, 0)',size:'40px'},
+ ]);
+ // Fail closed: no cancellation, canonical mutation or DOM rebuild in guards.
+ const guards=[];
+ for(const kind of ['composition','isComposing','noncancelable','unsupported','outside','split-pair']){
+  await fresh('A😀B',1);
+  guards.push(await page.evaluate(kind=>{
+   const h=document.querySelector('#host');
+   if(kind==='composition')h.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
+   if(kind==='unsupported'){const b=document.createElement('div');b.textContent='X';h.append(b);}
+   if(kind==='outside'){const t=document.body.appendChild(document.createTextNode('outside'));getSelection().setBaseAndExtent(t,0,t,0);}
+   if(kind==='split-pair')spike.setSelection(2);
+   const node=h.firstChild,html=h.innerHTML,before=spike.controlledState().value;
+   const e=new InputEvent('beforeinput',{bubbles:true,inputType:'insertLineBreak',cancelable:kind!=='noncancelable',isComposing:kind==='isComposing'});h.dispatchEvent(e);
+   const state=spike.controlledState();
+   if(kind==='composition')h.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true}));
+   return {kind,prevented:e.defaultPrevented,preserved:h.firstChild===node&&html===h.innerHTML&&JSON.stringify(before)===JSON.stringify(state.value),fallback:state.fallback};
+  },kind));
+ }
+ for(const guard of guards){expect(guard.prevented).toBe(false);expect(guard.preserved).toBe(true);expect(guard.fallback).toBeTruthy();}
+ // Explicit DOM recreation preserves both directions and every UTF-16 offset,
+ // including the inside-pair offsets that may be mapped but cannot be edited.
+ await fresh('A😀B\n',1,4,runs);
+ expect(await page.evaluate(()=>{
+  const value=spike.controlledState().value;
+  for(let i=0;i<=value.text.length;i++)for(const [anchor,focus] of [[i,0],[0,i]]){
+   spike.setSelection(anchor,focus);const old=document.querySelector('#host').firstChild;
+   spike.mount(value,{terminalBr:true,controlledEnter:true});spike.applyMetricLineHeight();
+   if(old===document.querySelector('#host').firstChild||JSON.stringify(spike.readSelection())!==JSON.stringify({anchor,focus}))return false;
+  }
+  return true;
+ })).toBe(true);
+ // Native history is intentionally not repaired. Observe Ctrl+Z and mark the
+ // unsupported history transaction for future editor-history integration.
+ await fresh('A');await page.keyboard.type('X');await check('AX',2);await page.keyboard.press('Enter');await check('AX\n',3);
+ await page.keyboard.press('Control+z');const undo=await snapshot();
+ await page.keyboard.press('Control+Shift+z');const redo=await snapshot();
+ expect(undo.applications.filter(a=>a.inputType==='insertLineBreak')).toHaveLength(1);
+ expect(redo.applications.filter(a=>a.inputType==='insertLineBreak')).toHaveLength(1);
+ await testInfo.attach('controlled-enter.json',{body:JSON.stringify({browser:browser.version(),passed:true,results,guards,undo,redo,historyIntegrated:false},null,2),contentType:'application/json'});
+});

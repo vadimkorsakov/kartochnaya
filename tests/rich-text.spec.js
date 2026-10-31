@@ -52,11 +52,11 @@ test('desktop cancel restores the exact original ranges',async({page})=>{
   await seed(page);await edit(page,false);await page.locator('#inlineText').fill('Замена 😀');await page.locator('#inlineText').press('Escape');
   const e=element(await exportedDocument(page));expect(e.text).toBe('Graph title');expect(e.textRuns).toEqual(originalRuns);
 });
-test('range metadata leaves Canvas and PNG unchanged',async({page})=>{
+test('supported ranges now change the actual PNG rendering',async({page})=>{
   await seed(page);const formatted=(await exportPNG(page)).image.data;
   await page.locator('#documentTabsHome').click();
   const d=structuredClone(fixture.documents[0]);d.id='plain-doc';d.title='Plain rendering';d.elements=d.elements.filter(e=>e.id==='title');d.groups=[];
   await importPayload(page,{format:'kartochnaya-v1',document:d});
   let stored;await expect.poll(async()=>{stored=(await records(page,'docs')).find(d=>d.title==='Plain rendering (импорт)');return stored?.id}).toBeTruthy();await openLibraryDocument(page,stored.id);
-  expect((await exportPNG(page)).image.data.equals(formatted)).toBe(true);
+  expect((await exportPNG(page)).image.data.equals(formatted)).toBe(false);
 });

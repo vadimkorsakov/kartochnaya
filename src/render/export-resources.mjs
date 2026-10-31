@@ -1,3 +1,5 @@
+import { usesRichTextLayout, richTextSpans } from './rich-text-layout.mjs';
+
 // Reads only the canvas passed by the caller. Cache ownership stays with the
 // renderer's image reader and the existing FontFace loader.
 export function collectCanvasResources(doc, { isVisible, hasEffect }) {
@@ -24,10 +26,13 @@ export function collectCanvasResources(doc, { isVisible, hasEffect }) {
     else if(!region&&(e.type==='text'||!paintsInk)&&e.fillType==='image'
       &&!(e.type==='path'&&!e.pathClosed)&&!(e.type==='vector'&&e.vectorLine))image(e.imageSrc,'image',e);
     if(e.type==='text'&&((!region&&(e.fillType!=='none'||Number(e.strokeWidth)>0))||backdropText)) {
-      const font={family:e.fontFamily||'Arial',weight:String(e.fontWeight||'400'),style:e.fontStyle||'normal',text:String(e.text||'')};
-      const key=JSON.stringify([font.family,font.weight,font.style]);
-      if(fonts.has(key))fonts.get(key).text+=font.text;
-      else fonts.set(key,font);
+      const spans=usesRichTextLayout(e)?richTextSpans(e):[{text:String(e.text||''),style:e}];
+      for(const {text,style} of spans){
+        const font={family:style.fontFamily||'Arial',weight:String(style.fontWeight||'400'),style:style.fontStyle||'normal',text};
+        const key=JSON.stringify([font.family,font.weight,font.style]);
+        if(fonts.has(key))fonts.get(key).text+=font.text;
+        else fonts.set(key,font);
+      }
     }
   }
   return {images:[...images.values()],fonts:[...fonts.values()]};

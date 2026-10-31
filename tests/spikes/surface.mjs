@@ -3,10 +3,10 @@ import {richTextSpans,resolveRichTextStyle,richTextFont,createRichTextLayoutEngi
 const host=document.querySelector('#host');
 const ctx=document.createElement('canvas').getContext('2d');
 const engine=createRichTextLayoutEngine(ctx,document.fonts);
-let composing=false,layer;
+let composing=false,layer,nativeTrace=false;
 export const events=[];
 for(const name of ['beforeinput','input','compositionstart','compositionupdate','compositionend'])host.addEventListener(name,e=>{
- events.push({type:name,inputType:e.inputType,cancelable:e.cancelable,isComposing:e.isComposing});
+ events.push({type:name,inputType:e.inputType,cancelable:e.cancelable,isComposing:e.isComposing,...(nativeTrace?{data:e.data,html:host.innerHTML,text:readText(),selection:host.contains(getSelection().anchorNode)?readSelection():null}:{})});
  if(name==='compositionstart')composing=true;
  if(name==='compositionend')composing=false;
 });
@@ -20,6 +20,7 @@ function index(){
   if(node!==host&&!['SPAN','BR'].includes(node.nodeName))throw Error('Unsupported native DOM: '+node.nodeName);
   const offsets=[text.length];
   if(node.nodeName==='BR'){
+   if(node.hasAttribute('data-caret-sentinel')){points.set(node,offsets);return;}
    // A sole or final BR after another BR is the browser's empty-line sentinel.
    if(node.nextSibling || (node.previousSibling && node.previousSibling.nodeName!=='BR' && !text.endsWith('\n')))text+='\n';
   }else for(const child of node.childNodes){visit(child);offsets.push(text.length);}
@@ -36,6 +37,10 @@ export function domPointToOffset(node,offset){
 }
 export function offsetToDomPoint(offset,affinity='downstream'){
  const map=index();if(!Number.isInteger(offset)||offset<0||offset>map.text.length)throw Error('Invalid UTF-16 offset');
+ // Prefer the structural end position for the final empty row. Upstream
+ // deliberately retains the text-node endpoint for affinity diagnostics.
+ const sentinel=host.querySelector(':scope > br[data-caret-sentinel]');
+ if(sentinel&&offset===map.text.length&&affinity==='downstream')return {node:host,offset:[...host.childNodes].indexOf(sentinel)};
  const leaves=affinity==='downstream'?[...map.leaves].reverse():map.leaves;
  const leaf=leaves.find(p=>offset>=p.start&&offset<=p.end);
  if(leaf)return {node:leaf.node,offset:offset-leaf.start};
@@ -44,13 +49,15 @@ export function offsetToDomPoint(offset,affinity='downstream'){
 }
 export function readSelection(){const s=getSelection();return {anchor:domPointToOffset(s.anchorNode,s.anchorOffset),focus:domPointToOffset(s.focusNode,s.focusOffset)};}
 export function setSelection(anchor,focus=anchor){const a=offsetToDomPoint(anchor),f=offsetToDomPoint(focus);getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);}
-export function mount(value){
+export function mount(value,{terminalBr=false}={}){
  if(composing)return false;
  const saved=host.contains(getSelection().anchorNode)?readSelection():null;
+ nativeTrace=terminalBr;
  layer=structuredClone(value);const base=resolveRichTextStyle(layer);
  Object.assign(host.style,{width:layer.w+'px',height:layer.h+'px',font:richTextFont(base),lineHeight:String(layer.lineHeight||1.15),letterSpacing:base.letterSpacing+'px',textAlign:layer.textAlign||'left',transform:''});
  host.replaceChildren(...richTextSpans(layer).map(p=>{const el=document.createElement('span');el.textContent=p.text;Object.assign(el.style,{font:richTextFont(p.style),lineHeight:String(layer.lineHeight||1.15),letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});return el;}));
  if(!host.childNodes.length)host.append(document.createTextNode(''));
+ if(terminalBr&&layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';host.append(br);}
  if(saved)setSelection(Math.min(saved.anchor,readText().length),Math.min(saved.focus,readText().length));
  return true;
 }
@@ -58,7 +65,7 @@ export async function ready(){await Promise.all(['20px SpikeSans','700 20px Spik
 // Diagnostic CSS only: preserve the mounted text, spans and Canvas engine.
 export function applyMetricLineHeight(){
  const styles=[resolveRichTextStyle(layer),...richTextSpans(layer).map(p=>p.style)];
- const elements=[host,...host.children];
+ const elements=[host,...host.querySelectorAll(':scope > span')];
  return elements.map((element,i)=>{
   const style=styles[i];ctx.font=richTextFont(style);
   const m=ctx.measureText('Mg'),ascent=m.fontBoundingBoxAscent,descent=m.fontBoundingBoxDescent;

@@ -154,3 +154,98 @@ test('compare break-spaces with metric line-height (diagnostic, not gate asserti
  await testInfo.attach('gate.json',{body:JSON.stringify({diagnosticsExecuted:true,gate0APassed,gatePassed,emptyRowsVerified,hardRowCaretsVerified,gate0BPassed,comparison,scope:'metric CSS matrix; empty-row probes include both affinities; native editing remains original CSS only',mismatches:after.filter(r=>!r.wrapMatches).map(r=>({name:r.name,dom:r.domLines,canvas:r.canvasLines}))},null,2),contentType:'application/json'});
  console.log(JSON.stringify({browser:testInfo.project.name,version:browser.version(),diagnosticsExecuted:true,gate0APassed,gatePassed,mismatches:after.filter(r=>!r.wrapMatches).map(r=>r.name)}));
 });
+
+// Native candidate diagnostic: passing execution never implies canonical safety.
+test('terminal BR native editing and metric soft-wrap (Gate 0B/2 diagnostic)',async({page,browser},testInfo)=>{
+ whiteSpace='break-spaces';
+ const results=[];
+ const fresh=async source=>{
+  const value={...base,text:source,textRuns:[]};await mount(page,value);
+  await page.evaluate(value=>{spike.mount(value,{terminalBr:true});spike.applyMetricLineHeight();spike.events.length=0;},value);
+  return value;
+ };
+ const snapshot=()=>page.evaluate(()=>({text:spike.readText(),selection:spike.readSelection(),html:document.querySelector('#host').innerHTML,events:[...spike.events]}));
+ const target=async(row,method)=>{
+  if(method==='click'){
+   const p=await page.evaluate(row=>{const h=document.querySelector('#host'),r=h.getBoundingClientRect();return {x:r.left+1,y:r.top+(row+.5)*parseFloat(getComputedStyle(h).lineHeight)};},row);
+   await page.mouse.click(p.x,p.y);
+  }else {await page.locator('#host').focus();await page.keyboard.press('Control+End');}
+ };
+ const compareGlyph=async(value,expected,offset)=>{
+  // Capture the new glyph Range BEFORE synchronising the Canvas model.
+  const glyph=await page.evaluate(()=>{
+   const i=spike.readText().indexOf('Z'),a=spike.offsetToDomPoint(i),b=spike.offsetToDomPoint(i+1,'upstream'),r=document.createRange(),h=document.querySelector('#host').getBoundingClientRect();r.setStart(a.node,a.offset);r.setEnd(b.node,b.offset);const box=r.getBoundingClientRect();return {x:box.x-h.x,y:box.y-h.y};
+  });
+  const projected=await page.evaluate(value=>{spike.mount(value,{terminalBr:true});spike.applyMetricLineHeight();return spike.measure();},{...value,text:expected});
+  expect(projected.text).toBe(expected);expect(projected.maxDy).toBeLessThanOrEqual(2);expect(projected.domLines).toEqual(projected.canvasLines);
+  const expectedGlyph=projected.pairs.find(p=>p.start===offset-1).canvas;
+  const geometry={glyph,expected:{x:expectedGlyph.x,y:expectedGlyph.top},dx:Math.abs(glyph.x-expectedGlyph.x),dy:Math.abs(glyph.y-expectedGlyph.top)};
+  return {geometry,projectedMaxDy:projected.maxDy};
+ };
+ const scenarios=[['A\n\nБ',1,'A\nZ\nБ',3],['A\n',1,'A\nZ',3],['A\n\nБ\n',3,'A\n\nБ\nZ',6],['\n\n',1,'\nZ\n',2],['\n\n',2,'\n\nZ',3]];
+ for(const [source,row,expected,offset] of scenarios)for(const method of ['click','ctrl-end','restore','text-end-restore','br-restore']){
+  // Ctrl+End is meaningful only for the terminal row; middle rows use clicks.
+  if((method==='ctrl-end'||method==='text-end-restore'||method==='br-restore')&&row!==source.split('\n').length-1)continue;
+  if((method==='text-end-restore'||method==='br-restore')&&!source.endsWith('\n'))continue;
+  const value=await fresh(source);
+  const mapping=await page.evaluate(()=>{
+   const h=document.querySelector('#host'),br=h.querySelector('br');
+   for(let i=0;i<=spike.readText().length;i++)for(const affinity of ['upstream','downstream']){const p=spike.offsetToDomPoint(i,affinity);if(spike.domPointToOffset(p.node,p.offset)!==i)throw Error('UTF-16 round trip');}
+   let n=0;for(let i=0;i<=h.childNodes.length;i++){if(spike.domPointToOffset(h,i)!==n)throw Error('host boundary');if(i<h.childNodes.length)n+=h.childNodes[i].textContent.length;}
+   const endpoints=['upstream','downstream'].map(affinity=>{const p=spike.offsetToDomPoint(spike.readText().length,affinity),r=document.createRange();r.setStart(p.node,p.offset);r.collapse(true);return {affinity,node:p.node.nodeName,offset:p.offset,rects:[...r.getClientRects()].map(r=>({x:r.x-h.getBoundingClientRect().x,y:r.y-h.getBoundingClientRect().y}))};});
+   return {endpoints,sentinel:!!br,baseStyle:!br||getComputedStyle(br).fontSize===getComputedStyle(h).fontSize};
+  });
+  expect(mapping.sentinel).toBe(source.endsWith('\n'));expect(mapping.baseStyle).toBe(true);
+  await target(row,method.includes('restore')?'click':method);
+  if(method==='text-end-restore'||method==='br-restore')await page.evaluate(method=>{const p=spike.offsetToDomPoint(spike.readText().length,method==='text-end-restore'?'upstream':'downstream');getSelection().setBaseAndExtent(p.node,p.offset,p.node,p.offset);},method);
+  const before=await snapshot();
+  if(method.includes('restore')){
+   await page.evaluate(value=>{const saved=spike.readSelection();spike.mount(value,{terminalBr:true});spike.applyMetricLineHeight();spike.setSelection(saved.anchor,saved.focus);},value);
+   expect((await snapshot()).selection).toEqual(before.selection);
+  }
+  await page.keyboard.type('Z');const after=await snapshot();
+  const {geometry,projectedMaxDy}=await compareGlyph(value,expected,offset);
+  const passed=after.text===expected&&after.selection.anchor===offset&&after.selection.focus===offset&&geometry.dx<=2&&geometry.dy<=2;
+  results.push({source,method,expected,offset,before,after,mapping,geometry,passed,projectedMaxDy});
+ }
+ // Observe input synchronously: no following character may conceal a service LF.
+ for(const source of ['A','A\n']){
+  await fresh(source);await page.locator('#host').focus();await page.keyboard.press('Control+End');await page.keyboard.press('Enter');
+  const enter=await snapshot();
+  expect(enter.events.map(e=>[e.type,e.inputType])).toEqual([['beforeinput','insertLineBreak'],['input','insertLineBreak']]);
+  expect(enter.events[1].text).toBe(enter.text);
+  await page.keyboard.type('Z');const after=await snapshot();
+  const {geometry,projectedMaxDy}=await compareGlyph({...base,textRuns:[]},source+'\nZ',source.length+2);
+  results.push({source,method:'Enter',geometry,projectedMaxDy,expected:source+'\n',enter,after,passed:enter.text===source+'\n'&&after.text===source+'\nZ'&&after.selection.anchor===source.length+2&&after.selection.focus===source.length+2&&geometry.dx<=2&&geometry.dy<=2});
+ }
+ // Fresh control without the opt-in marker, under the same metric CSS.
+ await mount(page,{...base,text:'A\n',textRuns:[]});await page.evaluate(()=>spike.applyMetricLineHeight());
+ await target(1,'click');await page.keyboard.type('Z');const withoutSentinel=await snapshot();
+ // The BR inherits host style even after a large formatted surrogate pair.
+ const mixed={...base,text:'A😀\n',textRuns:[{start:1,end:4,style:{fontSize:40}}]};
+ await fresh(mixed.text);
+ expect(await page.evaluate(value=>{
+  spike.mount(value,{terminalBr:true});const metrics=spike.applyMetricLineHeight(),h=document.querySelector('#host'),br=h.lastChild;
+  for(let i=0;i<=value.text.length;i++)for(const affinity of ['upstream','downstream']){const p=spike.offsetToDomPoint(i,affinity);if(spike.domPointToOffset(p.node,p.offset)!==i)throw Error('surrogate mapping');}
+  return {text:spike.readText(),brSize:getComputedStyle(br).fontSize,hostSize:getComputedStyle(h).fontSize,lastSpanSize:getComputedStyle(br.previousSibling).fontSize,metrics:metrics.length,spans:h.querySelectorAll('span').length};
+ },mixed)).toEqual({text:mixed.text,brSize:'20px',hostSize:'20px',lastSpanSize:'40px',metrics:3,spans:2});
+ // Existing spaces-5 soft-wrap under the metric geometry; native clipboard only.
+ const wrap={...base,text:'alpha     beta gamma',w:75,textRuns:[]};
+ await fresh(wrap.text);await page.evaluate(value=>{spike.mount(value,{terminalBr:true});spike.applyMetricLineHeight();},wrap);
+ const points=await page.evaluate(()=>{const m=spike.measure(),h=document.querySelector('#host').getBoundingClientRect();return [m.pairs.filter(p=>p.dom.row===0).at(-1).dom,m.pairs.find(p=>p.dom.row===1).dom].map((d,i)=>({x:h.x+(i?d.x+.2:d.endX-.2),y:h.y+(d.top+d.bottom)/2}));});
+ const actions=[];
+ for(const p of points){await page.mouse.click(p.x,p.y);actions.push(await snapshot());expect((await snapshot()).selection.focus).toBe(8);}
+ await page.keyboard.press('Control+Home');for(let i=0;i<8;i++)await page.keyboard.press('ArrowRight');
+ for(const [key,offset] of [['ArrowDown',15],['ArrowUp',8]]){await page.keyboard.press(key);expect((await snapshot()).selection.focus).toBe(offset);actions.push(await snapshot());}
+ await page.keyboard.press('Control+a');await page.keyboard.press('Control+c');await page.keyboard.press('Control+End');await page.keyboard.press('Control+v');expect(await text(page)).toBe(wrap.text+wrap.text);
+ for(const key of ['Backspace','Delete']){
+  await page.evaluate(value=>{spike.mount(value,{terminalBr:true});spike.applyMetricLineHeight();},wrap);await page.locator('#host').focus();await page.keyboard.press('Control+Home');for(let i=0;i<8;i++)await page.keyboard.press('ArrowRight');await page.keyboard.press(key);
+  expect(await text(page)).toBe(key==='Backspace'?wrap.text.slice(0,7)+wrap.text.slice(8):wrap.text.slice(0,8)+wrap.text.slice(9));
+ }
+ await testInfo.attach('native-caret.json',{body:JSON.stringify({browser:browser.version(),withoutSentinel,results,softWrap:{passed:true,actions},gate0B2Passed:results.every(r=>r.passed)},null,2),contentType:'application/json'});
+ // Pin the canonical blocker rather than silently labelling diagnostic execution PASS as gate PASS.
+ const enter=results.find(r=>r.source==='A'&&r.method==='Enter');
+ const chromium=testInfo.project.name.startsWith('chromium');
+ expect(enter.enter.text).toBe(chromium?'A\n\n':'A\n');expect(enter.passed).toBe(!chromium);
+ for(const result of results.filter(r=>r.method!=='Enter'||r.source!=='A'))expect(result.passed,JSON.stringify({source:result.source,method:result.method})).toBe(true);
+});

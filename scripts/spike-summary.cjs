@@ -1,19 +1,26 @@
 // A successful diagnostic runner is deliberately distinct from passing a gate.
 const fs=require('node:fs');
 const report=JSON.parse(fs.readFileSync('test-results/spike-results.json','utf8'));
-const entries=[];
+const entries=[],nativeEntries=[];
 function walk(suite){
  for(const spec of suite.specs||[])for(const test of spec.tests||[])for(const result of test.results||[]){
-  for(const a of result.attachments||[])if(a.name==='gate.json'){
+  for(const a of result.attachments||[]){
+  if(a.name==='native-caret.json'){
+   const native=JSON.parse(a.body?Buffer.from(a.body,'base64').toString():fs.readFileSync(a.path,'utf8'));
+   nativeEntries.push({...native,browser:test.projectName,version:native.browser,status:result.status});
+  }
+  if(a.name==='gate.json'){
    const gate=JSON.parse(a.body?Buffer.from(a.body,'base64').toString():fs.readFileSync(a.path,'utf8'));
    entries.push({browser:test.projectName,status:result.status,...gate});
+  }
   }
  }
  for(const child of suite.suites||[])walk(child);
 }
 for(const suite of report.suites||[])walk(suite);
+if(nativeEntries.length!==2)throw Error('Expected Chromium and Firefox native-caret measurements; diagnostics incomplete');
 if(entries.length!==2)throw Error('Expected Chromium and Firefox gate measurements; diagnostics incomplete');
-const executionPassed=report.stats.unexpected===0&&report.stats.skipped===0&&report.stats.expected===30;
+const executionPassed=report.stats.unexpected===0&&report.stats.skipped===0&&report.stats.expected===32;
 const overall=executionPassed&&entries.every(e=>e.gate0APassed);
 const markdown=[
  '### Plaintext-only diagnostic execution and gate verdict',
@@ -22,7 +29,7 @@ const markdown=[
  '| --- | --- | --- | --- |',
  ...entries.map(e=>`| ${e.browser} | ${e.gate0APassed?'PASS':'FAIL'} | ${e.gatePassed?'PASS':'FAIL'} | ${(e.mismatches||[]).map(m=>m.name).join(', ')||'none'} |`),
  '',`Combined Gate 0A: **${overall?'PASS':'FAIL'}**. Passing the diagnostic command does not approve WYSIWYG integration.`,
- '', 'Native editing is checked separately in the original pre-wrap/break-spaces modes; the metric CSS candidate is measured by the matrix only. Full Gate 0 also requires empty-line/affinity/IME validation.',
+ '', 'Native editing is checked separately in the original pre-wrap/break-spaces modes; the metric CSS matrix remains separate; terminal-BR native diagnostics are attached as native-caret.json. Full Gate 0 also requires empty-line/affinity/IME validation.',
  '',
 ].join('\n');
 const metricEntries=entries.filter(e=>e.comparison);
@@ -37,7 +44,14 @@ const metricMarkdown=metricEntries.length?[
  }), '',
  'Glyph/caret maxima exclude cases with differing line boundaries. Empty probes include both DOM affinities independently; absent rects are not zero error.', '',
 ].join('\n'):'';
-console.log(markdown+metricMarkdown);
-if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,markdown+metricMarkdown);
-fs.writeFileSync('test-results/spike-gates.json',JSON.stringify({executionPassed,gate0APassed:overall,browsers:entries},null,2)+'\n');
+const nativeMarkdown=[
+ '### Terminal BR native candidate (limited Gate 0B/2)', '',
+ '| Browser | Exact input, offsets and glyph geometry | Soft-wrap | Gate 0B/2 |',
+ '| --- | --- | --- | --- |',
+ ...nativeEntries.map(e=>`| ${e.browser} | ${e.results.filter(r=>r.passed).length}/${e.results.length} | ${e.softWrap.passed?'PASS':'FAIL'} | ${e.gate0B2Passed?'PASS (limited smoke)':'FAIL'} |`), '',
+ 'This limited result does not override strict Gate 0A/0B. Chromium insertLineBreak is pinned as a canonical-text blocker, not a passing save contract.', '',
+].join('\n');
+console.log(markdown+metricMarkdown+nativeMarkdown);
+if(process.env.GITHUB_STEP_SUMMARY)fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,markdown+metricMarkdown+nativeMarkdown);
+fs.writeFileSync('test-results/spike-gates.json',JSON.stringify({executionPassed,gate0APassed:overall,browsers:entries,native:nativeEntries},null,2)+'\n');
 if(!executionPassed)process.exitCode=1;

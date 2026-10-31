@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "playwright test --project=chromium",
+    "test:selection:firefox": "playwright test --config=playwright.selection.config.js",
     "test:known": "playwright test --project=known-failures",
     "test:all": "playwright test",
     "test:visual": "playwright test --project=chromium tests/visual.spec.js",

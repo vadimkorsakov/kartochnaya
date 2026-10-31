@@ -54,14 +54,16 @@ export function mount(value){
  if(saved)setSelection(Math.min(saved.anchor,readText().length),Math.min(saved.focus,readText().length));
  return true;
 }
-export async function ready(){await document.fonts.load('20px SpikeSans');await document.fonts.ready;}
+export async function ready(){await Promise.all(['20px SpikeSans','700 20px SpikeSans','20px SpikeSerif'].map(font=>document.fonts.load(font)));await document.fonts.ready;}
 export function measure(){
  const layout=engine.layout(layer),origin=host.getBoundingClientRect(),dom=[],canvas=[];
 
  for(const [rowIndex,row] of layout.rows.entries())for(const part of row.fragments){
   ctx.font=richTextFont(part.style);ctx.fontKerning='normal';ctx.letterSpacing=part.style.letterSpacing+'px';
-  for(const {segment,index} of new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(part.text)){
-   const prefix=part.text.slice(0,index),end=prefix+segment,m=ctx.measureText(segment);
+  for(const {segment,index:sourceIndex} of new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(layer.text.slice(part.start,part.end))){
+   if(segment==='\r')continue;
+   const index=sourceIndex;
+   const prefix=layer.text.slice(part.start,part.start+index).replaceAll('\r',''),end=prefix+segment,m=ctx.measureText(segment);
    canvas.push({start:part.start+index,end:part.start+index+segment.length,row:rowIndex,x:part.x+ctx.measureText(prefix).width,endX:part.x+ctx.measureText(end).width,top:part.y-(m.fontBoundingBoxAscent??m.actualBoundingBoxAscent),baseline:part.y,ascent:m.fontBoundingBoxAscent??m.actualBoundingBoxAscent});
   }
 
@@ -74,7 +76,7 @@ export function measure(){
   const metric=ctx.measureText(segment);const domBaseline=r.top-origin.top+(metric.fontBoundingBoxAscent??metric.actualBoundingBoxAscent);
   const caret=document.createRange();caret.setStart(a.node,a.offset);caret.collapse(true);const cr=caret.getClientRects()[0];
   caret.setStart(b.node,b.offset);caret.collapse(true);const er=caret.getClientRects()[0];
-  dom.push({baseline:domBaseline,hardBreak:segment==='\n',start:index,end:index+segment.length,x:r.left-origin.left,endX:r.right-origin.left,top:r.top-origin.top,bottom:r.bottom-origin.top,caret:cr?{x:cr.left-origin.left,y:cr.top-origin.top}:null,endCaret:er?{x:er.left-origin.left,y:er.top-origin.top}:null});
+  dom.push({baseline:domBaseline,hardBreak:/^[\r\n]+$/.test(segment),start:index,end:index+segment.length,x:r.left-origin.left,endX:r.right-origin.left,top:r.top-origin.top,bottom:r.bottom-origin.top,caret:cr?{x:cr.left-origin.left,y:cr.top-origin.top}:null,endCaret:er?{x:er.left-origin.left,y:er.top-origin.top}:null});
  }
  // Glyph boxes can overlap across rows when CSS line-height is smaller
  // than font bounds. Infer native baselines from Range top + font ascent;
@@ -82,7 +84,8 @@ export function measure(){
  let row=-1,baseline=-Infinity;
  for(const p of dom){if(Math.abs(p.baseline-baseline)>.25){row++;baseline=p.baseline;}p.row=row;}
  const glyphs=dom.filter(p=>!p.hardBreak);
- const pairs=glyphs.map((d,i)=>({start:d.start,dom:d,canvas:canvas[i],dx:Math.abs(d.x-canvas[i].x),dy:Math.abs(d.top-canvas[i].top)}));
+ // Match by source intervals: ignored legacy CR must not shift all later pairs.
+ const pairs=glyphs.flatMap(d=>{const c=canvas.find(c=>c.start===d.start&&c.end===d.end);return c?[{start:d.start,dom:d,canvas:c,dx:Math.abs(d.x-c.x),dy:Math.abs(d.top-c.top)}]:[];});
  // A soft-wrap offset has two legitimate visual positions. Compare a
  // collapsed native Range with both logical neighbours instead of treating
  // browser affinity as a geometry error. Keep the raw rects in pairs.
@@ -97,6 +100,21 @@ export function measure(){
    .sort((a,b)=>Math.hypot(a.dx,a.dy)-Math.hypot(b.dx,b.dy))[0];
  }));
  const domRows=dom.reduce((rows,p)=>{rows[p.row]??=[];if(!p.hardBreak)rows[p.row].push([p.start,p.end]);return rows;},[]);
- if(layer.text.endsWith('\n'))domRows.push([]);
- return {text:readText(),maxCaretDx:Math.max(0,...carets.map(p=>p.dx)),maxCaretDy:Math.max(0,...carets.map(p=>p.dy)),missingCaretRects:pairs.length*2-carets.length,domRows,canvasRows:layout.rows.map(row=>canvas.filter(p=>p.row===layout.rows.indexOf(row)).map(p=>[p.start,p.end])),maxDx:Math.max(0,...pairs.map(p=>p.dx)),maxDy:Math.max(0,...pairs.map(p=>p.dy)),pairs};
+ if(/[\r\n]$/.test(layer.text))domRows.push([]);
+ if(!domRows.length)domRows.push([]);
+ // Explicit source intervals include empty rows and hard-break ownership.
+ const domLines=[];let start=0;
+ for(const entries of domRows){
+  const end=entries.length?entries.at(-1)[1]:start;
+  const hard=dom.find(p=>p.hardBreak&&p.start===end);
+  const nextStart=hard?.end??end;
+  domLines.push({start,end,nextStart,softWrap:!hard&&domLines.length<domRows.length-1});start=nextStart;
+ }
+ const canvasLines=layout.rows.map(({start,end,nextStart,softWrap})=>({start,end,nextStart,softWrap}));
+ const rowProbes=domLines.map(line=>{
+  const p=offsetToDomPoint(line.start),r=document.createRange();r.setStart(p.node,p.offset);r.collapse(true);
+  return {offset:line.start,rects:[...r.getClientRects()].map(r=>({x:r.left-origin.left,y:r.top-origin.top,height:r.height}))};
+ });
+ const css=getComputedStyle(host);ctx.font=css.font;const metrics=ctx.measureText('Mg');
+ return {cssMetrics:{font:css.font,lineHeight:css.lineHeight,ascent:metrics.fontBoundingBoxAscent??metrics.actualBoundingBoxAscent,descent:metrics.fontBoundingBoxDescent??metrics.actualBoundingBoxDescent},rowProbes,unmatchedGlyphs:glyphs.length-pairs.length,text:readText(),domLines,canvasLines,domMetrics:dom,canvasMetrics:layout.rows,maxCaretDx:Math.max(0,...carets.map(p=>p.dx)),maxCaretDy:Math.max(0,...carets.map(p=>p.dy)),missingCaretRects:pairs.length*2-carets.length,domRows,canvasRows:layout.rows.map(row=>canvas.filter(p=>p.row===layout.rows.indexOf(row)).map(p=>[p.start,p.end])),maxDx:Math.max(0,...pairs.map(p=>p.dx)),maxDy:Math.max(0,...pairs.map(p=>p.dy)),pairs};
 }

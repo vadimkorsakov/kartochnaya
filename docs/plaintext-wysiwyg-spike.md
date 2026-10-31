@@ -1,5 +1,7 @@
 # PR #66: plaintext-only feasibility spike — Gate 0 не пройден
 
+Продолжение: [Gate 0A — проверка break-spaces, CR и вертикальной геометрии](gate-0a-dom-canvas.md).
+
 Дата: 31 октября 2026. База: `bc90ed49fd04198b3c0d5a8a9ca974955d8305c3`
 после PR #65. Изучено приложенное архитектурное заключение.
 

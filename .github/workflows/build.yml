@@ -91,12 +91,17 @@ jobs:
       - name: Install Firefox for selection regressions
         run: npx playwright install --with-deps firefox
       - run: npm run test:spike
+      - name: Report diagnostic execution separately from Gate 0A / Gate 0
+        if: always()
+        run: node scripts/spike-summary.cjs
       - name: Preserve plaintext-only feasibility measurements
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: plaintext-spike-measurements
-          path: test-results/spike-results.json
+          path: |
+            test-results/spike-results.json
+            test-results/spike-gates.json
           if-no-files-found: warn
           retention-days: 14
       - run: npm run test:selection:firefox

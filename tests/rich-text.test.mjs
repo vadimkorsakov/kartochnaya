@@ -143,3 +143,22 @@ test('native textarea undo/redo restores deleted formatting, grouped edits and b
   edit(initial.text,'historyUndo');edit('Новое');assert.equal(history.states.at(-1).text,'Новое');assert.equal(history.states.some(s=>s.text===initial.text+'ab'),false);
   assert.deepEqual(initial,rich());
 });
+
+test('resizing the base to a stored run size must not discard that run during text edits',()=>{
+  const e={text:'aB',fontSize:40,textRunsBaseFontSize:20,textRuns:[run(1,2,{fontSize:40})]},before=structuredClone(e);
+  assert.deepEqual(normalizeRuns(e.text,e.textRuns,e),e.textRuns);
+  assert.deepEqual(updateText(e,'aB!').textRuns,[run(1,3,{fontSize:40})]);
+  assert.deepEqual(applyTextStyle(e,0,1,{textColor:'red'}).textRuns,[run(0,1,{textColor:'red'}),run(1,2,{fontSize:40})]);
+  assert.deepEqual(e,before);
+  const cleared=clearTextFormatting(e);assert.equal(cleared.textRunsBaseFontSize,undefined);assert.equal(cleared.fontSize,40);
+  assert.deepEqual(applyTextStyle(cleared,0,1,{fontSize:20}).textRuns,[run(0,1,{fontSize:20})]);
+});
+
+test('base-equal explicit styles and aliases keep their render priority through normalization and edits',()=>{
+  const e={text:'AB',fontWeight:'400',fontStyle:'normal',textRuns:[run(0,2,{fontWeight:'400',bold:true,fontStyle:'normal',italic:true})]};
+  assert.deepEqual(normalizeRuns(e.text,e.textRuns,e),e.textRuns);
+  assert.deepEqual(updateText(e,'AB!').textRuns,[run(0,3,e.textRuns[0].style)]);
+  const aliases={text:'AB',fontWeight:'400',bold:true,fontStyle:'normal',italic:true,textRuns:[run(0,2,{bold:true,italic:true})]};
+  assert.deepEqual(normalizeRuns(aliases.text,aliases.textRuns,aliases),aliases.textRuns);
+  assert.deepEqual(updateText(aliases,'AB!').textRuns,[run(0,3,{bold:true,italic:true})]);
+});

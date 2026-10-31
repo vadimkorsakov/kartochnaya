@@ -90,3 +90,18 @@ test('a region text backdrop measures its font; a text layer without glyph paint
  const dependencies=collectCanvasResources({elements:[{type:'text',fillType:'none',fontFamily:'Unused'},{type:'text',isFxRegion:true,fillType:'image',imageSrc:'unused',fontFamily:'Required',effects:[{type:'textBackdrop',maskSrc:'mask'}]}]}, {...options,hasEffect});
  assert.deepEqual(dependencies.images.map(x=>x.src),['mask']);assert.deepEqual(dependencies.fonts.map(x=>x.family),['Required']);
 });
+
+test('mixed horizontal export prepares effective run variants, gaps and Unicode, with shared precedence',()=>{
+ const e={type:'text',text:'А😀 xyz',fontFamily:'Base',fontWeight:'500',fontStyle:'oblique',textRuns:[
+  {start:1,end:3,style:{fontFamily:'Emoji',bold:true,italic:false}},
+  {start:4,end:7,style:{fontWeight:'300',bold:true,fontStyle:'italic',italic:false}}
+ ]};
+ const before=structuredClone(e);
+ assert.deepEqual(collect([e]).fonts,[
+  {family:'Base',weight:'500',style:'oblique',text:'А '},
+  {family:'Emoji',weight:'700',style:'normal',text:'😀'},
+  {family:'Base',weight:'300',style:'italic',text:'xyz'}
+ ]);
+ assert.deepEqual(e,before);
+ assert.equal(collect([{...e,textMode:'vertical'}]).fonts.length,1);
+});

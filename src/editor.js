@@ -1,4 +1,5 @@
 import { updateText, transformText, replaceText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
+import { usesRichTextLayout, richTextFont, retainRichTextSizeBase, createRichTextLayoutEngine } from './render/rich-text-layout.mjs';
 import { createReplacementSession } from './backup/replace.mjs';
 import { createInstanceGuard } from './backup/instances.mjs';
 import { installBackupUI } from './backup/ui.mjs';
@@ -733,7 +734,7 @@ function relocateMobileHistory(){
 
 function showInspector(mode='settings'){if(matchMedia('(max-width:760px)').matches&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(matchMedia('(max-width:760px)').matches){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
 function hideInspector(){cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
-function changeProperty(key,val,final=false){const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else other[key]=e[key];if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
+function changeProperty(key,val,final=false){const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
 function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;changeProperty(t.dataset.key,t.value,final);if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key)))refreshInspector()}
 $('#inspector').addEventListener('change',e=>{if(e.target.dataset.clipCheckbox){const elem=app.doc.elements.find(x=>x.id===e.target.dataset.clipCheckbox);if(elem){elem.clipped=!e.target.checked;toggleClip(elem.id)}refreshInspector()}});
 $('#inspector').addEventListener('change',ev=>{if(ev.target.matches('[data-text-auto-font]'))setTextAutoFont(ev.target.checked)});
@@ -964,12 +965,19 @@ function wrapLines(c,e){
 // Horizontal text layout uses Canvas metrics both for exporting and auto fitting.
 // Older documents omit autoFontSize and therefore keep their historical sizing.
 const textFitContext=document.createElement('canvas').getContext('2d');
+const richTextEngine=createRichTextLayoutEngine(document.createElement('canvas').getContext('2d'),document.fonts);
+function mixedTextLayout(e){
+ const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
+ return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
+}
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
 function autoFitTextFont(e){
  if(!e?.autoFontSize||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||!String(e.text||'').length)return false;
+ retainRichTextSizeBase(e);
  const before=e.fontSize,lh=Math.max(.5,Number(e.lineHeight)||1.15),maxW=Math.max(10,e.w)-1,maxH=Math.max(1,e.h)-1;
  const fits=size=>{
   const sample={...e,fontSize:size};
+  if(usesRichTextLayout(sample)){const layout=richTextEngine.layout(sample);return layout.height<=maxH&&layout.width<=maxW}
   textFitContext.font=fontString(sample);
   const lines=wrapLines(textFitContext,sample);
   return lines.length*size*lh<=maxH&&lines.every(line=>measuredTextWidth(textFitContext,sample,line)<=maxW);
@@ -985,10 +993,10 @@ function fitTextBoxToContent(e){
  // Match Canvas wrapping; do not accidentally turn soft-wrapped paragraphs into
  // enormously wide single lines. Grow only if a single glyph cannot fit.
  textFitContext.font=fontString(e);
- const lines=wrapLines(textFitContext,e);
- const naturalWidth=Math.max(12,...lines.map(line=>Math.ceil(measuredTextWidth(textFitContext,e,line)+2)));
- const nextW=Math.max(12,naturalWidth+2),nextLines=wrapLines(textFitContext,{...e,w:nextW});
- const nextH=Math.max(12,Math.ceil(nextLines.length*(e.fontSize||24)*(e.lineHeight||1.15)+2));
+ const mixed=usesRichTextLayout(e)?richTextEngine.layout(e):null,lines=mixed?null:wrapLines(textFitContext,e);
+ const naturalWidth=mixed?Math.max(12,Math.ceil(mixed.width+2)):Math.max(12,...lines.map(line=>Math.ceil(measuredTextWidth(textFitContext,e,line)+2)));
+ const nextW=Math.max(12,naturalWidth+2),nextSample={...e,w:nextW};
+ const nextH=mixed?Math.max(12,Math.ceil(richTextEngine.layout(nextSample).height+2)):Math.max(12,Math.ceil(wrapLines(textFitContext,nextSample).length*(e.fontSize||24)*(e.lineHeight||1.15)+2));
  const oldW=e.w,oldH=e.h;if(nextW===oldW&&nextH===oldH)return false;
  if(e.textAlign==='right')e.x+=oldW-nextW;
  else if(e.textAlign==='center')e.x+=Math.round((oldW-nextW)/2);
@@ -1081,10 +1089,32 @@ function drawTextPathDraft(c){const dr=app.textPathDraft;if(!dr?.nodes.length)re
 function drawTextGlyphs(c,e,method='fill'){
  if(e.textMode==='path'&&method==='fill'&&paintTextOnPath(c,e))return;
  if(e.textMode==='vertical'){c.save();c.font=fontString(e);c.textBaseline='top';c.textAlign='center';const sz=e.fontSize||24,step=sz*(e.lineHeight||1.15);let y=0;let x=sz/2;for(const ch of String(e.text||'')){if(ch==='\n'||y+step>e.h){x+=step;y=0;if(ch==='\n')continue}if(x>e.w)break;if(method==='stroke')c.strokeText(ch,x,y);else c.fillText(ch,x,y);y+=step}c.restore();return}
+ if(usesRichTextLayout(e)){drawMixedTextGlyphs(c,e,method);return}
  c.save();c.font=fontString(e);c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';c.textBaseline='top';c.textAlign=e.textAlign||'left';const lh=(e.lineHeight||1.15)*(e.fontSize||24),lines=wrapLines(c,e),blockH=lines.length*lh,offsetY=e.verticalAlign==='middle'?Math.max(0,(e.h-blockH)/2):e.verticalAlign==='bottom'?Math.max(0,e.h-blockH):0;
  c.beginPath();c.rect(-Math.max(0,e.strokeWidth||0),-Math.max(0,e.strokeWidth||0),e.w+2*Math.max(0,e.strokeWidth||0),e.h+2*Math.max(0,e.strokeWidth||0));c.clip();
  const paint=(s,x,y)=>method==='stroke'?c.strokeText(s,x,y):c.fillText(s,x,y);
  for(let i=0;i<lines.length;i++){const y=i*lh+offsetY;if(y>e.h)break;const x=e.textAlign==='center'?e.w/2:e.textAlign==='right'?e.w:0;const t=lines[i];paint(t,x,y)}c.restore();
+}
+function drawMixedTextGlyphs(c,e,method){
+ const layout=mixedTextLayout(e),stroke=Math.max(0,e.strokeWidth||0);
+ c.save();c.textAlign='left';c.textBaseline='alphabetic';c.fontKerning='normal';
+ const solid=(e.fillType||'solid')==='solid';if(method==='fill'&&solid)c.globalAlpha*=clamp((e.fillOpacity??100)/100,0,1);
+ c.beginPath();c.rect(-stroke,-stroke,e.w+2*stroke,e.h+2*stroke);c.clip();
+ for(const row of layout.rows){
+  if(row.y>e.h)break;
+  for(const part of row.fragments){
+   c.font=richTextFont(part.style);c.letterSpacing=part.style.letterSpacing+'px';
+   if(method==='stroke')c.strokeText(part.text,part.x,part.y);
+   else{if(solid)c.fillStyle=part.style.textColor;c.fillText(part.text,part.x,part.y)}
+  }
+  // Existing layer decorations still cover the line; run decorations are data only.
+  if(method==='fill'&&(e.mobileUnderline||e.mobileStrike)){
+   c.strokeStyle=c.fillStyle;c.lineWidth=Math.max(1,(e.fontSize||24)/19);
+   const x=row.fragments[0]?.x||0;
+   for(const offset of [e.mobileUnderline?(e.fontSize||24)*.1:null,e.mobileStrike?-(e.fontSize||24)*.31:null])if(offset!==null){c.beginPath();c.moveTo(x,row.baseline+offset);c.lineTo(x+row.width,row.baseline+offset);c.stroke()}
+  }
+ }
+ c.restore();
 }
 function paintText(c,e){
  const kind=e.fillType||'solid';
@@ -1577,9 +1607,19 @@ function tf43Backdrop(e,f,d,raw){
  }
  const pad=Math.max(0,Number(f.spread??9)),alpha=clamp(Number(f.opacity??100)/100,0,1);
  c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.scale(e.flipX?-1:1,e.flipY?-1:1);c.translate(-e.w/2,-e.h/2);
+ const rows=[];
+ if(usesRichTextLayout(e)){
+  c.textBaseline='alphabetic';c.fontKerning='normal';
+  for(const row of mixedTextLayout(e).rows){
+   if(row.y>=e.h)break;
+   const parts=row.fragments.filter(p=>p.text.trim());if(!parts.length)continue;
+   let top=Infinity,bottom=-Infinity;
+   for(const part of parts){c.font=richTextFont(part.style);c.letterSpacing=part.style.letterSpacing+'px';const m=c.measureText(part.text);top=Math.min(top,part.y-m.actualBoundingBoxAscent);bottom=Math.max(bottom,part.y+m.actualBoundingBoxDescent)}
+   rows.push({l:parts[0].x-pad,r:parts.at(-1).x+parts.at(-1).width+pad,t:top-pad,b:Math.min(e.h,bottom)+pad});
+  }
+ }else{
  c.font=fontString(e);c.textBaseline='top';const lh=(e.lineHeight||1.15)*(e.fontSize||24),lines=wrapLines(c,e),blockH=lines.length*lh;
  const offsetY=e.verticalAlign==='middle'?Math.max(0,(e.h-blockH)/2):e.verticalAlign==='bottom'?Math.max(0,e.h-blockH):0;
- const rows=[];
  for(let i=0;i<lines.length;i++){
   if(i*lh+offsetY>=e.h)break;const str=lines[i];if(!str.trim())continue;
   const m=c.measureText(str),width=m.width+Math.max(0,str.length-1)*(e.letterSpacing||0);
@@ -1588,6 +1628,7 @@ function tf43Backdrop(e,f,d,raw){
   const top=y-(Number.isFinite(m.actualBoundingBoxAscent)?m.actualBoundingBoxAscent:-(e.fontSize||24)*.2);
   const bottom=y+(Number.isFinite(m.actualBoundingBoxDescent)?m.actualBoundingBoxDescent:(e.fontSize||24)*.8);
   rows.push({l:x-pad,r:x+width+pad,t:top-pad,b:bottom+pad});
+ }
  }
  if(rows.length){
   // Join neighboring line bands at their midpoint to preserve one continuous staircase.
@@ -4082,6 +4123,7 @@ for(const root of [$('#app'),$('#shade'),$('#mobilePropertyUI'),$('#documentTabs
 // Draw mobile-only text enhancements through the same Canvas path used for PNG export.
 const mobileV36BaseDrawText=drawTextGlyphs;
 drawTextGlyphs=function(c,e,method='fill'){
+ if(usesRichTextLayout(e))return mobileV36BaseDrawText(c,e,method);
  if(e.type==='text'&&e.mobileArcRadius&&e.textMode!=='path'){
   c.save();c.font=fontString(e);c.textBaseline='middle';c.textAlign='center';
   const source=String(e.text||'').split('\n')[0],r=Math.max(70,Math.abs(e.mobileArcRadius)*3),dir=Math.sign(e.mobileArcRadius)||1;

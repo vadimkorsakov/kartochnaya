@@ -31,7 +31,13 @@ function styleData(value, base = {}) {
     if (['fontFamily', 'fontStyle', 'textColor', 'fontWeight'].includes(k) && typeof v !== 'string') continue;
     if (k === 'fontSize' && !(typeof v === 'number' && v > 0)) continue;
     if (['bold', 'italic', 'underline', 'strikethrough'].includes(k) && typeof v !== 'boolean') continue;
-    if (!equal(v, base[k])) out[k] = v;
+    // Run sizes stay in the original reference units after mixed-text fitting.
+    let inherited = base[k];
+    if (k === 'fontSize' && Number.isFinite(base.textRunsBaseFontSize) && base.textRunsBaseFontSize > 0) inherited = base.textRunsBaseFontSize;
+    if ((k === 'bold' && base.fontWeight) || (k === 'italic' && base.fontStyle)) inherited = undefined;
+    // A base-equal explicit key still wins over a conflicting run alias.
+    const alias = k === 'fontWeight' ? 'bold' : k === 'fontStyle' ? 'italic' : null;
+    if (!equal(v, inherited) || alias && typeof value[alias] === 'boolean') out[k] = v;
   }
   return out;
 }
@@ -97,6 +103,7 @@ export function applyTextStyle(element, start, end, patch) {
 }
 export function clearTextFormatting(element) {
   const result = withRuns(element, element.text, []);
+  delete result.textRunsBaseFontSize;
   delete result.mobileRawTextRuns; delete result.mobileListRawTextRuns;
   return result;
 }

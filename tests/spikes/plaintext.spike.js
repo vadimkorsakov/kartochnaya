@@ -120,20 +120,37 @@ test('soft-wrap mouse affinity, arrows, Home/End, delete, multiline copy/paste',
 });
 
 });
-test('compare every logical line before/after break-spaces (diagnostic, not gate assertion)',async({page,browser},testInfo)=>{
+test('compare break-spaces with metric line-height (diagnostic, not gate assertion)',async({page,browser},testInfo)=>{
  await mount(page);const {cases}=require('./cases.cjs');const results=[];
- for(const whiteSpace of ['pre-wrap','break-spaces'])for(const [name,value] of cases){
-  await page.evaluate(({value,whiteSpace})=>{spike.mount(value);document.querySelector('#host').style.whiteSpace=whiteSpace;},{value,whiteSpace});
+ for(const geometry of ['original','font-metrics'])for(const [name,value] of cases){
+  const appliedMetrics=await page.evaluate(({value,geometry})=>{spike.mount(value);document.querySelector('#host').style.whiteSpace='break-spaces';return geometry==='font-metrics'?spike.applyMetricLineHeight():null;},{value,geometry});
   const result=await page.evaluate(()=>spike.measure());expect(result.text).toBe(value.text);expect(result.unmatchedGlyphs).toBe(0);
   for(const key of ['maxDx','maxDy','maxCaretDx','maxCaretDy'])expect(Number.isFinite(result[key])).toBe(true);
-  results.push({name,whiteSpace,...result,wrapMatches:JSON.stringify(result.domLines)===JSON.stringify(result.canvasLines)});
+  results.push({name,whiteSpace:'break-spaces',geometry,appliedMetrics,...result,wrapMatches:JSON.stringify(result.domLines)===JSON.stringify(result.canvasLines)});
  }
- const after=results.filter(r=>r.whiteSpace==='break-spaces');
+ const after=results.filter(r=>r.geometry==='font-metrics');
+ for(const r of after){
+  const before=results.find(b=>b.geometry==='original'&&b.name===r.name);
+  expect(r.canvasMetrics).toEqual(before.canvasMetrics);
+  expect(r.canvasLines).toEqual(before.canvasLines);
+  expect(r.caretRowProbes).toHaveLength(r.canvasLines.length);
+  expect(r.appliedMetrics.every(m=>parseFloat(m.computed)===m.height)).toBe(true);
+ }
  for(const r of after.filter(r=>r.name!=='lone-CR'))expect(r.wrapMatches,r.name).toBe(true);
  const repro=after.find(r=>r.name==='spaces-5');expect(repro.domLines[0]).toEqual({start:0,end:8,nextStart:8,softWrap:true});
  const gate0APassed=after.every(r=>r.wrapMatches);
- const gatePassed=gate0APassed&&after.every(r=>r.maxDx<=2&&r.maxDy<=2&&r.maxCaretDx<=2&&r.maxCaretDy<=2&&r.missingCaretRects===0);
+ const emptyRowsVerified=after.every(r=>r.caretRowProbes.filter(p=>p.empty).every(p=>p.affinities.every(a=>a.rects.length>0&&a.deltas.every(d=>d.dx<=2&&d.dy<=2))));
+ const geometryWithinTolerance=r=>r.maxDx<=2&&r.maxDy<=2&&r.maxCaretDx<=2&&r.maxCaretDy<=2&&r.missingCaretRects===0;
+ const hardRowCaretsVerified=after.filter(r=>r.wrapMatches).every(r=>r.caretRowProbes.filter((p,i)=>!i||!r.canvasLines[i-1].softWrap).every(p=>p.affinities.every(a=>a.rects.length>0&&a.deltas.every(d=>d.dx<=2&&d.dy<=2))));
+ const gate0BPassed=emptyRowsVerified&&hardRowCaretsVerified&&after.filter(r=>r.wrapMatches).every(geometryWithinTolerance);
+ const gatePassed=gate0APassed&&gate0BPassed;
+ const comparison=['original','font-metrics'].map(geometry=>{
+  const all=results.filter(r=>r.geometry===geometry),matching=all.filter(r=>r.wrapMatches);
+  const maximum=rows=>Object.fromEntries(['maxDx','maxDy','maxCaretDx','maxCaretDy'].map(key=>[key,Math.max(0,...rows.map(r=>r[key]))]));
+  const emptyProbes=all.flatMap(r=>r.caretRowProbes.filter(p=>p.empty).flatMap(p=>p.affinities));
+  return {geometry,lineMatches:matching.length,total:all.length,all:maximum(all),matching:maximum(matching),emptyProbes:emptyProbes.length,missingEmptyRects:emptyProbes.filter(a=>!a.rects.length).length,inaccurateEmptyRects:emptyProbes.filter(a=>a.deltas.some(d=>d.dx>2||d.dy>2)).length};
+ });
  await testInfo.attach('geometry.json',{body:JSON.stringify({browser:browser.version(),results},null,2),contentType:'application/json'});
- await testInfo.attach('gate.json',{body:JSON.stringify({diagnosticsExecuted:true,gate0APassed,gatePassed,scope:'logical line boundaries only; native editing is tested separately',mismatches:after.filter(r=>!r.wrapMatches).map(r=>({name:r.name,dom:r.domLines,canvas:r.canvasLines}))},null,2),contentType:'application/json'});
+ await testInfo.attach('gate.json',{body:JSON.stringify({diagnosticsExecuted:true,gate0APassed,gatePassed,emptyRowsVerified,hardRowCaretsVerified,gate0BPassed,comparison,scope:'metric CSS matrix; empty-row probes include both affinities; native editing remains original CSS only',mismatches:after.filter(r=>!r.wrapMatches).map(r=>({name:r.name,dom:r.domLines,canvas:r.canvasLines}))},null,2),contentType:'application/json'});
  console.log(JSON.stringify({browser:testInfo.project.name,version:browser.version(),diagnosticsExecuted:true,gate0APassed,gatePassed,mismatches:after.filter(r=>!r.wrapMatches).map(r=>r.name)}));
 });

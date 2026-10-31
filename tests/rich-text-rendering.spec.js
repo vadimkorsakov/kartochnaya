@@ -197,3 +197,13 @@ test('text backdrop follows the ink bands of mixed-size rows',async({page})=>{
  expect(greenBottom).toBeGreaterThanOrEqual(Math.floor(inkBottom)-2);
  expect(colored(image,0,255,0)).toBeGreaterThan(200);
 });
+
+test('editing after resizing to a raw run size preserves its scaled visual hierarchy',async({page})=>{
+ const runs=[{start:1,end:2,style:{fontSize:40,fontWeight:'400',bold:true,fontStyle:'normal',italic:true}}];
+ await seed(page,{text:'aB',fontSize:20,textRuns:runs});await select(page);await property(page,'fontSize',40);
+ const e=await layer(page),p=await canvasPoint(page,e.x+20,e.y+20);await page.mouse.dblclick(p.x,p.y);
+ await expect(page.locator('#inlineText')).toBeFocused();await page.locator('#inlineText').evaluate(el=>el.setSelectionRange(el.value.length,el.value.length));await page.keyboard.insertText('!');await page.locator('#inlineText').press('ControlOrMeta+Enter');
+ expect((await layer(page)).textRuns).toEqual([{start:1,end:3,style:runs[0].style}]);
+ expect((await frame(page)).find(d=>d.font.includes('80px')).font).not.toMatch(/italic|bold/);
+ expect((await frame(page)).map(d=>d.font)).toEqual(expect.arrayContaining([expect.stringContaining('40px'),expect.stringContaining('80px')]));
+});

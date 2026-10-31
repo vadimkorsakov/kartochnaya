@@ -357,3 +357,106 @@ test('controlled Enter canonical UTF-16 projection (Gate 0B/3 limited smoke)',as
  expect(redo.applications.filter(a=>a.inputType==='insertLineBreak')).toHaveLength(1);
  await testInfo.attach('controlled-enter.json',{body:JSON.stringify({browser:browser.version(),passed:true,results,guards,undo,redo,historyIntegrated:false},null,2),contentType:'application/json'});
 });
+
+test('controlled session history with native keyboard Undo/Redo (Gate 0B/4 limited smoke)',async({page,browser},testInfo)=>{
+ whiteSpace='break-spaces';
+ const results=[];
+ const fresh=async(text='A',anchor=text.length,focus=anchor,textRuns=[])=>{
+  const value={...base,text,textRuns,textRunsBaseFontSize:20,autoFontSize:true};await mount(page,value);
+  await page.evaluate(({value,anchor,focus})=>{
+   document.querySelector('#host').focus();
+   spike.mount(value,{terminalBr:true,controlledEnter:true,controlledHistory:true,selection:{anchor,focus}});
+   spike.applyMetricLineHeight();spike.applications.length=0;spike.events.length=0;
+  },{value,anchor,focus});return value;
+ };
+ const snapshot=()=>page.evaluate(()=>({
+  ...spike.controlledState(),text:spike.readText(),selection:spike.readSelection(),history:spike.historyState(),
+  sentinel:!!document.querySelector('#host > br[data-caret-sentinel]'),lineHeight:getComputedStyle(document.querySelector('#host')).lineHeight,
+ }));
+ const check=async(text,anchor=text.length,focus=anchor)=>{
+  const state=await snapshot();expect(state.fallback).toBeNull();
+  expect(state.text).toBe(text);expect(state.value.text).toBe(text);expect(state.selection).toEqual({anchor,focus});
+  expect(state.sentinel).toBe(text.endsWith('\n'));expect(state.lineHeight).toBe('24px');
+  results.push(state);return state;
+ };
+ const key=async(command,text,anchor=text.length,focus=anchor)=>{await page.keyboard.press(command);return check(text,anchor,focus);};
+ await fresh();await key('Control+z','A',1);await key('X','AX');await key('Enter','AX\n');
+ await page.evaluate(()=>document.querySelector('#host').dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertLineBreak'})));
+ expect((await check('AX\n',3)).history).toEqual({length:3,index:2});
+ let state=await key('Z','AX\nZ');expect(state.history).toEqual({length:4,index:3});expect(state.applications).toHaveLength(3);
+ // A canceled key must not also emit a browser history transaction.
+ for(const [command,text,caret,index] of [
+  ['Control+z','AX\n',3,2],['Control+z','AX',2,1],['Control+z','A',1,0],
+  ['Control+Shift+z','AX',2,1],['Control+y','AX\n',3,2],['Control+Shift+z','AX\nZ',4,3],
+ ]){state=await key(command,text,caret);expect(state.history).toEqual({length:4,index});expect(state.applications).toHaveLength(3);}
+ expect(await page.evaluate(()=>spike.events.filter(e=>['historyUndo','historyRedo'].includes(e.inputType)))).toEqual([]);
+ // Context-menu/accessibility beforeinput uses precisely the same history.
+ for(const [inputType,text,caret,index] of [['historyUndo','AX\n',3,2],['historyRedo','AX\nZ',4,3]]){
+  expect(await page.evaluate(inputType=>{const e=new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType});document.querySelector('#host').dispatchEvent(e);return e.defaultPrevented;},inputType)).toBe(true);
+  state=await check(text,caret);expect(state.history).toEqual({length:4,index});
+ }
+ // LF deletion must be one operation and retain its pre-edit caret.
+ for(const [source,offset,command,text,caret] of [
+  ['A\nB',2,'Backspace','AB',1],['A\nB',1,'Delete','AB',1],
+  ['A\n\n',3,'Backspace','A\n',2],['A\n',1,'Delete','A',1],
+ ]){
+  await fresh(source,offset);state=await key(command,text,caret);expect(state.history).toEqual({length:2,index:1});
+  await key('Control+z',source,offset);await key('Control+y',text,caret);
+ }
+ await fresh('A\n');
+ await page.evaluate(()=>{const e=document.createElement('div');e.id='history-paste';e.contentEditable='true';e.innerHTML='<b>P</b><br>Q';document.body.append(e);});
+ await page.locator('#history-paste').click();await page.keyboard.press('Control+a');await page.keyboard.press('Control+c');
+ await page.locator('#host').focus();await page.evaluate(()=>spike.setSelection(2));
+ state=await key('Control+v','A\nP\nQ',5);expect(state.history).toEqual({length:2,index:1});
+ await key('Control+z','A\n',2);await key('Control+y','A\nP\nQ',5);
+ const runs=[{start:0,end:3,style:{textColor:'#ff0000',fontWeight:'700'}},{start:3,end:4,style:{fontSize:40}}];
+ const initial=await fresh('A😀B',3,1,runs);
+ const expected=await page.evaluate(async()=>{const {replaceText}=await import('/src/model/rich-text.mjs');return replaceText(spike.controlledState().value,1,3,'\n');});
+ state=await key('Enter','A\nB',2);expect(state.value).toEqual(expected);
+ state=await key('Control+z','A😀B',3,1);expect(state.value).toEqual(initial);
+ expect(await page.locator('#host span').evaluateAll(es=>es.map(e=>({text:e.textContent,color:getComputedStyle(e).color,size:getComputedStyle(e).fontSize})))).toEqual([
+  {text:'A😀',color:'rgb(255, 0, 0)',size:'20px'},{text:'B',color:'rgb(0, 0, 0)',size:'40px'},
+ ]);
+ state=await key('Control+y','A\nB',2);expect(state.value).toEqual(expected);
+ // Pre-operation selection can differ from the original session selection.
+ await page.evaluate(()=>spike.setSelection(3,0));await key('Enter','\n',1);
+ await key('Control+z','A\nB',3,0);await key('Control+y','\n',1);
+ state=await key('Escape','A😀B',3,1);expect(state.value).toEqual(initial);expect(state.history).toEqual({length:1,index:0});
+ await key('Control+y','A😀B',3,1);
+ await fresh();await key('X','AX');await key('Enter','AX\n');await key('Z','AX\nZ');
+ await key('Control+z','AX\n',3);state=await key('Q','AX\nQ');expect(state.history).toEqual({length:4,index:3});
+ await key('Control+y','AX\nQ');await key('Control+Shift+z','AX\nQ');
+ // Cursor motion and duplicate input never create states or prune a branch.
+ await key('Control+z','AX\n',3);
+ const before=await snapshot();
+ await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowRight');
+ await page.evaluate(()=>document.querySelector('#host').dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertLineBreak'})));
+ state=await check('AX\n',3);expect(state.history).toEqual(before.history);expect(state.applications).toEqual(before.applications);
+ await key('Control+y','AX\nQ');
+ // Unconfirmed input, unsupported input and composition retain the canonical
+ // layer/history. Undo must neither traverse nor rebuild their dirty DOM.
+ const guards=[];
+ for(const kind of ['pending','dirty','unsupported','composition','isComposing','mismatch','noncancelable-history']){
+  await fresh();await key('X','AX');
+  const guard=await page.evaluate(kind=>{
+   const h=document.querySelector('#host'),value=spike.controlledState().value,history=spike.historyState();
+   if(kind==='composition')h.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
+   if(kind!=='dirty')h.dispatchEvent(new InputEvent('beforeinput',{bubbles:true,cancelable:kind!=='noncancelable-history',
+    inputType:kind==='unsupported'?'formatBold':kind==='noncancelable-history'?'historyUndo':'insertText',data:'Q',isComposing:kind==='isComposing'}));
+   if(kind==='mismatch'){
+    h.firstChild.textContent='dirty';h.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'Q'}));
+   }else h.append(document.createTextNode('unconfirmed'));
+   return {kind,value,history,html:h.innerHTML};
+  },kind);
+  await page.keyboard.press('Control+z');await page.keyboard.press('Control+Shift+z');await page.keyboard.press('Control+y');
+  const after=await page.evaluate(()=>({value:spike.controlledState().value,history:spike.historyState(),html:document.querySelector('#host').innerHTML}));
+  expect(after).toEqual({value:guard.value,history:guard.history,html:guard.html});
+  // Cancelable history events are consumed even after fallback.
+  expect(await page.evaluate(()=>{const e=new InputEvent('beforeinput',{bubbles:true,cancelable:true,inputType:'historyUndo'});document.querySelector('#host').dispatchEvent(e);return e.defaultPrevented;})).toBe(true);
+  expect(await page.evaluate(()=>({value:spike.controlledState().value,history:spike.historyState(),html:document.querySelector('#host').innerHTML}))).toEqual(after);
+  if(kind==='composition')await page.evaluate(()=>document.querySelector('#host').dispatchEvent(new CompositionEvent('compositionend',{bubbles:true})));
+  // Explicit cancel recovers the original full snapshot from history, not DOM.
+  state=await key('Escape','A',1);expect(state.history).toEqual({length:1,index:0});guards.push(guard);
+ }
+ await testInfo.attach('controlled-history.json',{body:JSON.stringify({browser:browser.version(),passed:true,results,guards},null,2),contentType:'application/json'});
+});

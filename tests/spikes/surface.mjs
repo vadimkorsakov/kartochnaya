@@ -1,10 +1,13 @@
 // Test-only candidate; never imported by the editor or persisted as HTML.
 import {richTextSpans,resolveRichTextStyle,richTextFont,createRichTextLayoutEngine} from '../../src/render/rich-text-layout.mjs';
 import {replaceText} from '../../src/model/rich-text.mjs';
+import {createInlineHistory,recordInlineHistory,moveInlineHistory} from '../../src/model/inline-text-history.mjs';
 const host=document.querySelector('#host');
 const ctx=document.createElement('canvas').getContext('2d');
 const engine=createRichTextLayoutEngine(ctx,document.fonts);
 let composing=false,layer,nativeTrace=false,controlledEnter=false,terminalMarker=false,metricLineHeight=false,pending=null,fallback=null,pasteText=null;
+let history=null,sessionSelection=null;
+export const historyState=()=>history?{length:history.states.length,index:history.index}:null;
 export const applications=[];
 export const controlledState=()=>({value:structuredClone(layer),fallback,applications:[...applications]});
 function trace(){try{return {html:host.innerHTML,text:readText(),selection:selectionInside()?readSelection():null};}catch{return {html:host.innerHTML,unsupported:true};}}
@@ -22,12 +25,50 @@ host.addEventListener('paste',e=>{
  if(controlledEnter)pasteText=e.clipboardData?.getData('text/plain')??null;
 });
 function project(value,selection){
- const metric=metricLineHeight;
+ const metric=metricLineHeight,savedHistory=history,savedSessionSelection=sessionSelection;
  mount(value,{terminalBr:terminalMarker,controlledEnter:true});
+ history=savedHistory;sessionSelection=savedSessionSelection;
  if(metric)applyMetricLineHeight();
  setSelection(selection.anchor,selection.focus);
 }
+// Only confirmed operations update history. Refresh the preceding state's caret
+// at commit time, so cursor movement alone neither records nor prunes Redo.
+function commit(value,before,after){
+ if(history){recordInlineHistory(history,layer,before);recordInlineHistory(history,value,after);}
+ project(value,after);
+}
+function travel(direction){
+ if(fallback||composing||pending)return;
+ try{if(readText()!==layer.text){stop('DOM differs from canonical state');return;}}
+ catch{stop('unsupported DOM');return;}
+ const state=moveInlineHistory(history,direction);
+ if(state)project(state.element,state.caret);
+}
+export function cancel(){
+ if(!history||composing)return false;
+ pending=null;
+ const original=history.states[0].element,selection=sessionSelection;
+ project(original,selection);
+ history=createInlineHistory(original);recordInlineHistory(history,original,selection);
+ return true;
+}
+host.addEventListener('keydown',e=>{
+ if(!history)return;
+ if(e.key==='Escape'){e.preventDefault();cancel();return;}
+ const key=e.key.toLowerCase();
+ if(e.ctrlKey&&!e.altKey&&!e.metaKey&&(key==='z'||key==='y')){
+  // Cancel the browser default even at history boundaries and after fallback.
+  // Consequently this key cannot also produce native history beforeinput.
+  e.preventDefault();travel(key==='y'||e.shiftKey?1:-1);
+ }
+},{capture:true});
 host.addEventListener('beforeinput',e=>{
+ if(history&&['historyUndo','historyRedo'].includes(e.inputType)){
+  if(!e.cancelable){stop('noncancelable history requires fallback');return;}
+  e.preventDefault();
+  if(!e.isComposing)travel(e.inputType==='historyUndo'?-1:1);
+  return;
+ }
  if(!controlledEnter||fallback)return;
  pending=null;
  if(composing||e.isComposing){stop('composition requires fallback');return;}
@@ -45,7 +86,7 @@ host.addEventListener('beforeinput',e=>{
  if(e.inputType==='insertLineBreak'){
   e.preventDefault();
   const next=replaceText(layer,start,end,'\n');
-  project(next,{anchor:start+1,focus:start+1});
+  commit(next,selection,{anchor:start+1,focus:start+1});
   applications.push({inputType:e.inputType,start,end,text:next.text});
   // A canceled operation has no pending native edit, even if an input is sent.
   return;
@@ -56,7 +97,7 @@ host.addEventListener('beforeinput',e=>{
  const data=e.inputType==='insertFromPaste'?(e.dataTransfer?.getData('text/plain')??pasteText):e.data;
  pasteText=null;
  if(e.inputType==='insertFromPaste'&&data===null){stop('paste without plaintext context');return;}
- pending={value:layer,start,end,inputType:e.inputType,data};
+ pending={value:layer,selection,start,end,inputType:e.inputType,data};
 });
 host.addEventListener('input',e=>{
  if(!controlledEnter||fallback)return;
@@ -87,7 +128,7 @@ host.addEventListener('input',e=>{
   }
   const next=replaceText(previous.value,start,end,inserted);
   if(next.text!==text){stop('native UTF-16 edit mismatch');return;}
-  project(next,selection);
+  commit(next,previous.selection,selection);
   applications.push({inputType:e.inputType,start,end,text:next.text});
  }catch{stop('unsupported native DOM or selection');}
 });
@@ -130,9 +171,10 @@ export function offsetToDomPoint(offset,affinity='downstream'){
 }
 export function readSelection(){const s=getSelection();return {anchor:domPointToOffset(s.anchorNode,s.anchorOffset),focus:domPointToOffset(s.focusNode,s.focusOffset)};}
 export function setSelection(anchor,focus=anchor){const a=offsetToDomPoint(anchor),f=offsetToDomPoint(focus);getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);}
-export function mount(value,{terminalBr=false,controlledEnter:controlled=false}={}){
+export function mount(value,{terminalBr=false,controlledEnter:controlled=false,controlledHistory=false,selection:initialSelection=null}={}){
  if(composing)return false;
  let saved=null;try{if(selectionInside())saved=readSelection();}catch{/* Explicit mount can recover unsupported DOM. */}
+ history=null;sessionSelection=null;
  controlledEnter=controlled;terminalMarker=terminalBr;pending=null;fallback=null;pasteText=null;metricLineHeight=false;
  nativeTrace=terminalBr||controlled;
  layer=structuredClone(value);const base=resolveRichTextStyle(layer);
@@ -140,7 +182,13 @@ export function mount(value,{terminalBr=false,controlledEnter:controlled=false}=
  host.replaceChildren(...richTextSpans(layer).map(p=>{const el=document.createElement('span');el.textContent=p.text;Object.assign(el.style,{font:richTextFont(p.style),lineHeight:String(layer.lineHeight||1.15),letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});return el;}));
  if(!host.childNodes.length)host.append(document.createTextNode(''));
  if(terminalBr&&layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';host.append(br);}
+ if(initialSelection)saved=initialSelection;
  if(saved)setSelection(Math.min(saved.anchor,readText().length),Math.min(saved.focus,readText().length));
+ if(controlled&&controlledHistory){
+  if(!saved)setSelection(layer.text.length);
+  sessionSelection=readSelection();
+  history=createInlineHistory(layer);recordInlineHistory(history,layer,sessionSelection);
+ }
  return true;
 }
 export async function ready(){await Promise.all(['20px SpikeSans','700 20px SpikeSans','20px SpikeSerif'].map(font=>document.fonts.load(font)));await document.fonts.ready;}

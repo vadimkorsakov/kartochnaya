@@ -1,5 +1,6 @@
-import { updateText, transformText, replaceText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
-import { usesRichTextLayout, richTextFont, retainRichTextSizeBase, createRichTextLayoutEngine } from './render/rich-text-layout.mjs';
+import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
+import { applyTextStyle, updateText, transformText, replaceText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
+import { usesRichTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine } from './render/rich-text-layout.mjs';
 import { createReplacementSession } from './backup/replace.mjs';
 import { createInstanceGuard } from './backup/instances.mjs';
 import { installBackupUI } from './backup/ui.mjs';
@@ -528,11 +529,11 @@ function snapshot(){syncCurrentSlide();const d=app.doc;return JSON.stringify({ha
 function describeChange(before,after){try{const a=JSON.parse(before),b=JSON.parse(after);if(JSON.stringify(a.selection)!==JSON.stringify(b.selection))return 'Изменение выделения';if(a.title!==b.title)return 'Переименование документа';if(a.width!==b.width||a.height!==b.height)return 'Изменение размеров холста';if(a.background!==b.background||a.backgroundAlpha!==b.backgroundAlpha)return 'Изменение фона холста';if((a.slides?.length||0)!==(b.slides?.length||0))return (b.slides?.length||0)>(a.slides?.length||0)?'Добавление холста':'Удаление холста';if((a.groups?.length||0)!==(b.groups?.length||0))return (b.groups?.length||0)>(a.groups?.length||0)?'Группировка слоёв':'Разгруппировка слоёв';if(JSON.stringify(a.groups)!==JSON.stringify(b.groups))return 'Изменение состояния группы';if((a.rulers?.length||0)!==(b.rulers?.length||0))return 'Изменение направляющих';if(a.elements.length!==b.elements.length)return b.elements.length>a.elements.length?'Добавление объекта':'Удаление объекта';const aa=new Map(a.elements.map(e=>[e.id,e]));for(const e of b.elements){const prev=aa.get(e.id);if(!prev)return 'Замена слоя';if(prev.text!==e.text)return 'Изменение текста';if(prev.name!==e.name)return 'Переименование слоя';if(prev.x!==e.x||prev.y!==e.y)return 'Перемещение слоя';if(prev.w!==e.w||prev.h!==e.h||prev.rotation!==e.rotation)return 'Трансформация слоя';if(JSON.stringify(prev.effects)!==JSON.stringify(e.effects))return 'Изменение эффектов';if(prev.fill!==e.fill||prev.fillType!==e.fillType||prev.opacity!==e.opacity||prev.stroke!==e.stroke||prev.strokeWidth!==e.strokeWidth)return 'Изменение оформления';if(prev.fontFamily!==e.fontFamily||prev.fontSize!==e.fontSize||prev.fontWeight!==e.fontWeight)return 'Изменение типографики';}if(a.elements.some((e,i)=>e.id!==b.elements[i]?.id))return 'Изменение порядка слоёв';if(JSON.stringify(a.slides)!==JSON.stringify(b.slides))return 'Изменение холста серии';return 'Изменение свойств';}catch{return 'Изменение макета'}}
 function resetHistory(){if(!app.doc)return;const initial=snapshot();app.historyBase=initial;app.historyPreviewOriginal=false;app.history=[initial];app.historyNames=['Исходное состояние'];app.historyIndex=0;updateHistoryButtons()}
 // Existing property controls join the active inline session; its finalizer releases ownership before committing.
-function commit(label){if(!app.doc)return;if(app.editingId&&matchMedia('(max-width:760px)').matches){const e=app.doc.elements.find(x=>x.id===app.editingId),edit=$('#inlineText');if(e&&edit.value!==e.text){edit.value=e.text;restoreInlineCaret(false)}positionInlineText();paint();return;}boundarySyncDoc(app.doc);syncCurrentSlide();syncAutoCardTitle();const state=snapshot(),previous=app.history[app.historyIndex];if(previous!==state){app.history=app.history.slice(0,app.historyIndex+1);app.historyNames=(app.historyNames||[]).slice(0,app.historyIndex+1);app.history.push(state);app.historyNames.push(typeof label==='string'?label:describeChange(previous,state));if(app.history.length>51){const n=app.history.length-51;app.history.splice(1,n);app.historyNames.splice(1,n);}app.historyIndex=app.history.length-1;app.historyPreviewOriginal=false}updateHistoryButtons();const save=saveState(app.doc.id),key=JSON.stringify(app.doc);if(key!==save.saved&&key!==save.pending?.key)app.doc.updatedAt=Date.now();saveSoon();paint();renderSlideStrip()}
+function commit(label){if(!app.doc)return;if(app.editingId&&(app.inlineSession||matchMedia('(max-width:760px)').matches)){recordInlineSession();const e=app.doc.elements.find(x=>x.id===app.editingId),edit=$('#inlineText');if(e&&edit.value!==e.text){edit.value=e.text;restoreInlineCaret(false)}positionInlineText();paint();return;}boundarySyncDoc(app.doc);syncCurrentSlide();syncAutoCardTitle();const state=snapshot(),previous=app.history[app.historyIndex];if(previous!==state){app.history=app.history.slice(0,app.historyIndex+1);app.historyNames=(app.historyNames||[]).slice(0,app.historyIndex+1);app.history.push(state);app.historyNames.push(typeof label==='string'?label:describeChange(previous,state));if(app.history.length>51){const n=app.history.length-51;app.history.splice(1,n);app.historyNames.splice(1,n);}app.historyIndex=app.history.length-1;app.historyPreviewOriginal=false}updateHistoryButtons();const save=saveState(app.doc.id),key=JSON.stringify(app.doc);if(key!==save.saved&&key!==save.pending?.key)app.doc.updatedAt=Date.now();saveSoon();paint();renderSlideStrip()}
 function historyGo(index){inkCancel();if(app.editingId)closeInlineText();if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;app.historyIndex=index;const state=JSON.parse(app.history[index]);const storedSelection=state.selection,storedLayers=state.layerSelection;delete state.selection;delete state.layerSelection;Object.assign(app.doc,state);boundaryRememberDoc(app.doc);ensureGroupData(app.doc);if(app.doc.type==='card')ensureCardSlides(app.doc);app.selectedGroupIds=[];app.focusGroupId=null;app.selectedIds=[];app.selected=null;app.guides=app.doc.rulers||[];restoreSelectionFromHistory(storedSelection);restoreLayerSelection(storedLayers);if(oldSlide!==app.doc.activeSlideIndex){$('#sizeLabel').textContent=`${app.doc.width} × ${app.doc.height} px`;applyZoom()}updateHistoryButtons();updateProjectBadge();refreshLayers();refreshInspector();refreshMobileTools();paint();renderSlideStrip();app.historyPreviewOriginal=index===0&&app.history.length>1;if(app.historyPreviewOriginal){clearTimeout(app.saveTimer);app.saveTimer=null;$('#saveStatus').textContent='Исходное состояние · предпросмотр';}else saveSoon()}
-function undo(dir){if(app.editingId)closeInlineText();if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
+function undo(dir){if(app.inlineSession?.formatted){inlineHistoryGo(dir);return}if(app.editingId)closeInlineText();if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
 function renderHistoryList(){const root=$('#historyEntries');if(!root)return;root.innerHTML=(app.history||[]).map((_,i)=>`<button type="button" class="history-entry ${i===app.historyIndex?'active':''}" data-history-index="${i}" ${i===app.historyIndex?'aria-current="step"':''}><span class="history-step">${i===0?'●':i}</span><span>${html(app.historyNames?.[i]||'Изменение макета')}</span></button>`).join('');const current=root.querySelector('.history-entry.active');if(current&&!$('#historyPopover').classList.contains('hidden'))current.scrollIntoView({block:'nearest'})}
-function updateHistoryButtons(){const draft=app.penDraft;$('#undoBtn').disabled=draft?!draft.undoStack?.length:app.historyIndex===0;$('#redoBtn').disabled=draft?!draft.redoStack?.length:app.historyIndex===app.history.length-1;renderHistoryList()}
+function updateHistoryButtons(){if(app.inlineSession?.formatted){$('#undoBtn').disabled=app.inlineSession.index===0;$('#redoBtn').disabled=app.inlineSession.index===app.inlineSession.states.length-1;return}const draft=app.penDraft;$('#undoBtn').disabled=draft?!draft.undoStack?.length:app.historyIndex===0;$('#redoBtn').disabled=draft?!draft.redoStack?.length:app.historyIndex===app.history.length-1;renderHistoryList()}
 // Revisions describe edits; snapshots describe writes; app.docs contains confirmed records.
 const documentSaves=new Map();
 function saveState(id){if(!documentSaves.has(id))documentSaves.set(id,{revision:0,sequence:0,confirmed:0,pending:null,saved:null,error:null});return documentSaves.get(id)}
@@ -734,8 +735,8 @@ function relocateMobileHistory(){
 
 function showInspector(mode='settings'){if(matchMedia('(max-width:760px)').matches&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(matchMedia('(max-width:760px)').matches){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
 function hideInspector(){cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
-function changeProperty(key,val,final=false){const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
-function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;changeProperty(t.dataset.key,t.value,final);if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key)))refreshInspector()}
+function changeProperty(key,val,final=false){if(styleInlineSelection(key,val,final))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
+function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;changeProperty(t.dataset.key,t.value,final);if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
 $('#inspector').addEventListener('change',e=>{if(e.target.dataset.clipCheckbox){const elem=app.doc.elements.find(x=>x.id===e.target.dataset.clipCheckbox);if(elem){elem.clipped=!e.target.checked;toggleClip(elem.id)}refreshInspector()}});
 $('#inspector').addEventListener('change',ev=>{if(ev.target.matches('[data-text-auto-font]'))setTextAutoFont(ev.target.checked)});
 $('#inspector').addEventListener('input',e=>handleInspectorChange(e,false));$('#inspector').addEventListener('change',e=>handleInspectorChange(e,true));$('#inspector').addEventListener('click',e=>{const b=e.target.closest('[data-align]');if(b){alignPicked(b.dataset.align);return}const sw=e.target.closest('[data-fill-open]');if(sw){openFillPopover(sw.dataset.fillOpen,sw);return}});
@@ -744,8 +745,9 @@ $('#inspector').addEventListener('input',e=>handleInspectorChange(e,false));$('#
 function clearFontPreview(){if(app.fontPreview){app.fontPreview=null;paint()}}
 function previewFont(family){const es=picked().filter(e=>e.type==='text');if(!es.length)return;const ids=es.map(e=>e.id);const [weight,style]=regularVariant(family).split(':');app.fontPreview={family,weight,style,ids};paint()}
 function applyFontFamily(family){const es=picked().filter(e=>e.type==='text');if(!es.length)return;clearFontPreview();const [weight,style]=regularVariant(family).split(':');
+ if(styleInlineSelection('fontFamily',family,true)){refreshInspector();refreshMobileTools();restoreInlineCaret();return}
  for(const e of es){e.fontFamily=family;e.fontWeight=weight;e.fontStyle=style}
- commit();refreshInspector();refreshMobileTools();toast('Шрифт: '+family);
+ commit();refreshInspector();refreshMobileTools();if(app.editingId)restoreInlineCaret();toast('Шрифт: '+family);
 }
 $('#inspector').addEventListener('click',ev=>{
  const trigger=ev.target.closest('[data-font-open]');if(trigger){ev.preventDefault();const menu=trigger.parentElement.querySelector('.font-family-menu');menu?.classList.toggle('hidden');trigger.setAttribute('aria-expanded',String(!menu.classList.contains('hidden')));return}
@@ -1929,7 +1931,7 @@ function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if
 // Keep the shared desktop/Android textarea and sparse formatting in one model.
 function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=next.text;if(next.textRuns)e.textRuns=next.textRuns;else delete e.textRuns}
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
-function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
+function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
 function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');
  if(!e.textMode||e.textMode==='horizontal'){
   editor.style.width=Math.max(1,e.w)+'px';editor.style.height=Math.max(1,e.h)+'px';
@@ -1945,35 +1947,106 @@ function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editi
 function closeInlineText(cancel=false){
  if(!app.editingId)return;
  // A numeric property input may own the IME; settle its change while the session still owns history.
- const focused=document.activeElement;if(focused?.closest('#mobilePropertyUI')&&focused.matches('input,textarea,select'))focused.blur();
+ const focused=document.activeElement;if(focused?.closest('#mobilePropertyUI,#inspector,#fillPopover')&&focused.matches('input,textarea,select'))focused.blur();
  mobileV36FinishInteraction();
  const editor=$('#inlineText'),e=app.doc?.elements.find(x=>x.id===app.editingId),before=app.editorBefore,titleBefore=app.editorTitleBefore;
- if(e){if(cancel){e.text=before;restoreTextRuns(e,app.editorRunsBefore)}else setTextValue(e,editor.value);if(cancel&&Number.isFinite(app.editorFontSizeBefore))e.fontSize=app.editorFontSizeBefore;}
+ const session=app.inlineSession;if(session)recordInlineSession();
+ if(e){if(cancel&&session){restoreInlineElement(e,session.states[0].element)}else if(cancel){e.text=before;restoreTextRuns(e,app.editorRunsBefore)}else setTextValue(e,editor.value);if(cancel&&Number.isFinite(app.editorFontSizeBefore))e.fontSize=app.editorFontSizeBefore;}
  const changed=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups})!==app.inlineModelBefore;
  // Release ownership before hiding/blurring: every exit path may safely call us again.
  if(app.editingId&&mobileV36Small())mobileV36State.userViewAdjusted=true;
- app.editingId=null;app.editorBefore=null;app.editorRunsBefore=null;app.inlineRichHistory=null;app.inlineInputSelection=null;app.editorFontSizeBefore=null;app.editorTitleBefore=null;app.inlineModelBefore=null;app.inlineCaret=null;
+ app.editingId=null;app.inlineSession=null;app.inlineToolPointer=false;app.editorBefore=null;app.editorRunsBefore=null;app.inlineRichHistory=null;app.inlineInputSelection=null;app.editorFontSizeBefore=null;app.editorTitleBefore=null;app.inlineModelBefore=null;app.inlineCaret=null;
  editor.classList.add('hidden');editor.classList.remove('vertical-wysiwyg');
  editor.blur();v41KeyboardViewport();
  if(cancel||!changed){app.doc.title=titleBefore;updateProjectBadge()}else syncAutoCardTitle();
- if(!cancel&&changed)commit('Изменение текста');else paint();
+ if(!cancel&&changed){
+  // Publish each settled action through the existing document history only once.
+  if(session?.formatted){const final=clone(e);for(const state of session.states.slice(1,session.index+1)){restoreInlineElement(e,state.element);commit('Изменение текста')}restoreInlineElement(e,final)}
+  commit('Изменение текста');
+ }else paint();
  refreshInspector();updateQuickBubble();
 }
-$('#inlineText').addEventListener('beforeinput',ev=>{let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
-$('#inlineText').addEventListener('input',ev=>{const e=app.doc?.elements.find(x=>x.id===app.editingId);if(e){if(app.inlineRichHistory){const result=editTextWithHistory(e,app.inlineRichHistory,ev.target.value,{selection:app.inlineInputSelection,inputType:ev.inputType});app.inlineRichHistory=result.history;e.text=result.element.text;restoreTextRuns(e,result.element.textRuns)}else setTextValue(e,ev.target.value,app.inlineInputSelection);app.inlineInputSelection=null;if(autoFitTextFont(e))positionInlineText();syncAutoCardTitle();refreshSaveStatus();paint()}});
+$('#inlineText').addEventListener('beforeinput',ev=>{if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
+$('#inlineText').addEventListener('input',ev=>{const e=app.doc?.elements.find(x=>x.id===app.editingId);if(e){if(app.inlineRichHistory&&!app.inlineSession?.formatted){const result=editTextWithHistory(e,app.inlineRichHistory,ev.target.value,{selection:app.inlineInputSelection,inputType:ev.inputType});app.inlineRichHistory=result.history;e.text=result.element.text;restoreTextRuns(e,result.element.textRuns)}else setTextValue(e,ev.target.value,app.inlineInputSelection);app.inlineInputSelection=null;if(autoFitTextFont(e))positionInlineText();syncAutoCardTitle();rememberInlineCaret();recordInlineSession(ev.inputType);refreshSaveStatus();paint()}});
 $('#inlineText').addEventListener('blur',ev=>{
  rememberInlineCaret();
+ if(app.inlineToolPointer||ev.relatedTarget?.closest(inlineFormattingRoots))return;
  // Android Back may dismiss only the IME. Keep the session and its visible exit.
  if(matchMedia('(max-width:760px)').matches&&(!ev.relatedTarget||ev.relatedTarget.closest('#documentTabsMenu,#documentTabsMenuToggle,#mobileToolbars,#mobilePropertyUI,#stageScroller,#zoomInBtn,#zoomOutBtn,#zoomLabel')))return;
  closeInlineText();
 });
-$('#inlineText').addEventListener('keydown',ev=>{if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(!matchMedia('(max-width:760px)').matches);canvas.focus()}if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText()}});
+$('#inlineText').addEventListener('keydown',ev=>{if(app.inlineSession?.formatted&&(ev.ctrlKey||ev.metaKey)&&['z','y'].includes(ev.key.toLowerCase())){ev.preventDefault();ev.stopPropagation();inlineHistoryGo(ev.key.toLowerCase()==='y'||ev.shiftKey?1:-1);return}if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(!matchMedia('(max-width:760px)').matches);canvas.focus()}if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText()}});
+// Formatting tools may take focus (including Android numeric inputs) without
+// releasing the textarea session. Inputs/selects keep native focus behavior.
+const inlineFormattingRoots='#inspector,#fillPopover,#fontDialog,#mobileToolbars,#mobilePropertyUI,#undoBtn,#redoBtn';
+function restoreInlineElement(e,value){for(const key of Object.keys(e))delete e[key];Object.assign(e,clone(value))}
+function recordInlineSession(inputType){
+ const e=app.doc?.elements.find(x=>x.id===app.editingId),session=app.inlineSession;if(!session||!e)return;
+ // Before the first formatting action, keep the browser's grouped undo branch.
+ const dir=!session.formatted&&(inputType==='historyUndo'?-1:inputType==='historyRedo'?1:0);
+ if(dir)for(let i=session.index+dir;i>=0&&i<session.states.length;i+=dir){if(session.states[i].element.text===e.text){session.index=i;return}}
+ recordInlineHistory(session,e,app.inlineCaret);
+ if(session.formatted)updateHistoryButtons();
+}
+function inlineHistoryGo(dir){
+ const session=app.inlineSession,e=app.doc?.elements.find(x=>x.id===app.editingId);if(!session||!e)return;
+ recordInlineSession();const state=moveInlineHistory(session,dir);if(!state)return;
+ restoreInlineElement(e,state.element);$('#inlineText').value=e.text;app.inlineCaret=state.caret;restoreInlineCaret();
+ positionInlineText();syncAutoCardTitle();refreshInspector();refreshMobileTools();updateHistoryButtons();paint();
+}
+function inlineStyleRange(){
+ if(!app.inlineSession)return null;
+ if(document.activeElement===$('#inlineText'))rememberInlineCaret();
+ const c=app.inlineCaret;return c&&c.end>c.start?c:null;
+}
+function inlineSelectionStyle(){const e=active(),c=inlineStyleRange();return richTextSpans(e).find(span=>span.start<=c.start&&span.end>c.start)?.style||resolveRichTextStyle(e)}
+function styleInlineSelection(key,value,final){
+ if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing'].includes(key))return false;
+ const c=inlineStyleRange(),e=active();if(!c||e?.id!==app.editingId)return false;
+ let patch={[key]:value};
+ const session=app.inlineSession;
+ if(!session.pendingStyle||session.pendingStyle.key!==key)session.pendingStyle={key,fontSize:e.fontSize,baseFontSize:e.textRunsBaseFontSize||e.fontSize};
+ if(['fontSize','letterSpacing'].includes(key)){
+  const n=Number(value);if(!Number.isFinite(n))return true;
+  patch[key]=key==='fontSize'?Math.max(1,n)*session.pendingStyle.baseFontSize/session.pendingStyle.fontSize:n;
+ }
+ if(key==='fontVariant'){const [weight,style]=String(value).split(':');patch={fontWeight:weight||'400',fontStyle:style||'normal',bold:null,italic:null}}
+ if(key==='fontWeight')patch.bold=null;
+ if(key==='fontStyle')patch.italic=null;
+ if(key==='bold')patch={fontWeight:value?'700':'400',bold:null};
+ if(key==='italic')patch={fontStyle:value?'italic':'normal',italic:null};
+ app.inlineSession.formatted=true;
+ // Store the pre-action caret even when focus has already moved to a panel.
+ app.inlineSession.states[app.inlineSession.index].caret=clone(c);
+ const next=applyTextStyle(e,c.start,c.end,patch);restoreTextRuns(e,next.textRuns);
+ // A manual size uses the fitted scale, then opts out of fitting just like
+ // the layer size field. Other fragments keep both their units and scale.
+ if(key==='fontSize'){e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}
+ retainRichTextSizeBase(e);autoFitTextFont(e);positionInlineText();restoreInlineCaret(false);
+ if(final){recordInlineSession();session.pendingStyle=null}updateHistoryButtons();paint();return true;
+}
+// Ownership lasts through the native mouse/focus/click sequence, including
+// touch compatibility events. The next pointer destination releases it.
+document.addEventListener('pointerdown',ev=>{if(!app.editingId)return;app.inlineToolPointer=!!ev.target.closest(inlineFormattingRoots);if(app.inlineToolPointer)rememberInlineCaret()},true);
+document.addEventListener('mousedown',ev=>{
+ if(!app.editingId||ev.button!==0||!ev.target.closest(inlineFormattingRoots))return;
+ app.inlineToolPointer=true;rememberInlineCaret();
+ // Buttons can operate on the focused selection. Inputs/selects must retain
+ // native focus, keyboard and text-selection behavior on desktop and Android.
+ if(document.activeElement===$('#inlineText')&&ev.target.closest('button'))ev.preventDefault();
+},true);
+document.addEventListener('keydown',ev=>{if(app.inlineSession&&ev.key==='Escape'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
+
 // Keep caret ownership when existing buttons operate on the selected text layer.
-function rememberInlineCaret(){if(app.editingId){const e=$('#inlineText');app.inlineCaret={start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection}}}
+function rememberInlineCaret(){const e=$('#inlineText');if(app.editingId&&document.activeElement===e){app.inlineCaret={start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection}}}
 function restoreInlineCaret(focus=true){if(!app.editingId)return;const e=$('#inlineText'),c=app.inlineCaret;if(focus)e.focus({preventScroll:true});if(c)e.setSelectionRange(Math.min(c.start,e.value.length),Math.min(c.end,e.value.length),c.direction)}
-for(const type of ['select','keyup','input'])$('#inlineText').addEventListener(type,rememberInlineCaret);
+for(const type of ['select','keyup','input','pointerup'])$('#inlineText').addEventListener(type,rememberInlineCaret);
+// Android's system handles can report only document selectionchange. Ignore
+// events from panels and delayed select events after textarea blur.
+document.addEventListener('selectionchange',rememberInlineCaret);
+function resumeInlineTextFromButton(){const focus=document.activeElement;if(app.editingId&&(focus===document.body||focus===$('#inlineText')||focus?.matches('button')))restoreInlineCaret()}
 for(const root of [$('#mobileToolbars'),$('#mobilePropertyUI'),$('#zoomInBtn'),$('#zoomOutBtn'),$('#zoomLabel')])root.addEventListener('pointerdown',ev=>{
- if(app.editingId&&matchMedia('(max-width:760px)').matches&&ev.target.closest('button')){rememberInlineCaret();ev.preventDefault()}
+ if(app.editingId&&document.activeElement===$('#inlineText')&&matchMedia('(max-width:760px)').matches&&ev.target.closest('button')){rememberInlineCaret();ev.preventDefault()}
 },true);
 function revealInlineText(){
  if(!app.editingId||!matchMedia('(max-width:760px)').matches)return;
@@ -2997,13 +3070,14 @@ function openFillPopover(key,btn){const p=$('#fillPopover'),oldKey=p.dataset.key
  p.classList.toggle('fx-color-popover',!!fxColorAnchor);
  p.dataset.key=key;p.dataset.format='HEX';if(active()?.fillType==='gradient'){gradientGeometry(active());p.dataset.stopId=gradientStops(active())[0]?.id||'';}renderFillPopover();p.classList.remove('hidden');
  refreshPickerVisual();paint();if(fxColorAnchor){positionEffectColorPopover();return}const b=btn.getBoundingClientRect();p.style.left=Math.max(12,b.left-375)+'px';p.style.top=Math.max(55,Math.min(b.top,innerHeight-p.offsetHeight-12))+'px';}
-function targetFillValue(key){if(key==='_effect'){const f=active()?.effects?.find(v=>v.id===$('#fillPopover').dataset.effectId);return f?.[$('#fillPopover').dataset.effectField||'color']||'#7857de'}if(key==='_ink')return app.inkSettings.color;const e=active();if(key==='_docBackground')return app.doc.background;if(key==='fill'&&e?.type==='text'&&(e.fillType||'solid')==='solid')return e.textColor||'#000000';return e?.[key]||'#ffffff'}
+function targetFillValue(key){if(['fill','textColor'].includes(key)&&inlineStyleRange())return inlineSelectionStyle().textColor;if(key==='_effect'){const f=active()?.effects?.find(v=>v.id===$('#fillPopover').dataset.effectId);return f?.[$('#fillPopover').dataset.effectField||'color']||'#7857de'}if(key==='_ink')return app.inkSettings.color;const e=active();if(key==='_docBackground')return app.doc.background;if(key==='fill'&&e?.type==='text'&&(e.fillType||'solid')==='solid')return e.textColor||'#000000';return e?.[key]||'#ffffff'}
 function syncTextFill(e){if(e?.type==='text'&&(e.fillType||'solid')==='solid')e.fill=e.textColor||'#000000'}
 function currentPickerKey(){const p=$('#fillPopover');return p.dataset.key==='fill'&&active()?.fillType==='gradient'?'gradientStop':p.dataset.key}
 function pickerAlphaKey(){const k=$('#fillPopover').dataset.key;return k==='stroke'?'strokeOpacity':'fillOpacity'}
 function cpCurrentHex(){if(currentPickerKey()==='gradientStop')return getGradientStop()?.color||'#ffffff';return normalizeHex(targetFillValue(currentPickerKey()))||'#ffffff'}
 function cpCurrentAlpha(){if($('#fillPopover').dataset.key==='_effect')return 100;if($('#fillPopover').dataset.key==='_ink')return app.inkSettings.alpha;if($('#fillPopover').dataset.key==='_docBackground')return app.doc.backgroundAlpha??100;if(currentPickerKey()==='gradientStop')return getGradientStop()?.alpha??100;const k=pickerAlphaKey();return Number(active()?.[k]??100)}
 function updatePickerColor(hex,final=false){hex=normalizeHex(hex);if(!hex)return;const k=currentPickerKey(),e=active();
+ if(['fill','textColor'].includes(k)&&styleInlineSelection('textColor',hex,final)){refreshPickerVisual(false);return}
  if(k==='_effect'){const f=active()?.effects?.find(v=>v.id===$('#fillPopover').dataset.effectId);if(f){fxModify(f.id,fx=>fx[$('#fillPopover').dataset.effectField||'color']=hex,final);refreshPickerVisual(false);refreshColorRowOnly();syncEffectColorSwatches();}return}
  if(k==='_ink'){app.inkSettings.color=hex;inkRefreshColor();inkPersist();return}
  if(k==='gradientStop'){const st=getGradientStop();if(st)st.color=hex;if(final)commit();else{paint();saveSoon()}}
@@ -3110,10 +3184,10 @@ $('#fillPopover').addEventListener('change',ev=>{
 
 $('#fillPopover').addEventListener('click',async ev=>{
  const p=$('#fillPopover'),b=ev.target.closest('[data-fill-mode],[data-fill-close],[data-fill-image],[data-cp-eyedrop],[data-fill-palette],[data-cp-add]');if(!b)return;
- if(b.hasAttribute('data-fill-close')){closeFillPopover();return}
+ if(b.hasAttribute('data-fill-close')){closeFillPopover();resumeInlineTextFromButton();return}
  if(b.hasAttribute('data-fill-mode')){setFillMode(b.dataset.fillMode);return}
  if(b.hasAttribute('data-fill-image')){app.pendingImage={kind:'fill',id:active()?.id};$('#imageInput').click();return}
- if(b.hasAttribute('data-fill-palette')){cpLiveColor(b.dataset.fillPalette,true);refreshPickerVisual();return}
+ if(b.hasAttribute('data-fill-palette')){cpLiveColor(b.dataset.fillPalette,true);refreshPickerVisual();resumeInlineTextFromButton();return}
  if(b.hasAttribute('data-cp-add')){const color=normalizeHex(p.querySelector('[data-cp-savehex]')?.value);if(!color){toast('Введите HEX, например #B08CFF');return}app.doc.palette??=[];if(!app.doc.palette.includes(color))app.doc.palette.push(color);commit();renderFillPopover();toast('Цвет добавлен в палитру');return}
  if(b.hasAttribute('data-cp-eyedrop')){if('EyeDropper'in window&&window.isSecureContext){try{const result=await new EyeDropper().open();cpLiveColor(result.sRGBHex,true);refreshPickerVisual();return}catch{}}
  app.pipetteArmed=true;$('#stageScroller').classList.add('pipette-mode');toast('Пипетка: щёлкни по цвету на карточке');}
@@ -3809,6 +3883,7 @@ function mobileV36PhotoColors(){const colors=[];try{
   for(let i=0;i<d.length;i+=72){if(d[i+3]<230)continue;const r=Math.round(d[i]/32)*32,gg=Math.round(d[i+1]/32)*32,b=Math.round(d[i+2]/32)*32;const hex='#'+[r,gg,b].map(n=>Math.min(255,n).toString(16).padStart(2,'0')).join('');if(!colors.includes(hex))colors.push(hex)}
  } }catch(e){console.warn('Фото-палитра недоступна',e)}return colors.slice(0,16)}
 function mobileV36ApplyColor(c,final=true){if(!/^#[0-9a-fA-F]{6}$/.test(c))return;const e=active();if(!e)return;
+ if(!mobileV36State.fxColor&&mobileV36State.colorTab!=='gradient'&&styleInlineSelection('textColor',c,final)){mobileV36State.hue=mobileV36HexToHSV(c)[0];return}
  if(mobileV36State.fxColor){const target=mobileV36State.fxColor;const f=e.effects?.find(x=>x.type===target.type);if(!f)return;f[target.key]=c;if(final)mobileV36Commit();else{paint();saveSoon()}}
  else if(mobileV36State.sub==='colorEdit'&&mobileV36State.colorTab==='gradient'){
   e.fillType='gradient';e.gradientMode=e.gradientMode||'linear';e.gradientStops||=[{pos:0,color:e.fill||c,alpha:100},{pos:100,color:e.fill2||c,alpha:100}];gradientStops(e);gradientGeometry(e);
@@ -3878,7 +3953,7 @@ function mobileV36Render(){
  let content='';
  if(!s.expanded){
   if(t==='font')content=mobileV36Pill(`<div class="mp-horizontal">${fontFamilies().map(mobileV36FontChip).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
-  if(t==='size'||t==='opacity'){const key=t==='size'?'fontSize':'opacity',val=e[key]??100,min=t==='size'?1:0,max=t==='size'?500:100;content=mobileV36Pill(`${mobileV36Slider(key,val,min,max,1)}${mobileV36Stepper(key,val,min,max,1)}${t==='size'&&e.type==='text'&&(!e.textMode||e.textMode==='horizontal')?`<label class="mp-auto-font" title="Подбирать размер под рамку"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Авто</span></label>`:''}`)}
+  if(t==='size'||t==='opacity'){const key=t==='size'?'fontSize':'opacity',val=(t==='size'&&inlineStyleRange()?inlineSelectionStyle().fontSize:e[key])??100,min=t==='size'?1:0,max=t==='size'?500:100;content=mobileV36Pill(`${mobileV36Slider(key,val,min,max,1)}${mobileV36Stepper(key,val,min,max,1)}${t==='size'&&e.type==='text'&&(!e.textMode||e.textMode==='horizontal')?`<label class="mp-auto-font" title="Подбирать размер под рамку"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Авто</span></label>`:''}`)}
   if(t==='color')content=mobileV36Pill(`<button class="mp-circle mp-rainbow" data-mp-action="colorEdit">＋</button><div class="mp-swatches">${mobileV36Colors().map(mobileV36Swatch).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
   if(t==='nudge')content=mobileV36Pill(`<div class="mp-grid" style="flex:1">${mobileNudgeButtons()}</div>`)
  }else{
@@ -3902,6 +3977,7 @@ function mobileV36Render(){
 }
 function mobileV36AlignLayer(where){const es=picked().filter(x=>!isLayerLocked(x));for(const e of es){const d=app.doc;if(where==='aleft')e.x=0;if(where==='aright')e.x=d.width-e.w;if(where==='ahcenter')e.x=(d.width-e.w)/2;if(where==='atop')e.y=0;if(where==='abottom')e.y=d.height-e.h;if(where==='avcenter')e.y=(d.height-e.h)/2;}mobileV36Commit();mobileV36Render()}
 function mobileV36Format(key){const e=active();if(!e)return;
+ if(['bold','italic'].includes(key)&&inlineStyleRange()){const style=inlineSelectionStyle(),value=key==='bold'?!(Number(style.fontWeight)>=600):style.fontStyle!=='italic';styleInlineSelection(key,value,true);mobileV36Render();resumeInlineTextFromButton();return}
  if(key==='bold')e.fontWeight=Number(e.fontWeight)>=600?'400':'700';
  if(key==='italic')e.fontStyle=e.fontStyle==='italic'?'normal':'italic';
  if(key==='underline')e.mobileUnderline=!e.mobileUnderline;
@@ -4007,7 +4083,7 @@ mobileV36.addEventListener('click',ev=>{
  const b=ev.target.closest('button');if(!b||b.dataset.mpNudge)return;
  mobileV36FinishInteraction();
  if(b.dataset.mpAction){const action=b.dataset.mpAction;
-  if(action==='done'){mobileV36Close();return}
+  if(action==='done'){mobileV36Close();resumeInlineTextFromButton();return}
   if(action==='back'){mobileV36Back();return}
   if(action==='expand'){mobileV36Expand();return}
   if(action==='fontSearch'||action==='fontSearchClose'){mobileV36State.fontSearch=action==='fontSearch';mobileV36Render();mobileV36.querySelector(mobileV36State.fontSearch?'[data-mp-search=font]':'[data-mp-font-category]')?.focus();return}
@@ -4017,9 +4093,9 @@ mobileV36.addEventListener('click',ev=>{
   if(action==='addStop'){const e=active();e.gradientStops||=[{pos:0,color:e.fill||'#7857de',alpha:100},{pos:100,color:e.fill2||'#ffffff',alpha:100}];gradientStops(e);gradientGeometry(e);if(e.gradientStops.length>=12){toast('Максимум 12 точек');return};const stop={id:uid(),pos:50,color:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value),alpha:100};e.gradientStops.push(stop);gradientStops(e);mobileV36State.activeStop=e.gradientStops.indexOf(stop);mobileV36Commit();mobileV36Render();return}
   if(action==='eyedropper'){mobileV36State.picking=true;mobileV36.className='';mobileV36.innerHTML='';mobileV36ResetView();toast('Пипетка: коснись нужного цвета на холсте');return}
  }
- if(b.dataset.mpFont){const f=b.dataset.mpFont,same=active()?.fontFamily===f;if(v41FontUnavailable(f)){toast('Шрифт недоступен на этом устройстве');return}if(!same)applyFontFamily(f);mobileV36State.fontVariantFamily=(same&&mobileV36State.fontVariantFamily===f)?null:f;mobileV36Render();return}
- if(b.dataset.mpVariant){mobileV36Property('fontVariant',b.dataset.mpVariant,true);mobileV36Render();return}
- if(b.dataset.mpSwatch){mobileV36ApplyColor(b.dataset.mpSwatch,true);mobileV36Render();return}
+ if(b.dataset.mpFont){const f=b.dataset.mpFont,same=active()?.fontFamily===f;if(v41FontUnavailable(f)){toast('Шрифт недоступен на этом устройстве');return}if(!same||inlineStyleRange())applyFontFamily(f);mobileV36State.fontVariantFamily=(same&&mobileV36State.fontVariantFamily===f)?null:f;mobileV36Render();resumeInlineTextFromButton();return}
+ if(b.dataset.mpVariant){mobileV36Property('fontVariant',b.dataset.mpVariant,true);mobileV36Render();resumeInlineTextFromButton();return}
+ if(b.dataset.mpSwatch){mobileV36ApplyColor(b.dataset.mpSwatch,true);mobileV36Render();resumeInlineTextFromButton();return}
  if(b.dataset.mpStrokeColor){mobileV36Property('stroke',b.dataset.mpStrokeColor,true);mobileV36Render();return}
  if(b.dataset.mpGradient){const e=active();[e.fill,e.fill2]=b.dataset.mpGradient.split(',');e.fillType='gradient';e.gradientAngle=90;e.gradientMode='linear';e.gradientStops=[{pos:0,color:e.fill,alpha:100},{pos:100,color:e.fill2,alpha:100}];gradientStops(e);gradientGeometry(e);mobileV36Commit();mobileV36Render();return}
  if(b.dataset.mpGradientStyle){const e=active();if(b.dataset.mpGradientStyle==='radial')e.gradientMode='radial';else{e.gradientMode='linear';e.gradientAngle=Number(b.dataset.mpGradientStyle);delete e.gradientStart;delete e.gradientEnd}gradientStops(e);gradientGeometry(e);mobileV36Commit();mobileV36Render();return}
@@ -4034,7 +4110,7 @@ mobileV36.addEventListener('click',ev=>{
  if(b.dataset.mpMore){const id=b.dataset.mpMore;if(id==='copy')copyLayers();if(id==='paste')pasteLayers();if(id==='delete'){deleteElement();mobileV36Close();return}if(id==='lock')contextAction('lock');if(id==='group'){if(isOneGroup())ungroupSelected();else groupSelected()};if(id==='title'){const e=active();if(e.type==='text'){for(const x of app.doc.elements)if(x.type==='text')x.isTitleLayer=false;e.isTitleLayer=true;syncAutoCardTitle();commit()}}if(id==='saveShape')openSaveSelectedShape();mobileV36Render();return}
  if(b.dataset.mpTextmode){const mode=b.dataset.mpTextmode,e=active();if(mode==='path'&&(!e.textPathPoints||e.textPathPoints.length<2)){e.textPathPoints=[{x:0,y:.72},{x:.25,y:.15},{x:.5,y:.15},{x:.75,y:.72},{x:1,y:.72}];e.textPathOffset=0;e.textPathSide='above'}mobileV36Property('textMode',mode,true);mobileV36Render();return}
  if(b.dataset.mpBlend){mobileV36Property('blendMode',b.dataset.mpBlend,true);mobileV36Render();return}
- if(b.dataset.mpStep){const k=b.dataset.mpStep,step=Number(b.closest('.mp-stepper').querySelector('[data-mp-key]').step)||1;const n=Number(active()?.[k]||0)+Number(b.dataset.dir)*step;mobileV36Property(k,Math.max(0,n),true);mobileV36Render();return}
+ if(b.dataset.mpStep){const k=b.dataset.mpStep,step=Number(b.closest('.mp-stepper').querySelector('[data-mp-key]').step)||1;const value=k==='fontSize'&&inlineStyleRange()?inlineSelectionStyle().fontSize:active()?.[k];const n=Number(value||0)+Number(b.dataset.dir)*step;mobileV36Property(k,Math.max(0,n),true);mobileV36Render();resumeInlineTextFromButton();return}
 });
 mobileV36.addEventListener('input',ev=>{
  const t=ev.target;
@@ -4079,7 +4155,7 @@ for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),
   if(!numericEditValid(field))field.value=numericEditLastValue.get(field)??'';
   // blur produces the same one change event as leaving the field by mouse.
   field.blur();
-  if(!mobileV36Small()&&app.doc&&documentTabSession.activeId!=='home')canvas.focus({preventScroll:true});
+  if(app.editingId)restoreInlineCaret();else if(!mobileV36Small()&&app.doc&&documentTabSession.activeId!=='home')canvas.focus({preventScroll:true});
  },true);
 }
 // Trigger mobile toolbox actions before the legacy bubble handler handles "more".

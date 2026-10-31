@@ -30,6 +30,7 @@ on:
       - 'tests/module-bundle.smoke.spec.js'
       - 'tests/helpers.js'
       - 'playwright.config.js'
+      - 'playwright.selection.config.js'
       - 'scripts/test-server.mjs'
       - 'scripts/test-summary.cjs'
       - 'scripts/build.mjs'
@@ -87,6 +88,9 @@ jobs:
           unzip -q "$RUNNER_TEMP/chromium.zip" -d "$GITHUB_WORKSPACE/.cache"
           "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" --version
       - run: npm run test:netlify
+      - name: Install Firefox for selection regressions
+        run: npx playwright install --with-deps firefox
+      - run: npm run test:selection:firefox
       - run: npm run test:all
       - name: Preserve browser failure diagnostics
         if: failure()

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "test": "playwright test --project=chromium",
+    "test:selection:firefox": "playwright test --config=playwright.selection.config.js",
     "test:known": "playwright test --project=known-failures",
     "test:all": "playwright test",
     "test:visual": "playwright test --project=chromium tests/visual.spec.js",
@@ -17,7 +18,7 @@
     "build": "node scripts/build.mjs",
     "build:html": "node scripts/build.mjs html",
     "build:pwa": "node scripts/build.mjs pwa",
-    "test:unit": "node --test tests/rich-text-layout.test.mjs tests/rich-text.test.mjs tests/group-plan.test.mjs tests/export-resources.test.mjs tests/layer-masks.test.mjs tests/canvas-graph.test.mjs tests/colors.test.mjs tests/gradient-model.test.mjs tests/shape-catalog.test.mjs tests/geometry.test.mjs tests/indexeddb.test.mjs tests/project-integrity.test.mjs tests/zip-backup.test.mjs tests/workspace-replace.test.mjs tests/document-save.test.mjs",
+    "test:unit": "node --test tests/inline-text-history.test.mjs tests/rich-text-layout.test.mjs tests/rich-text.test.mjs tests/group-plan.test.mjs tests/export-resources.test.mjs tests/layer-masks.test.mjs tests/canvas-graph.test.mjs tests/colors.test.mjs tests/gradient-model.test.mjs tests/shape-catalog.test.mjs tests/geometry.test.mjs tests/indexeddb.test.mjs tests/project-integrity.test.mjs tests/zip-backup.test.mjs tests/workspace-replace.test.mjs tests/document-save.test.mjs",
     "test:source": "node --test tests/source-extraction.test.mjs",
     "test:pwa": "node --test tests/pwa-runtime.test.mjs",
     "build:verify": "node scripts/verify-build.mjs",

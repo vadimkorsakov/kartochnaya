@@ -1098,13 +1098,14 @@ function drawTextGlyphs(c,e,method='fill'){
 function drawMixedTextGlyphs(c,e,method){
  const layout=mixedTextLayout(e),stroke=Math.max(0,e.strokeWidth||0);
  c.save();c.textAlign='left';c.textBaseline='alphabetic';c.fontKerning='normal';
+ const solid=(e.fillType||'solid')==='solid';if(method==='fill'&&solid)c.globalAlpha*=clamp((e.fillOpacity??100)/100,0,1);
  c.beginPath();c.rect(-stroke,-stroke,e.w+2*stroke,e.h+2*stroke);c.clip();
  for(const row of layout.rows){
   if(row.y>e.h)break;
   for(const part of row.fragments){
    c.font=richTextFont(part.style);c.letterSpacing=part.style.letterSpacing+'px';
    if(method==='stroke')c.strokeText(part.text,part.x,part.y);
-   else{if((e.fillType||'solid')==='solid')c.fillStyle=hexAlpha(part.style.textColor,e.fillOpacity??100);c.fillText(part.text,part.x,part.y)}
+   else{if(solid)c.fillStyle=part.style.textColor;c.fillText(part.text,part.x,part.y)}
   }
   // Existing layer decorations still cover the line; run decorations are data only.
   if(method==='fill'&&(e.mobileUnderline||e.mobileStrike)){

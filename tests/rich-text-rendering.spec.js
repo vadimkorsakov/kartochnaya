@@ -40,7 +40,7 @@ function rowGroups(draws){const rows=[];for(const d of draws){let row=rows.find(
 for(const mobile of [false,true])test.describe(mobile?'mixed rendering mobile':'mixed rendering desktop',()=>{
  test.use(mobile?{viewport:{width:390,height:844},isMobile:true,hasTouch:true}:{});
  test('colors share one baseline; screen and PNG paint both colors',async({page})=>{
-  await seed(page);const draws=await frame(page);
+  await seed(page,{textColor:'red',textRuns:[{start:8,end:13,style:{textColor:'rgb(0,0,255)'}}]});const draws=await frame(page);
   expect(draws.map(d=>d.text)).toEqual(['Красный ','Синий']);expect(draws[0].y).toBe(draws[1].y);
   expect(draws.map(d=>d.color)).toEqual(['#ff0000','#0000ff']);expect(draws[1].x).toBeCloseTo(draws[0].width,5);
   const screen=await canvasImage(page);expect(colored(screen,255,0,0)).toBeGreaterThan(5);expect(colored(screen,0,0,255)).toBeGreaterThan(5);
@@ -167,12 +167,13 @@ test('long text with forty ranges renders within budget and avoids repeated full
 });
 
 test('at document scale the real display Canvas and PNG are pixel-identical',async({page})=>{
- await seed(page,{text:'Цвет 😀 размер\nВторая строка',textRuns:[{start:5,end:7,style:{fontSize:32,textColor:'#0000ff'}},{start:8,end:14,style:{fontFamily:'monospace',italic:true}}]});
+ await seed(page,{text:'Цвет 😀 размер\nВторая строка',fillOpacity:50,textColor:'#f00',textRuns:[{start:5,end:7,style:{fontSize:32,textColor:'#0000ff'}},{start:8,end:14,style:{fontFamily:'monospace',italic:true}}]});
  const stageHeight=await page.locator('#stageScroller').evaluate(el=>el.clientHeight);
  await page.setViewportSize({width:1280,height:900+308-stageHeight});await page.locator('#zoomLabel').click();
  await expect(page.locator('#zoomLabel')).toHaveText('100%');
  const screen=await canvasImage(page);expect([screen.width,screen.height]).toEqual([320,240]);
  const png=(await exportPNG(page)).image;expect(png.data.equals(screen.data)).toBe(true);
+ let fadedRed=0;for(let i=0;i<png.data.length;i+=4)if(png.data[i]>=248&&png.data[i+1]>=120&&png.data[i+1]<=123&&png.data[i+2]>=117&&png.data[i+2]<=120)fadedRed++;expect(fadedRed).toBeGreaterThan(10);
 });
 
 test('loading a font used only by a run invalidates cached geometry for Canvas and PNG',async({page})=>{

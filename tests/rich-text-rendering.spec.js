@@ -58,6 +58,12 @@ test('families, explicit weights/styles, boolean aliases and letter spacing reac
  expect(d[0].font).toContain('italic 300');expect(d[0].font).toContain('serif');expect(d[0].spacing).toBe('3px');
  expect(d[1].font).toMatch(/bold|700/);expect(d[1].font).toContain('monospace');expect(d[1].font).not.toContain('italic');
  expect(d[2].font).toContain('italic');expect(d[2].font).not.toContain('700');
+ const widths=await page.evaluate(()=>{
+  const c=document.createElement('canvas').getContext('2d');c.fontKerning='normal';
+  c.font='italic 300 20px serif';c.letterSpacing='3px';const serif=c.measureText('MMMM').width;
+  c.font='700 20px monospace';c.letterSpacing='0px';return [serif,c.measureText('iiii').width];
+ });
+ expect(d[0].width).toBeCloseTo(widths[0],5);expect(d[1].width).toBeCloseTo(widths[1],5);
  expect(d[1].x).toBeCloseTo(d[0].width,5);expect(d[2].x).toBeCloseTo(d[0].width+d[1].width,5);
  const {image}=await exportPNG(page);expect(colored(image,255,0,0)).toBeGreaterThan(100);
 });

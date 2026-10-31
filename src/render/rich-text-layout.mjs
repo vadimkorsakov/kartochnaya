@@ -5,7 +5,11 @@ export const usesRichTextLayout = e => Array.isArray(e.textRuns) && e.textRuns.l
 
 const positive = (n, fallback) => Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : fallback;
 const spacing = n => Number.isFinite(Number(n)) ? Number(n) : 0;
-export const richTextFont = s => `${s.fontStyle} ${s.fontWeight} ${s.fontSize}px "${s.fontFamily.replaceAll('"', '')}"`;
+const genericFamilies = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace', 'ui-rounded', 'emoji', 'math', 'fangsong']);
+export const richTextFont = s => {
+  const family = genericFamilies.has(s.fontFamily.toLowerCase()) ? s.fontFamily.toLowerCase() : `"${s.fontFamily.replaceAll('"', '')}"`;
+  return `${s.fontStyle} ${s.fontWeight} ${s.fontSize}px ${family}`;
+};
 
 // Explicit weight/style wins over its boolean alias within the same scope.
 // A run's boolean alias overrides the inherited layer weight/style.

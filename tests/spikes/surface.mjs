@@ -55,6 +55,19 @@ export function mount(value){
  return true;
 }
 export async function ready(){await Promise.all(['20px SpikeSans','700 20px SpikeSans','20px SpikeSerif'].map(font=>document.fonts.load(font)));await document.fonts.ready;}
+// Diagnostic CSS only: preserve the mounted text, spans and Canvas engine.
+export function applyMetricLineHeight(){
+ const styles=[resolveRichTextStyle(layer),...richTextSpans(layer).map(p=>p.style)];
+ const elements=[host,...host.children];
+ return elements.map((element,i)=>{
+  const style=styles[i];ctx.font=richTextFont(style);
+  const m=ctx.measureText('Mg'),ascent=m.fontBoundingBoxAscent,descent=m.fontBoundingBoxDescent;
+  if(!Number.isFinite(ascent)||!Number.isFinite(descent))throw Error('Font bounding metrics unavailable');
+  const height=Math.max(style.fontSize*(layer.lineHeight||1.15),ascent+descent);
+  element.style.lineHeight=height+'px';
+  return {font:ctx.font,fontSize:style.fontSize,ascent,descent,height,computed:getComputedStyle(element).lineHeight};
+ });
+}
 export function measure(){
  const layout=engine.layout(layer),origin=host.getBoundingClientRect(),dom=[],canvas=[];
 
@@ -115,6 +128,20 @@ export function measure(){
   const p=offsetToDomPoint(line.start),r=document.createRange();r.setStart(p.node,p.offset);r.collapse(true);
   return {offset:line.start,rects:[...r.getClientRects()].map(r=>({x:r.left-origin.left,y:r.top-origin.top,height:r.height}))};
  });
+ // Probe every Canvas row in both DOM affinities, including empty/trailing
+ // rows. Keep missing rects and wrong-row affinity; never substitute neighbours.
+ const caretRowProbes=layout.rows.map((row,rowIndex)=>{
+  const empty=row.start===row.end;
+  const style=row.fragments[0]?.style||resolveRichTextStyle(layer);
+  ctx.font=richTextFont(style);const m=ctx.measureText('Mg');
+  const expected={x:row.fragments[0]?.x??(layer.textAlign==='center'?layer.w/2:layer.textAlign==='right'?layer.w:0),y:row.baseline-m.fontBoundingBoxAscent};
+  const affinities=['upstream','downstream'].map(affinity=>{
+   const p=offsetToDomPoint(row.start,affinity),r=document.createRange();r.setStart(p.node,p.offset);r.collapse(true);
+   const rects=[...r.getClientRects()].map(r=>({x:r.left-origin.left,y:r.top-origin.top,height:r.height}));
+   return {affinity,rects,deltas:rects.map(r=>({dx:Math.abs(r.x-expected.x),dy:Math.abs(r.y-expected.y)}))};
+  });
+  return {row:rowIndex,offset:row.start,empty,expected,affinities};
+ });
  const css=getComputedStyle(host);ctx.font=css.font;const metrics=ctx.measureText('Mg');
- return {cssMetrics:{font:css.font,lineHeight:css.lineHeight,ascent:metrics.fontBoundingBoxAscent??metrics.actualBoundingBoxAscent,descent:metrics.fontBoundingBoxDescent??metrics.actualBoundingBoxDescent},rowProbes,unmatchedGlyphs:glyphs.length-pairs.length,text:readText(),domLines,canvasLines,domMetrics:dom,canvasMetrics:layout.rows,maxCaretDx:Math.max(0,...carets.map(p=>p.dx)),maxCaretDy:Math.max(0,...carets.map(p=>p.dy)),missingCaretRects:pairs.length*2-carets.length,domRows,canvasRows:layout.rows.map(row=>canvas.filter(p=>p.row===layout.rows.indexOf(row)).map(p=>[p.start,p.end])),maxDx:Math.max(0,...pairs.map(p=>p.dx)),maxDy:Math.max(0,...pairs.map(p=>p.dy)),pairs};
+ return {caretRowProbes,cssMetrics:{font:css.font,lineHeight:css.lineHeight,ascent:metrics.fontBoundingBoxAscent??metrics.actualBoundingBoxAscent,descent:metrics.fontBoundingBoxDescent??metrics.actualBoundingBoxDescent},rowProbes,unmatchedGlyphs:glyphs.length-pairs.length,text:readText(),domLines,canvasLines,domMetrics:dom,canvasMetrics:layout.rows,maxCaretDx:Math.max(0,...carets.map(p=>p.dx)),maxCaretDy:Math.max(0,...carets.map(p=>p.dy)),missingCaretRects:pairs.length*2-carets.length,domRows,canvasRows:layout.rows.map(row=>canvas.filter(p=>p.row===layout.rows.indexOf(row)).map(p=>[p.start,p.end])),maxDx:Math.max(0,...pairs.map(p=>p.dx)),maxDy:Math.max(0,...pairs.map(p=>p.dy)),pairs};
 }

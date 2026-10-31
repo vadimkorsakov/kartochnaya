@@ -30,7 +30,8 @@
     "test:netlify": "node --test tests/netlify-deploy.test.mjs && npm run build:netlify && playwright test --config=playwright.netlify.config.js",
     "test:drive": "node --test tests/google-drive.test.mjs tests/google-drive-backup.test.mjs tests/google-drive-accounts.test.mjs",
     "test:yandex": "node --test tests/yandex-disk.test.mjs tests/yandex-disk-backup.test.mjs tests/yandex-netlify.test.mjs",
-    "test:cloud": "node --test tests/cloud-coordinator.test.mjs"
+    "test:cloud": "node --test tests/cloud-coordinator.test.mjs",
+    "test:spike": "playwright test --config=playwright.spike.config.js"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

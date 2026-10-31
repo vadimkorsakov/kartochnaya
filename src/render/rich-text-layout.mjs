@@ -88,40 +88,47 @@ export function createRichTextLayoutEngine(context, fontSet) {
     for (const { segment, index } of segmenter.segment(text)) {
       while (spanIndex + 1 < spans.length && spans[spanIndex].end <= index) spanIndex++;
       if (segment === '\r') continue; // Same CR compatibility as legacy horizontal text.
-      clusters.push({ text: segment === '\r\n' ? '\n' : segment, style: spans[spanIndex]?.style || base });
+      clusters.push({ text: segment === '\r\n' ? '\n' : segment, start: index, end: index + segment.length, style: spans[spanIndex]?.style || base });
     }
-    const rows = []; let fragments = [], rowWidth = 0;
+    const rows = []; let fragments = [], rowWidth = 0, rowStart = 0;
     const styleKey = s => JSON.stringify(s);
     function append(parts, cluster) {
       const last = parts.at(-1), id = styleKey(cluster.style);
       if (last?.id === id) {
-        const next = { ...last, text: last.text + cluster.text };
+        const next = { ...last, text: last.text + cluster.text, end: cluster.end };
         next.metrics = measure(next.text, next.style); parts[parts.length - 1] = next;
         return next.metrics.width - last.metrics.width;
       }
       const part = { ...cluster, id, metrics: measure(cluster.text, cluster.style) };
       parts.push(part); return part.metrics.width;
     }
-    function finish() {
+    function finish(breakCluster, final = false) {
       const samples = fragments.length ? fragments : [{ style: base, metrics: measure('Mg', base) }];
       const ascent = Math.max(...samples.map(p => p.metrics.ascent));
       const descent = Math.max(...samples.map(p => p.metrics.descent));
       const maxSize = Math.max(...samples.map(p => p.style.fontSize));
       const rowHeight = Math.max(maxSize * lineHeight, ascent + descent);
-      rows.push({ fragments, width: rowWidth, height: rowHeight, baseline: ascent + (rowHeight - ascent - descent) / 2 });
+      // Source intervals are UTF-16, independent of rendered geometry. Hard
+      // breaks are excluded from end and owned by [end, nextStart). A trailing
+      // empty row has start=end=text.length. Legacy ignored CRs retain offsets.
+      const end = breakCluster?.start ?? (final ? text.length : fragments.at(-1)?.end ?? rowStart);
+      const nextStart = breakCluster?.end ?? end;
+      rows.push({ start: rowStart, end, nextStart, softWrap: !breakCluster && !final,
+        fragments, width: rowWidth, height: rowHeight, baseline: ascent + (rowHeight - ascent - descent) / 2 });
+      rowStart = nextStart;
       fragments = []; rowWidth = 0;
     }
     // Words span style changes. Keep whitespace as source content, including at
     // wrap boundaries; oversized words/spaces fall back to whole graphemes.
     for (let i = 0; i < clusters.length;) {
-      if (clusters[i].text === '\n') { finish(); i++; continue; }
+      if (clusters[i].text === '\n') { finish(clusters[i]); i++; continue; }
       const blank = /^\s+$/u.test(clusters[i].text); let end = i + 1;
       while (end < clusters.length && clusters[end].text !== '\n' && /^\s+$/u.test(clusters[end].text) === blank) end++;
       const token = [];
       // Group first so measuring a long word is linear on the common path.
       for (let j = i; j < end; j++) {
         const ch = clusters[j], last = token.at(-1), id = styleKey(ch.style);
-        if (last?.id === id) last.text += ch.text; else token.push({ ...ch, id });
+        if (last?.id === id) { last.text += ch.text; last.end = ch.end; } else token.push({ ...ch, id });
       }
       const trial = fragments.slice(); let trialWidth = rowWidth;
       for (const part of token) trialWidth += append(trial, part);
@@ -138,15 +145,15 @@ export function createRichTextLayoutEngine(context, fontSet) {
       }
       i = end;
     }
-    finish();
+    finish(undefined, true);
     const blockHeight = rows.reduce((sum, row) => sum + row.height, 0);
     let y = e.verticalAlign === 'middle' ? Math.max(0, (height - blockHeight) / 2) :
       e.verticalAlign === 'bottom' ? Math.max(0, height - blockHeight) : 0;
     for (const row of rows) {
       let x = e.textAlign === 'center' ? (width - row.width) / 2 : e.textAlign === 'right' ? width - row.width : 0;
       row.y = y; row.baseline += y;
-      row.fragments = row.fragments.map(({ text, style, metrics }) => {
-        const part = { text, style, x, y: row.baseline, width: metrics.width }; x += metrics.width; return part;
+      row.fragments = row.fragments.map(({ text, style, metrics, start, end }) => {
+        const part = { text, style, start, end, x, y: row.baseline, width: metrics.width }; x += metrics.width; return part;
       });
       y += row.height;
     }

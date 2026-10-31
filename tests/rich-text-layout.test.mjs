@@ -38,3 +38,20 @@ test('bounded measurement cache reuses layouts and invalidates on font completio
  assert.ok(next.rows.length>first.rows.length);
  for(const name of ['loadingdone','loadingerror']){events[name]();const before=calls;assert.notEqual(engine.layout(e),first);assert.ok(calls>before)}
 });
+
+test('source intervals preserve UTF-16, hard/soft wraps, empty rows and CR compatibility',()=>{
+ const context={measureText(text){return {width:[...text].length*10,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
+ const engine=createRichTextLayoutEngine(context);
+ for(const text of ['', '\n', '\n\n', 'A😀👩‍💻Б\n\nC\n', 'AB\r\nC\rD\r', 'alpha     beta']){
+  const rows=engine.layout({text,w:35,h:100,fontSize:20,textRuns:[{start:1,end:3,style:{textColor:'red'}}]}).rows;
+  assert.equal(rows[0].start,0);assert.equal(rows.at(-1).nextStart,text.length);
+  const boundaries=new Set([0,text.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(text),p=>p.index)]);
+  for(let i=0;i<rows.length;i++){
+   const row=rows[i];assert.ok(row.start<=row.end&&row.end<=row.nextStart);
+   if(i+1<rows.length)assert.equal(row.nextStart,rows[i+1].start);
+   assert.equal(row.softWrap,i+1<rows.length&&row.end===row.nextStart);
+   if(row.nextStart>row.end)assert.match(text.slice(row.end,row.nextStart),/^\r?\n$/);
+   for(const p of row.fragments){assert.ok(p.start>=row.start&&p.end<=row.end);assert.ok(boundaries.has(p.start)&&boundaries.has(p.end));assert.equal(p.text,text.slice(p.start,p.end).replaceAll('\r',''));}
+  }
+ }
+});

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveRichTextStyle,richTextSpans,retainRichTextSizeBase,usesRichTextLayout,createRichTextLayoutEngine,LEGACY_TOP_LAYOUT} from '../src/render/rich-text-layout.mjs';
+import {resolveRichTextStyle,richTextSpans,retainRichTextSizeBase,usesRichTextLayout,createRichTextLayoutEngine,LEGACY_TOP_LAYOUT,legacyTopProjection} from '../src/render/rich-text-layout.mjs';
 
 const base={text:'А😀 Б',fontSize:20,fontWeight:'500',fontStyle:'oblique',textColor:'#123456',letterSpacing:2};
 test('explicit keys win within a scope, run aliases override the base, missing keys inherit',()=>{
@@ -30,12 +30,14 @@ test('plain, vertical, path, boundary, arc and justified text retain legacy disp
 test('bounded measurement cache reuses layouts and invalidates on font completion/error',()=>{
  let calls=0;const events={};
  const context={measureText(text){calls++;const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);return {width:[...text].length*size/2,fontBoundingBoxAscent:size*.8,fontBoundingBoxDescent:size*.2}}};
- const engine=createRichTextLayoutEngine(context,{size:0,addEventListener:(name,fn)=>events[name]=fn});
+ const fontSet={size:0,addEventListener:(name,fn)=>events[name]=fn},engine=createRichTextLayoutEngine(context,fontSet);
  const e={...base,w:80,h:200,textRuns:[{start:1,end:3,style:{fontSize:40}}]};
  const first=engine.layout(e),count=calls;assert.equal(engine.layout(e),first);assert.equal(calls,count);
  assert.equal(first.rows.flatMap(r=>r.fragments).map(p=>p.text).join(''),base.text);
  const next=engine.layout({...e,w:40});assert.notEqual(next,first);
  assert.ok(next.rows.length>first.rows.length);
+ for(const patch of [{fontFamily:'Georgia'},{fontSize:32}]){const before=calls;assert.notEqual(engine.layout({...e,...patch}),first);assert.ok(calls>before)}
+ fontSet.size++;assert.notEqual(engine.layout(e),first);
  for(const name of ['loadingdone','loadingerror']){events[name]();const before=calls;assert.notEqual(engine.layout(e),first);assert.ok(calls>before)}
 });
 
@@ -58,10 +60,39 @@ test('source intervals preserve UTF-16, hard/soft wraps, empty rows and CR compa
 
 test('legacy-top opts in per layer and cannot collide with the old rich cache entry',()=>{
  const stack=[];
- const context={textBaseline:'alphabetic',save(){stack.push({font:this.font,textBaseline:this.textBaseline,letterSpacing:this.letterSpacing})},restore(){Object.assign(this,stack.pop())},measureText(text){return {width:text.length*20,fontBoundingBoxAscent:29,fontBoundingBoxDescent:7,actualBoundingBoxAscent:this.textBaseline==='top'?-2.828125:22}}};
+ const context={textBaseline:'alphabetic',save(){stack.push({font:this.font,textBaseline:this.textBaseline,letterSpacing:this.letterSpacing})},restore(){Object.assign(this,stack.pop())},measureText(text){return {width:text.length*20,fontBoundingBoxAscent:29,fontBoundingBoxDescent:7,actualBoundingBoxAscent:this.textBaseline==='top'?-2.828125:22,actualBoundingBoxDescent:this.textBaseline==='top'?24.828125:0}}};
  const engine=createRichTextLayoutEngine(context),source={text:'ABCD\nABCD',w:200,h:120,fontFamily:'Arial',fontSize:32,lineHeight:1.15,textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]},before=structuredClone(source);
  const old=engine.layout(source),marked=engine.layout({...source,textLayoutMode:LEGACY_TOP_LAYOUT});
  assert.equal(old.rows[0].baseline,29.4);assert.equal(marked.rows[0].baseline,24.828125);
  assert.equal(marked.rows[1].baseline-marked.rows[0].baseline,32*1.15);
  assert.equal(engine.layout(source),old);assert.equal(engine.layout({...source,textLayoutMode:LEGACY_TOP_LAYOUT}),marked);assert.deepEqual(source,before);
+});
+
+test('legacy projection uses metrics at any family, size, weight, style and line height',()=>{
+ const stack=[];let fault={};
+ const context={textBaseline:'alphabetic',save(){stack.push({font:this.font,textBaseline:this.textBaseline,letterSpacing:this.letterSpacing})},restore(){Object.assign(this,stack.pop())},measureText(text){
+  const size=Number(this.font.match(/([\d.]+)px/)[1]),top=this.textBaseline==='top';
+  return {width:text.length*size/2,fontBoundingBoxAscent:size*.75,fontBoundingBoxDescent:size*.2,
+   actualBoundingBoxAscent:top?0:size*.7,actualBoundingBoxDescent:top?size*.7:0,...(typeof fault==='function'?fault(text,top):fault)};
+ }};
+ for(const fontFamily of ['Any Available Face','Georgia','Arial'])for(const fontSize of [24,32,40])for(const lineHeight of [1,1.15,1.3]){
+  const e={text:'ABCD\nABCD',fontFamily,fontSize,fontWeight:'700',fontStyle:'italic',lineHeight},before=structuredClone(e);
+  const p=legacyTopProjection(context,e);assert.ok(p);assert.equal(p.height,fontSize*lineHeight);assert.ok(Math.abs(p.baseline-fontSize*.7)<1e-10);assert.deepEqual(e,before);
+  assert.equal(legacyTopProjection(context,{...e,textRuns:[{start:1,end:3,style:{textColor:'red'}}]}),null);
+  assert.ok(legacyTopProjection(context,{...e,textLayoutMode:LEGACY_TOP_LAYOUT,textRuns:[{start:1,end:3,style:{textColor:'red'}}]}));
+  assert.equal(legacyTopProjection(context,{...e,textLayoutMode:LEGACY_TOP_LAYOUT,textRuns:[{start:1,end:3,style:{fontSize:fontSize+1}}]}),null);
+ }
+ const e={text:'ABCD',fontSize:32,lineHeight:1.15};
+ for(const invalid of [{width:NaN},{fontBoundingBoxAscent:Infinity},{fontBoundingBoxDescent:-1},{fontBoundingBoxAscent:50},{actualBoundingBoxDescent:99}]){fault=invalid;assert.equal(legacyTopProjection(context,e),null)}
+ fault={};assert.equal(legacyTopProjection(context,{...e,text:'ABCD\n'}),null);
+ fault=(text,top)=>text==='EFGH'?{actualBoundingBoxAscent:top?0:23.4,actualBoundingBoxDescent:top?23.4:0}:{};
+ assert.equal(legacyTopProjection(context,{...e,text:'ABCD\nEFGH'}),null);
+ // A naturally matching row needs no marker; an existing marker remains valid.
+ fault={fontBoundingBoxAscent:22.4,fontBoundingBoxDescent:9.6};
+ assert.equal(legacyTopProjection(context,{...e,lineHeight:1}),null);
+ assert.ok(legacyTopProjection(context,{...e,lineHeight:1,textLayoutMode:LEGACY_TOP_LAYOUT}));
+ // The actual source rows take precedence over a slightly different Mg sample.
+ fault=text=>text==='Mg'?{fontBoundingBoxAscent:23.2,fontBoundingBoxDescent:8.8}:{fontBoundingBoxAscent:22.8,fontBoundingBoxDescent:9.2};
+ assert.equal(legacyTopProjection(context,{...e,lineHeight:1}),null);
+ assert.equal(context.textBaseline,'alphabetic');
 });

@@ -16,6 +16,31 @@ async function state(page){return page.locator(surface).evaluate(el=>{
  return {text:el.textContent,anchor:offset(sel.anchorNode,sel.anchorOffset),focus:offset(sel.focusNode,sel.focusOffset)};
 });}
 async function value(page){return getLayer(await exportedDocument(page));}
+// Observe the real JSON export Blob without asking Chromium to download a file
+// for every intermediate Undo/Redo state. Actual downloads remain covered by
+// exportedDocument() elsewhere; these two long tests would otherwise issue
+// eleven successive automatic downloads in a single page.
+async function snapshotValue(page){
+ const payload=await page.evaluate(async()=>{
+  const originalClick=HTMLAnchorElement.prototype.click;
+  let blobUrl=null;
+  HTMLAnchorElement.prototype.click=function(...args){
+   if(this.download?.endsWith('.json')&&this.href.startsWith('blob:')){blobUrl=this.href;return;}
+   return originalClick.apply(this,args);
+  };
+  try{
+   const button=document.querySelector('#jsonExportBtn');
+   if(!button)throw Error('JSON export control missing');
+   button.click();
+   if(!blobUrl)throw Error('JSON exporter did not create a downloadable Blob');
+   const response=await fetch(blobUrl);
+   if(!response.ok)throw Error('JSON export Blob could not be read');
+   return JSON.parse(await response.text());
+  }finally{HTMLAnchorElement.prototype.click=originalClick;}
+ });
+ expect(payload.format).toBe('kartochnaya-v1');
+ return getLayer(payload.document);
+}
 async function redPixels(page){return page.locator('#canvas').evaluate(canvas=>{const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;let count=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]>180&&pixels[i+1]<70&&pixels[i+2]<70&&pixels[i+3])count++;return count;});}
 
 test('opt-in input, three undo/redo, single document commit and persistence',async({page})=>{
@@ -146,14 +171,14 @@ test('emoji range color and size preserve UTF-16 boundaries and Undo',async({pag
 });
 
 test('mixed typing Enter and formatting history, branch truncation and pending preview close',async({page})=>{
- await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}});await edit(page);await page.keyboard.type('X');await page.keyboard.press('Enter');const typed=await value(page);await selectRange(page,1,3);
- const spacing=page.locator('#inspector [data-key=letterSpacing]');await spacing.fill('2');await spacing.press('Tab');const formatted=await value(page);await assertRange(page,'ABCDX\n',1,3);
- await page.keyboard.press('Control+z');expect(await value(page)).toEqual(typed);await assertRange(page,'ABCDX\n',1,3);
- await page.keyboard.press('Control+z');expect((await value(page)).text).toBe('ABCDX');await assertRange(page,'ABCDX',5,5);
- await page.keyboard.press('Control+Shift+z');expect(await value(page)).toEqual(typed);await assertRange(page,'ABCDX\n',1,3);
- await page.keyboard.press('Control+Shift+z');expect(await value(page)).toEqual(formatted);await assertRange(page,'ABCDX\n',1,3);
- await page.keyboard.press('Control+z');await page.keyboard.type('Y');const branch=await value(page);await page.keyboard.press('Control+Shift+z');expect(await value(page)).toEqual(branch);
- await selectRange(page,0,1);await spacing.fill('3');await spacing.press('Control+Enter');await expect(page.locator(surface)).toBeHidden();expect((await value(page)).textRuns[0].style.letterSpacing).toBe(3);
+ await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}});await edit(page);await page.keyboard.type('X');await page.keyboard.press('Enter');const typed=await snapshotValue(page);await selectRange(page,1,3);
+ const spacing=page.locator('#inspector [data-key=letterSpacing]');await spacing.fill('2');await spacing.press('Tab');const formatted=await snapshotValue(page);await assertRange(page,'ABCDX\n',1,3);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(typed);await assertRange(page,'ABCDX\n',1,3);
+ await page.keyboard.press('Control+z');expect((await snapshotValue(page)).text).toBe('ABCDX');await assertRange(page,'ABCDX',5,5);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(typed);await assertRange(page,'ABCDX\n',1,3);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(formatted);await assertRange(page,'ABCDX\n',1,3);
+ await page.keyboard.press('Control+z');await page.keyboard.type('Y');const branch=await snapshotValue(page);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(branch);
+ await selectRange(page,0,1);await spacing.fill('3');await spacing.press('Control+Enter');await expect(page.locator(surface)).toBeHidden();expect((await snapshotValue(page)).textRuns[0].style.letterSpacing).toBe(3);
 });
 
 for(const property of ['lineHeight','autoFit'])test('unsupported inspector action safely hands off after panel focus: '+property,async({page})=>{
@@ -179,12 +204,12 @@ test('palette, hue slider and square use direct range previews with one Undo eac
 });
 
 test('numeric previews from origin, no-op history and ordinary input finalize once',async({page})=>{
- await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}});await edit(page);await page.keyboard.type('X');const typed=await value(page);await selectRange(page,1,3);
- const size=page.locator('#inspector [data-key=fontSize]');for(const n of ['24','28','20']){await size.fill(n);await expect(size).toBeFocused();}await size.press('Tab');expect(await value(page)).toEqual(typed);
- await assertRange(page,'ABCDX',1,3);await page.keyboard.press('Control+z');expect((await value(page)).text).toBe('ABCD');await page.keyboard.press('Control+Shift+z');expect(await value(page)).toEqual(typed);
- await selectRange(page,1,3);await size.fill('28');await size.fill('30');await assertRange(page,'ABCDX',1,3);const formatted=await value(page);
- await page.keyboard.type('Y');const afterInput=await value(page);await page.keyboard.press('Control+z');expect(await value(page)).toEqual(formatted);await page.keyboard.press('Control+z');expect(await value(page)).toEqual(typed);
- await page.keyboard.press('Control+Shift+z');expect(await value(page)).toEqual(formatted);await page.keyboard.press('Control+Shift+z');expect(await value(page)).toEqual(afterInput);
+ await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}});await edit(page);await page.keyboard.type('X');const typed=await snapshotValue(page);await selectRange(page,1,3);
+ const size=page.locator('#inspector [data-key=fontSize]');for(const n of ['24','28','20']){await size.fill(n);await expect(size).toBeFocused();}await size.press('Tab');expect(await snapshotValue(page)).toEqual(typed);
+ await assertRange(page,'ABCDX',1,3);await page.keyboard.press('Control+z');expect((await snapshotValue(page)).text).toBe('ABCD');await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(typed);
+ await selectRange(page,1,3);await size.fill('28');await size.fill('30');await assertRange(page,'ABCDX',1,3);const formatted=await snapshotValue(page);
+ await page.keyboard.type('Y');const afterInput=await snapshotValue(page);await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(formatted);await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(typed);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(formatted);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(afterInput);
 });
 
 test('unmeasurable style projection safely hands off with no partial preview history',async({page})=>{

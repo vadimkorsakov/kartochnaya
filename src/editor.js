@@ -974,6 +974,49 @@ function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
  return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
 }
+// Opening a plain layer must not opt it into the mixed Canvas painter. Compare
+// the real legacy rows and baseline with the virtual rich projection instead.
+// Incompatible fonts/wraps remain on textarea until the engines are reconciled.
+function plainWysiwygLayoutCompatible(e){
+ if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
+ try{
+  const c=textFitContext,rows=mixedTextLayout(e).rows,lines=wrapLines(c,e);
+  if(rows.length!==lines.length)return false;
+  c.save();
+  try{
+   c.font=fontString(e);const legacyFont=c.font;
+   c.font=richTextFont(resolveRichTextStyle(e));if(c.font!==legacyFont)return false;
+   c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';
+   const step=(e.lineHeight||1.15)*(e.fontSize||24);
+   // Half a document pixel is at most one screen pixel at the checked 200%.
+   return rows.every((row,i)=>{
+    // Fallback glyphs (including emoji) may change the legacy top baseline.
+    // Measure the actual row, not a Latin sample such as Mg.
+    const source=lines[i],text=source||'Mg',chars=Array.from(source);
+    // A color boundary also separates Canvas shaping runs. Refuse a plain
+    // row whose glyph advances depend on cross-boundary shaping/kerning.
+    let previousWidth=0,largest=0,second=0;
+    for(let j=0;j<chars.length;j++){
+     const width=c.measureText(chars[j]).width;
+     if(j){
+      const delta=previousWidth+width-c.measureText(chars[j-1]+chars[j]).width;
+      if(Math.abs(delta)>.5)return false;
+      if(delta>largest){second=largest;largest=delta}else second=Math.max(second,delta);
+     }
+     previousWidth=width;
+    }
+    // A single first range introduces at most two shaping boundaries. Keep
+    // enough room for both; even small kerning loss must not add a soft wrap.
+    if(c.measureText(source).width+largest+second>Math.max(1,e.w))return false;
+    c.textBaseline='top';const top=c.measureText(text).actualBoundingBoxAscent;
+    c.textBaseline='alphabetic';const baseline=c.measureText(text).actualBoundingBoxAscent-top;
+    return row.fragments.map(p=>p.text).join('')===lines[i]&&
+     Math.abs(row.width-c.measureText(lines[i]).width)<=.5&&
+     Math.abs(row.baseline-(baseline+i*step))<=.5&&Math.abs(row.y-i*step)<=.5;
+   });
+  }finally{c.restore()}
+ }catch{return false}
+}
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
 function autoFitTextFont(e){
  if(!e?.autoFontSize||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||!String(e.text||'').length)return false;
@@ -1936,7 +1979,7 @@ function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=n
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
 function startInlineWysiwyg(e){
  const host=$('#inlineWysiwyg');app.inlineSession.wysiwyg=true;app.inlineSession.formatted=true;
- app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,
+ app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:plainWysiwygLayoutCompatible,
   available:family=>!v41FontUnavailable(family),
   onChange(){syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();},
   onFallback(selection,reason){finishWysiwygFallback(selection,reason);},
@@ -1978,7 +2021,7 @@ $('#canvasHost').addEventListener('keydown',ev=>{if(ev.target.id!=='inlineWysiwy
  if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(true);canvas.focus();}
  if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText();}
 });
-function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family))){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
+function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),plainWysiwygLayoutCompatible)){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
 function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');
  if(!e.textMode||e.textMode==='horizontal'){
   editor.style.width=Math.max(1,e.w)+'px';editor.style.height=Math.max(1,e.h)+'px';

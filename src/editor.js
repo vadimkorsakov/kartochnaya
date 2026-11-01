@@ -998,16 +998,21 @@ function plainWysiwygLayoutCompatible(e){
     const source=lines[i],text=source||'Mg',chars=Array.from(source);
     // A color boundary also separates Canvas shaping runs. Refuse a plain
     // row whose glyph advances depend on cross-boundary shaping/kerning.
-    let previousWidth=0,largest=0,second=0;
+    let previousWidth=0,largest=0,second=0,largestChange=0,secondChange=0;
     for(let j=0;j<chars.length;j++){
      const width=c.measureText(chars[j]).width;
      if(j){
       const delta=previousWidth+width-c.measureText(chars[j-1]+chars[j]).width;
       if(Math.abs(delta)>.5)return false;
+      const change=Math.abs(delta);
+      if(change>largestChange){secondChange=largestChange;largestChange=change}else secondChange=Math.max(secondChange,change);
       if(delta>largest){second=largest;largest=delta}else second=Math.max(second,delta);
      }
      previousWidth=width;
     }
+    // Marked layers run this same comparison again after color splits the
+    // row. Both new boundaries together must still fit its width tolerance.
+    if(projection&&largestChange+secondChange>.5)return false;
     // A single first range introduces at most two shaping boundaries. Keep
     // enough room for both; even small kerning loss must not add a soft wrap.
     if(c.measureText(source).width+largest+second>Math.max(1,e.w))return false;
@@ -2120,7 +2125,8 @@ function styleInlineSelection(key,value,final){
  app.inlineSession.states[app.inlineSession.index].caret=clone(c);
  const next=applyTextStyle(e,c.start,c.end,patch);
  if(session.wysiwyg&&!usesRichTextLayout(session.states[0].element)&&!usesRichTextLayout(e)&&next.textRuns?.length&&(c.start>0||c.end<e.text.length)&&legacyTopProjection(textFitContext,e))next.textLayoutMode=LEGACY_TOP_LAYOUT;
- restoreTextRuns(e,next.textRuns);if(next.textLayoutMode===LEGACY_TOP_LAYOUT)e.textLayoutMode=LEGACY_TOP_LAYOUT;
+ if(usesRichTextLayout(e)&&!next.textRuns?.length){delete e.textLayoutMode;delete e.textRunsBaseFontSize;}
+ restoreTextRuns(e,next.textRuns);if(next.textLayoutMode===LEGACY_TOP_LAYOUT&&next.textRuns?.length)e.textLayoutMode=LEGACY_TOP_LAYOUT;
  // A manual size uses the fitted scale, then opts out of fitting just like
  // the layer size field. Other fragments keep both their units and scale.
  if(key==='fontSize'){e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}

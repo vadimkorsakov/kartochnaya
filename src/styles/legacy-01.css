@@ -1532,3 +1532,7 @@ html,body{background:#1e1f27!important;}
 .text-auto-font{display:flex;align-items:center;gap:9px;margin:10px 0;padding:8px 10px;border:1px solid var(--stroke);border-radius:8px;cursor:pointer;font-size:12px}
 .text-auto-font input,.mp-auto-font input{accent-color:#7857de;flex-shrink:0}
 .mp-auto-font{display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;font-weight:650;padding:0 4px;cursor:pointer}
+
+.inline-wysiwyg{white-space:break-spaces!important;overflow-wrap:anywhere;word-break:normal;overflow:visible;}
+.wysiwyg-recovery{position:fixed;bottom:24px;left:20%;right:20%;z-index:1000;padding:16px;background:#242332;color:#fff;border:1px solid #a88afa;user-select:text;}
+.wysiwyg-recovery button{margin:8px;padding:8px;}

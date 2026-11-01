@@ -41,6 +41,41 @@ export function richTextSpans(e) {
   return spans;
 }
 
+// Opt-in only: documents without this value retain their original rich layout.
+export const LEGACY_TOP_LAYOUT = 'legacy-top';
+export function legacyAlphabeticBaseline(context, text, style) {
+  context.save();
+  try {
+    context.font = richTextFont(style); context.fontKerning = 'normal';
+    context.letterSpacing = style.letterSpacing + 'px';
+    context.textBaseline = 'top'; const top = context.measureText(text).actualBoundingBoxAscent;
+    context.textBaseline = 'alphabetic'; const alphabetic = context.measureText(text).actualBoundingBoxAscent;
+    if (!Number.isFinite(top) || !Number.isFinite(alphabetic)) throw Error('Legacy baseline unavailable');
+    return alphabetic - top;
+  } finally { context.restore(); }
+}
+// The new DOM projection is deliberately limited to uniform Arial 32 with LF.
+// Color may split spans, but fonts/sizes/spacing must still match the layer.
+// Returns session-only geometry; never writes a mode into the source layer.
+export function legacyTopProjection(context, e) {
+  if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && (usesRichTextLayout(e) || e.textLayoutMode !== undefined)) return null;
+  if (String(e.text ?? '').split('\n').some(text => !text)) return null;
+  const base = resolveRichTextStyle(e);
+  if (base.fontFamily !== 'Arial' || base.fontSize !== 32 || base.fontWeight !== '400' || base.fontStyle !== 'normal' || (e.lineHeight || 1.15) !== 1.15) return null;
+  if (richTextSpans(e).some(p => ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing'].some(k => p.style[k] !== base[k]))) return null;
+  context.save();
+  try {
+    context.font = richTextFont(base); context.textBaseline = 'alphabetic';
+    const m = context.measureText('Mg'), height = base.fontSize * (e.lineHeight || 1.15);
+    if (!Number.isFinite(m.fontBoundingBoxAscent) || !Number.isFinite(m.fontBoundingBoxDescent) || m.fontBoundingBoxAscent + m.fontBoundingBoxDescent > height) return null;
+    const natural = m.fontBoundingBoxAscent + (height - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2;
+    const offsets = String(e.text ?? '').split('\n').map(text => legacyAlphabeticBaseline(context, text || 'Mg', base) - natural);
+    if (offsets.some(offset => Math.abs(offset - offsets[0]) > .000001)) return null;
+    if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && Math.abs(offsets[0]) <= .5) return null;
+    return {offset: offsets[0], baseline: natural + offsets[0], height};
+  } finally { context.restore(); }
+}
+
 // One persisted reference size is needed to scale absolute run sizes without
 // rewriting them, including after save/reopen. Never called during painting.
 export function retainRichTextSizeBase(e) {
@@ -80,7 +115,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
     const spans = richTextSpans(e), base = resolveRichTextStyle(e);
     const width = Math.max(1, Number(e.w) || 1), height = Math.max(0, Number(e.h) || 0);
     const lineHeight = Math.max(.5, Number(e.lineHeight) || 1.15);
-    const key = JSON.stringify([spans, base, width, height, lineHeight, e.textAlign, e.verticalAlign, fontSet?.size]);
+    const key = JSON.stringify([spans, base, width, height, lineHeight, e.textAlign, e.verticalAlign, e.textLayoutMode, fontSet?.size]);
     if (layouts.has(key)) return layouts.get(key);
     // Segment the source as a whole: run boundaries cannot split emoji/combining
     // clusters. If a run starts inside a cluster, its first character owns it.
@@ -107,14 +142,15 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const ascent = Math.max(...samples.map(p => p.metrics.ascent));
       const descent = Math.max(...samples.map(p => p.metrics.descent));
       const maxSize = Math.max(...samples.map(p => p.style.fontSize));
-      const rowHeight = Math.max(maxSize * lineHeight, ascent + descent);
+      const legacy = e.textLayoutMode === LEGACY_TOP_LAYOUT;
+      const rowHeight = legacy ? maxSize * lineHeight : Math.max(maxSize * lineHeight, ascent + descent);
       // Source intervals are UTF-16, independent of rendered geometry. Hard
       // breaks are excluded from end and owned by [end, nextStart). A trailing
       // empty row has start=end=text.length. Legacy ignored CRs retain offsets.
       const end = breakCluster?.start ?? (final ? text.length : fragments.at(-1)?.end ?? rowStart);
       const nextStart = breakCluster?.end ?? end;
       rows.push({ start: rowStart, end, nextStart, softWrap: !breakCluster && !final,
-        fragments, width: rowWidth, height: rowHeight, baseline: ascent + (rowHeight - ascent - descent) / 2 });
+        fragments, width: rowWidth, height: rowHeight, baseline: legacy ? Math.max(...samples.map(p => legacyAlphabeticBaseline(context, text.slice(rowStart, end) || 'Mg', p.style))) : ascent + (rowHeight - ascent - descent) / 2 });
       rowStart = nextStart;
       fragments = []; rowWidth = 0;
     }

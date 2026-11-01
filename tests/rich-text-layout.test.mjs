@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveRichTextStyle,richTextSpans,retainRichTextSizeBase,usesRichTextLayout,createRichTextLayoutEngine} from '../src/render/rich-text-layout.mjs';
+import {resolveRichTextStyle,richTextSpans,retainRichTextSizeBase,usesRichTextLayout,createRichTextLayoutEngine,LEGACY_TOP_LAYOUT} from '../src/render/rich-text-layout.mjs';
 
 const base={text:'А😀 Б',fontSize:20,fontWeight:'500',fontStyle:'oblique',textColor:'#123456',letterSpacing:2};
 test('explicit keys win within a scope, run aliases override the base, missing keys inherit',()=>{
@@ -54,4 +54,14 @@ test('source intervals preserve UTF-16, hard/soft wraps, empty rows and CR compa
    for(const p of row.fragments){assert.ok(p.start>=row.start&&p.end<=row.end);assert.ok(boundaries.has(p.start)&&boundaries.has(p.end));assert.equal(p.text,text.slice(p.start,p.end).replaceAll('\r',''));}
   }
  }
+});
+
+test('legacy-top opts in per layer and cannot collide with the old rich cache entry',()=>{
+ const stack=[];
+ const context={textBaseline:'alphabetic',save(){stack.push({font:this.font,textBaseline:this.textBaseline,letterSpacing:this.letterSpacing})},restore(){Object.assign(this,stack.pop())},measureText(text){return {width:text.length*20,fontBoundingBoxAscent:29,fontBoundingBoxDescent:7,actualBoundingBoxAscent:this.textBaseline==='top'?-2.828125:22}}};
+ const engine=createRichTextLayoutEngine(context),source={text:'ABCD\nABCD',w:200,h:120,fontFamily:'Arial',fontSize:32,lineHeight:1.15,textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]},before=structuredClone(source);
+ const old=engine.layout(source),marked=engine.layout({...source,textLayoutMode:LEGACY_TOP_LAYOUT});
+ assert.equal(old.rows[0].baseline,29.4);assert.equal(marked.rows[0].baseline,24.828125);
+ assert.equal(marked.rows[1].baseline-marked.rows[0].baseline,32*1.15);
+ assert.equal(engine.layout(source),old);assert.equal(engine.layout({...source,textLayoutMode:LEGACY_TOP_LAYOUT}),marked);assert.deepEqual(source,before);
 });

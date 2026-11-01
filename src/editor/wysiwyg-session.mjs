@@ -1,5 +1,5 @@
-import {richTextSpans, resolveRichTextStyle, richTextFont, usesRichTextLayout} from '../render/rich-text-layout.mjs';
-import {replaceText} from '../model/rich-text.mjs';
+import {richTextSpans, resolveRichTextStyle, richTextFont, usesRichTextLayout, retainRichTextSizeBase} from '../render/rich-text-layout.mjs';
+import {replaceText, applyTextStyle} from '../model/rich-text.mjs';
 import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-history.mjs';
 
 const ctx = document.createElement('canvas').getContext('2d');
@@ -17,29 +17,61 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true) {
 
 // Canonical layer + the editor's existing session history own all confirmed data.
 // Unknown DOM remains on screen until explicit recovery; it is never persisted.
-export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery}) {
+export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true}) {
  let layer=element, composing=false, pending=null, fallback=null, pasteText=null, confirmedHTML, inactive=false;
  const safe={phase:'confirmed', deferred:false};
+ let savedSelection=null, preview=null;
  const abort=new AbortController(), listen=(name,fn)=>host.addEventListener(name,fn,{signal:abort.signal});
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
  function stop(reason){pending=null;pasteText=null;fallback=reason;safe.phase='recovery-required';if(!inactive)onRecovery(reason);}
  function project(value,selection){
   if(selection?.start!==undefined)selection={anchor:selection.direction==='backward'?selection.end:selection.start,focus:selection.direction==='backward'?selection.start:selection.end};
-  for(const key of Object.keys(element))delete element[key];Object.assign(element,structuredClone(value));layer=element;
-  const base=resolveRichTextStyle(layer);Object.assign(host.style,{font:richTextFont(base),lineHeight:lineHeight(layer,base),letterSpacing:base.letterSpacing+'px'});
-  host.replaceChildren(...richTextSpans(layer).map(p=>{const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:lineHeight(layer,p.style),letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});return span;}));
+  // Prepare every metric and node before touching the canonical layer or DOM.
+  const base=resolveRichTextStyle(value),spans=richTextSpans(value);
+  const styles=[base,...spans.map(p=>p.style)];
+  for(const style of styles)if(!available(style.fontFamily)||!document.fonts.check(richTextFont(style)))throw Error('Font unavailable');
+  const heights=styles.map(style=>lineHeight(value,style));
+  const nodes=spans.map((p,i)=>{const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:heights[i+1],letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});return span;});
+  const next=structuredClone(value);
+  for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
+  Object.assign(host.style,{font:richTextFont(base),lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
+  host.replaceChildren(...nodes);
   if(!host.childNodes.length)host.append(document.createTextNode(''));
   if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';host.append(br);}
-  confirmedHTML=host.innerHTML;setSelection(selection.anchor,selection.focus);
+  confirmedHTML=host.innerHTML;
+  // setBaseAndExtent focuses contenteditable in Chromium and would blur a
+  // numeric/HEX input (emitting change in the middle of its input callback).
+  // Keep the range in UTF-16 while a panel owns focus; restore on host focus.
+  savedSelection={...selection};
+  if(document.activeElement===host)setSelection(selection.anchor,selection.focus);
  }
  function clean(){try{return !composing&&!pending&&!fallback&&!safe.deferred&&host.innerHTML===confirmedHTML&&readText()===layer.text;}catch{return false;}}
  const caret=c=>({start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'});
  function commit(value,before,after){recordInlineHistory(history,layer,caret(before));recordInlineHistory(history,value,caret(after));project(value,after);onChange();}
- function travel(direction){if(!clean()){stop('История недоступна до восстановления ввода');return;}const state=moveInlineHistory(history,direction);if(state){project(state.element,state.caret);onChange();}}
+ function travel(direction){finishPreview();if(!clean()){stop('История недоступна до восстановления ввода');return;}const state=moveInlineHistory(history,direction);if(state){project(state.element,state.caret);onChange();}}
  function requestFallback(reason){
   if(!clean()){stop('Нужно восстановить подтверждённый ввод');return false;}
-  let selection;try{selection=readSelection();}catch{stop('Не удалось сохранить выделение');return false;}
+  finishPreview();
+  let selection;try{selection=rememberSelection();}catch{stop('Не удалось сохранить выделение');return false;}
   onFallback(selection,reason);return true;
+ }
+ function finishPreview(){
+  if(!preview)return;
+  recordInlineHistory(history,layer,caret(preview.selection));preview=null;onChange();
+ }
+ function applyRangeStyle(patch,{key,final=false}={}){
+  if(!clean()||safe.phase!=='confirmed'||inactive){stop('Нужно восстановить подтверждённый ввод');return true;}
+  let selection;try{selection=rememberSelection();}catch{return false;}
+  if(selection.anchor===selection.focus)return false;
+  if(preview&&(preview.key!==key||preview.selection.anchor!==selection.anchor||preview.selection.focus!==selection.focus))finishPreview();
+  const origin=preview?.element||structuredClone(layer);
+  const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
+  retainRichTextSizeBase(next);
+  // project preflights fonts and metrics; a failure leaves layer/history intact.
+  try{project(next,selection);}catch{return false;}
+  if(!preview){recordInlineHistory(history,origin,caret(selection));preview={key,element:origin,selection};}
+  if(final)finishPreview();else onChange();
+  return true;
  }
  listen('paste',e=>{pasteText=e.clipboardData?.getData('text/plain')??null;});
  listen('compositionstart',()=>{composing=true;safe.deferred=true;safe.phase='composing';onRecovery('IME: завершите композицию, затем восстановите подтверждённый текст');});
@@ -78,9 +110,23 @@ function offsetToDomPoint(offset){
  for(const [node,offsets] of map.points){const i=offsets.indexOf(offset);if(i>=0)return {node,offset:i};}
  throw Error('Unmapped offset');
 }
-function readSelection(){const s=getSelection();return {anchor:domPointToOffset(s.anchorNode,s.anchorOffset),focus:domPointToOffset(s.focusNode,s.focusOffset)};}
-function setSelection(anchor,focus=anchor){const a=offsetToDomPoint(anchor),f=offsetToDomPoint(focus);getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);}
+function validSelection(c,text=layer.text){
+ const split=i=>i>0&&i<text.length&&/[\uD800-\uDBFF]/.test(text[i-1])&&/[\uDC00-\uDFFF]/.test(text[i]);
+ return c&&[c.anchor,c.focus].every(i=>Number.isInteger(i)&&i>=0&&i<=text.length&&!split(i));
+}
+function readSelection(){const s=getSelection();const c={anchor:domPointToOffset(s.anchorNode,s.anchorOffset),focus:domPointToOffset(s.focusNode,s.focusOffset)};if(!validSelection(c,index().text))throw Error('Invalid selection');return c;}
+function rememberSelection(){
+ // Only this host may update its saved UTF-16 selection. Never inspect panel
+ // input selection, even if the browser retains a DOM range in the host.
+ if(document.activeElement===host&&clean())savedSelection=readSelection();
+ if(!validSelection(savedSelection))throw Error('No confirmed selection');
+ return {...savedSelection};
+}
+function setSelection(anchor,focus=anchor){const c={anchor,focus};if(!validSelection(c))throw Error('Invalid selection');const a=offsetToDomPoint(anchor),f=offsetToDomPoint(focus);getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);savedSelection=c;}
+listen('focusout',()=>{if(selectionInside()&&clean()){try{savedSelection=readSelection();}catch{}}});
+listen('focus',()=>{if(validSelection(savedSelection)&&clean())setSelection(savedSelection.anchor,savedSelection.focus);});
 listen('beforeinput',e=>{
+ finishPreview();
  if(inactive){if(e.cancelable&&!composing&&!e.isComposing)e.preventDefault();return;}
  {
   if(safe.phase==='recovery-required'){if(e.cancelable&&!composing&&!e.isComposing)e.preventDefault();return;}
@@ -168,7 +214,7 @@ listen('input',e=>{
 
  host.contentEditable='plaintext-only';host.classList.remove('hidden');
  const initial={anchor:layer.text.length,focus:layer.text.length};project(structuredClone(layer),initial);recordInlineHistory(history,layer,caret(initial));
- return {get composing(){return composing;},travel,readSelection,setSelection,requestFallback,clean,
+ return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection,requestFallback,clean,applyRangeStyle,finishPreview,
   preserve(){inactive=true;pending=null;if(!composing)host.contentEditable='false';},
   focus(){host.focus({preventScroll:true});},
   recover(){if(composing)return false;pending=null;fallback=null;safe.deferred=false;safe.phase='confirmed';project(structuredClone(layer),{anchor:layer.text.length,focus:layer.text.length});onChange();return true;},

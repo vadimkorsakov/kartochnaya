@@ -1,4 +1,4 @@
-const {test,expect,openHome,importPayload,records,openLibraryDocument,exportedDocument,canvasPoint}=require('./helpers');
+const {test,expect,openHome,importPayload,records,openLibraryDocument,exportedDocument,exportPNG,canvasPoint}=require('./helpers');
 const fixture=require('./fixtures/canvas-graph.json');
 const surface='#inlineWysiwyg';
 const getLayer=doc=>doc.elements.find(e=>e.id==='title');
@@ -233,9 +233,9 @@ async function seedPlain(page,patch={},options={}){
  return seed(page,{fonts:[plainFont],...options,patch:{text:'ABCD',fontFamily:'Nimbus Sans',fontSize:26,lineHeight:1.03,textRuns:undefined,...patch}});
 }
 
-test('plain compatible layer opens with a virtual span; no-op close has no model, history or IDB writes',async({page})=>{
+for(const [label,patch] of [['Nimbus',{}],['Arial',{fontFamily:'Arial',fontSize:32,lineHeight:1.15}]])test('plain compatible layer opens with a virtual span; no-op close has no model, history or IDB writes: '+label,async({page})=>{
  await page.addInitScript(()=>{window.docWrites=0;const put=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(...args){if(this.name==='docs')window.docWrites++;return put.apply(this,args)};});
- const doc=await seedPlain(page),initial=getLayer(doc);expect(initial).not.toHaveProperty('textRuns');expect(initial).not.toHaveProperty('textRunsBaseFontSize');
+ const doc=await seedPlain(page,patch),initial=getLayer(doc);expect(initial).not.toHaveProperty('textRuns');expect(initial).not.toHaveProperty('textRunsBaseFontSize');
  const undo=await page.locator('#undoBtn').isEnabled();await page.waitForTimeout(700);const writes=await page.evaluate(()=>window.docWrites);
  await edit(page);await expect(page.locator(surface)).toBeFocused();expect(await snapshotValue(page)).toEqual(initial);
  expect(await page.locator(surface+' span').allTextContents()).toEqual(['ABCD']);
@@ -281,12 +281,12 @@ for(const key of ['fontFamily','fontSize'])test('plain first '+key+' works witho
 // or expected images are patched to make the two painters agree.
 async function observePlainGeometry(page){
  await page.addInitScript(()=>{
-  window.plainFrame=[];const proto=CanvasRenderingContext2D.prototype,clear=proto.clearRect,fill=proto.fillText;
+  window.plainFrame=[];window.plainExportFrame=[];const proto=CanvasRenderingContext2D.prototype,clear=proto.clearRect,fill=proto.fillText;
   proto.clearRect=function(...args){if(this.canvas.id==='canvas')window.plainFrame=[];return clear.apply(this,args)};
   proto.fillText=function(text,x,y,...args){
-   if(this.canvas.id==='canvas'){
+   if(this.canvas.id==='canvas'||window.capturePlainExport){
     const m=this.measureText(text);const saved=this.textBaseline;this.textBaseline='alphabetic';const a=this.measureText(text);this.textBaseline=saved;
-    window.plainFrame.push({text,x,y,baseline:y+a.actualBoundingBoxAscent-m.actualBoundingBoxAscent,top:y-m.actualBoundingBoxAscent,bottom:y+m.actualBoundingBoxDescent,width:m.width,font:this.font,spacing:this.letterSpacing,mode:saved});
+    const sample={text,x,y,baseline:y+a.actualBoundingBoxAscent-m.actualBoundingBoxAscent,top:y-m.actualBoundingBoxAscent,bottom:y+m.actualBoundingBoxDescent,width:m.width,font:this.font,spacing:this.letterSpacing,mode:saved};if(this.canvas.id==='canvas')window.plainFrame.push(sample);else if(window.capturePlainExport)window.plainExportFrame.push(sample);
    }
    return fill.call(this,text,x,y,...args);
   };
@@ -339,16 +339,75 @@ for(const [name,patch,compatible] of plainCases)test('plain real geometry at 50/
  await testInfo.attach('plain-layout.json',{body:JSON.stringify(evidence,null,2),contentType:'application/json'});
 });
 
-test('plain Arial 32 transition reproducer: baseline jump keeps legacy textarea',async({page},testInfo)=>{
- await observePlainGeometry(page);const doc=await seedPlain(page,{text:'ABCD',fontFamily:'Arial',fontSize:32,lineHeight:1.15});await page.locator('#layers [data-layer="title"] .layer-name').click();const legacy=await plainFrame(page);
- await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(getLayer(doc));expect(await plainFrame(page)).toEqual(legacy);
- // Reproduce the existing first-run transition through the real legacy inspector.
- await edit(page);await page.keyboard.press('Home');await page.keyboard.press('ArrowRight');await page.keyboard.press('Shift+ArrowRight');await page.keyboard.press('Shift+ArrowRight');await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await page.locator('#inlineText').focus();await page.keyboard.press('Control+Enter');
- const mixed=await plainFrame(page);expect(mixed[0].baseline-legacy[0].baseline).toBeGreaterThan(4);expect(mixed[0].baseline-legacy[0].baseline).toBeLessThan(5);
- await testInfo.attach('arial32-transition.json',{body:JSON.stringify({legacy,mixed},null,2),contentType:'application/json'});
+async function arialRanges(page){
+ return page.locator(surface).evaluate(el=>{
+   const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width),walk=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),out=[];
+   const c=document.createElement('canvas').getContext('2d');c.font=getComputedStyle(el).font;c.textBaseline='alphabetic';const m=c.measureText('ABCD');
+   for(let n;n=walk.nextNode();)for(let i=0;i<n.length;i++){if(n.data[i]==='\n')continue;const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+1);const b=r.getBoundingClientRect();const prefix=el.textContent.split('\n')[Math.floor(out.length/4)].slice(0,out.length%4);out.push({text:n.data[i],x:(b.x-host.x)/scale,width:b.width/scale,canvasX:c.measureText(prefix).width,canvasWidth:c.measureText(n.data[i]).width,top:(b.y-host.y)/scale})}
+   const baselines=[];let end=0;
+   for(const row of el.textContent.split('\n')){
+    end+=row.length;const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);let at=0;
+    for(let n;n=walker.nextNode();){if(at+n.length<end){at+=n.length;continue}const r=document.createRange();r.setStart(n,end-at);r.collapse(true);const probe=document.createElement('span');probe.style.cssText='display:inline-block;width:0;height:0;padding:0;margin:0;border:0;vertical-align:baseline;line-height:0';r.insertNode(probe);baselines.push((probe.getBoundingClientRect().bottom-host.y)/scale);const parent=probe.parentNode;probe.remove();parent.normalize();break}
+    end++;
+   }
+   out.forEach((char,i)=>char.baseline=baselines[Math.floor(i/4)]);return out;
+  });
+}
+async function checkArialCaret(page,zoom,baseline){
+ await selectRange(page,2,2);await page.bringToFront();await page.locator(surface).evaluate(el=>el.style.setProperty('caret-color','#ff00fe','important'));
+ // Native arrows restart the caret blink; the screenshot keeps the real caret.
+ await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowLeft');
+ const caret=await page.locator(surface).evaluate(el=>{const r=getSelection().getRangeAt(0).getBoundingClientRect(),host=el.getBoundingClientRect();const c=document.createElement('canvas').getContext('2d');c.font=getComputedStyle(el).font;c.textBaseline='alphabetic';return {x:r.x,y:r.y,bottom:r.bottom,hostY:host.y,ascent:c.measureText('ABCD').fontBoundingBoxAscent}});
+ const box=await page.locator(surface).boundingBox(),clip={x:box.x-12,y:box.y-12,width:box.width+24,height:box.height+24};
+ expect(caret.bottom-caret.y).toBeGreaterThan(0);
+ if(page.context().browser().browserType().name()==='firefox'){
+  const measured=await arialRanges(page);expect(Math.abs(measured[0].baseline-baseline)).toBeLessThanOrEqual(.05);expect(Math.abs(caret.x-box.x-measured[2].x*(zoom/100))).toBeLessThanOrEqual(.5);
+  await page.locator(surface).evaluate(el=>el.style.removeProperty('caret-color'));
+  return {caret,painted:null,rasterStatus:'Firefox Playwright screenshots omit native caret even in isolated unmodified contenteditable; native Selection/Range checked'};
+ }
+ let painted,lastShot;
+ try{await expect.poll(async()=>{
+  lastShot=await page.screenshot({clip,caret:'initial',animations:'disabled'});const png=require('pngjs').PNG.sync.read(lastShot);const points=[];
+  for(let y=0;y<png.height;y++)for(let x=0;x<png.width;x++){const i=(y*png.width+x)*4;if(png.data[i]>150&&png.data[i+2]>150&&png.data[i]-png.data[i+1]>80&&png.data[i+2]-png.data[i+1]>80)points.push([x,y])}
+  painted=points.length?{x:Math.min(...points.map(p=>p[0]))+clip.x,top:Math.min(...points.map(p=>p[1]))+clip.y,bottom:Math.max(...points.map(p=>p[1]))+1+clip.y}:null;return !!painted;
+ }).toBe(true);}catch(error){await test.info().attach('native-caret.png',{body:lastShot,contentType:'image/png'});throw error;}
+ expect(Math.abs(painted.x-caret.x)).toBeLessThanOrEqual(2);expect(Math.abs(painted.top-caret.y)).toBeLessThanOrEqual(2);expect(Math.abs(painted.bottom-caret.bottom)).toBeLessThanOrEqual(2);
+ const measured=await arialRanges(page);expect(Math.abs(measured[0].baseline-baseline)).toBeLessThanOrEqual(.05);
+ await page.locator(surface).evaluate(el=>el.style.removeProperty('caret-color'));return {caret,painted};
+}
+for(const text of ['ABCD','ABCD\nABCD'])test('Arial legacy-top baseline, DOM Range and persistence: '+JSON.stringify(text),async({page},testInfo)=>{
+ await page.setViewportSize({width:2200,height:1600});await observePlainGeometry(page);
+ const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:32,lineHeight:1.15,y:80,h:120}),initial=getLayer(doc);
+ await page.locator('#layers [data-layer="title"] .layer-name').click();const evidence=[];
+ for(const zoom of [50,100,200]){
+  await zoomTo(page,zoom);const before=await plainFrame(page),pixels=await canvasPixels(page);
+  await edit(page);await expect(page.locator(surface)).toBeFocused();expect(await snapshotValue(page)).toEqual(initial);
+  await selectRange(page,1,3);
+  const ranges=await arialRanges(page),caret=await checkArialCaret(page,zoom,before[0].baseline);
+  for(const char of ranges){expect(Math.abs(char.x-char.canvasX)).toBeLessThanOrEqual(.05);expect(Math.abs(char.width-char.canvasWidth)).toBeLessThanOrEqual(.05)}
+  for(let i=0;i<before.length;i++)for(const char of ranges.slice(i*4,i*4+4))expect(Math.abs(char.baseline-before[i].baseline)).toBeLessThanOrEqual(.05);
+  evidence.push({zoom,legacy:before,dom:ranges,caret});
+  await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);expect(await canvasPixels(page)).toBe(pixels);
+ }
+ await edit(page);await selectRange(page,1,3);await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await assertRange(page,text,1,3);
+ const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);expect(changed.textLayoutMode).toBe('legacy-top');expect(changed).not.toHaveProperty('textRunsBaseFontSize');
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);
+ await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
+ await edit(page);await selectRange(page,1,3);await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await assertRange(page,text,1,3);await page.keyboard.press('Control+Enter');
+ const mixed=await plainFrame(page);for(const d of mixed)expect(Math.min(...evidence.at(-1).legacy.map(old=>Math.abs(old.baseline-d.baseline)))).toBeLessThan(.000001);
+ await page.locator('#undoBtn').click();expect(await snapshotValue(page)).toEqual(initial);await page.locator('#redoBtn').click();expect(await snapshotValue(page)).toEqual(changed);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(changed);await page.reload();await openLibraryDocument(page,doc.id);expect(await snapshotValue(page)).toEqual(changed);expect(await plainFrame(page)).toEqual(mixed);
+ await page.evaluate(()=>{window.plainExportFrame=[];window.capturePlainExport=true});await exportPNG(page);const png=await page.evaluate(()=>{window.capturePlainExport=false;return window.plainExportFrame});expect(png.slice(-mixed.length)).toEqual(mixed);
+ for(const zoom of [50,100,200]){
+  await zoomTo(page,zoom);await edit(page);await expect(page.locator(surface)).toBeFocused();const ranges=await arialRanges(page),caret=await checkArialCaret(page,zoom,evidence[0].legacy[0].baseline);
+  for(let i=0;i<evidence[0].legacy.length;i++)for(const char of ranges.slice(i*4,i*4+4))expect(Math.abs(char.baseline-evidence[0].legacy[i].baseline)).toBeLessThanOrEqual(.05);
+  for(const char of ranges){expect(Math.abs(char.x-char.canvasX)).toBeLessThanOrEqual(.05);expect(Math.abs(char.width-char.canvasWidth)).toBeLessThanOrEqual(.05)}
+  evidence.push({afterColorZoom:zoom,dom:ranges,caret});await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(changed);
+ }
+ evidence.push({mixed,png});const path=testInfo.outputPath('arial-legacy-top.json');await require('node:fs/promises').writeFile(path,JSON.stringify(evidence,null,2));await testInfo.attach('arial-legacy-top.json',{path,contentType:'application/json'});
 });
 
-for(const [name,patch] of Object.entries({autoFit:{autoFontSize:true},rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
+for(const [name,patch] of Object.entries({autoFit:{autoFontSize:true},rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'},ArialKerning:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'AV'},ArialSoftWrap:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
  const doc=await seedPlain(page,patch);await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(getLayer(doc));
 });
 test('plain without flag retains textarea',async({page})=>{await seedPlain(page,{}, {flag:false});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden()});
@@ -388,4 +447,21 @@ test('plain native metrics guard explicitly records the Nimbus 32 Firefox except
  const metrics=await page.evaluate(()=>{const c=document.createElement('canvas').getContext('2d');c.font='32px "Nimbus Sans"';c.textBaseline='top';const top=c.measureText('ABCD').actualBoundingBoxAscent;c.textBaseline='alphabetic';const m=c.measureText('ABCD'),legacy=m.actualBoundingBoxAscent-top,rich=m.fontBoundingBoxAscent+(Math.max(32,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;return {legacy,rich,delta:rich-legacy}});
  if(browserName==='firefox')expect(Math.abs(metrics.delta)).toBeGreaterThan(.5);else expect(Math.abs(metrics.delta)).toBeLessThanOrEqual(.5);
  await edit(page);await expect(page.locator(browserName==='firefox'?'#inlineText':surface)).toBeFocused();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);await testInfo.attach('nimbus32-native-metrics.json',{body:JSON.stringify(metrics,null,2),contentType:'application/json'});
+});
+
+
+test('Arial ordinary input and no-op range style never persist a layout mode',async({page})=>{
+ const doc=await seedPlain(page,{fontFamily:'Arial',fontSize:32,lineHeight:1.15});await edit(page);await selectRange(page,1,3);const size=page.locator('#inspector [data-key=fontSize]');await size.fill('32');await size.press('Tab');expect(await snapshotValue(page)).toEqual(getLayer(doc));
+ await selectRange(page,4,4);await page.keyboard.type('H');await page.keyboard.press('Control+Enter');const typed=await snapshotValue(page);expect(typed.text).toBe('ABCDH');expect(typed).not.toHaveProperty('textLayoutMode');expect(typed).not.toHaveProperty('textRuns');expect(typed).not.toHaveProperty('textRunsBaseFontSize');await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(typed);
+});
+
+test('old unmarked Arial rich document keeps its original baseline and PNG geometry',async({page})=>{
+ await observePlainGeometry(page);const doc=await seed(page,{patch:{text:'ABCD\nABCD',fontFamily:'Arial',fontSize:32,lineHeight:1.15,y:80,h:120,textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]}});await page.locator('#layers [data-layer="title"] .layer-name').click();const initial=getLayer(doc),before=await plainFrame(page),pixels=await canvasPixels(page);
+ expect(before.map(d=>d.baseline)).toEqual([29.4,29.4,29.4,66.19999999999999]);expect(initial).not.toHaveProperty('textLayoutMode');await edit(page);await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);expect(await canvasPixels(page)).toBe(pixels);
+ await page.evaluate(()=>{window.plainExportFrame=[];window.capturePlainExport=true});await exportPNG(page);const png=await page.evaluate(()=>{window.capturePlainExport=false;return window.plainExportFrame});expect(png.slice(-before.length)).toEqual(before);
+});
+
+
+test('legacy-top unsupported empty row hands off confirmed input without losing its mode',async({page})=>{
+ await seedPlain(page,{text:'ABCD',fontFamily:'Arial',fontSize:32,lineHeight:1.15,textLayoutMode:'legacy-top',textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]});await edit(page);await page.keyboard.press('End');await page.keyboard.press('Enter');await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator('#wysiwygRecovery')).toBeHidden();const changed=await snapshotValue(page);expect(changed.text).toBe('ABCD\n');expect(changed.textLayoutMode).toBe('legacy-top');expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
 });

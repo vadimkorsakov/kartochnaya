@@ -1,7 +1,7 @@
 import {eligibleWysiwyg, createWysiwygSession} from './editor/wysiwyg-session.mjs';
 import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
 import { applyTextStyle, updateText, transformText, replaceText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
-import { usesRichTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine } from './render/rich-text-layout.mjs';
+import { usesRichTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine, LEGACY_TOP_LAYOUT, legacyTopProjection } from './render/rich-text-layout.mjs';
 import { createReplacementSession } from './backup/replace.mjs';
 import { createInstanceGuard } from './backup/instances.mjs';
 import { installBackupUI } from './backup/ui.mjs';
@@ -980,7 +980,10 @@ function mixedTextLayout(e){
 function plainWysiwygLayoutCompatible(e){
  if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
  try{
-  const c=textFitContext,rows=mixedTextLayout(e).rows,lines=wrapLines(c,e);
+  const c=textFitContext,projection=legacyTopProjection(c,e);
+  const rows=richTextEngine.layout(projection?{...e,textLayoutMode:LEGACY_TOP_LAYOUT}:e).rows,lines=wrapLines(c,e);
+  if(e.textLayoutMode===LEGACY_TOP_LAYOUT&&!projection)return false;
+  if(projection&&rows.some(row=>row.softWrap))return false;
   if(rows.length!==lines.length)return false;
   c.save();
   try{
@@ -2115,7 +2118,9 @@ function styleInlineSelection(key,value,final){
  app.inlineSession.formatted=true;
  // Store the pre-action caret even when focus has already moved to a panel.
  app.inlineSession.states[app.inlineSession.index].caret=clone(c);
- const next=applyTextStyle(e,c.start,c.end,patch);restoreTextRuns(e,next.textRuns);
+ const next=applyTextStyle(e,c.start,c.end,patch);
+ if(session.wysiwyg&&!usesRichTextLayout(session.states[0].element)&&!usesRichTextLayout(e)&&next.textRuns?.length&&(c.start>0||c.end<e.text.length)&&legacyTopProjection(textFitContext,e))next.textLayoutMode=LEGACY_TOP_LAYOUT;
+ restoreTextRuns(e,next.textRuns);if(next.textLayoutMode===LEGACY_TOP_LAYOUT)e.textLayoutMode=LEGACY_TOP_LAYOUT;
  // A manual size uses the fitted scale, then opts out of fitting just like
  // the layer size field. Other fragments keep both their units and scale.
  if(key==='fontSize'){e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}

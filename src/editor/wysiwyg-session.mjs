@@ -1,4 +1,4 @@
-import {richTextSpans, resolveRichTextStyle, richTextFont, usesRichTextLayout, retainRichTextSizeBase} from '../render/rich-text-layout.mjs';
+import {richTextSpans, resolveRichTextStyle, richTextFont, usesRichTextLayout, retainRichTextSizeBase, LEGACY_TOP_LAYOUT, legacyTopProjection} from '../render/rich-text-layout.mjs';
 import {replaceText, applyTextStyle} from '../model/rich-text.mjs';
 import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-history.mjs';
 
@@ -8,11 +8,21 @@ function lineHeight(layer, style) {
  if(!Number.isFinite(m.fontBoundingBoxAscent)||!Number.isFinite(m.fontBoundingBoxDescent)||!(m.width>0))throw Error('Font metrics unavailable');
  return Math.max(style.fontSize*(layer.lineHeight||1.15),m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)+'px';
 }
+// CSS inline baselines need not equal Canvas fontBoundingBox baselines.
+// Measure the actual inline baseline before positioning any editable glyphs.
+function legacyDOMOffset(base, projection, text) {
+ const probe=document.createElement('div'),baseline=document.createElement('span');
+ Object.assign(probe.style,{position:'fixed',left:'-100000px',top:'0',visibility:'hidden',padding:'0',margin:'0',border:'0',font:richTextFont(base),fontKerning:'normal',lineHeight:projection.height+'px',letterSpacing:base.letterSpacing+'px',whiteSpace:'break-spaces',width:'max-content'});
+ baseline.style.cssText='display:inline-block;width:0;height:0;padding:0;margin:0;border:0;vertical-align:baseline;line-height:0';
+ probe.append(document.createTextNode(text.split('\n')[0]||'Mg'),baseline);document.body.append(probe);
+ try {return projection.baseline-(baseline.getBoundingClientRect().bottom-probe.getBoundingClientRect().top);}
+ finally {probe.remove();}
+}
 export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompatible=()=>false) {
  if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')!=='1'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
  if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.autoFontSize||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||e.strokeWidth||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
- if(!usesRichTextLayout(e)&&!plainCompatible(e))return false;
+ if((!usesRichTextLayout(e)||e.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(e))return false;
  try {return [resolveRichTextStyle(e),...richTextSpans(e).map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(e,s));}catch{return false;}
 }
 
@@ -32,8 +42,10 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const base=resolveRichTextStyle(value),spans=richTextSpans(value);
   const styles=[base,...spans.map(p=>p.style)];
   for(const style of styles)if(!available(style.fontFamily)||!document.fonts.check(richTextFont(style)))throw Error('Font unavailable');
+  const projection=(startedPlain||value.textLayoutMode===LEGACY_TOP_LAYOUT)?legacyTopProjection(ctx,value):null;
   const heights=styles.map(style=>lineHeight(value,style));
-  const nodes=spans.map((p,i)=>{const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:heights[i+1],letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});return span;});
+  const offset=projection?legacyDOMOffset(base,projection,value.text):0;
+  const nodes=spans.map((p,i)=>{const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:heights[i+1],letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});if(projection)Object.assign(span.style,{position:'relative',top:offset+'px'});return span;});
   const next=structuredClone(value);
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
   Object.assign(host.style,{font:richTextFont(base),lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
@@ -69,6 +81,11 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const origin=preview?.element||structuredClone(layer);
   if(startedPlain&&!usesRichTextLayout(origin)&&!plainCompatible(origin))return false;
   const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
+  if(startedPlain&&!usesRichTextLayout(origin)&&next.textRuns?.length&&legacyTopProjection(ctx,origin)){
+   if(Math.min(selection.anchor,selection.focus)===0&&Math.max(selection.anchor,selection.focus)===origin.text.length)return false;
+   next.textLayoutMode=LEGACY_TOP_LAYOUT;
+  }
+  if(next.textLayoutMode===LEGACY_TOP_LAYOUT&&!legacyTopProjection(ctx,next))return false;
   retainRichTextSizeBase(next);
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}
@@ -167,7 +184,7 @@ listen('beforeinput',e=>{
   commit(next,selection,{anchor:start+1,focus:start+1});
 
   safe.phase='confirmed';
-  if(startedPlain&&!usesRichTextLayout(layer)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
+  if(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
   // A canceled operation has no pending native edit, even if an input is sent.
   return;
  }
@@ -213,7 +230,7 @@ listen('input',e=>{
   commit(next,previous.selection,selection);
 
   safe.phase='confirmed';
-  if(startedPlain&&!usesRichTextLayout(layer)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
+  if(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
  }catch{stop('unsupported native DOM or selection');}
 });
 

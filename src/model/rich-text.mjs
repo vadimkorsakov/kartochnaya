@@ -104,6 +104,7 @@ export function applyTextStyle(element, start, end, patch) {
 export function clearTextFormatting(element) {
   const result = withRuns(element, element.text, []);
   delete result.textRunsBaseFontSize;
+  delete result.textLayoutMode;
   delete result.mobileRawTextRuns; delete result.mobileListRawTextRuns;
   return result;
 }

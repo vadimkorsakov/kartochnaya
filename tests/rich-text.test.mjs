@@ -150,7 +150,7 @@ test('resizing the base to a stored run size must not discard that run during te
   assert.deepEqual(updateText(e,'aB!').textRuns,[run(1,3,{fontSize:40})]);
   assert.deepEqual(applyTextStyle(e,0,1,{textColor:'red'}).textRuns,[run(0,1,{textColor:'red'}),run(1,2,{fontSize:40})]);
   assert.deepEqual(e,before);
-  const cleared=clearTextFormatting(e);assert.equal(cleared.textRunsBaseFontSize,undefined);assert.equal(cleared.fontSize,40);
+  const cleared=clearTextFormatting({...e,textLayoutMode:'legacy-top'});assert.equal(cleared.textLayoutMode,undefined);assert.equal(cleared.textRunsBaseFontSize,undefined);assert.equal(cleared.fontSize,40);
   assert.deepEqual(applyTextStyle(cleared,0,1,{fontSize:20}).textRuns,[run(0,1,{fontSize:20})]);
 });
 

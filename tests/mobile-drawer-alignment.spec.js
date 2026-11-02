@@ -35,6 +35,7 @@ async function expectFlushWithToolbar(page,selector,margin=5){
 
 test('shape property sheets remain above mobile toolbar for stroke, position, color and more',async({page})=>{
  await openTemplate(page);
+ const dockTop=await page.locator('#mobileToolbars').evaluate(el=>el.getBoundingClientRect().top);
  for(const action of ['stroke','position','color','more']){
   const tool=page.locator(`#mobileContext [data-mobile="${action}"]`);
   await tool.scrollIntoViewIfNeeded();
@@ -44,6 +45,8 @@ test('shape property sheets remain above mobile toolbar for stroke, position, co
   await expect(sheet).toBeVisible();
   await expect(page.locator('#mobileToolbars')).toBeVisible();
   await expectFlushWithToolbar(page,'#mobilePropertyUI .mp-sheet');
+  const currentDockTop=await page.locator('#mobileToolbars').evaluate(el=>el.getBoundingClientRect().top);
+  expect(Math.abs(currentDockTop-dockTop),'opening properties must not move the bottom toolbar').toBeLessThanOrEqual(2);
   await sheet.locator('[data-mp-action="done"]').tap();
  }
 });

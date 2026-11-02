@@ -2586,10 +2586,10 @@ canvas.addEventListener('dblclick',ev=>{if(app.textPathDraft){ev.preventDefault(
  const el=app.doc.elements.find(x=>x.id===app.penEditId);
  if(el?.type==='path'&&!isLayerLocked(el)){const target=penHitPoint(p,el);if(target?.kind==='anchor')penToggleNode(el,target.i)}return}
 const guide=hitSavedGuide(p);if(guide>=0){app.doc.rulers.splice(guide,1);commit();toast('Направляющая удалена');return}const current=active();if(current&&!current.locked&&selectedGradientVisible()&&gradientLineHit(current,p)){const st=addGradientStop(current,gradientPositionOnLine(current,p));$('#fillPopover').dataset.stopId=st.id;commit();renderFillPopover();paint();return}const e=hitElement(p);if(e?.type==='text'&&e.id===app.selected&&!isLayerLocked(e)){const handle=hitHandle(e,p);if(handle&&handle!=='rotate'&&(!e.textMode||e.textMode==='horizontal')){ev.preventDefault();if(fitTextBoxToContent(e)){commit('Подогнать рамку под текст');refreshInspector()}return}}if(e?.type==='path'&&!app.penTool){setPenMode(true,e.id);return}if(e?.groupId&&app.groupIsolation!==e.id){select(e.id,false,true);toast('Редактирование внутри группы · Esc для выхода');return}if(e&&app.selected!==e.id)select(e.id);if(active()&&active().fillType==='image'&&active().imageSrc){enterCrop();return}if(active()?.type==='text')openInlineText()});
-// Ctrl+wheel over editor chrome must not zoom the whole browser page.
-// The stage keeps its existing document-zoom handler below.
+// Suppress browser page zoom from Ctrl/Meta+wheel throughout the app,
+// including the home workspace. The canvas stage owns its own zoom below.
 document.addEventListener('wheel',ev=>{
- if(!(ev.ctrlKey||ev.metaKey)||homeVisible()||ev.target.closest('#stageScroller'))return;
+ if(!(ev.ctrlKey||ev.metaKey)||ev.target.closest('#stageScroller'))return;
  ev.preventDefault();
 },{capture:true,passive:false});
 $('#stageScroller').addEventListener('wheel',ev=>{if(ev.altKey)ev.preventDefault();if(ev.ctrlKey||ev.metaKey){ev.preventDefault();setZoom(Math.round((app.zoom+(ev.deltaY<0?.1:-.1))*100)/100,{x:ev.clientX,y:ev.clientY})}else if(app.cropMode&&active()){ev.preventDefault();active().cropZoom=clamp((active().cropZoom||1)*Math.exp(-ev.deltaY*.002),1,12);commit()}},{passive:false});

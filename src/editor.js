@@ -4004,13 +4004,14 @@ function mobileV36ApplyView(){
   mobileV36State.userViewAdjusted=true;
   requestAnimationFrame(()=>{positionInlineText();revealInlineText();paint()});return;
  }
- // Sheet covers the mobile toolbar. Reserve only the overlap with the stage column;
- // do not subtract both sheet height and toolbar height a second time.
- const sheetRect=sheet.getBoundingClientRect(),toolbar=$('#mobileToolbars');
- const previous=parseFloat(column.style.paddingBottom)||0;
- const scrollerBaseBottom=toolbar.getBoundingClientRect().top+previous;
- const covered=Math.max(0,scrollerBaseBottom-sheetRect.top);
- column.style.paddingBottom=Math.ceil(covered)+'px';area.style.marginBottom='';
+ // Keep the bottom toolbar in its normal flow position for images and
+ // shapes, just as for text. Padding on the entire stage column moves the
+ // toolbar itself above the sheet, leaving the fixed sheet at the old dock
+ // position and making the controls overlap.
+ const sheetRect=sheet.getBoundingClientRect(),toolbar=$('#mobileToolbars').getBoundingClientRect();
+ const covered=Math.max(0,toolbar.top-sheetRect.top);
+ column.style.paddingBottom='';
+ area.style.setProperty('margin-bottom',Math.ceil(covered)+'px','important');
  requestAnimationFrame(()=>{
   if(!mobileV36State.expanded||!mobileV36State.baseView||app.doc?.id!==base.docId)return;
   if(app.editingId||mobileV36State.userViewAdjusted){if(app.editingId)mobileV36State.userViewAdjusted=true;positionInlineText();revealInlineText();paint();return}

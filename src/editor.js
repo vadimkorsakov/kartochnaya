@@ -2596,6 +2596,24 @@ $('#stageScroller').addEventListener('wheel',ev=>{if(ev.altKey)ev.preventDefault
 window.addEventListener('keydown',ev=>{if(!app.cropMode)return;if(ev.key==='Enter'||ev.key==='Escape'){ev.preventDefault();ev.stopImmediatePropagation();exitCrop(ev.key==='Enter')}},{capture:true});
 $('#cropDoneBtn').onclick=()=>exitCrop(true);$('#cropCancelBtn').onclick=()=>exitCrop(false);
 $('#zoomInBtn').onclick=()=>setZoom(Math.round((app.zoom+(innerWidth<=760?.03:.1))*100)/100);$('#zoomOutBtn').onclick=()=>setZoom(Math.round((app.zoom-(innerWidth<=760?.03:.1))*100)/100);$('#zoomLabel').onclick=fitCanvas;
+// Ctrl/Cmd+0 fits the canvas; Ctrl/Cmd+Plus/Minus adjusts document zoom.
+// Intercept browser zoom in the home workspace too, but never redirect
+// text-field shortcuts or editing sessions into canvas zoom.
+window.addEventListener('keydown',ev=>{
+ if(!(ev.ctrlKey||ev.metaKey)||ev.altKey||ev.isComposing)return;
+ const code=ev.code;
+ const action=(code==='Digit0'||code==='Numpad0')?'fit'
+  :(code==='Equal'||code==='NumpadAdd'||ev.key==='+')?'in'
+  :(code==='Minus'||code==='NumpadSubtract'||ev.key==='-')?'out':null;
+ if(!action)return;
+ const handledAlready=ev.defaultPrevented;
+ ev.preventDefault();ev.stopImmediatePropagation();
+ if(handledAlready||homeVisible()||!app.doc||app.editingId||app.wysiwyg)return;
+ const target=ev.target;
+ if(target?.isContentEditable||target?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"]'))return;
+ if(action==='fit')fitCanvas();
+ else setZoom(Math.round((app.zoom+(action==='in'?1:-1)*(innerWidth<=760?.03:.1))*100)/100);
+},{capture:true});
 const validImageFiles=files=>[...files].filter(f=>f.type.startsWith('image/'));
 $('#stageScroller').addEventListener('dragover',ev=>{if(ev.dataTransfer?.types&&Array.from(ev.dataTransfer.types).includes('Files')){ev.preventDefault();ev.dataTransfer.dropEffect='copy';$('#stageScroller').classList.add('drag-over')}});
 $('#stageScroller').addEventListener('dragleave',ev=>{if(!$('#stageScroller').contains(ev.relatedTarget))$('#stageScroller').classList.remove('drag-over')});

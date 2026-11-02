@@ -31,6 +31,9 @@ test('editor creates an independent card and activates its new tab while retaini
  await expect.poll(async()=> (await records(page,'docs')).find(d=>d.id===card.id)?.elements.length).toBe(2);
  await page.reload();
  await expect(page.locator('#homeScreen')).toBeVisible();
+ // The workspace library lists templates and cards in separate filtered tabs.
+ await page.locator('.project-tabs .tab[data-filter="card"]').click();
+ await expect(page.locator(`[data-docid="${card.id}"]`)).toBeVisible();
  await openLibraryDocument(page,card.id);
  const reopened=await exportedDocument(page);
  expect(reopened.id).toBe(card.id);
@@ -59,6 +62,8 @@ test('creating a card from the home library does not force navigation into the e
  const template=await exportedDocument(page);
  await page.locator('#documentTabsHome').click();
  await expect(page.locator('#homeScreen')).toBeVisible();
+ await page.locator('.project-tabs .tab[data-filter="template"]').click();
+ await expect(page.locator(`[data-docid="${template.id}"]`)).toBeVisible();
  await page.locator(`[data-docid="${template.id}"] [data-projectact="card"]`).click();
  await expect(page.locator('#homeScreen')).toBeVisible();
  await expect(page.locator(`[data-tab-id="${template.id}"]`)).toBeVisible();

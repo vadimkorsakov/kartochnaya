@@ -102,9 +102,9 @@ test('edit mode allows keyboard reordering and does not delete on a short drag',
  for(const hex of ['#aabbcc','#112233','#ee7799'])await addColor(page,hex);
  await page.locator('[data-cp-manage]').click();
  const middle=page.locator('.cp-palette-saved [data-cp-remove="#112233"]');
- await middle.focus();await page.keyboard.press('Alt+ArrowRight');
+ await middle.focus();await page.keyboard.press('Shift+ArrowRight');
  expect((await exportedDocument(page)).palette).toEqual(['#aabbcc','#ee7799','#112233']);
  await expect(page.locator('.cp-palette-saved [data-cp-remove="#112233"]')).toBeFocused();
- await page.keyboard.press('Alt+ArrowLeft');
+ await page.keyboard.press('Shift+ArrowLeft');
  expect((await exportedDocument(page)).palette).toEqual(['#aabbcc','#112233','#ee7799']);
 });

@@ -4401,6 +4401,59 @@ for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),
   if(app.editingId)restoreInlineCaret();else if(!mobileV36Small()&&app.doc&&documentTabSession.activeId!=='home')canvas.focus({preventScroll:true});
  },true);
 }
+// Unified compact steppers for number fields rendered in the desktop UI.
+// Keep the original input, min/max/step and its delegated input/change handlers.
+function enhanceNumericField(field){
+ if(field.closest('.k-num-wrap,#mobilePropertyUI')||field.hasAttribute('data-no-stepper'))return;
+ const wrap=document.createElement('span');wrap.className='k-num-wrap';
+ field.before(wrap);wrap.appendChild(field);
+ const label=(field.getAttribute('aria-label')||field.title||field.closest('label')?.textContent||'значение').trim().slice(0,70);
+ const controls=document.createElement('span');controls.className='k-num-steps';
+ for(const [direction,title,path] of [['up','Увеличить','M4 8l4-4 4 4'],['down','Уменьшить','M4 4l4 4 4-4']]){
+  const button=document.createElement('button');button.type='button';
+  button.className='k-num-step';button.dataset.numDirection=direction;
+  button.setAttribute('aria-label',title+' '+label);button.title=title+' '+label;
+  button.innerHTML='<svg aria-hidden="true" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="'+path+'"/></svg>';
+  controls.appendChild(button);
+ }
+ wrap.appendChild(controls);
+}
+function enhanceNumericFields(node){
+ if(node.nodeType!==1)return;
+ if(node.matches('input[type="number"]'))enhanceNumericField(node);
+ node.querySelectorAll('input[type="number"]').forEach(enhanceNumericField);
+}
+const numericControlsObserver=new MutationObserver(records=>{
+ for(const record of records)for(const node of record.addedNodes)enhanceNumericFields(node);
+});
+numericControlsObserver.observe(document.body,{childList:true,subtree:true});
+enhanceNumericFields(document.body);
+document.addEventListener('pointerdown',ev=>{
+ if(ev.pointerType==='mouse'&&ev.button===0&&ev.target.closest('.k-num-step'))ev.preventDefault();
+},true);
+document.addEventListener('click',ev=>{
+ const button=ev.target.closest('.k-num-step');if(!button)return;
+ ev.preventDefault();ev.stopPropagation();
+ const field=button.closest('.k-num-wrap')?.querySelector('input[type="number"]');
+ if(!field||field.disabled||field.readOnly)return;
+ const previous=field.value;
+ try{
+  if(button.dataset.numDirection==='up')field.stepUp();
+  else field.stepDown();
+ }catch{
+  // step="any" does not support the native stepping methods.
+  const step=Number(field.getAttribute('data-step-amount'))||1;
+  const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:0;
+  let next=base+(button.dataset.numDirection==='up'?step:-step);
+  if(field.min!=='')next=Math.max(next,Number(field.min));
+  if(field.max!=='')next=Math.min(next,Number(field.max));
+  field.value=String(Number(next.toFixed(8)));
+ }
+ if(previous===field.value)return;
+ field.dispatchEvent(new Event('input',{bubbles:true}));
+ // Keep native edit transactions: one finalized change per button click.
+ if(field.isConnected)field.dispatchEvent(new Event('change',{bubbles:true}));
+},true);
 // Trigger mobile toolbox actions before the legacy bubble handler handles "more".
 $('#quickBubble').addEventListener('click',ev=>{if(mobileV36Small()&&ev.target.closest('[data-quick=more]')){ev.stopImmediatePropagation();mobileV36Open('more',true)}},true);
 $('#mobileConfirm').onclick=()=>{if(app.editingId){closeInlineText();return}if(mobileV36State.tool)mobileV36Back();else setSelected([])};

@@ -1555,3 +1555,18 @@ html,body{background:#1e1f27!important;}
 .inline-wysiwyg{white-space:break-spaces!important;overflow-wrap:anywhere;word-break:normal;overflow:visible;}
 .wysiwyg-recovery{position:fixed;bottom:24px;left:20%;right:20%;z-index:1000;padding:16px;background:#242332;color:#fff;border:1px solid #a88afa;user-select:text;}
 .wysiwyg-recovery button{margin:8px;padding:8px;}
+
+
+/* Mobile drawer alignment: use the same measured toolbar edge for text,
+   shape and image property sheets, not the older full-viewport bottom:0.
+   Shape catalog uses the visual viewport edge when browser chrome collapses. */
+@media(max-width:760px){
+ #mobilePropertyUI.mp-open,
+ #mobilePropertyUI.mp-open:has(>.mp-sheet){
+  bottom:var(--mobile-toolbar-anchor,50px)!important;
+  padding-bottom:0!important;
+ }
+ #shapeTray.shape-tray:not(.hidden){
+  bottom:var(--mobile-visual-toolbar-anchor,var(--mobile-toolbar-anchor,50px))!important;
+ }
+}

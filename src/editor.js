@@ -1935,10 +1935,14 @@ function mobileNudgeAvoidBubble(bubble){
  else if(below+b.height<=bottom)panel.style.top=below+'px';
  else bubble.classList.add('hidden'); // The small viewport cannot fit both controls safely.
 }
+// Hide floating actions while a finger/stylus/mouse is working on the mobile
+// canvas. Tracking pointer IDs handles ordinary drags and multi-touch without
+// changing document selection, drag ownership or undo history.
+const quickBubbleCanvasPointers=new Set();
 function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if(!bubble)return;
  if(!app.doc||homeVisible()||$('#app').classList.contains('hidden')){bubble.classList.add('hidden');return}
  const selected=picked();const onMobile=matchMedia('(max-width:760px)').matches;
- const show=onMobile&&!app.mobileLayersOpen&&selected.length>0&&!app.cropMode&&!app.editingId&&!$('#stageScroller').classList.contains('drag-over');
+ const show=onMobile&&!quickBubbleCanvasPointers.size&&!app.mobileLayersOpen&&selected.length>0&&!app.cropMode&&!app.editingId&&!$('#stageScroller').classList.contains('drag-over');
  bubble.classList.toggle('hidden',!show);if(!show)return;
  bubble.querySelector('[data-quick="edit"]').classList.toggle('hidden',active()?.type!=='text');
  bubble.querySelector('[data-quick="group"]').classList.toggle('hidden',selected.length<2||!!isOneGroup());
@@ -2170,6 +2174,25 @@ window.visualViewport?.addEventListener('scroll',updateQuickBubble,{passive:true
 const quickBubbleResize=new ResizeObserver(()=>updateQuickBubble());
 for(const node of [$('#stageScroller'),$('#mobileToolbars')])quickBubbleResize.observe(node);
 document.body.appendChild($('#quickBubble'));$('#stageScroller').addEventListener('scroll',()=>updateQuickBubble(),{passive:true});
+// Selection begins before the canvas's drag handler; hide the bubble immediately
+// so subsequent paint()/pointermove calls cannot float it over the moving layer.
+canvas.addEventListener('pointerdown',ev=>{
+ if(!matchMedia('(max-width:760px)').matches)return;
+ quickBubbleCanvasPointers.add(ev.pointerId);
+ updateQuickBubble();
+},true);
+// Run after canvas pointerup/cancel has finalized selection, including a tap
+// without movement. Pointer capture can release outside the artboard.
+function releaseQuickBubbleCanvasPointer(ev){
+ if(quickBubbleCanvasPointers.delete(ev.pointerId))updateQuickBubble();
+}
+window.addEventListener('pointerup',releaseQuickBubbleCanvasPointer);
+window.addEventListener('pointercancel',releaseQuickBubbleCanvasPointer);
+canvas.addEventListener('lostpointercapture',releaseQuickBubbleCanvasPointer);
+window.addEventListener('blur',()=>{
+ if(!quickBubbleCanvasPointers.size)return;
+ quickBubbleCanvasPointers.clear();updateQuickBubble();
+});
 $('#stageScroller').addEventListener('scroll',()=>{if(app.editingId)positionInlineText()},{passive:true});window.addEventListener('resize',()=>{if(app.editingId)positionInlineText()});
 $('#quickBubble').addEventListener('pointerdown',ev=>ev.stopPropagation());
 $('#quickBubble').addEventListener('click',ev=>{ev.stopPropagation();const a=ev.target.closest('[data-quick]');if(!a)return;const action=a.dataset.quick;if(action==='edit')openInlineText();if(action==='duplicate')duplicateElement();if(action==='delete')deleteElement(true);if(action==='group')groupSelected();if(action==='ungroup')ungroupSelected();if(action==='multi'){app.multiMode=!app.multiMode;updateQuickBubble();toast(app.multiMode?'Выбирай другие слои':'Множественный выбор выключен')}if(action==='lock'){const val=!picked().every(e=>e.locked);picked().filter(e=>!ancestorGroups(e.groupId).some(g=>g.locked)).forEach(e=>e.locked=val);commit();refreshLayers();refreshInspector();updateQuickBubble()}});

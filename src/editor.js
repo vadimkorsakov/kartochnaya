@@ -2198,7 +2198,7 @@ $('#quickBubble').addEventListener('pointerdown',ev=>ev.stopPropagation());
 $('#quickBubble').addEventListener('click',ev=>{ev.stopPropagation();const a=ev.target.closest('[data-quick]');if(!a)return;const action=a.dataset.quick;if(action==='edit')openInlineText();if(action==='duplicate')duplicateElement();if(action==='delete')deleteElement(true);if(action==='group')groupSelected();if(action==='ungroup')ungroupSelected();if(action==='multi'){app.multiMode=!app.multiMode;updateQuickBubble();toast(app.multiMode?'Выбирай другие слои':'Множественный выбор выключен')}if(action==='lock'){const val=!picked().every(e=>e.locked);picked().filter(e=>!ancestorGroups(e.groupId).some(g=>g.locked)).forEach(e=>e.locked=val);commit();refreshLayers();refreshInspector();updateQuickBubble()}});
 function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=Math.max(80,area.clientHeight-gutter*2);app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);app.lastZoom=app.zoom;applyZoom();if(mobile)requestAnimationFrame(()=>{area.scrollLeft=Math.max(0,(area.scrollWidth-area.clientWidth)/2);area.scrollTop=Math.max(0,(area.scrollHeight-area.clientHeight)/2)})}
 function applyZoom(anchor){const d=app.doc,ratio=Math.min(window.devicePixelRatio||1,8192/(d.width*app.zoom),8192/(d.height*app.zoom),Math.sqrt(24000000/(d.width*d.height*app.zoom*app.zoom))),stage=$('#stageScroller'),old=app.lastZoom||app.zoom;app.renderScale=ratio;const rect=canvas.getBoundingClientRect();const pointer=anchor||{x:stage.getBoundingClientRect().left+stage.clientWidth/2,y:stage.getBoundingClientRect().top+stage.clientHeight/2};const dx=(pointer.x-rect.left)/old,dy=(pointer.y-rect.top)/old;app.lastZoom=app.zoom;canvas.style.width=Math.max(1,d.width*app.zoom)+'px';canvas.style.height=Math.max(1,d.height*app.zoom)+'px';canvas.width=Math.max(1,Math.round(d.width*app.zoom*ratio));canvas.height=Math.max(1,Math.round(d.height*app.zoom*ratio));$('#zoomLabel').textContent=Math.round(app.zoom*100)+'%';positionInlineText();updateQuickBubble();requestAnimationFrame(renderRulers);if(Math.abs(old-app.zoom)>.0001){const after=canvas.getBoundingClientRect();stage.scrollLeft+=(after.left+dx*app.zoom-pointer.x);stage.scrollTop+=(after.top+dy*app.zoom-pointer.y)}paint()}
-function setZoom(z,anchor){if(app.editingId||mobileV36State.expanded)mobileV36State.userViewAdjusted=true;const keepText=!!app.editingId&&!anchor;if(keepText){const r=$(app.wysiwyg?'#inlineWysiwyg':'#inlineText').getBoundingClientRect();anchor={x:r.left+r.width/2,y:r.top+r.height/2}}app.zoom=clamp(z,.04,8);applyZoom(anchor);if(keepText)requestAnimationFrame(revealInlineText)}
+function setZoom(z,anchor){if(app.editingId||mobileV36State.expanded)mobileV36State.userViewAdjusted=true;const keepText=!!app.editingId&&!anchor;if(keepText){const r=$(app.wysiwyg?'#inlineWysiwyg':'#inlineText').getBoundingClientRect();anchor={x:r.left+r.width/2,y:r.top+r.height/2}}app.zoom=clamp(z,Math.min(.1,canvasFitZoom()),8);applyZoom(anchor);if(keepText)requestAnimationFrame(revealInlineText)}
 function clientDocPoint(ev){const r=canvas.getBoundingClientRect();return {x:(ev.clientX-r.left)/app.zoom,y:(ev.clientY-r.top)/app.zoom}}
 function rotateHandles(e){const z=29/app.zoom;return [[e.w/2,0,e.w/2,-z],[e.w/2,e.h,e.w/2,e.h+z],[0,e.h/2,-z,e.h/2],[e.w,e.h/2,e.w+z,e.h/2]]}
 function hitHandle(e,p){if(e.isFxRegion)return null;const t=9/app.zoom,l=toLocal(e,p);if(rotateHandles(e).some(([x,y,ex,ey])=>Math.hypot(l.x-ex,l.y-ey)<12/app.zoom))return 'rotate';for(const [key,x,y] of handleCoords(e).filter(([k])=>k.length===2))if(Math.abs(l.x-x)<t&&Math.abs(l.y-y)<t)return key;if(l.x>=-t&&l.x<=e.w+t){if(Math.abs(l.y)<t)return 'n';if(Math.abs(l.y-e.h)<t)return 's'}if(l.y>=-t&&l.y<=e.h+t){if(Math.abs(l.x)<t)return 'w';if(Math.abs(l.x-e.w)<t)return 'e'}return null}
@@ -3458,8 +3458,44 @@ function changeSlide(index,scrollToBoard=false){const d=app.doc;if(!isArtboardSe
  if(changed){inkCancel();if(app.cropMode)exitCrop(true);syncCurrentSlide(d);applySlideToRoot(d,index);app.penDraft=null;app.pixelSelection=null;updateHistoryButtons();$('#sizeLabel').textContent=`${d.width} × ${d.height} px`;app.guides=[];app.selectedIds=[];app.selected=null;app.selectedGroupIds=[];app.focusGroupId=null;refreshLayers();refreshInspector();refreshMobileTools();}
  // Retain shared zoom and pan across artboards.
  applyZoom();renderSlideStrip();if(scrollToBoard)seriesFocus(index);if(changed)saveSoon();}
-function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');if(isArtboardSeries()){const d=app.doc;ensureCardSlides(d);const total=d.slides.reduce((s,slide)=>s+slide.width,0)+ARTBOARD_GAP*Math.max(0,d.slides.length-1);const mh=Math.max(...d.slides.map(slide=>slide.height));const narrow=window.matchMedia('(max-width:760px)').matches;const margin=narrow?8:90;app.zoom=narrow?clamp(Math.min((area.clientWidth-margin*2)/d.width,(area.clientHeight-margin*2-16)/d.height),.04,3):clamp(Math.min((area.clientWidth-180)/total,(area.clientHeight-175)/mh),.04,3);app.lastZoom=app.zoom;applyZoom();requestAnimationFrame(()=>seriesFocus(d.activeSlideIndex));return}
- const viewport=$('#stageViewport');viewport.classList.remove('multi-artboard');viewport.style.width='';viewport.style.height='';$('#canvasHost').style.left='';$('#canvasHost').style.top='';$('#canvasHost').style.width='';$('#canvasHost').style.height='';const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=Math.max(80,area.clientHeight-gutter*2);app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);app.lastZoom=app.zoom;applyZoom();if(mobile)requestAnimationFrame(()=>{area.scrollLeft=Math.max(0,(area.scrollWidth-area.clientWidth)/2);area.scrollTop=Math.max(0,(area.scrollHeight-area.clientHeight)/2)})}
+// Use the same measured fit calculation for Fit and the interactive zoom floor.
+// A huge document or a wide desktop series may need less than 10% to fit.
+function canvasFitZoom(){
+ if(!app.doc)return .04;
+ const area=$('#stageScroller'),d=app.doc;
+ if(isArtboardSeries()){
+  ensureCardSlides(d);
+  const total=d.slides.reduce((sum,slide)=>sum+slide.width,0)+ARTBOARD_GAP*Math.max(0,d.slides.length-1);
+  const mh=Math.max(...d.slides.map(slide=>slide.height));
+  const narrow=window.matchMedia('(max-width:760px)').matches;
+  const margin=narrow?8:90;
+  return narrow
+   ?clamp(Math.min((area.clientWidth-margin*2)/d.width,(area.clientHeight-margin*2-16)/d.height),.04,3)
+   :clamp(Math.min((area.clientWidth-180)/total,(area.clientHeight-175)/mh),.04,3);
+ }
+ const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;
+ const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=Math.max(80,area.clientHeight-gutter*2);
+ return clamp(Math.min(maxW/d.width,maxH/d.height),.04,3);
+}
+function fitCanvas(){
+ if(!app.doc)return;
+ const area=$('#stageScroller');
+ if(isArtboardSeries()){
+  app.zoom=canvasFitZoom();app.lastZoom=app.zoom;applyZoom();
+  requestAnimationFrame(()=>seriesFocus(app.doc.activeSlideIndex));
+  return;
+ }
+ const viewport=$('#stageViewport');viewport.classList.remove('multi-artboard');
+ viewport.style.width='';viewport.style.height='';
+ $('#canvasHost').style.left='';$('#canvasHost').style.top='';
+ $('#canvasHost').style.width='';$('#canvasHost').style.height='';
+ const mobile=matchMedia('(max-width:760px)').matches;
+ app.zoom=canvasFitZoom();app.lastZoom=app.zoom;applyZoom();
+ if(mobile)requestAnimationFrame(()=>{
+  area.scrollLeft=Math.max(0,(area.scrollWidth-area.clientWidth)/2);
+  area.scrollTop=Math.max(0,(area.scrollHeight-area.clientHeight)/2);
+ });
+}
 function applyZoom(anchor){if(!app.doc)return;const d=app.doc,stage=$('#stageScroller'),old=app.lastZoom||app.zoom;
  if(isArtboardSeries()){ensureCardSlides(d);const r=stage.getBoundingClientRect();const target=anchor||{x:r.left+stage.clientWidth/2,y:r.top+stage.clientHeight/2};const screenX=target.x-r.left,screenY=target.y-r.top;const worldX=(stage.scrollLeft+screenX-ARTBOARD_MARGIN)/old,worldY=(stage.scrollTop+screenY-80)/old;
  const ratio=Math.min(devicePixelRatio||1,8192/(d.width*app.zoom),8192/(d.height*app.zoom),Math.sqrt(23000000/(d.width*d.height*app.zoom*app.zoom)));app.renderScale=ratio;canvas.style.width=Math.max(1,d.width*app.zoom)+'px';canvas.style.height=Math.max(1,d.height*app.zoom)+'px';canvas.width=Math.max(1,Math.round(d.width*app.zoom*ratio));canvas.height=Math.max(1,Math.round(d.height*app.zoom*ratio));app.lastZoom=app.zoom;

@@ -316,6 +316,25 @@ body.alt-held .inspector input[type=number],.inspector input[type=number].scrubb
 .cp-palette{border-top:1px solid #484852;padding:13px 16px 16px}
 .cp-palette-head{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:700;margin-bottom:12px}
 .cp-plus{border:1px solid #64626b;color:#fff;background:#45444b;border-radius:6px;height:28px;width:28px;font-size:21px;cursor:pointer;line-height:1}
+.cp-palette-actions{display:flex;align-items:center;gap:7px}
+.cp-plus{display:inline-flex;align-items:center;justify-content:center}
+.cp-plus svg{width:17px;height:17px}
+.cp-manage.active{background:#623c4d;border-color:#ad728e;color:#ffe9f2;font-size:17px}
+.cp-manage:focus-visible,.cp-palette-grid button:focus-visible{outline:2px solid #c7adff;outline-offset:2px}
+.cp-palette-caption{color:#b3b0bf;font-size:11px;line-height:1.4;margin:0 0 8px}
+.cp-palette-used-caption{margin-top:14px}
+.cp-palette-empty{grid-column:1/-1;font-size:11px;line-height:1.4;color:#a5a0b0}
+.cp-palette-grid button.cp-swatch-remove{position:relative;outline:2px solid #b97692;outline-offset:-2px}
+.cp-swatch-remove span{position:absolute;top:-5px;right:-5px;display:grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1px solid #a9a4af;background:#323039;color:#fff;font-size:14px;line-height:1;font-weight:700;box-shadow:0 1px 3px #0008}
+.cp-swatch-remove:hover span{background:#9d435c;border-color:#f0b5c5}
+
+.cp-palette-saved .cp-swatch-remove{touch-action:none;user-select:none;cursor:grab}
+.cp-palette-saved .cp-swatch-remove:active{cursor:grabbing}
+.cp-palette-saved .cp-swatch-dragging{z-index:4;opacity:.75;pointer-events:none;cursor:grabbing;box-shadow:0 5px 14px #0008}
+.cp-palette-saved .cp-swatch-drop-before{box-shadow:-4px 0 0 #c5aaff}
+.cp-palette-saved .cp-swatch-drop-after{box-shadow:4px 0 0 #c5aaff}
+
+
 .cp-palette-grid{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:7px}
 .cp-palette-grid button{aspect-ratio:1;width:100%;border-radius:6px;border:1px solid #73717e;cursor:pointer}
 .cp-palette-grid button:hover{outline:2px solid #f3f3fa}

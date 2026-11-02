@@ -526,8 +526,8 @@ function setDoc(d){const stored=app.docs.find(rec=>rec.id===d.id),fromStorage=ap
 function layerSelectionForHistory(){return {ids:[...app.selectedIds],groups:[...(app.selectedGroupIds||[])],focus:app.focusGroupId||null,isolation:app.groupIsolation||null}}
 function rememberLayerSelection(){if(app.history[app.historyIndex]){const state=JSON.parse(app.history[app.historyIndex]);state.layerSelection=layerSelectionForHistory();app.history[app.historyIndex]=JSON.stringify(state)}}
 function restoreLayerSelection(state){const ids=new Set(app.doc.elements.map(e=>e.id)),groups=new Set(app.doc.groups.map(g=>g.id));app.selectedIds=(state?.ids||[]).filter(id=>ids.has(id));app.selected=app.selectedIds.length===1?app.selectedIds[0]:null;app.selectedGroupIds=(state?.groups||[]).filter(id=>groups.has(id));app.focusGroupId=groups.has(state?.focus)?state.focus:null;app.groupIsolation=ids.has(state?.isolation)?state.isolation:null}
-function snapshot(){syncCurrentSlide();const d=app.doc;return JSON.stringify({hasCustomName:!!d.hasCustomName,title:d.title,width:d.width,height:d.height,background:d.background,backgroundAlpha:d.backgroundAlpha??100,rulers:d.rulers||[],groups:d.groups||[],elements:d.elements,slides:d.type==='card'?d.slides:undefined,activeSlideIndex:d.type==='card'?d.activeSlideIndex:undefined,selection:encodeSelectionForHistory(),layerSelection:layerSelectionForHistory()})}
-function describeChange(before,after){try{const a=JSON.parse(before),b=JSON.parse(after);if(JSON.stringify(a.selection)!==JSON.stringify(b.selection))return 'Изменение выделения';if(a.title!==b.title)return 'Переименование документа';if(a.width!==b.width||a.height!==b.height)return 'Изменение размеров холста';if(a.background!==b.background||a.backgroundAlpha!==b.backgroundAlpha)return 'Изменение фона холста';if((a.slides?.length||0)!==(b.slides?.length||0))return (b.slides?.length||0)>(a.slides?.length||0)?'Добавление холста':'Удаление холста';if((a.groups?.length||0)!==(b.groups?.length||0))return (b.groups?.length||0)>(a.groups?.length||0)?'Группировка слоёв':'Разгруппировка слоёв';if(JSON.stringify(a.groups)!==JSON.stringify(b.groups))return 'Изменение состояния группы';if((a.rulers?.length||0)!==(b.rulers?.length||0))return 'Изменение направляющих';if(a.elements.length!==b.elements.length)return b.elements.length>a.elements.length?'Добавление объекта':'Удаление объекта';const aa=new Map(a.elements.map(e=>[e.id,e]));for(const e of b.elements){const prev=aa.get(e.id);if(!prev)return 'Замена слоя';if(prev.text!==e.text)return 'Изменение текста';if(prev.name!==e.name)return 'Переименование слоя';if(prev.x!==e.x||prev.y!==e.y)return 'Перемещение слоя';if(prev.w!==e.w||prev.h!==e.h||prev.rotation!==e.rotation)return 'Трансформация слоя';if(JSON.stringify(prev.effects)!==JSON.stringify(e.effects))return 'Изменение эффектов';if(prev.fill!==e.fill||prev.fillType!==e.fillType||prev.opacity!==e.opacity||prev.stroke!==e.stroke||prev.strokeWidth!==e.strokeWidth)return 'Изменение оформления';if(prev.fontFamily!==e.fontFamily||prev.fontSize!==e.fontSize||prev.fontWeight!==e.fontWeight)return 'Изменение типографики';}if(a.elements.some((e,i)=>e.id!==b.elements[i]?.id))return 'Изменение порядка слоёв';if(JSON.stringify(a.slides)!==JSON.stringify(b.slides))return 'Изменение холста серии';return 'Изменение свойств';}catch{return 'Изменение макета'}}
+function snapshot(){syncCurrentSlide();const d=app.doc;return JSON.stringify({hasCustomName:!!d.hasCustomName,title:d.title,width:d.width,height:d.height,background:d.background,backgroundAlpha:d.backgroundAlpha??100,palette:d.palette||[],rulers:d.rulers||[],groups:d.groups||[],elements:d.elements,slides:d.type==='card'?d.slides:undefined,activeSlideIndex:d.type==='card'?d.activeSlideIndex:undefined,selection:encodeSelectionForHistory(),layerSelection:layerSelectionForHistory()})}
+function describeChange(before,after){try{const a=JSON.parse(before),b=JSON.parse(after);if(JSON.stringify(a.selection)!==JSON.stringify(b.selection))return 'Изменение выделения';if(a.title!==b.title)return 'Переименование документа';if(a.width!==b.width||a.height!==b.height)return 'Изменение размеров холста';if(a.background!==b.background||a.backgroundAlpha!==b.backgroundAlpha)return 'Изменение фона холста';if(JSON.stringify(a.palette||[])!==JSON.stringify(b.palette||[]))return 'Изменение палитры';if((a.slides?.length||0)!==(b.slides?.length||0))return (b.slides?.length||0)>(a.slides?.length||0)?'Добавление холста':'Удаление холста';if((a.groups?.length||0)!==(b.groups?.length||0))return (b.groups?.length||0)>(a.groups?.length||0)?'Группировка слоёв':'Разгруппировка слоёв';if(JSON.stringify(a.groups)!==JSON.stringify(b.groups))return 'Изменение состояния группы';if((a.rulers?.length||0)!==(b.rulers?.length||0))return 'Изменение направляющих';if(a.elements.length!==b.elements.length)return b.elements.length>a.elements.length?'Добавление объекта':'Удаление объекта';const aa=new Map(a.elements.map(e=>[e.id,e]));for(const e of b.elements){const prev=aa.get(e.id);if(!prev)return 'Замена слоя';if(prev.text!==e.text)return 'Изменение текста';if(prev.name!==e.name)return 'Переименование слоя';if(prev.x!==e.x||prev.y!==e.y)return 'Перемещение слоя';if(prev.w!==e.w||prev.h!==e.h||prev.rotation!==e.rotation)return 'Трансформация слоя';if(JSON.stringify(prev.effects)!==JSON.stringify(e.effects))return 'Изменение эффектов';if(prev.fill!==e.fill||prev.fillType!==e.fillType||prev.opacity!==e.opacity||prev.stroke!==e.stroke||prev.strokeWidth!==e.strokeWidth)return 'Изменение оформления';if(prev.fontFamily!==e.fontFamily||prev.fontSize!==e.fontSize||prev.fontWeight!==e.fontWeight)return 'Изменение типографики';}if(a.elements.some((e,i)=>e.id!==b.elements[i]?.id))return 'Изменение порядка слоёв';if(JSON.stringify(a.slides)!==JSON.stringify(b.slides))return 'Изменение холста серии';return 'Изменение свойств';}catch{return 'Изменение макета'}}
 function resetHistory(){if(!app.doc)return;const initial=snapshot();app.historyBase=initial;app.historyPreviewOriginal=false;app.history=[initial];app.historyNames=['Исходное состояние'];app.historyIndex=0;updateHistoryButtons()}
 // Existing property controls join the active inline session; its finalizer releases ownership before committing.
 function commit(label){if(!app.doc)return;if(app.editingId&&(app.inlineSession||matchMedia('(max-width:760px)').matches)){recordInlineSession();const e=app.doc.elements.find(x=>x.id===app.editingId),edit=$('#inlineText');if(e&&edit.value!==e.text){edit.value=e.text;restoreInlineCaret(false)}positionInlineText();paint();return;}boundarySyncDoc(app.doc);syncCurrentSlide();syncAutoCardTitle();const state=snapshot(),previous=app.history[app.historyIndex];if(previous!==state){app.history=app.history.slice(0,app.historyIndex+1);app.historyNames=(app.historyNames||[]).slice(0,app.historyIndex+1);app.history.push(state);app.historyNames.push(typeof label==='string'?label:describeChange(previous,state));if(app.history.length>51){const n=app.history.length-51;app.history.splice(1,n);app.historyNames.splice(1,n);}app.historyIndex=app.history.length-1;app.historyPreviewOriginal=false}updateHistoryButtons();const save=saveState(app.doc.id),key=JSON.stringify(app.doc);if(key!==save.saved&&key!==save.pending?.key)app.doc.updatedAt=Date.now();saveSoon();paint();renderSlideStrip()}
@@ -3172,7 +3172,7 @@ function openFillPopover(key,btn){const p=$('#fillPopover'),oldKey=p.dataset.key
  if(fxColorAnchor)closeFillPopover();
  fxColorAnchor=key==='_effect'&&btn.closest('#fxPopover')?{surface:fxPopoverState,button:btn}:null;
  p.classList.toggle('fx-color-popover',!!fxColorAnchor);
- p.dataset.key=key;p.dataset.format='HEX';if(active()?.fillType==='gradient'){gradientGeometry(active());p.dataset.stopId=gradientStops(active())[0]?.id||'';}renderFillPopover();p.classList.remove('hidden');
+ p.dataset.key=key;p.dataset.format='HEX';p.dataset.paletteEdit='0';if(active()?.fillType==='gradient'){gradientGeometry(active());p.dataset.stopId=gradientStops(active())[0]?.id||'';}renderFillPopover();p.classList.remove('hidden');
  refreshPickerVisual();paint();if(fxColorAnchor){positionEffectColorPopover();return}const b=btn.getBoundingClientRect();p.style.left=Math.max(12,b.left-375)+'px';p.style.top=Math.max(55,Math.min(b.top,innerHeight-p.offsetHeight-12))+'px';}
 function targetFillValue(key){if(['fill','textColor'].includes(key)&&inlineStyleRange())return inlineSelectionStyle().textColor;if(key==='_effect'){const f=active()?.effects?.find(v=>v.id===$('#fillPopover').dataset.effectId);return f?.[$('#fillPopover').dataset.effectField||'color']||'#7857de'}if(key==='_ink')return app.inkSettings.color;const e=active();if(key==='_docBackground')return app.doc.background;if(key==='fill'&&e?.type==='text'&&(e.fillType||'solid')==='solid')return e.textColor||'#000000';return e?.[key]||'#ffffff'}
 function syncTextFill(e){if(e?.type==='text'&&(e.fillType||'solid')==='solid')e.fill=e.textColor||'#000000'}
@@ -3219,7 +3219,13 @@ function refreshPickerVisual(updateChannels=true){const p=$('#fillPopover');if(p
 function fillPreviewMode(k){const e=active();return k!=='fill'?'solid':e?.fillType||'solid'}
 function repositionFillPopover(){const p=$('#fillPopover');if(p.classList.contains('hidden'))return;if(fxColorAnchor){positionEffectColorPopover();return}const anchor=$('#inspector [data-fill-open="'+p.dataset.key+'"]');const y=anchor?.getBoundingClientRect()?.top??220;
  p.style.top=Math.max(54,Math.min(y,innerHeight-p.offsetHeight-12))+'px';}
-function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=active(),type=fillPreviewMode(key),colors=[...new Set([...(app.doc.palette||[]),app.doc.background,...app.doc.elements.flatMap(o=>[o.fill,o.fill2,o.stroke,o.textColor])].map(normalizeHex).filter(Boolean))].slice(0,40);
+function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=active(),type=fillPreviewMode(key);
+ const savedColors=[...new Set((app.doc.palette||[]).map(normalizeHex).filter(Boolean))].slice(0,40);
+ const usedColors=[...new Set([app.doc.background,...app.doc.elements.flatMap(o=>[o.fill,o.fill2,o.stroke,o.textColor])].map(normalizeHex).filter(Boolean))].filter(c=>!savedColors.includes(c)).slice(0,Math.max(0,40-savedColors.length));
+ const managing=p.dataset.paletteEdit==='1';
+ const paletteSwatch=(color,saved)=>saved&&managing
+  ? `<button type="button" data-cp-remove="${color}" class="cp-swatch-remove" aria-label="Цвет ${color}: нажмите, чтобы удалить; перетащите, чтобы изменить порядок" title="Перетащить для сортировки · нажать для удаления · Shift+←/→ для перемещения" style="background:${color}"><span aria-hidden="true">×</span></button>`
+  : `<button type="button" data-fill-palette="${color}" aria-label="Выбрать цвет ${color}" title="${color}" style="background:${color}"></button>`;
  const labels={_effect:'Цвет эффекта',_ink:'Цвет кисти / карандаша',_docBackground:'Фон холста',stroke:'Обводка',fill:'Заливка',textColor:'Цвет текста'};
  const stopPicker=type==='gradient'&&key==='fill'?gradientStopsUI(e):'';
  p.classList.toggle('cp-gradient-active',type==='gradient');p.innerHTML=`<div class="popover-head"><strong>${labels[key]||'Заливка'}</strong><button data-fill-close aria-label="Закрыть">✕</button></div><div class="cp-body">
@@ -3230,7 +3236,9 @@ function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=activ
  <div class="cp-slider-row"><button class="cp-eyedropper" title="Пипетка: взять цвет с холста" data-cp-eyedrop>${uiIcon('pipette')}</button><div class="cp-sliders"><input id="cpHue" class="cp-hue" type="range" min="0" max="360" step="1" aria-label="Цветовой тон"><input id="cpAlpha" class="cp-alpha" type="range" min="0" max="100" step="1" aria-label="Непрозрачность"></div></div>
  <div class="cp-channels"><select id="cpFormat" aria-label="Цветовая модель">${['HEX','RGB','CSS','HSL','HSB'].map(v=>`<option ${v===p.dataset.format?'selected':''}>${v}</option>`).join('')}</select><div id="cpChannels" class="cp-channel-values"></div><label class="cp-opacity"><input id="cpAlphaInput" type="number" min="0" max="100" aria-label="Прозрачность в процентах">%</label></div>
  `}
- </div><div class="cp-palette"><div class="cp-palette-head"><span>Цвета проекта</span><button data-cp-add class="cp-plus" title="Сохранить свой цвет">+</button></div><div class="cp-add-row"><input data-cp-savehex aria-label="HEX для добавления в палитру" value="${cpCurrentHex().toUpperCase()}"><span>HEX</span></div><div class="cp-palette-grid">${colors.map(c=>`<button data-fill-palette="${c}" title="${c}" style="background:${c}"></button>`).join('')}</div></div>`;
+ </div><div class="cp-palette"><div class="cp-palette-head"><span>Цвета проекта</span><div class="cp-palette-actions"><button type="button" data-cp-manage class="cp-plus cp-manage ${managing?'active':''}" aria-label="${managing?'Завершить редактирование цветов':'Редактировать сохранённые цвета'}" aria-pressed="${managing}" title="${managing?'Готово':'Редактировать сохранённые цвета'}">${managing?'✓':uiIcon('edit')}</button><button type="button" data-cp-add class="cp-plus" title="Сохранить свой цвет" aria-label="Сохранить цвет в палитру">+</button></div></div><div class="cp-add-row"><input data-cp-savehex aria-label="HEX для добавления в палитру" value="${cpCurrentHex().toUpperCase()}"><span>HEX</span></div>
+ <div class="cp-palette-caption">Сохранённые цвета</div><div class="cp-palette-grid cp-palette-saved">${savedColors.map(c=>paletteSwatch(c,true)).join('')||'<span class="cp-palette-empty">Пока нет сохранённых цветов</span>'}</div>
+ ${usedColors.length?`<div class="cp-palette-caption cp-palette-used-caption">Цвета на карточке</div><div class="cp-palette-grid cp-palette-used">${usedColors.map(c=>paletteSwatch(c,false)).join('')}</div>`:''}</div>`;
  refreshPickerVisual();requestAnimationFrame(repositionFillPopover);
 }
 function setFillMode(mode){if(app.wysiwyg&&!fallbackInlineWysiwyg('Тип заливки'))return;const e=active(),p=$('#fillPopover');if(!e)return;const previous=e.fillType;if(e.type==='text'&&e.fillType==='solid'&&mode!=='solid')e.fill=e.textColor||'#000000';
@@ -3287,14 +3295,84 @@ $('#fillPopover').addEventListener('change',ev=>{
  }
 });
 
+// Palette ordering is a document-level change, just like adding/removing a color.
+// Pointer capture works for mouse, pen and touch; the actual order changes only
+// on release, so an abandoned drag cannot leave a half-mutated palette.
+let paletteSwatchDrag=null, suppressPaletteSwatchClick=false;
+function savedPaletteColors(){return [...new Set((app.doc?.palette||[]).map(normalizeHex).filter(Boolean))]}
+function reorderSavedPalette(color,target,after){
+ const colors=savedPaletteColors(),from=colors.indexOf(color),to=colors.indexOf(target);
+ if(from<0||to<0||from===to)return false;
+ let insert=to+(after?1:0);colors.splice(from,1);
+ if(from<insert)insert--;
+ colors.splice(insert,0,color);
+ if(colors.join('|')===savedPaletteColors().join('|'))return false;
+ app.doc.palette=colors;commit('Порядок сохранённых цветов');renderFillPopover();return true;
+}
+function clearPaletteDrag(){
+ const drag=paletteSwatchDrag;paletteSwatchDrag=null;
+ if(!drag)return;
+ drag.source.style.transform='';drag.source.classList.remove('cp-swatch-dragging');
+ for(const node of $('#fillPopover').querySelectorAll('.cp-swatch-drop-before,.cp-swatch-drop-after'))
+  node.classList.remove('cp-swatch-drop-before','cp-swatch-drop-after');
+ try{if(drag.source.hasPointerCapture(drag.pointerId))drag.source.releasePointerCapture(drag.pointerId)}catch{}
+}
+$('#fillPopover').addEventListener('pointerdown',ev=>{
+ const source=ev.target.closest('.cp-palette-saved [data-cp-remove]');
+ if(!source||ev.button!==0||$('#fillPopover').dataset.paletteEdit!=='1'||!app.doc||app.wysiwyg)return;
+ paletteSwatchDrag={source,color:source.dataset.cpRemove,pointerId:ev.pointerId,x:ev.clientX,y:ev.clientY,dragging:false,target:null,after:false};
+ try{source.setPointerCapture(ev.pointerId)}catch{paletteSwatchDrag=null}
+});
+$('#fillPopover').addEventListener('pointermove',ev=>{
+ const drag=paletteSwatchDrag;if(!drag||ev.pointerId!==drag.pointerId)return;
+ const dx=ev.clientX-drag.x,dy=ev.clientY-drag.y;
+ if(!drag.dragging&&Math.hypot(dx,dy)<6)return;
+ if(!drag.dragging){drag.dragging=true;drag.source.classList.add('cp-swatch-dragging')}
+ drag.source.style.transform=`translate(${dx}px,${dy}px)`;
+ const target=document.elementFromPoint(ev.clientX,ev.clientY)?.closest('.cp-palette-saved [data-cp-remove]');
+ const after=!!target&&ev.clientX>=target.getBoundingClientRect().left+target.getBoundingClientRect().width/2;
+ for(const node of $('#fillPopover').querySelectorAll('.cp-swatch-drop-before,.cp-swatch-drop-after'))
+  node.classList.remove('cp-swatch-drop-before','cp-swatch-drop-after');
+ drag.target=target&&target!==drag.source?target.dataset.cpRemove:null;drag.after=after;
+ if(drag.target)target.classList.add(after?'cp-swatch-drop-after':'cp-swatch-drop-before');
+ ev.preventDefault();
+});
+function finishPaletteSwatchDrag(ev){
+ const drag=paletteSwatchDrag;if(!drag||ev.pointerId!==drag.pointerId)return;
+ const {dragging,color,target,after}=drag;
+ if(dragging){suppressPaletteSwatchClick=true;setTimeout(()=>{suppressPaletteSwatchClick=false},0);}
+ clearPaletteDrag();
+ if(ev.type==='pointerup'&&dragging&&target)reorderSavedPalette(color,target,after);
+}
+$('#fillPopover').addEventListener('pointerup',finishPaletteSwatchDrag);
+$('#fillPopover').addEventListener('pointercancel',finishPaletteSwatchDrag);
+$('#fillPopover').addEventListener('click',ev=>{
+ if(!suppressPaletteSwatchClick||!ev.target.closest('[data-cp-remove]'))return;
+ suppressPaletteSwatchClick=false;ev.preventDefault();ev.stopImmediatePropagation();
+},true);
+$('#fillPopover').addEventListener('keydown',ev=>{
+ const source=ev.target.closest('.cp-palette-saved [data-cp-remove]');
+ if(!source||!ev.shiftKey||ev.ctrlKey||ev.altKey||!['ArrowLeft','ArrowRight'].includes(ev.key))return;
+ ev.preventDefault();ev.stopPropagation();
+ const colors=savedPaletteColors(),index=colors.indexOf(source.dataset.cpRemove),next=index+(ev.key==='ArrowLeft'?-1:1);
+ if(next<0||next>=colors.length)return;
+ const nextColor=colors[next];
+ if(reorderSavedPalette(source.dataset.cpRemove,nextColor,ev.key==='ArrowRight'))
+  $('#fillPopover').querySelector(`.cp-palette-saved [data-cp-remove="${source.dataset.cpRemove}"]`)?.focus();
+});
+
 $('#fillPopover').addEventListener('click',async ev=>{
- const p=$('#fillPopover'),b=ev.target.closest('[data-fill-mode],[data-fill-close],[data-fill-image],[data-cp-eyedrop],[data-fill-palette],[data-cp-add]');if(!b)return;
+ const p=$('#fillPopover'),b=ev.target.closest('[data-fill-mode],[data-fill-close],[data-fill-image],[data-cp-eyedrop],[data-fill-palette],[data-cp-add],[data-cp-manage],[data-cp-remove]');if(!b)return;
  if(b.hasAttribute('data-fill-close')){closeFillPopover();resumeInlineTextFromButton();return}
  if(b.hasAttribute('data-fill-mode')){setFillMode(b.dataset.fillMode);return}
- if((b.hasAttribute('data-fill-image')||b.hasAttribute('data-cp-add'))&&app.wysiwyg&&!fallbackInlineWysiwyg('Действие палитры'))return;
+ if(b.hasAttribute('data-cp-manage')){p.dataset.paletteEdit=p.dataset.paletteEdit==='1'?'0':'1';renderFillPopover();return}
+ if((b.hasAttribute('data-fill-image')||b.hasAttribute('data-cp-add')||b.hasAttribute('data-cp-remove'))&&app.wysiwyg&&!fallbackInlineWysiwyg('Действие палитры'))return;
  if(b.hasAttribute('data-fill-image')){app.pendingImage={kind:'fill',id:active()?.id};$('#imageInput').click();return}
  if(b.hasAttribute('data-fill-palette')){cpLiveColor(b.dataset.fillPalette,true);refreshPickerVisual();resumeInlineTextFromButton();return}
- if(b.hasAttribute('data-cp-add')){const color=normalizeHex(p.querySelector('[data-cp-savehex]')?.value);if(!color){toast('Введите HEX, например #B08CFF');return}app.doc.palette??=[];if(!app.doc.palette.includes(color))app.doc.palette.push(color);commit();renderFillPopover();toast('Цвет добавлен в палитру');return}
+ if(b.hasAttribute('data-cp-remove')){const color=normalizeHex(b.dataset.cpRemove),palette=app.doc.palette||[];
+  if(!color||!palette.some(v=>normalizeHex(v)===color))return;
+  app.doc.palette=palette.filter(v=>normalizeHex(v)!==color);commit('Удаление сохранённого цвета');renderFillPopover();toast('Цвет удалён из сохранённых');return}
+ if(b.hasAttribute('data-cp-add')){const color=normalizeHex(p.querySelector('[data-cp-savehex]')?.value);if(!color){toast('Введите HEX, например #B08CFF');return}app.doc.palette??=[];if(!app.doc.palette.some(v=>normalizeHex(v)===color)){app.doc.palette.push(color);commit('Добавление сохранённого цвета')}renderFillPopover();toast('Цвет сохранён в палитре');return}
  if(b.hasAttribute('data-cp-eyedrop')){if('EyeDropper'in window&&window.isSecureContext){try{const result=await new EyeDropper().open();cpLiveColor(result.sRGBHex,true);refreshPickerVisual();return}catch{}}
  app.pipetteArmed=true;$('#stageScroller').classList.add('pipette-mode');toast('Пипетка: щёлкни по цвету на карточке');}
 });

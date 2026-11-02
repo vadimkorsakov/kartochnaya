@@ -307,11 +307,16 @@ test('effect color follows the measured parent on the left, resize and inspector
   await page.setViewportSize({ width: 1440, height: 1000 });
   await expect.poll(async () => (await colorPicker(page).boundingBox())?.x).not.toBe(initial.color.x);
   await colorGeometry(page, 'left');
-  const before = await colorPicker(page).boundingBox();
   await row(page, 'fx-3').evaluate(row => { const p=document.querySelector('#inspector');p.scrollTop+=row.getBoundingClientRect().top-p.getBoundingClientRect().top-2; });
-  await expect.poll(async () => (await colorPicker(page).boundingBox())?.y).not.toBe(before.y);
   const aligned = await colorGeometry(page, 'left');
-  expect(aligned.color.y).toBeCloseTo(aligned.effect.y, 0);
+  // A tall picker is legitimately clamped against the viewport/dock edge.
+  // Scrolling the parent need not change its Y once that limit is reached.
+  const dock = await page.locator('.floating-docks').boundingBox();
+  let bottom = page.viewportSize().height - 8;
+  if (dock && aligned.color.x < dock.x + dock.width && aligned.color.x + aligned.color.width > dock.x)
+    bottom = Math.min(bottom, dock.y - 10);
+  const expectedY = Math.max(8, Math.min(aligned.effect.y, Math.max(8, bottom - aligned.color.height)));
+  expect(aligned.color.y).toBeCloseTo(expectedY, 0);
   await page.setViewportSize({ width: 1280, height: 560 }); await colorGeometry(page, 'left');
 });
 

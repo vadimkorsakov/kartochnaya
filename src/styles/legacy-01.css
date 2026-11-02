@@ -328,6 +328,13 @@ body.alt-held .inspector input[type=number],.inspector input[type=number].scrubb
 .cp-swatch-remove span{position:absolute;top:-5px;right:-5px;display:grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1px solid #a9a4af;background:#323039;color:#fff;font-size:14px;line-height:1;font-weight:700;box-shadow:0 1px 3px #0008}
 .cp-swatch-remove:hover span{background:#9d435c;border-color:#f0b5c5}
 
+.cp-palette-saved .cp-swatch-remove{touch-action:none;user-select:none;cursor:grab}
+.cp-palette-saved .cp-swatch-remove:active{cursor:grabbing}
+.cp-palette-saved .cp-swatch-dragging{z-index:4;opacity:.75;pointer-events:none;cursor:grabbing;box-shadow:0 5px 14px #0008}
+.cp-palette-saved .cp-swatch-drop-before{box-shadow:-4px 0 0 #c5aaff}
+.cp-palette-saved .cp-swatch-drop-after{box-shadow:4px 0 0 #c5aaff}
+
+
 .cp-palette-grid{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:7px}
 .cp-palette-grid button{aspect-ratio:1;width:100%;border-radius:6px;border:1px solid #73717e;cursor:pointer}
 .cp-palette-grid button:hover{outline:2px solid #f3f3fa}

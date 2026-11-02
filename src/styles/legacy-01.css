@@ -1570,3 +1570,59 @@ html,body{background:#1e1f27!important;}
   bottom:var(--mobile-visual-toolbar-anchor,var(--mobile-toolbar-anchor,50px))!important;
  }
 }
+
+
+/* One numeric stepper for desktop inspector, effects, brush, gradient and dialogs.
+   The original input remains focusable and editable; buttons are layered inside
+   its border rather than relying on platform-specific Firefox/Chromium spinners. */
+.k-num-wrap{
+ position:relative;display:inline-flex;align-items:stretch;
+ flex:1 1 auto;width:100%;min-width:0;vertical-align:middle;
+}
+.k-num-wrap>input[type=number]{
+ box-sizing:border-box;flex:1 1 auto;width:100%!important;min-width:0!important;
+ padding-right:34px!important;font-variant-numeric:tabular-nums;
+ appearance:textfield!important;-moz-appearance:textfield!important;
+}
+.k-num-wrap>input[type=number]::-webkit-inner-spin-button,
+.k-num-wrap>input[type=number]::-webkit-outer-spin-button{
+ -webkit-appearance:none!important;margin:0;
+}
+.k-num-steps{
+ position:absolute;z-index:1;right:4px;top:50%;transform:translateY(-50%);
+ display:grid;grid-template-rows:repeat(2,14px);width:21px;height:28px;
+ overflow:hidden;border-radius:5px;border:1px solid #6c6876;
+ background:#373540;color:#c9c5d3;
+}
+.k-num-step{
+ box-sizing:border-box!important;display:flex!important;align-items:center!important;
+ justify-content:center!important;width:100%!important;height:14px!important;
+ min-width:0!important;min-height:0!important;padding:0!important;margin:0!important;
+ border:0!important;border-radius:0!important;background:transparent!important;
+ color:inherit!important;cursor:pointer!important;touch-action:manipulation;
+}
+.k-num-step+.k-num-step{border-top:1px solid #595562!important}
+.k-num-step svg{display:block;width:12px;height:11px;pointer-events:none}
+.k-num-step:hover{background:#625179!important;color:#fff!important}
+.k-num-step:active{background:#7b61aa!important}
+.k-num-step:focus-visible{outline:2px solid #d3baff;outline-offset:-2px}
+.k-num-wrap:has(input:disabled) .k-num-step,
+.k-num-wrap:has(input[readonly]) .k-num-step{opacity:.3;cursor:not-allowed!important}
+.k-num-wrap:focus-within .k-num-steps{border-color:#9a83e5}
+.inspector .compact-field>.k-num-wrap{flex:1 1 0;width:0;min-width:0}
+.inspector .compact-field .k-num-steps{right:3px}
+.tf43-pair>.k-num-wrap{width:80px;flex:0 0 80px}
+.ink-row>.k-num-wrap{width:74px;flex:0 0 74px}
+.brush-context label{grid-template-columns:110px minmax(0,1fr) 74px!important}
+.brush-context label>.k-num-wrap{width:74px!important;min-width:0!important;text-align:initial}
+#selectionToolbar .magic-tolerance-controls>.k-num-wrap{width:74px;flex:0 0 74px}
+.selection-menu label>.k-num-wrap{width:74px;flex:0 0 74px}
+.cp-channels{grid-template-columns:89px minmax(0,1fr) 94px}
+.cp-opacity>.k-num-wrap{width:77px;flex:0 0 77px}
+.cp-opacity .k-num-wrap>input[type=number]{text-align:left}
+.cp-stop-row{grid-template-columns:23px 70px minmax(0,1fr) 70px 26px}
+.cp-stop-row>.k-num-wrap{width:100%;min-width:0}
+@media(max-width:760px){
+ .tf43-pair>.k-num-wrap{width:78px;flex-basis:78px}
+ .cp-channels{grid-template-columns:72px minmax(0,1fr) 94px}
+}

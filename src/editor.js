@@ -4076,7 +4076,7 @@ window.visualViewport?.addEventListener('scroll',mobileFontHeight);
 window.addEventListener('resize',mobileFontHeight);
 function mobileV36FontPanel(){const e=active(),category=mobileV36State.fontCategory||'all',filter=mobileV36State.query.toLowerCase().trim();
  const renderList=list=>list.filter(x=>x.toLowerCase().includes(filter)).map(f=>`<button class="mp-font-row ${e.fontFamily===f?'active':''}" data-mp-font="${mobileV36Escape(f)}"><span><strong class="mp-previewfont" style="font-family:${mobileV36Escape(JSON.stringify(f))}">${mobileV36Escape(f)}</strong></span>${v41FontUnavailable(f)?'<small>Недоступен</small>':e.fontFamily===f?'✓':'›'}</button>${!v41FontUnavailable(f)&&mobileV36State.fontVariantFamily===f?`<div class="mp-variant-inline">${fontVariants(f).map(([v,n])=>`<button data-mp-variant="${mobileV36Escape(v)}" class="${(e.fontWeight+':'+(e.fontStyle||'normal'))===v?'active':''}">${mobileV36Escape(n)}</button>`).join('')}</div>`:''}`).join('')||'<div class="mp-dim">В этой категории нет шрифтов</div>';
- return mobileV36Sheet('Шрифт',`<div class="mp-source mp-font-categories">${mobileV36State.fontSearch?`<input data-mp-search="font" type="search" aria-label="Поиск шрифта" placeholder="Поиск шрифта…" value="${mobileV36Escape(mobileV36State.query)}"><button data-mp-action="fontSearchClose" aria-label="Закрыть поиск">×</button>`:`<select data-mp-font-category="1" aria-label="Категория шрифтов">${v41FontCategories.map(([id,label])=>`<option value="${id}" ${category===id?'selected':''}>${label}</option>`).join('')}</select><button data-mp-action="fontSearch" aria-label="Поиск шрифта">${uiIcon('search')}</button>`}<button data-mp-action="fontImport" aria-label="Загрузить шрифт">+</button></div><div class="mp-font-scroll">${renderList(v41FontsByCategory(category))}</div>`,{back:true})
+ return mobileV36Sheet('Шрифт',`<div class="mp-source mp-font-categories">${mobileV36State.fontSearch?`<input data-mp-search="font" type="search" aria-label="Поиск шрифта" placeholder="Поиск шрифта…" value="${mobileV36Escape(mobileV36State.query)}"><button data-mp-action="fontSearchClose" aria-label="Закрыть поиск">×</button>`:`<select data-mp-font-category="1" aria-label="Категория шрифтов">${v41FontCategories.map(([id,label])=>`<option value="${id}" ${category===id?'selected':''}>${label}</option>`).join('')}</select><button data-mp-action="fontSearch" aria-label="Поиск шрифта">${uiIcon('search')}</button>`}<button data-mp-action="fontImport" aria-label="Загрузить шрифт">+</button></div><div class="mp-font-scroll" data-mp-font-scope="${mobileV36Escape(JSON.stringify([category,filter]))}">${renderList(v41FontsByCategory(category))}</div>`,{back:true})
 }
 function mobileV36ColorPanel(){if(mobileV36State.sub==='colorEdit')return mobileV36ColorEditor();
  const presets=['#000000','#232323','#545454','#858585','#bababa','#ffffff','#ff4545','#ff849d','#ff76a8','#ad77ef','#7956eb','#4720ce','#0086c3','#04bce2','#69deed','#a4e8f2','#006b64','#16b38b','#46d47e','#b3ea2f','#d4fc15','#f3e43c','#ffbb43','#fa823b'];
@@ -4181,9 +4181,16 @@ function mobileV36Render(){
   else content=mobileV36Sheet(mobileV36Label[t]||'Свойства',`<div class="mp-field">Прозрачность${mobileV36Slider('opacity',e.opacity??100,0,100,1)}</div><div class="mp-subtitle">Дополнительные параметры доступны в разделе «Ещё»</div>`);
  }
  if(!content){s.expanded=true;return mobileV36Render()}
+ // Rebuilding the mobile sheet replaces its scroll element. Preserve the
+ // user's place for font/variant changes, but reset for new search results
+ // or a different category (a different list of rows).
+ const previousFontList=mobileV36.querySelector('.mp-font-scroll');
+ const previousFontScroll=previousFontList?{scope:previousFontList.dataset.mpFontScope,top:previousFontList.scrollTop}:null;
  mobileV36.innerHTML=content;mobileV36.className='mp-open';
- $$('#mobileContext button').forEach(b=>b.classList.toggle('mobile-active',b.dataset.mobile===t));
+ document.querySelectorAll('#mobileContext button').forEach(b=>b.classList.toggle('mobile-active',b.dataset.mobile===t));
  mobileFontHeight();
+ const nextFontList=mobileV36.querySelector('.mp-font-scroll');
+ if(previousFontScroll&&nextFontList?.dataset.mpFontScope===previousFontScroll.scope)nextFontList.scrollTop=previousFontScroll.top;
  if(s.expanded||app.editingId)mobileV36ApplyView();else mobileV36ResetView();
  if(app.editingId){positionInlineText();requestAnimationFrame(revealInlineText)}
 }

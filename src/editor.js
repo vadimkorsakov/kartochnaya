@@ -4004,13 +4004,14 @@ function mobileV36ApplyView(){
   mobileV36State.userViewAdjusted=true;
   requestAnimationFrame(()=>{positionInlineText();revealInlineText();paint()});return;
  }
- // Sheet covers the mobile toolbar. Reserve only the overlap with the stage column;
- // do not subtract both sheet height and toolbar height a second time.
- const sheetRect=sheet.getBoundingClientRect(),toolbar=$('#mobileToolbars');
- const previous=parseFloat(column.style.paddingBottom)||0;
- const scrollerBaseBottom=toolbar.getBoundingClientRect().top+previous;
- const covered=Math.max(0,scrollerBaseBottom-sheetRect.top);
- column.style.paddingBottom=Math.ceil(covered)+'px';area.style.marginBottom='';
+ // Keep the bottom toolbar in its normal flow position for images and
+ // shapes, just as for text. Padding on the entire stage column moves the
+ // toolbar itself above the sheet, leaving the fixed sheet at the old dock
+ // position and making the controls overlap.
+ const sheetRect=sheet.getBoundingClientRect(),toolbar=$('#mobileToolbars').getBoundingClientRect();
+ const covered=Math.max(0,toolbar.top-sheetRect.top);
+ column.style.paddingBottom='';
+ area.style.setProperty('margin-bottom',Math.ceil(covered)+'px','important');
  requestAnimationFrame(()=>{
   if(!mobileV36State.expanded||!mobileV36State.baseView||app.doc?.id!==base.docId)return;
   if(app.editingId||mobileV36State.userViewAdjusted){if(app.editingId)mobileV36State.userViewAdjusted=true;positionInlineText();revealInlineText();paint();return}
@@ -4494,8 +4495,15 @@ $('#stageScroller').addEventListener('pointerdown',ev=>{
 
 // Actual position of the toolbar (not its nominal CSS height) anchors every compact drawer.
 function syncMobileToolbarAnchor(){if(!matchMedia('(max-width:760px)').matches)return;const toolbar=$('#mobileToolbars');if(!toolbar)return;
- const height=Math.max(0,window.innerHeight-toolbar.getBoundingClientRect().top);
+ const top=toolbar.getBoundingClientRect().top;
+ const height=Math.max(0,window.innerHeight-top);
  document.documentElement.style.setProperty('--mobile-toolbar-anchor',height+'px');
+ // Bottom sheets are fixed in the visual viewport on mobile browsers; the
+ // browser's collapsing address bar can make innerHeight larger than its
+ // visible height. Keep the shape drawer aligned to the visible toolbar.
+ const vv=window.visualViewport;
+ const visualBottom=(vv?.offsetTop||0)+(vv?.height||window.innerHeight);
+ document.documentElement.style.setProperty('--mobile-visual-toolbar-anchor',Math.max(0,visualBottom-top)+'px');
 }
 new ResizeObserver(syncMobileToolbarAnchor).observe($('#mobileToolbars'));
 window.addEventListener('resize',syncMobileToolbarAnchor,{passive:true});
@@ -4890,7 +4898,7 @@ $('#mobileContext').addEventListener('click',ev=>{if(ev.target.closest('[data-bo
 // Ensure the new command remains accessible in the mobile More submenu, too.
 const boundaryOldMobileRender=mobileV36Render;
 mobileV36Render=function(){const result=boundaryOldMobileRender();if(mobileV36State.tool==='more'&&active()&&boundarySupported(active())){
- const target=mobileV36.querySelector('.mp-sheet');if(target){const btn=document.createElement('button');btn.type='button';btn.className='mp-choice';btn.textContent='⌁ Текст вдоль границ';btn.addEventListener('click',()=>{mobileV36Close();boundaryCreate(false)});target.appendChild(btn)}
+ const target=mobileV36.querySelector('.mp-sheet .mp-body');if(target){const btn=document.createElement('button');btn.type='button';btn.className='mp-choice';btn.textContent='⌁ Текст вдоль границ';btn.addEventListener('click',()=>{mobileV36Close();boundaryCreate(false)});target.appendChild(btn)}
  }return result};
 // Avoid old path-tool creation from the drawing toolbar; legacy objects stay renderable.
 app.textToolMode=app.textToolMode==='path'?'horizontal':app.textToolMode;

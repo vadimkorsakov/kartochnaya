@@ -3224,7 +3224,7 @@ function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=activ
  const usedColors=[...new Set([app.doc.background,...app.doc.elements.flatMap(o=>[o.fill,o.fill2,o.stroke,o.textColor])].map(normalizeHex).filter(Boolean))].filter(c=>!savedColors.includes(c)).slice(0,Math.max(0,40-savedColors.length));
  const managing=p.dataset.paletteEdit==='1';
  const paletteSwatch=(color,saved)=>saved&&managing
-  ? `<button type="button" data-cp-remove="${color}" class="cp-swatch-remove" aria-label="Цвет ${color}: нажмите, чтобы удалить; перетащите, чтобы изменить порядок" title="Перетащить для сортировки · нажать для удаления · Alt+←/→ для перемещения" style="background:${color}"><span aria-hidden="true">×</span></button>`
+  ? `<button type="button" data-cp-remove="${color}" class="cp-swatch-remove" aria-label="Цвет ${color}: нажмите, чтобы удалить; перетащите, чтобы изменить порядок" title="Перетащить для сортировки · нажать для удаления · Shift+←/→ для перемещения" style="background:${color}"><span aria-hidden="true">×</span></button>`
   : `<button type="button" data-fill-palette="${color}" aria-label="Выбрать цвет ${color}" title="${color}" style="background:${color}"></button>`;
  const labels={_effect:'Цвет эффекта',_ink:'Цвет кисти / карандаша',_docBackground:'Фон холста',stroke:'Обводка',fill:'Заливка',textColor:'Цвет текста'};
  const stopPicker=type==='gradient'&&key==='fill'?gradientStopsUI(e):'';
@@ -3352,8 +3352,8 @@ $('#fillPopover').addEventListener('click',ev=>{
 },true);
 $('#fillPopover').addEventListener('keydown',ev=>{
  const source=ev.target.closest('.cp-palette-saved [data-cp-remove]');
- if(!source||!ev.altKey||!['ArrowLeft','ArrowRight'].includes(ev.key))return;
- ev.preventDefault();
+ if(!source||!ev.shiftKey||ev.ctrlKey||ev.altKey||!['ArrowLeft','ArrowRight'].includes(ev.key))return;
+ ev.preventDefault();ev.stopPropagation();
  const colors=savedPaletteColors(),index=colors.indexOf(source.dataset.cpRemove),next=index+(ev.key==='ArrowLeft'?-1:1);
  if(next<0||next>=colors.length)return;
  const nextColor=colors[next];

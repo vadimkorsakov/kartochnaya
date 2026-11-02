@@ -3172,7 +3172,7 @@ function openFillPopover(key,btn){const p=$('#fillPopover'),oldKey=p.dataset.key
  if(fxColorAnchor)closeFillPopover();
  fxColorAnchor=key==='_effect'&&btn.closest('#fxPopover')?{surface:fxPopoverState,button:btn}:null;
  p.classList.toggle('fx-color-popover',!!fxColorAnchor);
- p.dataset.key=key;p.dataset.format='HEX';if(active()?.fillType==='gradient'){gradientGeometry(active());p.dataset.stopId=gradientStops(active())[0]?.id||'';}renderFillPopover();p.classList.remove('hidden');
+ p.dataset.key=key;p.dataset.format='HEX';p.dataset.paletteEdit='0';if(active()?.fillType==='gradient'){gradientGeometry(active());p.dataset.stopId=gradientStops(active())[0]?.id||'';}renderFillPopover();p.classList.remove('hidden');
  refreshPickerVisual();paint();if(fxColorAnchor){positionEffectColorPopover();return}const b=btn.getBoundingClientRect();p.style.left=Math.max(12,b.left-375)+'px';p.style.top=Math.max(55,Math.min(b.top,innerHeight-p.offsetHeight-12))+'px';}
 function targetFillValue(key){if(['fill','textColor'].includes(key)&&inlineStyleRange())return inlineSelectionStyle().textColor;if(key==='_effect'){const f=active()?.effects?.find(v=>v.id===$('#fillPopover').dataset.effectId);return f?.[$('#fillPopover').dataset.effectField||'color']||'#7857de'}if(key==='_ink')return app.inkSettings.color;const e=active();if(key==='_docBackground')return app.doc.background;if(key==='fill'&&e?.type==='text'&&(e.fillType||'solid')==='solid')return e.textColor||'#000000';return e?.[key]||'#ffffff'}
 function syncTextFill(e){if(e?.type==='text'&&(e.fillType||'solid')==='solid')e.fill=e.textColor||'#000000'}
@@ -3219,7 +3219,13 @@ function refreshPickerVisual(updateChannels=true){const p=$('#fillPopover');if(p
 function fillPreviewMode(k){const e=active();return k!=='fill'?'solid':e?.fillType||'solid'}
 function repositionFillPopover(){const p=$('#fillPopover');if(p.classList.contains('hidden'))return;if(fxColorAnchor){positionEffectColorPopover();return}const anchor=$('#inspector [data-fill-open="'+p.dataset.key+'"]');const y=anchor?.getBoundingClientRect()?.top??220;
  p.style.top=Math.max(54,Math.min(y,innerHeight-p.offsetHeight-12))+'px';}
-function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=active(),type=fillPreviewMode(key),colors=[...new Set([...(app.doc.palette||[]),app.doc.background,...app.doc.elements.flatMap(o=>[o.fill,o.fill2,o.stroke,o.textColor])].map(normalizeHex).filter(Boolean))].slice(0,40);
+function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=active(),type=fillPreviewMode(key);
+ const savedColors=[...new Set((app.doc.palette||[]).map(normalizeHex).filter(Boolean))].slice(0,40);
+ const usedColors=[...new Set([app.doc.background,...app.doc.elements.flatMap(o=>[o.fill,o.fill2,o.stroke,o.textColor])].map(normalizeHex).filter(Boolean))].filter(c=>!savedColors.includes(c)).slice(0,Math.max(0,40-savedColors.length));
+ const managing=p.dataset.paletteEdit==='1';
+ const paletteSwatch=(color,saved)=>saved&&managing
+  ? `<button type="button" data-cp-remove="${color}" class="cp-swatch-remove" aria-label="Удалить сохранённый цвет ${color}" title="Удалить ${color} из сохранённых цветов" style="background:${color}"><span aria-hidden="true">×</span></button>`
+  : `<button type="button" data-fill-palette="${color}" aria-label="Выбрать цвет ${color}" title="${color}" style="background:${color}"></button>`;
  const labels={_effect:'Цвет эффекта',_ink:'Цвет кисти / карандаша',_docBackground:'Фон холста',stroke:'Обводка',fill:'Заливка',textColor:'Цвет текста'};
  const stopPicker=type==='gradient'&&key==='fill'?gradientStopsUI(e):'';
  p.classList.toggle('cp-gradient-active',type==='gradient');p.innerHTML=`<div class="popover-head"><strong>${labels[key]||'Заливка'}</strong><button data-fill-close aria-label="Закрыть">✕</button></div><div class="cp-body">
@@ -3230,7 +3236,9 @@ function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=activ
  <div class="cp-slider-row"><button class="cp-eyedropper" title="Пипетка: взять цвет с холста" data-cp-eyedrop>${uiIcon('pipette')}</button><div class="cp-sliders"><input id="cpHue" class="cp-hue" type="range" min="0" max="360" step="1" aria-label="Цветовой тон"><input id="cpAlpha" class="cp-alpha" type="range" min="0" max="100" step="1" aria-label="Непрозрачность"></div></div>
  <div class="cp-channels"><select id="cpFormat" aria-label="Цветовая модель">${['HEX','RGB','CSS','HSL','HSB'].map(v=>`<option ${v===p.dataset.format?'selected':''}>${v}</option>`).join('')}</select><div id="cpChannels" class="cp-channel-values"></div><label class="cp-opacity"><input id="cpAlphaInput" type="number" min="0" max="100" aria-label="Прозрачность в процентах">%</label></div>
  `}
- </div><div class="cp-palette"><div class="cp-palette-head"><span>Цвета проекта</span><button data-cp-add class="cp-plus" title="Сохранить свой цвет">+</button></div><div class="cp-add-row"><input data-cp-savehex aria-label="HEX для добавления в палитру" value="${cpCurrentHex().toUpperCase()}"><span>HEX</span></div><div class="cp-palette-grid">${colors.map(c=>`<button data-fill-palette="${c}" title="${c}" style="background:${c}"></button>`).join('')}</div></div>`;
+ </div><div class="cp-palette"><div class="cp-palette-head"><span>Цвета проекта</span><div class="cp-palette-actions"><button type="button" data-cp-manage class="cp-plus cp-manage ${managing?'active':''}" aria-label="${managing?'Завершить удаление цветов':'Управлять сохранёнными цветами'}" aria-pressed="${managing}" title="${managing?'Готово':'Удалить сохранённые цвета'}">${managing?'✓':uiIcon('trash')}</button><button type="button" data-cp-add class="cp-plus" title="Сохранить свой цвет" aria-label="Сохранить цвет в палитру">+</button></div></div><div class="cp-add-row"><input data-cp-savehex aria-label="HEX для добавления в палитру" value="${cpCurrentHex().toUpperCase()}"><span>HEX</span></div>
+ <div class="cp-palette-caption">Сохранённые цвета</div><div class="cp-palette-grid cp-palette-saved">${savedColors.map(c=>paletteSwatch(c,true)).join('')||'<span class="cp-palette-empty">Пока нет сохранённых цветов</span>'}</div>
+ ${usedColors.length?`<div class="cp-palette-caption cp-palette-used-caption">Цвета на карточке</div><div class="cp-palette-grid cp-palette-used">${usedColors.map(c=>paletteSwatch(c,false)).join('')}</div>`:''}</div>`;
  refreshPickerVisual();requestAnimationFrame(repositionFillPopover);
 }
 function setFillMode(mode){if(app.wysiwyg&&!fallbackInlineWysiwyg('Тип заливки'))return;const e=active(),p=$('#fillPopover');if(!e)return;const previous=e.fillType;if(e.type==='text'&&e.fillType==='solid'&&mode!=='solid')e.fill=e.textColor||'#000000';
@@ -3288,13 +3296,17 @@ $('#fillPopover').addEventListener('change',ev=>{
 });
 
 $('#fillPopover').addEventListener('click',async ev=>{
- const p=$('#fillPopover'),b=ev.target.closest('[data-fill-mode],[data-fill-close],[data-fill-image],[data-cp-eyedrop],[data-fill-palette],[data-cp-add]');if(!b)return;
+ const p=$('#fillPopover'),b=ev.target.closest('[data-fill-mode],[data-fill-close],[data-fill-image],[data-cp-eyedrop],[data-fill-palette],[data-cp-add],[data-cp-manage],[data-cp-remove]');if(!b)return;
  if(b.hasAttribute('data-fill-close')){closeFillPopover();resumeInlineTextFromButton();return}
  if(b.hasAttribute('data-fill-mode')){setFillMode(b.dataset.fillMode);return}
- if((b.hasAttribute('data-fill-image')||b.hasAttribute('data-cp-add'))&&app.wysiwyg&&!fallbackInlineWysiwyg('Действие палитры'))return;
+ if(b.hasAttribute('data-cp-manage')){p.dataset.paletteEdit=p.dataset.paletteEdit==='1'?'0':'1';renderFillPopover();return}
+ if((b.hasAttribute('data-fill-image')||b.hasAttribute('data-cp-add')||b.hasAttribute('data-cp-remove'))&&app.wysiwyg&&!fallbackInlineWysiwyg('Действие палитры'))return;
  if(b.hasAttribute('data-fill-image')){app.pendingImage={kind:'fill',id:active()?.id};$('#imageInput').click();return}
  if(b.hasAttribute('data-fill-palette')){cpLiveColor(b.dataset.fillPalette,true);refreshPickerVisual();resumeInlineTextFromButton();return}
- if(b.hasAttribute('data-cp-add')){const color=normalizeHex(p.querySelector('[data-cp-savehex]')?.value);if(!color){toast('Введите HEX, например #B08CFF');return}app.doc.palette??=[];if(!app.doc.palette.includes(color))app.doc.palette.push(color);commit();renderFillPopover();toast('Цвет добавлен в палитру');return}
+ if(b.hasAttribute('data-cp-remove')){const color=normalizeHex(b.dataset.cpRemove),palette=app.doc.palette||[];
+  if(!color||!palette.some(v=>normalizeHex(v)===color))return;
+  app.doc.palette=palette.filter(v=>normalizeHex(v)!==color);commit('Удаление сохранённого цвета');renderFillPopover();toast('Цвет удалён из сохранённых');return}
+ if(b.hasAttribute('data-cp-add')){const color=normalizeHex(p.querySelector('[data-cp-savehex]')?.value);if(!color){toast('Введите HEX, например #B08CFF');return}app.doc.palette??=[];if(!app.doc.palette.some(v=>normalizeHex(v)===color)){app.doc.palette.push(color);commit('Добавление сохранённого цвета')}renderFillPopover();toast('Цвет сохранён в палитре');return}
  if(b.hasAttribute('data-cp-eyedrop')){if('EyeDropper'in window&&window.isSecureContext){try{const result=await new EyeDropper().open();cpLiveColor(result.sRGBHex,true);refreshPickerVisual();return}catch{}}
  app.pipetteArmed=true;$('#stageScroller').classList.add('pipette-mode');toast('Пипетка: щёлкни по цвету на карточке');}
 });

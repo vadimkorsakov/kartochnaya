@@ -7,6 +7,9 @@ async function auditZoomKeys(page){
   window.zoomKeyAudit=[];
   window.addEventListener('keydown',event=>{
    if(!(event.ctrlKey||event.metaKey))return;
+   // Playwright sends separate keydowns for Control and the actual zoom key.
+   // Audit only the chord's action key, not the modifier key itself.
+   if(!['Digit0','Numpad0','Equal','NumpadAdd','Minus','NumpadSubtract'].includes(event.code))return;
    const record={code:event.code,key:event.key,prevented:false};
    window.zoomKeyAudit.push(record);
    queueMicrotask(()=>{record.prevented=event.defaultPrevented});

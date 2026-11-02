@@ -4187,7 +4187,7 @@ function mobileV36Render(){
  const previousFontList=mobileV36.querySelector('.mp-font-scroll');
  const previousFontScroll=previousFontList?{scope:previousFontList.dataset.mpFontScope,top:previousFontList.scrollTop}:null;
  mobileV36.innerHTML=content;mobileV36.className='mp-open';
- $('#mobileContext button').forEach(b=>b.classList.toggle('mobile-active',b.dataset.mobile===t));
+ document.querySelectorAll('#mobileContext button').forEach(b=>b.classList.toggle('mobile-active',b.dataset.mobile===t));
  mobileFontHeight();
  const nextFontList=mobileV36.querySelector('.mp-font-scroll');
  if(previousFontScroll&&nextFontList?.dataset.mpFontScope===previousFontScroll.scope)nextFontList.scrollTop=previousFontScroll.top;

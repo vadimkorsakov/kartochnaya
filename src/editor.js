@@ -3224,7 +3224,7 @@ function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=activ
  const usedColors=[...new Set([app.doc.background,...app.doc.elements.flatMap(o=>[o.fill,o.fill2,o.stroke,o.textColor])].map(normalizeHex).filter(Boolean))].filter(c=>!savedColors.includes(c)).slice(0,Math.max(0,40-savedColors.length));
  const managing=p.dataset.paletteEdit==='1';
  const paletteSwatch=(color,saved)=>saved&&managing
-  ? `<button type="button" data-cp-remove="${color}" class="cp-swatch-remove" aria-label="Удалить сохранённый цвет ${color}" title="Удалить ${color} из сохранённых цветов" style="background:${color}"><span aria-hidden="true">×</span></button>`
+  ? `<button type="button" data-cp-remove="${color}" class="cp-swatch-remove" aria-label="Цвет ${color}: нажмите, чтобы удалить; перетащите, чтобы изменить порядок" title="Перетащить для сортировки · нажать для удаления · Alt+←/→ для перемещения" style="background:${color}"><span aria-hidden="true">×</span></button>`
   : `<button type="button" data-fill-palette="${color}" aria-label="Выбрать цвет ${color}" title="${color}" style="background:${color}"></button>`;
  const labels={_effect:'Цвет эффекта',_ink:'Цвет кисти / карандаша',_docBackground:'Фон холста',stroke:'Обводка',fill:'Заливка',textColor:'Цвет текста'};
  const stopPicker=type==='gradient'&&key==='fill'?gradientStopsUI(e):'';
@@ -3236,7 +3236,7 @@ function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=activ
  <div class="cp-slider-row"><button class="cp-eyedropper" title="Пипетка: взять цвет с холста" data-cp-eyedrop>${uiIcon('pipette')}</button><div class="cp-sliders"><input id="cpHue" class="cp-hue" type="range" min="0" max="360" step="1" aria-label="Цветовой тон"><input id="cpAlpha" class="cp-alpha" type="range" min="0" max="100" step="1" aria-label="Непрозрачность"></div></div>
  <div class="cp-channels"><select id="cpFormat" aria-label="Цветовая модель">${['HEX','RGB','CSS','HSL','HSB'].map(v=>`<option ${v===p.dataset.format?'selected':''}>${v}</option>`).join('')}</select><div id="cpChannels" class="cp-channel-values"></div><label class="cp-opacity"><input id="cpAlphaInput" type="number" min="0" max="100" aria-label="Прозрачность в процентах">%</label></div>
  `}
- </div><div class="cp-palette"><div class="cp-palette-head"><span>Цвета проекта</span><div class="cp-palette-actions"><button type="button" data-cp-manage class="cp-plus cp-manage ${managing?'active':''}" aria-label="${managing?'Завершить удаление цветов':'Управлять сохранёнными цветами'}" aria-pressed="${managing}" title="${managing?'Готово':'Удалить сохранённые цвета'}">${managing?'✓':uiIcon('trash')}</button><button type="button" data-cp-add class="cp-plus" title="Сохранить свой цвет" aria-label="Сохранить цвет в палитру">+</button></div></div><div class="cp-add-row"><input data-cp-savehex aria-label="HEX для добавления в палитру" value="${cpCurrentHex().toUpperCase()}"><span>HEX</span></div>
+ </div><div class="cp-palette"><div class="cp-palette-head"><span>Цвета проекта</span><div class="cp-palette-actions"><button type="button" data-cp-manage class="cp-plus cp-manage ${managing?'active':''}" aria-label="${managing?'Завершить редактирование цветов':'Редактировать сохранённые цвета'}" aria-pressed="${managing}" title="${managing?'Готово':'Редактировать сохранённые цвета'}">${managing?'✓':uiIcon('edit')}</button><button type="button" data-cp-add class="cp-plus" title="Сохранить свой цвет" aria-label="Сохранить цвет в палитру">+</button></div></div><div class="cp-add-row"><input data-cp-savehex aria-label="HEX для добавления в палитру" value="${cpCurrentHex().toUpperCase()}"><span>HEX</span></div>
  <div class="cp-palette-caption">Сохранённые цвета</div><div class="cp-palette-grid cp-palette-saved">${savedColors.map(c=>paletteSwatch(c,true)).join('')||'<span class="cp-palette-empty">Пока нет сохранённых цветов</span>'}</div>
  ${usedColors.length?`<div class="cp-palette-caption cp-palette-used-caption">Цвета на карточке</div><div class="cp-palette-grid cp-palette-used">${usedColors.map(c=>paletteSwatch(c,false)).join('')}</div>`:''}</div>`;
  refreshPickerVisual();requestAnimationFrame(repositionFillPopover);
@@ -3293,6 +3293,72 @@ $('#fillPopover').addEventListener('change',ev=>{
  for(const [attr,key] of [['data-stop-position','pos'],['data-stop-hex','color'],['data-stop-alpha','alpha']])if(el.hasAttribute(attr)){
   const id=el.getAttribute(attr);if(key==='color'&&!normalizeHex(el.value)){toast('Некорректный HEX');renderFillPopover();return}changeGradientStop(id,key,el.value,true);return;
  }
+});
+
+// Palette ordering is a document-level change, just like adding/removing a color.
+// Pointer capture works for mouse, pen and touch; the actual order changes only
+// on release, so an abandoned drag cannot leave a half-mutated palette.
+let paletteSwatchDrag=null, suppressPaletteSwatchClick=false;
+function savedPaletteColors(){return [...new Set((app.doc?.palette||[]).map(normalizeHex).filter(Boolean))]}
+function reorderSavedPalette(color,target,after){
+ const colors=savedPaletteColors(),from=colors.indexOf(color),to=colors.indexOf(target);
+ if(from<0||to<0||from===to)return false;
+ let insert=to+(after?1:0);colors.splice(from,1);
+ if(from<insert)insert--;
+ colors.splice(insert,0,color);
+ if(colors.join('|')===savedPaletteColors().join('|'))return false;
+ app.doc.palette=colors;commit('Порядок сохранённых цветов');renderFillPopover();return true;
+}
+function clearPaletteDrag(){
+ const drag=paletteSwatchDrag;paletteSwatchDrag=null;
+ if(!drag)return;
+ drag.source.style.transform='';drag.source.classList.remove('cp-swatch-dragging');
+ for(const node of $('#fillPopover').querySelectorAll('.cp-swatch-drop-before,.cp-swatch-drop-after'))
+  node.classList.remove('cp-swatch-drop-before','cp-swatch-drop-after');
+ try{if(drag.source.hasPointerCapture(drag.pointerId))drag.source.releasePointerCapture(drag.pointerId)}catch{}
+}
+$('#fillPopover').addEventListener('pointerdown',ev=>{
+ const source=ev.target.closest('.cp-palette-saved [data-cp-remove]');
+ if(!source||ev.button!==0||$('#fillPopover').dataset.paletteEdit!=='1'||!app.doc||app.wysiwyg)return;
+ paletteSwatchDrag={source,color:source.dataset.cpRemove,pointerId:ev.pointerId,x:ev.clientX,y:ev.clientY,dragging:false,target:null,after:false};
+ try{source.setPointerCapture(ev.pointerId)}catch{paletteSwatchDrag=null}
+});
+$('#fillPopover').addEventListener('pointermove',ev=>{
+ const drag=paletteSwatchDrag;if(!drag||ev.pointerId!==drag.pointerId)return;
+ const dx=ev.clientX-drag.x,dy=ev.clientY-drag.y;
+ if(!drag.dragging&&Math.hypot(dx,dy)<6)return;
+ if(!drag.dragging){drag.dragging=true;drag.source.classList.add('cp-swatch-dragging')}
+ drag.source.style.transform=`translate(${dx}px,${dy}px)`;
+ const target=document.elementFromPoint(ev.clientX,ev.clientY)?.closest('.cp-palette-saved [data-cp-remove]');
+ const after=!!target&&ev.clientX>=target.getBoundingClientRect().left+target.getBoundingClientRect().width/2;
+ for(const node of $('#fillPopover').querySelectorAll('.cp-swatch-drop-before,.cp-swatch-drop-after'))
+  node.classList.remove('cp-swatch-drop-before','cp-swatch-drop-after');
+ drag.target=target&&target!==drag.source?target.dataset.cpRemove:null;drag.after=after;
+ if(drag.target)target.classList.add(after?'cp-swatch-drop-after':'cp-swatch-drop-before');
+ ev.preventDefault();
+});
+function finishPaletteSwatchDrag(ev){
+ const drag=paletteSwatchDrag;if(!drag||ev.pointerId!==drag.pointerId)return;
+ const {dragging,color,target,after}=drag;
+ if(dragging){suppressPaletteSwatchClick=true;setTimeout(()=>{suppressPaletteSwatchClick=false},0);}
+ clearPaletteDrag();
+ if(ev.type==='pointerup'&&dragging&&target)reorderSavedPalette(color,target,after);
+}
+$('#fillPopover').addEventListener('pointerup',finishPaletteSwatchDrag);
+$('#fillPopover').addEventListener('pointercancel',finishPaletteSwatchDrag);
+$('#fillPopover').addEventListener('click',ev=>{
+ if(!suppressPaletteSwatchClick||!ev.target.closest('[data-cp-remove]'))return;
+ suppressPaletteSwatchClick=false;ev.preventDefault();ev.stopImmediatePropagation();
+},true);
+$('#fillPopover').addEventListener('keydown',ev=>{
+ const source=ev.target.closest('.cp-palette-saved [data-cp-remove]');
+ if(!source||!ev.altKey||!['ArrowLeft','ArrowRight'].includes(ev.key))return;
+ ev.preventDefault();
+ const colors=savedPaletteColors(),index=colors.indexOf(source.dataset.cpRemove),next=index+(ev.key==='ArrowLeft'?-1:1);
+ if(next<0||next>=colors.length)return;
+ const nextColor=colors[next];
+ if(reorderSavedPalette(source.dataset.cpRemove,nextColor,ev.key==='ArrowRight'))
+  $('#fillPopover').querySelector(`.cp-palette-saved [data-cp-remove="${source.dataset.cpRemove}"]`)?.focus();
 });
 
 $('#fillPopover').addEventListener('click',async ev=>{

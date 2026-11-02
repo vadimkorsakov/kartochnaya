@@ -1,18 +1,24 @@
 const {test,expect,openHome,createDocument}=require('./helpers');
 
-// Observe the real cancelable key event before the app intercepts it in
-// capture phase. The audit runs in a microtask after all key listeners.
+// Record the actual preventDefault call. Reading defaultPrevented from a
+// queued microtask is unreliable when the app stops propagation in capture.
 async function auditZoomKeys(page){
  await page.addInitScript(()=>{
   window.zoomKeyAudit=[];
+  const keyRecords=new WeakMap();
+  const nativePreventDefault=Event.prototype.preventDefault;
+  Event.prototype.preventDefault=function(...args){
+   const record=keyRecords.get(this);
+   if(record)record.prevented=true;
+   return nativePreventDefault.apply(this,args);
+  };
   window.addEventListener('keydown',event=>{
    if(!(event.ctrlKey||event.metaKey))return;
-   // Playwright sends separate keydowns for Control and the actual zoom key.
-   // Audit only the chord's action key, not the modifier key itself.
+   // Playwright sends a separate keydown for the Control modifier.
    if(!['Digit0','Numpad0','Equal','NumpadAdd','Minus','NumpadSubtract'].includes(event.code))return;
    const record={code:event.code,key:event.key,prevented:false};
+   keyRecords.set(event,record);
    window.zoomKeyAudit.push(record);
-   queueMicrotask(()=>{record.prevented=event.defaultPrevented});
   },{capture:true});
  });
 }

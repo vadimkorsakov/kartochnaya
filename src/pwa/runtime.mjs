@@ -60,11 +60,18 @@ export function installNetlifyPWA({ prepare, resume }) {
   heading.append(label, close); actions.append(button, retry, detailsToggle);
   panel.append(heading, actions, details); document.body.append(panel);
   document.getElementById('documentTabs').append(toggle);
+
   const mobile = window.matchMedia('(max-width:760px)');
   let screen = document.getElementById('homeScreen')?.classList.contains('hidden') ? 'editor' : 'home';
   let expanded = false;
   let preparing = false, confirmedReady = false, announceSuccess = false, displayedWorker, collapseTimer;
   const registrationDisplay = new WeakMap();
+  function positionPanel() {
+    const rect = toggle.getBoundingClientRect();
+    const width = Math.min(340, window.innerWidth - 16);
+    panel.style.left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width)) + 'px';
+    panel.style.top = Math.max(8, Math.min(window.innerHeight - 110, rect.bottom + 7)) + 'px';
+  }
   function layout() {
     const visible = !mobile.matches || screen === 'home';
     const host = document.getElementById(mobile.matches ? 'homePwaStatus' : 'documentTabs');
@@ -73,14 +80,22 @@ export function installNetlifyPWA({ prepare, resume }) {
     panel.hidden = !visible || !expanded;
     toggle.setAttribute('aria-expanded', String(!panel.hidden));
     detailsToggle.setAttribute('aria-expanded', String(!details.hidden));
-    document.documentElement.style.setProperty('--pwa-notice-height', (panel.hidden ? 0 : 36 + (actions.hidden ? 0 : 36) + (details.hidden ? 0 : 60)) + 'px');
+    if (!panel.hidden) positionPanel();
   }
-  document.addEventListener('karto-screen-change', event => { screen = event.detail.screen; layout(); });
-  mobile.addEventListener('change', layout);
+  document.addEventListener('karto-screen-change', event => { screen = event.detail.screen; expanded = false; layout(); });
+  mobile.addEventListener('change', () => { expanded = false; layout(); });
+  window.addEventListener('resize', layout);
+  document.addEventListener('pointerdown', event => {
+    if (expanded && !panel.contains(event.target) && !toggle.contains(event.target)) collapse();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (expanded && event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); collapse();
+    }
+  }, true);
   function collapse() {
     clearTimeout(collapseTimer); expanded = false; details.hidden = true;
-    // Keep keyboard focus on a visible control after closing or auto-collapse.
-    if (!toggle.hidden && panel.contains(document.activeElement)) toggle.focus();
+    if (panel.contains(document.activeElement) && !toggle.hidden) toggle.focus();
     layout();
   }
   close.onclick = collapse;
@@ -89,18 +104,19 @@ export function installNetlifyPWA({ prepare, resume }) {
     clearTimeout(collapseTimer); expanded = true; layout();
   };
   detailsToggle.onclick = () => { details.hidden = !details.hidden; layout(); };
-  function notice(message, { expanded: showExpanded = true, detail = '', retryable = false, update = false, success = false } = {}) {
+  function notice(message, { detail = '', retryable = false, update = false, success = false } = {}) {
     clearTimeout(collapseTimer);
     label.textContent = label.title = message;
     details.textContent = detail; details.hidden = true; detailsToggle.hidden = !detail;
     retry.hidden = !retryable; button.hidden = !update;
     actions.hidden = !detail && !retryable && !update;
-    toggle.textContent = update ? 'Версия ↑' : retryable ? 'Офлайн !' : confirmedReady ? 'Офлайн ✓' : 'Офлайн …';
+    const state = update ? 'update' : retryable ? 'error' : confirmedReady ? 'ready' : 'loading';
+    toggle.dataset.state = state; toggle.dataset.ready = String(confirmedReady);
+    toggle.title = message;
     toggle.setAttribute('aria-label', 'Офлайн: ' + message);
-    expanded = showExpanded; layout();
-    if (success) collapseTimer = setTimeout(() => {
-      label.textContent = label.title = 'Готово к работе офлайн'; collapse();
-    }, 4000);
+    // The panel is never opened automatically, including on success or error.
+    layout();
+    if (success && expanded) collapseTimer = setTimeout(collapse, 4000);
   }
   function failed(error) {
     notice(confirmedReady ? 'Не удалось обновить офлайн-копию' : 'Не удалось подготовить офлайн-копию', {

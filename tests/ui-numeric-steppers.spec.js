@@ -6,7 +6,7 @@ const stepButton=(input,direction)=>input.locator('xpath=..').locator('.k-num-st
 
 async function addShapeFromVisibleDock(page){
  await page.locator('#dockShapes').click();
- const shape=page.locator('#shapeTray [data-tray-shape]').first();
+ const shape=page.locator('#shapeTray [data-tray-shape="basic0"]'); // Filled square; first catalog entry is an unfilled line.
  await expect(shape).toBeVisible();
  await shape.click();
  await expect(page.locator('#inspector input[data-key="x"]')).toBeVisible();

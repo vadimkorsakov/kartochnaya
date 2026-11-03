@@ -1198,6 +1198,38 @@ function drawMeasurements(c){if(!app.altDown||!app.selectedIds.length||app.drag)
 if(other){const cy=clamp((Math.max(a.y,other.y)+Math.min(a.bottom,other.bottom))/2,0,app.doc.height);const cx=clamp((Math.max(a.x,other.x)+Math.min(a.right,other.right))/2,0,app.doc.width);if(a.right<=other.x)measure(a.right,other.x,'x',0,cy);else if(other.right<=a.x)measure(other.right,a.x,'x',0,cy);if(a.bottom<=other.y)measure(a.bottom,other.y,'y',cx,0);else if(other.bottom<=a.y)measure(other.bottom,a.y,'y',cx,0)}else{const y=clamp((a.y+a.bottom)/2,10*z,app.doc.height-10*z),x=clamp((a.x+a.right)/2,10*z,app.doc.width-10*z);if(a.x>0)measure(0,a.x,'x',0,y);if(a.right<app.doc.width)measure(a.right,app.doc.width,'x',0,y);if(a.y>0)measure(0,a.y,'y',x,0);if(a.bottom<app.doc.height)measure(a.bottom,app.doc.height,'y',x,0)}c.restore()}
 function hitSavedGuide(point){if(!app.showRulers)return -1;const t=5/app.zoom;return (app.doc.rulers||[]).findIndex(g=>Math.abs(g.pos-(g.axis==='x'?point.x:point.y))<=t)}
 function drawSavedGuides(c){if(!app.showRulers)return;const z=1/app.zoom;c.save();c.strokeStyle='#16a3bf';c.lineWidth=1*z;c.setLineDash([5*z,3*z]);for(const guide of [...(app.doc.rulers||[]),...(app.guideDrag?[app.guideDrag]:[])]){c.beginPath();if(guide.axis==='x'){c.moveTo(guide.pos,0);c.lineTo(guide.pos,app.doc.height)}else{c.moveTo(0,guide.pos);c.lineTo(app.doc.width,guide.pos)}c.stroke()}c.restore()}
+
+function drawGuideEdgeMeasurements(c){
+ // Guides created from a ruler and existing guides moved on the canvas share
+ // the same temporary overlay. Do not show it for stationary saved guides.
+ if(!app.showRulers||!app.doc)return;
+ const guide=app.guideDrag||(app.drag?.type==='guideMove'?app.doc.rulers?.[app.drag.index]:null);
+ if(!guide||!['x','y'].includes(guide.axis)||!Number.isFinite(guide.pos))return;
+ const vertical=guide.axis==='x',length=vertical?app.doc.width:app.doc.height;
+ const cross=(vertical?app.doc.height:app.doc.width)/2;
+ const position=clamp(guide.pos,0,length),z=1/app.zoom;
+ c.save();c.lineWidth=z;c.strokeStyle='#ee4fa3';c.fillStyle='#ee4fa3';
+ const segment=(from,to)=>{
+  c.beginPath();
+  if(vertical){
+   c.moveTo(from,cross);c.lineTo(to,cross);
+   for(const x of [from,to]){c.moveTo(x,cross-5*z);c.lineTo(x,cross+5*z)}
+  }else{
+   c.moveTo(cross,from);c.lineTo(cross,to);
+   for(const y of [from,to]){c.moveTo(cross-5*z,y);c.lineTo(cross+5*z,y)}
+  }
+  c.stroke();
+  const label=String(Math.round(Math.abs(to-from)));
+  c.font=`${11*z}px Arial`;
+  const half=(c.measureText(label).width+12*z)/2;
+  const inset=Math.min(half,length/2);
+  const center=clamp((from+to)/2,inset,length-inset);
+  drawLabel(c,label,vertical?center:cross,vertical?cross:center);
+ };
+ segment(0,position);
+ segment(position,length);
+ c.restore();
+}
 function toggleRulers(){app.showRulers=!app.showRulers;$('#toggleRulersBtn').classList.toggle('on',app.showRulers);$('#toggleRulersBtn').setAttribute('aria-pressed',String(app.showRulers));$('#rulerTop').hidden=!app.showRulers;$('#rulerLeft').hidden=!app.showRulers;paint();renderRulers()}
 function renderRulers(){if(!app.doc||!app.showRulers)return;const sc=$('#stageScroller').getBoundingClientRect(),cr=canvas.getBoundingClientRect(),top=$('#rulerTop'),left=$('#rulerLeft');const factor=devicePixelRatio||1;top.style.top=(sc.top-$('#stageScroller').parentElement.getBoundingClientRect().top)+'px';left.style.top=top.style.top;
  for(const [el,w,h] of [[top,sc.width,23],[left,23,sc.height]]){el.style.width=w+'px';el.style.height=h+'px';el.width=Math.max(1,Math.round(w*factor));el.height=Math.max(1,Math.round(h*factor))}
@@ -1917,7 +1949,7 @@ function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDo
  // Regional pixelation must sample native document pixels, even in a scaled preview.
  const t=c.getTransform(),nativeRegion=(t.a!==1||t.d!==1||t.b!==0||t.c!==0)&&stack.elements.some(e=>e.isFxRegion&&isLayerVisible(e,stack)&&(e.effects||[]).some(f=>f.type==='pixelate'&&f.enabled!==false));
  if(nativeRegion){const native=fxCanvas(d);paintDocument(native.getContext('2d'),stack);c.drawImage(native,0,0)}
- else{c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack)}if(withSelection){drawSavedGuides(c);drawGuides(c);drawPixelSelectionOverlay(c);
+ else{c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack)}if(withSelection){drawSavedGuides(c);drawGuideEdgeMeasurements(c);drawGuides(c);drawPixelSelectionOverlay(c);
 const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>!e.isFxRegion&&isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();if(app.cropMode)drawCropControls(c,e);drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(chosen),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);drawMobileNudgeMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
 function paint(){if(!app.doc)return;if(app.inkTool)inkMoveCursor(lastInkPointer);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);const ratio=app.renderScale||1;ctx.setTransform(app.zoom*ratio,0,0,app.zoom*ratio,0,0);paintDocument(ctx,app.doc,true);if(app.drag?.type==='newText'){const a=app.drag.start,b=app.drag.current||a;ctx.save();ctx.lineWidth=1/app.zoom;ctx.setLineDash([5/app.zoom,3/app.zoom]);ctx.strokeStyle='#ab8aff';ctx.fillStyle='#9a73ee22';ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.restore()}scheduleInkPreview();ctx.restore();paintCropPreview();updateQuickBubble()}
 // Give the quick-actions bubble its normal placement. If the resident arrows

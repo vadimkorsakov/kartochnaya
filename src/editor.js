@@ -1989,20 +1989,18 @@ function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDo
  else{c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack)}if(withSelection){drawSavedGuides(c);drawGuideEdgeMeasurements(c);drawGuides(c);drawPixelSelectionOverlay(c);
 const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>!e.isFxRegion&&isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(chosen),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);drawMobileNudgeMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
 function paint(){if(!app.doc)return;if(app.inkTool)inkMoveCursor(lastInkPointer);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);const ratio=app.renderScale||1;ctx.setTransform(app.zoom*ratio,0,0,app.zoom*ratio,0,0);paintDocument(ctx,app.doc,true);if(app.drag?.type==='newText'){const a=app.drag.start,b=app.drag.current||a;ctx.save();ctx.lineWidth=1/app.zoom;ctx.setLineDash([5/app.zoom,3/app.zoom]);ctx.strokeStyle='#ab8aff';ctx.fillStyle='#9a73ee22';ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.restore()}scheduleInkPreview();ctx.restore();paintCropPreview();updateQuickBubble()}
-// Give the quick-actions bubble its normal placement. If the resident arrows
-// would overlap it, move the arrows instead of pushing the bubble over selection.
+// Keep the edge-to-edge nudge strip anchored to the mobile dock. If it would
+// overlap the selection's floating actions, reposition the bubble instead.
 function mobileNudgeAvoidBubble(bubble){
  const panel=$('#mobileNudge');
  if(!panel||panel.classList.contains('hidden'))return;
  const a=bubble.getBoundingClientRect(),b=panel.getBoundingClientRect(),gap=8;
  if(a.right+gap<=b.left||b.right+gap<=a.left||a.bottom+gap<=b.top||b.bottom+gap<=a.top)return;
- const stage=$('#stageScroller').getBoundingClientRect(),toolbar=$('#mobileToolbars').getBoundingClientRect(),vv=window.visualViewport;
- const top=Math.max(stage.top,vv?.offsetTop||0)+gap;
- const bottom=Math.min(stage.bottom,toolbar.top,(vv?.offsetTop||0)+(vv?.height||innerHeight))-gap;
- const above=a.top-b.height-gap,below=a.bottom+gap;
- if(above>=top)panel.style.top=above+'px';
- else if(below+b.height<=bottom)panel.style.top=below+'px';
- else bubble.classList.add('hidden'); // The small viewport cannot fit both controls safely.
+ const stage=$('#stageScroller').getBoundingClientRect(),vv=window.visualViewport;
+ const minTop=Math.max(stage.top,vv?.offsetTop||0)+gap;
+ const above=b.top-a.height-gap;
+ if(above>=minTop)bubble.style.top=above+'px';
+ else bubble.classList.add('hidden'); // The strip is stable on narrow viewports.
 }
 // Hide floating actions while a finger/stylus/mouse is working on the mobile
 // canvas. Tracking pointer IDs handles ordinary drags and multi-touch without
@@ -2027,7 +2025,9 @@ function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if
  const left=Math.max(stage.left,vv?.offsetLeft||0)+gap;
  const right=Math.min(stage.right,(vv?.offsetLeft||0)+(vv?.width||innerWidth))-gap;
  const top=Math.max(stage.top,vv?.offsetTop||0)+gap;
- const bottom=Math.min(stage.bottom,(vv?.offsetTop||0)+(vv?.height||innerHeight),toolbar.height?toolbar.top:Infinity)-gap;
+ const strip=$('#mobileNudge');
+ const stripTop=strip&&!strip.classList.contains('hidden')?strip.getBoundingClientRect().top:Infinity;
+ const bottom=Math.min(stage.bottom,(vv?.offsetTop||0)+(vv?.height||innerHeight),toolbar.height?toolbar.top:Infinity,stripTop)-gap;
  const {width,height}=bubble.getBoundingClientRect();
  if(!width||!height)return; // A conflicting panel may hide the bubble via CSS.
  if(right-left<width||bottom-top<height){bubble.classList.add('hidden');return}
@@ -4013,10 +4013,13 @@ function mobileNudgeSync(){
  const show=mobileV36Small()&&app.doc&&!homeVisible()&&!$('#app').classList.contains('hidden')&&picked().some(e=>isLayerVisible(e)&&!e.isFxRegion)&&!app.cropMode&&!app.editingId&&!blocked;
  panel.classList.toggle('hidden',!show);
  if(show&&!panel.children.length)panel.innerHTML=mobileNudgeButtons();
- if(!show){if(mobileV36Interaction?.target.closest('#mobileNudge'))mobileV36FinishInteraction();panel.replaceChildren();if(mobileNudgeMeasureDoc&&!(mobileV36State.tool==='nudge'&&!homeVisible()&&app.selectedIds.length)){mobileNudgeClearMeasurements();if(app.doc)requestAnimationFrame(paint)}return}
+ if(!show){if(mobileV36Interaction?.target.closest('#mobileNudge'))mobileV36FinishInteraction();panel.replaceChildren();if(mobileNudgeMeasureDoc){mobileNudgeClearMeasurements();if(app.doc)requestAnimationFrame(paint)}return}
  const vv=window.visualViewport,toolbar=$('#mobileToolbars').getBoundingClientRect();
- panel.style.left=((vv?.offsetLeft||0)+(vv?.width||innerWidth)/2)+'px';
- panel.style.top=(Math.min(toolbar.top,(vv?.offsetTop||0)+(vv?.height||innerHeight))-panel.getBoundingClientRect().height-8)+'px';
+ // An edge-to-edge resident control, flush with the mobile dock. VisualViewport
+ // coordinates keep it aligned while browser UI expands/collapses.
+ panel.style.left=(vv?.offsetLeft||0)+'px';
+ panel.style.width=(vv?.width||innerWidth)+'px';
+ panel.style.top=(Math.min(toolbar.top,(vv?.offsetTop||0)+(vv?.height||innerHeight))-panel.getBoundingClientRect().height)+'px';
  panel.querySelectorAll('button').forEach(b=>b.disabled=!picked().some(e=>!isLayerLocked(e)));
 }
 const mobileNudgeObserver=new MutationObserver(()=>mobileNudgeSync());
@@ -4042,17 +4045,17 @@ function drawMobileNudgeMeasurements(c){
 }
 
 const mobileV36Text=()=>active()?.type==='text';
-const mobileV36Icons={edit:'✎',font:'Ff',size:'aA',color:'A̲',format:'B≡',spacing:'↕T',effects:'✧',opacity:'◐',layers:'▤',position:'▦',nudge:'✥',more:'•••',fit:'▣',crop:'▧',replace:'▤',stroke:'▱',round:'◜',settings:'⚙'};
-const mobileV36Label={edit:'Править',font:'Шрифт',size:'Размер',color:'Цвет',format:'Формат',spacing:'Интервал',effects:'Эффекты',opacity:'Прозрачн.',layers:'Слои',position:'Расположение',nudge:'Сдвинуть',more:'Ещё',fit:'Размещение',crop:'Обрезка',replace:'Заменить',stroke:'Обводка',round:'Скругление',settings:'Свойства'};
-const mobileV36OrderText=['edit','font','size','color','format','spacing','effects','opacity','layers','position','nudge','more'];
-const mobileV36OrderOther=['color','opacity','effects','layers','position','nudge','more'];
+const mobileV36Icons={edit:'✎',font:'Ff',size:'aA',color:'A̲',format:'B≡',spacing:'↕T',effects:'✧',opacity:'◐',layers:'▤',position:'▦',more:'•••',fit:'▣',crop:'▧',replace:'▤',stroke:'▱',round:'◜',settings:'⚙'};
+const mobileV36Label={edit:'Править',font:'Шрифт',size:'Размер',color:'Цвет',format:'Формат',spacing:'Интервал',effects:'Эффекты',opacity:'Прозрачн.',layers:'Слои',position:'Расположение',more:'Ещё',fit:'Размещение',crop:'Обрезка',replace:'Заменить',stroke:'Обводка',round:'Скругление',settings:'Свойства'};
+const mobileV36OrderText=['edit','font','size','color','format','spacing','effects','opacity','layers','position','more'];
+const mobileV36OrderOther=['color','opacity','effects','layers','position','more'];
 const mobileV36Escape=s=>html(String(s??''));
 function mobileV36RefreshTools(){
  const has=app.selectedIds.length>0;
  if(mobileV36State.tool&&mobileV36State.elementId!==app.selected)mobileV36Close();
  const kind=mobileV36Text()?'text':active()?.type==='image'||(active()?.fillType==='image'&&active()?.imageSrc)?'image':has?'shape':'none';
  $('#mobileContext').classList.toggle('hidden',!has);$('#mobilePrimary').classList.toggle('hidden',has);
- let order=kind==='text'?mobileV36OrderText:kind==='image'?['replace','crop','effects','opacity','layers','position','nudge','more']:kind==='shape'?['color','stroke','effects','opacity','layers','position','nudge','more']:[];
+ let order=kind==='text'?mobileV36OrderText:kind==='image'?['replace','crop','effects','opacity','layers','position','more']:kind==='shape'?['color','stroke','effects','opacity','layers','position','more']:[];
  const oldScroll=$('#mobileContext').scrollLeft;
  $('#mobileContext').innerHTML=order.map(key=>`<button type="button" class="${mobileV36State.tool===key?'mobile-active':''}" data-mobile="${key}" title="${mobileV36Label[key]}"><span class="mp-action-symbol">${mobileV36Icons[key]||'⌁'}</span><span>${mobileV36Label[key]}</span></button>`).join('');
  $('#mobileContext').scrollLeft=oldScroll;
@@ -4137,7 +4140,7 @@ function mobileV36Open(tool,expanded){
  closeMobileOverlays('mobileProperties');closeToolPopovers();
  if(mobileV36State.tool!==tool){mobileV36State.fontTall=false;mobileV36State.fontSearch=false;mobileV36State.userViewAdjusted=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.effectId=null;mobileV36State.tab=tool==='position'?'sort':'solid'}
  mobileV36State.tool=tool;mobileV36State.elementId=app.selected;
- mobileV36State.expanded=expanded===undefined?!['font','size','color','opacity','nudge'].includes(tool):!!expanded;
+ mobileV36State.expanded=expanded===undefined?!['font','size','color','opacity'].includes(tool):!!expanded;
  mobileV36Render();
 }
 function mobileV36Expand(){mobileV36State.expanded=true;mobileV36Render()}
@@ -4271,7 +4274,6 @@ function mobileV36Render(){
   if(t==='font')content=mobileV36Pill(`<div class="mp-horizontal">${fontFamilies().map(mobileV36FontChip).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
   if(t==='size'||t==='opacity'){const key=t==='size'?'fontSize':'opacity',val=(t==='size'&&inlineStyleRange()?inlineSelectionStyle().fontSize:e[key])??100,min=t==='size'?1:0,max=t==='size'?500:100;content=mobileV36Pill(`${mobileV36Slider(key,val,min,max,1)}${mobileV36Stepper(key,val,min,max,1)}${t==='size'&&e.type==='text'&&(!e.textMode||e.textMode==='horizontal')?`<label class="mp-auto-font" title="Подбирать размер под рамку"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Авто</span></label>`:''}`)}
   if(t==='color')content=mobileV36Pill(`<button class="mp-circle mp-rainbow" data-mp-action="colorEdit">＋</button><div class="mp-swatches">${mobileV36Colors().map(mobileV36Swatch).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
-  if(t==='nudge')content=mobileV36Pill(`<div class="mp-grid" style="flex:1">${mobileNudgeButtons()}</div>`)
  }else{
   if(t==='font')content=mobileV36FontPanel();
   else if(t==='color')content=mobileV36ColorPanel();
@@ -4281,7 +4283,7 @@ function mobileV36Render(){
    else if(t==='stroke')content=mobileV36StrokePanel();
   else if(t==='position')content=mobileV36PositionPanel();
   else if(t==='more')content=mobileV36MorePanel();
-  else if(t==='size'||t==='opacity'||t==='nudge'){s.expanded=false;return mobileV36Render()}
+  else if(t==='size'||t==='opacity'){s.expanded=false;return mobileV36Render()}
   else content=mobileV36Sheet(mobileV36Label[t]||'Свойства',`<div class="mp-field">Прозрачность${mobileV36Slider('opacity',e.opacity??100,0,100,1)}</div><div class="mp-subtitle">Дополнительные параметры доступны в разделе «Ещё»</div>`);
  }
  if(!content){s.expanded=true;return mobileV36Render()}

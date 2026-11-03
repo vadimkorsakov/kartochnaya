@@ -24,23 +24,9 @@ export function waitForOfflineWorker(registration, timeoutMs = 30000) {
 
 export function installNetlifyPWA({ prepare, resume }) {
   if (!('serviceWorker' in navigator)) return;
-  // Reserve space below the tabs instead of covering the canvas or mobile tools.
+  // The icon and optional popover never reserve vertical layout space.
   const style = document.createElement('style');
-  style.textContent = `
-    :root{--pwa-notice-height:0px}
-    body{padding-top:calc(var(--document-tab-height) + var(--pwa-notice-height))}
-    #app{height:calc(var(--v41-visual-height,100dvh) - var(--document-tab-height) - var(--pwa-notice-height))!important}
-    .home-screen{top:calc(var(--document-tab-height) + var(--pwa-notice-height))}
-    #pwaStatus{position:fixed;top:var(--document-tab-height);left:0;right:0;z-index:13;background:#242429;color:#f3efff;font:12px system-ui;box-shadow:inset 0 -1px #51475f}
-    #pwaStatus [hidden],#pwaStatus[hidden]{display:none!important}
-    #pwaStatus .pwa-row{height:36px;display:flex;align-items:center;gap:8px;padding:0 8px}
-    #pwaMessage{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    #pwaStatus button,#pwaToggle{flex:0 0 auto;border:1px solid #625475;border-radius:6px;background:#37313f;color:#f3efff;font:12px system-ui;min-height:32px;padding:4px 8px}
-    #documentTabs #pwaToggle{order:4;border-radius:0;min-width:64px}
-    #pwaStatus button:focus-visible,#pwaToggle:focus-visible{outline:2px solid #b99aff;outline-offset:-2px}
-    #pwaToggle[hidden]{display:none}
-    #pwaDetails{height:60px;overflow:auto;overflow-wrap:anywhere;margin:0;padding:4px 8px;white-space:pre-wrap}
-  `;
+  style.textContent = "\n#pwaStatus{position:fixed;z-index:610;box-sizing:border-box;width:min(340px,calc(100vw - 16px));max-height:min(72dvh,420px);overflow:auto;border:1px solid #625475;border-radius:10px;background:#292630;color:#f3efff;box-shadow:0 16px 35px #0009;font:12px/1.4 system-ui}\n#pwaStatus[hidden],#pwaStatus [hidden],#pwaToggle[hidden]{display:none!important}\n#pwaStatus .pwa-row{display:flex;align-items:center;gap:8px;padding:9px 10px;min-height:36px}\n#pwaStatus .pwa-row+.pwa-row{padding-top:0}\n#pwaMessage{flex:1;min-width:0;overflow-wrap:anywhere}\n#pwaStatus button{flex:0 0 auto;border:1px solid #625475;border-radius:6px;background:#37313f;color:#f3efff;font:12px system-ui;min-height:30px;padding:4px 8px}\n#pwaStatus button:focus-visible,#pwaToggle:focus-visible{outline:2px solid #b99aff;outline-offset:2px}\n#pwaDetails{max-height:150px;overflow:auto;overflow-wrap:anywhere;margin:0;padding:0 10px 10px;white-space:pre-wrap}\n#pwaToggle{position:relative;display:grid;place-items:center;flex:0 0 32px;width:32px;height:30px;padding:5px;border:1px solid #625475;border-radius:6px;background:#302d38;color:#f3efff;cursor:pointer}\n#pwaToggle:hover{background:#423b4b}\n#documentTabs #pwaToggle{order:4;flex:0 0 32px;margin:0 5px 0 2px}\n#homePwaStatus #pwaToggle{margin:0}\n#pwaToggle .pwa-icon{display:block;width:20px;height:20px;fill:currentColor;flex:none}\n#pwaToggle .pwa-icon-saved{display:none}\n#pwaToggle[data-state=\"ready\"] .pwa-icon-loading,\n#pwaToggle[data-state=\"update\"] .pwa-icon-loading,\n#pwaToggle[data-state=\"error\"][data-ready=\"true\"] .pwa-icon-loading{display:none}\n#pwaToggle[data-state=\"ready\"] .pwa-icon-saved,\n#pwaToggle[data-state=\"update\"] .pwa-icon-saved,\n#pwaToggle[data-state=\"error\"][data-ready=\"true\"] .pwa-icon-saved{display:block}\n#pwaToggle[data-state=\"loading\"] .pwa-icon-loading{animation:pwa-cloud-pulse 1.35s ease-in-out infinite}\n#pwaToggle[data-state=\"update\"]::after,#pwaToggle[data-state=\"error\"]::after{content:'';position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;background:#e2b1ff;box-shadow:0 0 0 1px #292630}\n#pwaToggle[data-state=\"error\"]::after{background:#ff999f}\n@keyframes pwa-cloud-pulse{0%,100%{opacity:1}50%{opacity:.35}}\n@media(prefers-reduced-motion:reduce){#pwaToggle[data-state=\"loading\"] .pwa-icon-loading{animation:none}}\n";
   document.head.append(style);
   const panel = document.createElement('aside');
   panel.id = 'pwaStatus';

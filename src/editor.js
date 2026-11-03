@@ -12,7 +12,7 @@ import { prepareProjectImport } from './model/project-integrity.mjs';
 import { remapCanvasGraph, remapDocumentGraph, selectCanvasGraph, canvasGraphIds } from './model/canvas-graph.mjs';
 import { toLocal, boundsOf, handleCoords, gradientLocalPoint, gradientDocPoint } from './core/geometry.mjs';
 import { validateShapeCatalog } from './core/shape-catalog.mjs';
-import { measureVectorArtwork, tightVectorPlacement, vectorPathTransform } from './core/vector-geometry.mjs';
+import { measureVectorArtwork, tightVectorPlacement, vectorPathTransform, vectorPointInFrame } from './core/vector-geometry.mjs';
 import { html, clamp, fmt } from './core/primitives.mjs';
 import { rgbHex, hexRgb, hsvRGB, rgbHSV, rgbHSL, hslRGB, normalizeHex, cpFormatValues } from './core/colors.mjs';
 import { readImageResource } from './render/image-resource.mjs';
@@ -2658,7 +2658,7 @@ if(app.insertTool==='text'){
  if(target&&((target.type==='path'&&target.pathNodes?.length>1)||(target.type==='vector'&&target.vectorD))){
  const text=defaultElement('text');text.text='';text.name='Текст по контуру';text.textMode='path';text.x=target.x;text.y=target.y;text.w=target.w;text.h=target.h;
  if(target.type==='path')text.textPathPoints=target.pathNodes.map(n=>({x:n.x,y:n.y,inX:n.inX??n.x,inY:n.inY??n.y,outX:n.outX??n.x,outY:n.outY??n.y}));
- else {const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',target.vectorD);try{const len=path.getTotalLength();text.textPathPoints=Array.from({length:11},(_,i)=>{const q=path.getPointAtLength(len*i/10);return {x:q.x/100,y:q.y/100}})}catch(err){text.textPathPoints=[{x:0,y:.5},{x:1,y:.5}]}}
+ else {const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',target.vectorD);try{const len=path.getTotalLength();text.textPathPoints=Array.from({length:11},(_,i)=>{const q=path.getPointAtLength(len*i/10);return vectorPointInFrame(target.vectorViewBox,q.x,q.y)})}catch(err){text.textPathPoints=[{x:0,y:.5},{x:1,y:.5}]}}
  text.textPathOffset=0;text.textPathSide='above';app.doc.elements.push(text);setSelected([text.id],true);commit('Текст по векторному контуру');refreshLayers();openInlineText();return;
  }
  }
@@ -4851,7 +4851,7 @@ function boundarySampleElement(src,contourIndex=0){
    const length=p.getTotalLength();if(!Number.isFinite(length)||length<1)return null;
    const mat=part.matrix?new DOMMatrix(part.matrix):null;
    const count=Math.min(1400,Math.max(60,Math.ceil(length/1.7)));
-   const points=Array.from({length:count+1},(_,i)=>{const q=p.getPointAtLength(length*i/count),v=mat?new DOMPoint(q.x,q.y).matrixTransform(mat):q;return{x:v.x/100,y:v.y/100}});
+   const points=Array.from({length:count+1},(_,i)=>{const q=p.getPointAtLength(length*i/count),v=mat?new DOMPoint(q.x,q.y).matrixTransform(mat):q;return vectorPointInFrame(src.vectorViewBox,v.x,v.y)});
    let closed=/[zZ]\s*$/.test(part.d.trim());
    if(Math.hypot(points[0].x-points.at(-1).x,points[0].y-points.at(-1).y)<.006)closed=true;
    return {points,closed};
@@ -4918,7 +4918,7 @@ function boundaryCreate(selection=false){
 // Frames belong to model editing, never to Canvas. Weak keys keep tabs/slides
 // independent without serializing runtime state or copying whole documents.
 const boundarySources=new WeakMap();
-function boundarySourceState(src){return {frame:{x:src.x,y:src.y,w:src.w,h:src.h,rotation:src.rotation||0},signature:JSON.stringify([src.type,src.pathNodes,src.pathClosed,src.corner,src.vectorD,src.vectorId,src.vectorParts,src.w,src.h])}}
+function boundarySourceState(src){return {frame:{x:src.x,y:src.y,w:src.w,h:src.h,rotation:src.rotation||0},signature:JSON.stringify([src.type,src.pathNodes,src.pathClosed,src.corner,src.vectorD,src.vectorId,src.vectorParts,src.vectorViewBox,src.w,src.h])}}
 function boundaryRememberDoc(doc){
  const sources=new Map((doc?.elements||[]).map(e=>[e.id,e]));
  for(const e of doc?.elements||[]){const B=e.pathBoundary;if(e.type!=='text'||e.textMode!=='boundary'||!B?.sourceId){boundarySources.delete(e);continue}const src=sources.get(B.sourceId);

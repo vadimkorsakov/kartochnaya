@@ -64,7 +64,7 @@ test('mask is created from layer context, repeat-click never deletes it, right-c
  // Creation cannot be invoked again after the layer already has a mask.
  await independent(page).locator('.layer-name').click({button:'right'});
  await expect(create).toBeHidden();
- await page.locator('#contextMenu').press('Escape').catch(()=>{});
+ await page.locator('#layerCount').click(); // Dismiss context menu without selecting another layer.
  // Only the mask thumbnail's own context menu may delete the mask.
  await independent(page).locator('[data-select-mask="independent"]').click({button:'right'});
  await expect(page.locator('#maskContextMenu')).toBeVisible();

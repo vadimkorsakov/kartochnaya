@@ -1633,13 +1633,11 @@ html,body{background:#1e1f27!important;}
 @media (min-width:761px) and (hover:hover) {
   #layers .layer-sort>.layer-actions {
     opacity:0!important;
-    visibility:hidden;
     pointer-events:none;
     transition:opacity .12s ease;
   }
   #layers .layer-sort:is(:hover,:focus-within)>.layer-actions {
     opacity:1!important;
-    visibility:visible;
     pointer-events:auto;
   }
 }

@@ -104,15 +104,18 @@ for (const mobile of [false, true]) test(`complete update waits for explicit cli
   if (mobile) {
     await expect(page.locator('#pwaStatus')).toBeHidden();
     await expect(page.locator('#pwaToggle')).toBeHidden();
-    expect(await page.locator('html').evaluate(el => el.style.getPropertyValue('--pwa-notice-height'))).toBe('0px');
+    expect(await page.locator('html').evaluate(el => el.style.getPropertyValue('--pwa-notice-height'))).toBe('');
     await page.locator('#documentTabsHome').click();
-    await expect(page.locator('#homePwaStatus #pwaToggle')).toHaveText('Версия ↑');
+    await expect(page.locator('#homePwaStatus #pwaToggle')).toHaveAttribute('data-state', 'update');
+    await expect(page.locator('#homePwaStatus #pwaToggle')).toHaveAttribute('aria-label', /Доступна новая версия/);
     await page.screenshot({ path: testInfo.outputPath('mobile-home-pwa.png') });
     await page.locator('#homeEditorBtn').click();
   } else await page.screenshot({ path: testInfo.outputPath('desktop-tabs-pwa.png') });
   expect(await page.locator('meta[name=test-deploy]').count()).toBe(0);
   await insertShape(page); // Do not wait for debounce; update must confirm this save.
   if (mobile) await page.locator('#documentTabsHome').click();
+  await page.locator('#pwaToggle').click();
+  await expect(page.locator('#pwaStatus')).toBeVisible();
   await page.locator('#pwaUpdate').click();
   await expect(page.locator('meta[name=test-deploy]')).toHaveAttribute('content', 'next');
   await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
@@ -132,6 +135,8 @@ test('failed candidate integrity leaves old active worker and complete cache ava
   await update(page, 'redundant');
   await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
   await expect(page.locator('#pwaStatus')).toContainText('Не удалось обновить');
+  await expect(page.locator('#pwaToggle')).toHaveAttribute('data-state', 'error');
+  await page.locator('#pwaToggle').click();
   await page.locator('#pwaDetailsToggle').click();
   await expect(page.locator('#pwaDetails')).toContainText('Прежняя рабочая копия сохранена');
   expect(await page.evaluate(() => navigator.serviceWorker.controller.scriptURL)).toContain('/sw.js');
@@ -149,7 +154,7 @@ test('save failure postpones update and keeps editing state', async ({ page }) =
   });
   await ready(page); await createDocument(page, 'Keep unsaved'); await addShape(page); await savedDocument(page, 'Keep unsaved', 1);
   await deploy('save-failure'); await update(page); await page.evaluate(() => { window.failUpdateSave = true; });
-  await addShape(page); await page.locator('#pwaUpdate').click();
+  await addShape(page); await page.locator('#pwaToggle').click(); await page.locator('#pwaUpdate').click();
   await expect(page.locator('#pwaStatus')).toContainText('Обновление отложено');
   expect(await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).waiting?.state)).toBe('installed');
   expect(await page.locator('meta[name=test-deploy]').count()).toBe(0);
@@ -172,7 +177,7 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
   async function editorWithoutPWA() {
     await expect(page.locator('#pwaToggle')).toBeHidden();
     await expect(page.locator('#pwaStatus')).toBeHidden();
-    expect(await page.locator('html').evaluate(el => el.style.getPropertyValue('--pwa-notice-height'))).toBe('0px');
+    expect(await page.locator('html').evaluate(el => el.style.getPropertyValue('--pwa-notice-height'))).toBe('');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     const top = await page.locator('#app').evaluate(el => el.getBoundingClientRect().top);
     expect(top).toBe(42);
@@ -183,6 +188,9 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
   const controls = await page.locator('.home-topbar button').evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right }; }));
   for (const r of controls) { expect(r.left).toBeGreaterThanOrEqual(0); expect(r.right).toBeLessThanOrEqual(viewport.width); }
   await page.screenshot({ path: testInfo.outputPath('mobile-home-error.png') });
+  await expect(page.locator('#pwaStatus')).toBeHidden();
+  await expect(page.locator('#homePwaStatus #pwaToggle')).toHaveAttribute('data-state', 'error');
+  await page.locator('#pwaToggle').click();
   await expect(page.locator('#pwaStatus')).toBeVisible();
   await page.locator('#pwaDetailsToggle').click();
   await expect(page.locator('#pwaDetails')).toContainText('SHA-256');
@@ -215,8 +223,12 @@ test('stalled registration stops preparation after deadline and offers retry', a
   });
   await openHome(page);
   await expect(page.locator('#pwaStatus')).toContainText('Подготовка');
+  await expect(page.locator('#pwaStatus')).toBeHidden();
+  await expect(page.locator('#pwaToggle')).toHaveAttribute('data-state', 'loading');
   await page.clock.runFor(30001);
   await expect(page.locator('#pwaStatus')).toContainText('Не удалось подготовить');
+  await expect(page.locator('#pwaToggle')).toHaveAttribute('data-state', 'error');
+  await page.locator('#pwaToggle').click();
   await page.locator('#pwaDetailsToggle').click();
   await expect(page.locator('#pwaDetails')).toContainText('30 секунд');
   await expect(page.locator('#pwaRetry')).toBeEnabled();

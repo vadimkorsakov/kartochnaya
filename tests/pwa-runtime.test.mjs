@@ -45,11 +45,12 @@ function runtime(t, reg, small = false) {
     append(...children) { for (const child of children) { child.parentNode = this; if (!nodes.includes(child)) nodes.push(child); } }
     setAttribute(name, value) { this[name] = String(value); }
     contains() { return false; }
+    getBoundingClientRect() { return { left: 1000, right: 1032, top: 10, bottom: 40, width: 32, height: 30 }; }
     remove() { this.removed = true; }
   }
   const tabs = new Element(), homeHost = new Element();
   const media = Object.assign(new EventTarget(), { matches: small });
-  const win = Object.assign(new EventTarget(), { matchMedia: () => media });
+  const win = Object.assign(new EventTarget(), { matchMedia: () => media, innerWidth: 1366, innerHeight: 768 });
   const document = Object.assign(new EventTarget(), {
     createElement: () => new Element(), body: new Element(), head: new Element(), documentElement: new Element(),
     getElementById: id => id === 'documentTabs' ? tabs : id === 'homePwaStatus' ? homeHost : nodes.find(node => node.id === id),
@@ -71,7 +72,7 @@ function worker(ready, version = 'old') {
 }
 const settle = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)); };
 
-test('first success is confirmed by worker and automatically collapses; reopening does not register again', async t => {
+test('first success confirms cache without opening a banner; popover requires click and does not register again', async t => {
   const reg = registration('installing'), ui = runtime(t, reg);
   await settle();
   assert.notEqual(ui.get('pwaStatus').dataset.offlineReady, 'true');
@@ -80,7 +81,8 @@ test('first success is confirmed by worker and automatically collapses; reopenin
   installing.dispatchEvent(new Event('statechange'));
   await settle();
   assert.equal(ui.get('pwaStatus').dataset.offlineReady, 'true');
-  assert.equal(ui.get('pwaStatus').hidden, false);
+  assert.equal(ui.get('pwaStatus').hidden, true);
+  assert.equal(ui.get('pwaToggle').dataset.state, 'ready');
   ui.serviceWorker.dispatchEvent(new Event('controllerchange'));
   await settle();
   assert.equal(ui.get('pwaMessage').textContent, 'Офлайн-копия готова');
@@ -88,6 +90,8 @@ test('first success is confirmed by worker and automatically collapses; reopenin
   assert.equal(ui.get('pwaStatus').hidden, true);
   ui.get('pwaToggle').onclick();
   assert.equal(ui.get('pwaStatus').hidden, false);
+  ui.get('pwaToggle').onclick();
+  assert.equal(ui.get('pwaStatus').hidden, true);
   assert.equal(ui.serviceWorker.register.mock.callCount(), 1);
 });
 
@@ -116,6 +120,9 @@ test('normal ready session stays compact and failed update preserves confirmed r
   assert.equal(ui.get('pwaStatus').dataset.offlineReady, 'true');
   assert.equal(ui.get('pwaStatus').dataset.version, 'old');
   assert.match(ui.get('pwaDetails').textContent, /Прежняя рабочая копия сохранена/);
+  assert.equal(ui.get('pwaStatus').hidden, true);
+  assert.equal(ui.get('pwaToggle').dataset.state, 'error');
+  assert.equal(ui.get('pwaToggle').dataset.ready, 'true');
 });
 
 test('candidate already installing at registration confirms old copy before reporting failure', async t => {
@@ -134,6 +141,10 @@ test('waiting update requires explicit click and failed save postpones activatio
   const reg = Object.assign(new EventTarget(), { active: worker(true), waiting }), ui = runtime(t, reg);
   await settle();
   assert.equal(ui.get('pwaUpdate').hidden, false);
+  assert.equal(ui.get('pwaToggle').dataset.state, 'update');
+  assert.equal(ui.get('pwaStatus').hidden, true);
+  ui.get('pwaToggle').onclick();
+  assert.equal(ui.get('pwaStatus').hidden, false);
   assert.equal(ui.prepare.mock.callCount(), 0);
   ui.prepare.mock.mockImplementation(async () => { throw Error('IndexedDB save failed'); });
   await ui.get('pwaUpdate').onclick();
@@ -153,15 +164,18 @@ test('mobile error and retry survive editor visits with zero reserved height', a
   ui.screen('editor');
   assert.equal(ui.get('pwaToggle').hidden, true);
   assert.equal(ui.get('pwaStatus').hidden, true);
-  assert.equal(ui.document.documentElement.style['--pwa-notice-height'], '0px');
+  assert.equal(ui.document.documentElement.style['--pwa-notice-height'], undefined);
   ui.serviceWorker.dispatchEvent(new Event('controllerchange')); await settle();
   assert.equal(ui.get('pwaStatus').hidden, true);
   ui.screen('home');
+  assert.equal(ui.get('pwaStatus').hidden, true);
+  assert.equal(ui.get('pwaToggle').dataset.state, 'error');
+  ui.get('pwaToggle').onclick();
   assert.equal(ui.get('pwaStatus').hidden, false);
-  assert.equal(ui.get('pwaToggle').textContent, 'Офлайн !');
   reg.active = worker(true);
   ui.get('pwaRetry').onclick(); await settle();
   assert.equal(ui.get('pwaStatus').dataset.offlineReady, 'true');
+  assert.equal(ui.get('pwaToggle').dataset.state, 'ready');
   ui.media.matches = false; ui.media.dispatchEvent(new Event('change'));
   ui.screen('editor');
   assert.equal(ui.get('pwaToggle').parentNode, ui.tabs);
@@ -175,9 +189,11 @@ test('waiting update arriving in mobile editor stays hidden and requires saved d
   const post = t.mock.method(reg.waiting, 'postMessage');
   ui.serviceWorker.dispatchEvent(new Event('controllerchange')); await settle();
   assert.equal(ui.get('pwaStatus').hidden, true);
-  assert.equal(ui.get('pwaToggle').textContent, 'Версия ↑');
-  assert.equal(ui.document.documentElement.style['--pwa-notice-height'], '0px');
+  assert.equal(ui.get('pwaToggle').dataset.state, 'update');
+  assert.equal(ui.document.documentElement.style['--pwa-notice-height'], undefined);
   ui.screen('home');
+  assert.equal(ui.get('pwaStatus').hidden, true);
+  ui.get('pwaToggle').onclick();
   assert.equal(ui.get('pwaStatus').hidden, false);
   assert.equal(ui.get('pwaUpdate').hidden, false);
   ui.prepare.mock.mockImplementation(async () => { throw Error('save failed'); });

@@ -82,7 +82,18 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
     // Use the public wheel handler to create a genuinely scrollable canvas.
     const r = await stage.boundingBox();
     for (let i = 0; i < 20; i++) await stage.dispatchEvent('wheel', { ctrlKey: true, deltaY: -100, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 });
-    await stage.evaluate(node => { node.scrollTop = 0; });
+    // A free-panning workspace has expandable empty margins, so scrollTop=0
+    // no longer means that the artboard is against the viewport's top edge.
+    // Scroll by the actual DOM geometry to put the object near that edge.
+    await stage.evaluate(node => {
+      const card=document.querySelector('#canvas').getBoundingClientRect();
+      const viewport=node.getBoundingClientRect();
+      node.scrollTop+=card.top-viewport.top-12;
+    });
+    await expect.poll(async () => {
+      const g=await geometry(page,element);
+      return Math.abs(g.selection.top-g.stage.top-12);
+    }).toBeLessThan(2);
     await expect.poll(async () => {
       const g = await geometry(page, element); return Math.round(g.bubble.top - g.selection.bottom);
     }).toBe(8);

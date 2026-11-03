@@ -2319,7 +2319,7 @@ function enterCrop(){const e=active();if(!e||e.fillType!=='image'||!e.imageSrc)r
    if(im){const contain=Math.min(e.w/im.naturalWidth,e.h/im.naturalHeight),cover=Math.max(e.w/im.naturalWidth,e.h/im.naturalHeight);e.cropZoom=contain/cover;}
    e.cropX=0;e.cropY=0;
  }
- e.imageFit='crop';app.cropMode=true;app.cropHover=null;$('#cropPreview').style.cursor='default';$('#cropActions').classList.remove('hidden');$('.stage-column').classList.add('crop-active');hideInspector();paint();requestAnimationFrame(()=>{const sc=$('#stageScroller');sc.scrollLeft=Math.max(0,(sc.scrollWidth-sc.clientWidth)/2);sc.scrollTop=Math.max(0,(sc.scrollHeight-sc.clientHeight)/2);paint()})}
+ e.imageFit='crop';app.cropMode=true;app.cropHover=null;$('#cropPreview').style.cursor='default';$('#cropActions').classList.remove('hidden');$('.stage-column').classList.add('crop-active');hideInspector();paint();requestAnimationFrame(()=>{centerStageCanvas();paint()})}
 function exitCrop(ok=true){if(!app.cropMode)return;const e=active();if(!ok&&e&&app.cropBefore)Object.assign(e,app.cropBefore);app.cropMode=false;app.cropBefore=null;app.cropHover=null;app.drag=null;canvas.style.cursor='default';$('#cropPreview').style.cursor='';$('#cropActions').classList.add('hidden');$('.stage-column').classList.remove('crop-active');$('#stageViewport').style.padding='';commit();refreshInspector();paint()}
 
 // Pen tool: editable normalized cubic Bézier nodes. Existing drawings are still standard layers.
@@ -2638,7 +2638,7 @@ function penOverlay(c){
 
 // Hand tool: space + drag pans the stage, without selecting/moving a layer.
 $('#stageScroller').addEventListener('pointerdown',ev=>{if(ev.target.closest('#inlineText,#inlineWysiwyg')||!app.spaceDown||ev.button!==0)return;const stage=$('#stageScroller');app.handDrag={x:ev.clientX,y:ev.clientY,left:stage.scrollLeft,top:stage.scrollTop,id:ev.pointerId};stage.setPointerCapture(ev.pointerId);ev.preventDefault();ev.stopPropagation()},true);
-$('#stageScroller').addEventListener('pointermove',ev=>{if(!app.handDrag)return;const stage=$('#stageScroller'),a=app.handDrag;stage.scrollLeft=a.left-(ev.clientX-a.x);stage.scrollTop=a.top-(ev.clientY-a.y);ev.stopPropagation()},true);
+$('#stageScroller').addEventListener('pointermove',ev=>{if(!app.handDrag)return;const stage=$('#stageScroller'),a=app.handDrag;stage.scrollLeft=a.left-(ev.clientX-a.x);stage.scrollTop=a.top-(ev.clientY-a.y);ensureStagePanRoom();ev.stopPropagation()},true);
 function finishPan(ev){if(app.handDrag?.id===ev.pointerId){app.handDrag=null;ev.stopPropagation()}}
 $('#stageScroller').addEventListener('pointerup',finishPan,true);$('#stageScroller').addEventListener('pointercancel',finishPan,true);
 const touchPointers=new Map();
@@ -3563,18 +3563,65 @@ function redrawSeriesWorkspace(){const d=app.doc,viewport=$('#stageViewport'),si
  siblings.replaceChildren();list.forEach(({x,y,w,h,index})=>{if(index===d.activeSlideIndex)return;const el=document.createElement('div');el.className='series-board';el.dataset.boardIndex=String(index);Object.assign(el.style,{left:x+'px',top:y+'px',width:w+'px',height:h+'px'});const preview=document.createElement('canvas');el.appendChild(preview);const label=document.createElement('div');label.className='series-board-label';label.textContent=`Холст ${index+1} · ${d.slides[index].width} × ${d.slides[index].height}`;el.appendChild(label);siblings.appendChild(el);try{drawBoardCanvas(preview,slideAsDoc(d,index))}catch(error){console.warn('Preview error',error)}})
 }
 function renderSlideStrip(){const d=app.doc;$('#slideStrip')?.classList.add('hidden');$('#slideAddMenu')?.classList.add('hidden');const side=$('#seriesSidebar');if(!isArtboardSeries()){side.classList.add('hidden');$('#mobileSeriesToggle').classList.add('hidden');$('#mobileSeriesSheet').classList.add('hidden');redrawSeriesWorkspace();return}ensureCardSlides(d);syncCurrentSlide(d);side.classList.remove('hidden');$('#seriesSidebarCount').textContent=String(d.slides.length);$('#mobileSeriesToggle').classList.remove('hidden');const list=$('#seriesSidebarList');list.innerHTML='';$('#mobileSeriesList').replaceChildren();d.slides.forEach((s,i)=>{const btn=document.createElement('button');btn.type='button';btn.className='series-sidebar-row'+(i===d.activeSlideIndex?' active':'');btn.dataset.sideSlide=String(i);btn.innerHTML=`<span class="series-mini"></span><span class="series-sidebar-info"><strong>Холст ${i+1}</strong><small>${s.width} × ${s.height}</small></span>${d.slides.length>1?'<span class="series-remove" title="Удалить этот холст" data-side-remove="'+i+'">×</span>':''}`;list.appendChild(btn);const mob=btn.cloneNode(true);$('#mobileSeriesList').appendChild(mob);const mc=document.createElement('canvas');mob.querySelector('.series-mini').appendChild(mc);try{drawBoardCanvas(mc,slideAsDoc(d,i))}catch(e){console.warn(e)}const c=document.createElement('canvas');btn.querySelector('.series-mini').appendChild(c);try{drawBoardCanvas(c,slideAsDoc(d,i))}catch(e){console.warn(e)}});redrawSeriesWorkspace()}
-function seriesFocus(index){const geometry=seriesLocations().list[index],sc=$('#stageScroller');if(!geometry)return;const left=geometry.x+geometry.w/2-sc.clientWidth/2,top=geometry.y+geometry.h/2-sc.clientHeight/2;sc.scrollTo({left:Math.max(0,left),top:Math.max(0,top),behavior:'smooth'})}
+function seriesFocus(index,behavior='smooth'){const geometry=seriesLocations().list[index],sc=$('#stageScroller');if(!geometry)return;const left=stagePanRoom.left+geometry.x+geometry.w/2-sc.clientWidth/2,top=stagePanRoom.top+geometry.y+geometry.h/2-sc.clientHeight/2;sc.scrollTo({left:Math.max(0,left),top:Math.max(0,top),behavior});ensureStagePanRoom()}
 function changeSlide(index,scrollToBoard=false){const d=app.doc;if(!isArtboardSeries())return;ensureCardSlides(d);if(index<0||index>=d.slides.length)return;const changed=index!==d.activeSlideIndex;
  if(changed){inkCancel();if(app.cropMode)exitCrop(true);syncCurrentSlide(d);applySlideToRoot(d,index);app.penDraft=null;app.pixelSelection=null;updateHistoryButtons();$('#sizeLabel').textContent=`${d.width} × ${d.height} px`;app.guides=[];app.selectedIds=[];app.selected=null;app.selectedGroupIds=[];app.focusGroupId=null;refreshLayers();refreshInspector();refreshMobileTools();}
  // Retain shared zoom and pan across artboards.
  applyZoom();renderSlideStrip();if(scrollToBoard)seriesFocus(index);if(changed)saveSoon();}
-function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');if(isArtboardSeries()){const d=app.doc;ensureCardSlides(d);const total=d.slides.reduce((s,slide)=>s+slide.width,0)+ARTBOARD_GAP*Math.max(0,d.slides.length-1);const mh=Math.max(...d.slides.map(slide=>slide.height));const narrow=window.matchMedia('(max-width:760px)').matches;const margin=narrow?8:90;app.zoom=narrow?clamp(Math.min((area.clientWidth-margin*2)/d.width,(area.clientHeight-margin*2-16)/d.height),.04,3):clamp(Math.min((area.clientWidth-180)/total,(area.clientHeight-175)/mh),.04,3);app.lastZoom=app.zoom;applyZoom();requestAnimationFrame(()=>seriesFocus(d.activeSlideIndex));return}
- const viewport=$('#stageViewport');viewport.classList.remove('multi-artboard');viewport.style.width='';viewport.style.height='';$('#canvasHost').style.left='';$('#canvasHost').style.top='';$('#canvasHost').style.width='';$('#canvasHost').style.height='';const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=Math.max(80,area.clientHeight-gutter*2);app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);app.lastZoom=app.zoom;applyZoom();if(mobile)requestAnimationFrame(()=>{area.scrollLeft=Math.max(0,(area.scrollWidth-area.clientWidth)/2);area.scrollTop=Math.max(0,(area.scrollHeight-area.clientHeight)/2)})}
+// Extend the scrollable workspace on demand. Space/hand dragging, trackpads and
+// touch scrolling can move every artboard completely out of view without hitting
+// a fixed canvas-edge boundary. No document coordinates or export pixels change.
+const stagePanRoom={top:0,right:0,bottom:0,left:0};
+let stagePanAdjusting=false,ambientHand=null;
+function setStagePanRoom(margins){
+ const stage=$('#stageScroller'),viewport=$('#stageViewport');
+ const before=canvas.getBoundingClientRect(),oldLeft=stage.scrollLeft,oldTop=stage.scrollTop;
+ Object.assign(stagePanRoom,margins);
+ // Inline important is needed because series layout uses margin:0!important.
+ viewport.style.setProperty('margin',stagePanRoom.top+'px '+stagePanRoom.right+'px '+stagePanRoom.bottom+'px '+stagePanRoom.left+'px','important');
+ const after=canvas.getBoundingClientRect();
+ stage.scrollLeft=oldLeft+after.left-before.left;
+ stage.scrollTop=oldTop+after.top-before.top;
+ // Drag offsets are absolute scroll positions. Rebase them when the room grows
+ // to avoid a jump on the next pointermove.
+ const dx=stage.scrollLeft-oldLeft,dy=stage.scrollTop-oldTop;
+ if(app.handDrag){app.handDrag.left+=dx;app.handDrag.top+=dy}
+ if(ambientHand){ambientHand.left+=dx;ambientHand.top+=dy}
+}
+function resetStagePanRoom(){
+ const stage=$('#stageScroller');
+ if(!stage.clientWidth||!stage.clientHeight)return;
+ stagePanAdjusting=true;
+ try{
+  const x=Math.ceil(stage.clientWidth*2),y=Math.ceil(stage.clientHeight*2);
+  setStagePanRoom({left:x,right:x,top:y,bottom:y});
+ }finally{stagePanAdjusting=false}
+}
+function ensureStagePanRoom(){
+ const stage=$('#stageScroller');
+ if(!app.doc||stagePanAdjusting||!stage.clientWidth||!stage.clientHeight)return;
+ const x=stage.clientWidth,y=stage.clientHeight,room={...stagePanRoom};
+ if(stage.scrollLeft<x)room.left+=Math.ceil(x*2);
+ if(stage.scrollWidth-stage.clientWidth-stage.scrollLeft<x)room.right+=Math.ceil(x*2);
+ if(stage.scrollTop<y)room.top+=Math.ceil(y*2);
+ if(stage.scrollHeight-stage.clientHeight-stage.scrollTop<y)room.bottom+=Math.ceil(y*2);
+ if(Object.keys(room).every(side=>room[side]===stagePanRoom[side]))return;
+ stagePanAdjusting=true;
+ try{setStagePanRoom(room)}finally{stagePanAdjusting=false}
+}
+function centerStageCanvas(){
+ const stage=$('#stageScroller'),a=stage.getBoundingClientRect(),b=canvas.getBoundingClientRect();
+ stage.scrollLeft+=b.left+b.width/2-(a.left+stage.clientWidth/2);
+ stage.scrollTop+=b.top+b.height/2-(a.top+stage.clientHeight/2);
+ ensureStagePanRoom();
+}
+function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');if(isArtboardSeries()){const d=app.doc;ensureCardSlides(d);const total=d.slides.reduce((s,slide)=>s+slide.width,0)+ARTBOARD_GAP*Math.max(0,d.slides.length-1);const mh=Math.max(...d.slides.map(slide=>slide.height));const narrow=window.matchMedia('(max-width:760px)').matches;const margin=narrow?8:90;app.zoom=narrow?clamp(Math.min((area.clientWidth-margin*2)/d.width,(area.clientHeight-margin*2-16)/d.height),.04,3):clamp(Math.min((area.clientWidth-180)/total,(area.clientHeight-175)/mh),.04,3);app.lastZoom=app.zoom;resetStagePanRoom();applyZoom();requestAnimationFrame(()=>seriesFocus(d.activeSlideIndex,'instant'));return}
+ const viewport=$('#stageViewport');viewport.classList.remove('multi-artboard');viewport.style.width='';viewport.style.height='';$('#canvasHost').style.left='';$('#canvasHost').style.top='';$('#canvasHost').style.width='';$('#canvasHost').style.height='';const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=Math.max(80,area.clientHeight-gutter*2);app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);app.lastZoom=app.zoom;resetStagePanRoom();applyZoom();centerStageCanvas()}
 function applyZoom(anchor){if(!app.doc)return;const d=app.doc,stage=$('#stageScroller'),old=app.lastZoom||app.zoom;
- if(isArtboardSeries()){ensureCardSlides(d);const r=stage.getBoundingClientRect();const target=anchor||{x:r.left+stage.clientWidth/2,y:r.top+stage.clientHeight/2};const screenX=target.x-r.left,screenY=target.y-r.top;const worldX=(stage.scrollLeft+screenX-ARTBOARD_MARGIN)/old,worldY=(stage.scrollTop+screenY-80)/old;
+ if(isArtboardSeries()){ensureCardSlides(d);const r=stage.getBoundingClientRect();const target=anchor||{x:r.left+stage.clientWidth/2,y:r.top+stage.clientHeight/2};const screenX=target.x-r.left,screenY=target.y-r.top;const worldX=(stage.scrollLeft+screenX-stagePanRoom.left-ARTBOARD_MARGIN)/old,worldY=(stage.scrollTop+screenY-stagePanRoom.top-80)/old;
  const ratio=Math.min(devicePixelRatio||1,8192/(d.width*app.zoom),8192/(d.height*app.zoom),Math.sqrt(23000000/(d.width*d.height*app.zoom*app.zoom)));app.renderScale=ratio;canvas.style.width=Math.max(1,d.width*app.zoom)+'px';canvas.style.height=Math.max(1,d.height*app.zoom)+'px';canvas.width=Math.max(1,Math.round(d.width*app.zoom*ratio));canvas.height=Math.max(1,Math.round(d.height*app.zoom*ratio));app.lastZoom=app.zoom;
- $('#zoomLabel').textContent=Math.round(app.zoom*100)+'%';redrawSeriesWorkspace();positionInlineText();renderRulers();stage.scrollLeft=Math.max(0,ARTBOARD_MARGIN+worldX*app.zoom-screenX);stage.scrollTop=Math.max(0,80+worldY*app.zoom-screenY);paint();return;}
- const ratio=Math.min(devicePixelRatio||1,8192/(d.width*app.zoom),8192/(d.height*app.zoom),Math.sqrt(24000000/(d.width*d.height*app.zoom*app.zoom))),rect=canvas.getBoundingClientRect(),pointer=anchor||{x:stage.getBoundingClientRect().left+stage.clientWidth/2,y:stage.getBoundingClientRect().top+stage.clientHeight/2};app.renderScale=ratio;const dx=(pointer.x-rect.left)/old,dy=(pointer.y-rect.top)/old;app.lastZoom=app.zoom;canvas.style.width=Math.max(1,d.width*app.zoom)+'px';canvas.style.height=Math.max(1,d.height*app.zoom)+'px';canvas.width=Math.max(1,Math.round(d.width*app.zoom*ratio));canvas.height=Math.max(1,Math.round(d.height*app.zoom*ratio));$('#zoomLabel').textContent=Math.round(app.zoom*100)+'%';positionInlineText();updateQuickBubble();requestAnimationFrame(renderRulers);if(Math.abs(old-app.zoom)>.0001){const after=canvas.getBoundingClientRect();stage.scrollLeft+=(after.left+dx*app.zoom-pointer.x);stage.scrollTop+=(after.top+dy*app.zoom-pointer.y)}paint()}
+ $('#zoomLabel').textContent=Math.round(app.zoom*100)+'%';redrawSeriesWorkspace();positionInlineText();renderRulers();stage.scrollLeft=stagePanRoom.left+ARTBOARD_MARGIN+worldX*app.zoom-screenX;stage.scrollTop=stagePanRoom.top+80+worldY*app.zoom-screenY;ensureStagePanRoom();paint();return;}
+ const ratio=Math.min(devicePixelRatio||1,8192/(d.width*app.zoom),8192/(d.height*app.zoom),Math.sqrt(24000000/(d.width*d.height*app.zoom*app.zoom))),rect=canvas.getBoundingClientRect(),pointer=anchor||{x:stage.getBoundingClientRect().left+stage.clientWidth/2,y:stage.getBoundingClientRect().top+stage.clientHeight/2};app.renderScale=ratio;const dx=(pointer.x-rect.left)/old,dy=(pointer.y-rect.top)/old;app.lastZoom=app.zoom;canvas.style.width=Math.max(1,d.width*app.zoom)+'px';canvas.style.height=Math.max(1,d.height*app.zoom)+'px';canvas.width=Math.max(1,Math.round(d.width*app.zoom*ratio));canvas.height=Math.max(1,Math.round(d.height*app.zoom*ratio));$('#zoomLabel').textContent=Math.round(app.zoom*100)+'%';positionInlineText();updateQuickBubble();requestAnimationFrame(renderRulers);if(Math.abs(old-app.zoom)>.0001){const after=canvas.getBoundingClientRect();stage.scrollLeft+=(after.left+dx*app.zoom-pointer.x);stage.scrollTop+=(after.top+dy*app.zoom-pointer.y)}ensureStagePanRoom();paint()}
 
 // Presets set width and height atomically; manually typed dimensions remain unrestricted.
 function applyCanvasPreset(container,code){
@@ -3614,9 +3661,12 @@ $('#mobileSeriesClose').addEventListener('click',()=>$('#mobileSeriesSheet').cla
 $('#mobileSeriesAdd').addEventListener('click',()=>{$('#mobileSeriesSheet').classList.add('hidden');openSeriesCreator()});
 $('#mobileSeriesList').addEventListener('click',ev=>{const rem=ev.target.closest('[data-side-remove]');if(rem){removeSeriesSlide(Number(rem.dataset.sideRemove));return}const row=ev.target.closest('[data-side-slide]');if(row){$('#mobileSeriesSheet').classList.add('hidden');changeSlide(Number(row.dataset.sideSlide),true)}});
 // Panning starts also on gaps and inactive artboards, sharing one scroll offset.
-const scrollerForPan=$('#stageScroller');let ambientHand=null;
+const scrollerForPan=$('#stageScroller');
+scrollerForPan.style.overflowAnchor='none';
+scrollerForPan.addEventListener('scroll',ensureStagePanRoom,{passive:true});
+new ResizeObserver(ensureStagePanRoom).observe(scrollerForPan);
 scrollerForPan.addEventListener('pointerdown',ev=>{if(!isArtboardSeries()||!(app.handTool||app.spaceDown)||ev.target.closest('#canvasHost')||ev.button!==0)return;ev.preventDefault();ev.stopPropagation();ambientHand={id:ev.pointerId,x:ev.clientX,y:ev.clientY,left:scrollerForPan.scrollLeft,top:scrollerForPan.scrollTop};try{scrollerForPan.setPointerCapture(ev.pointerId)}catch{}},true);
-scrollerForPan.addEventListener('pointermove',ev=>{if(!ambientHand||ambientHand.id!==ev.pointerId)return;scrollerForPan.scrollLeft=ambientHand.left-(ev.clientX-ambientHand.x);scrollerForPan.scrollTop=ambientHand.top-(ev.clientY-ambientHand.y)},true);
+scrollerForPan.addEventListener('pointermove',ev=>{if(!ambientHand||ambientHand.id!==ev.pointerId)return;scrollerForPan.scrollLeft=ambientHand.left-(ev.clientX-ambientHand.x);scrollerForPan.scrollTop=ambientHand.top-(ev.clientY-ambientHand.y);ensureStagePanRoom()},true);
 for(const type of ['pointerup','pointercancel'])scrollerForPan.addEventListener(type,ev=>{if(ambientHand?.id===ev.pointerId)ambientHand=null},true);
 $('#artboardSiblings').addEventListener('pointerdown',ev=>{const b=ev.target.closest('[data-board-index]');if(!b||app.handTool||app.spaceDown)return;ev.preventDefault();ev.stopPropagation();const index=Number(b.dataset.boardIndex),rect=b.getBoundingClientRect(),p={x:(ev.clientX-rect.left)/app.zoom,y:(ev.clientY-rect.top)/app.zoom};changeSlide(index,false);const hit=hitElement(p);if(hit)setSelected([hit.id],true);else setSelected([]);});
 
@@ -3658,7 +3708,7 @@ function captureDocumentTab(){
  if(app.doc?.type==='card')syncCurrentSlide(app.doc);
  tab.doc=app.doc;tab.view={};
  for(const field of DOCUMENT_TAB_FIELDS)tab.view[field]=app[field];
- const sc=$('#stageScroller');tab.view.scrollLeft=sc.scrollLeft;tab.view.scrollTop=sc.scrollTop;
+ const sc=$('#stageScroller');tab.view.scrollLeft=sc.scrollLeft;tab.view.scrollTop=sc.scrollTop;tab.view.stagePanRoom={...stagePanRoom};
  tab.view.cursor=canvas.style.cursor;tab.view.cropPanelVisible=!$('#cropActions').classList.contains('hidden');
  // A pending debounce belongs to the old document and must not save another tab.
  clearTimeout(app.saveTimer);app.saveTimer=null;
@@ -3695,6 +3745,7 @@ function restoreDocumentTab(tab){
  openEditor();refreshSaveStatus();
  requestAnimationFrame(()=>{
   if(documentTabSession.activeId!==tab.id)return;
+  if(view.stagePanRoom)setStagePanRoom(view.stagePanRoom);
   applyZoom();
   const sc=$('#stageScroller');sc.scrollLeft=view.scrollLeft||0;sc.scrollTop=view.scrollTop||0;
   refreshLayers();refreshInspector();refreshMobileTools();renderSlideStrip();paint();renderRulers();
@@ -3741,7 +3792,7 @@ function openDocumentTab(source){
 function captureInitialDocumentTabView(tab){
  if(documentTabSession.activeId!==tab.id||app.doc?.id!==tab.id)return;
  for(const field of DOCUMENT_TAB_FIELDS)tab.view[field]=app[field];
- const sc=$('#stageScroller');tab.view.scrollLeft=sc.scrollLeft;tab.view.scrollTop=sc.scrollTop;tab.view.cursor=canvas.style.cursor;
+ const sc=$('#stageScroller');tab.view.scrollLeft=sc.scrollLeft;tab.view.scrollTop=sc.scrollTop;tab.view.stagePanRoom={...stagePanRoom};tab.view.cursor=canvas.style.cursor;
 }
 function activateDocumentTab(id){
  if(id==='home'){
@@ -4138,7 +4189,7 @@ function mobileV36ApplyView(){
   const proposed=Math.max(.04,Math.min(base.zoom,w/app.doc.width,h/app.doc.height));
   app.zoom=proposed;app.lastZoom=proposed;applyZoom();
   if(isArtboardSeries())seriesFocus(app.doc.activeSlideIndex||0);
-  else{area.scrollLeft=Math.max(0,(area.scrollWidth-area.clientWidth)/2);area.scrollTop=Math.max(0,(area.scrollHeight-area.clientHeight)/2)}
+  else centerStageCanvas();
   paint();
  });
 }

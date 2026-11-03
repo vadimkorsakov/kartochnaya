@@ -551,7 +551,7 @@ test('resident strip remains docked when the quick-action bubble shares the view
 test('resident arrows follow selection, menus, properties, viewport and home', async ({ page }) => {
   await open(page); await expect(page.locator('#mobileNudge')).toBeVisible();
   const panel = await page.locator('#mobileNudge').boundingBox(), toolbar = await page.locator('#mobileToolbars').boundingBox();
-  expect(panel.y + panel.height).toBeLessThan(toolbar.y);
+  expect(Math.abs(panel.y + panel.height - toolbar.y), 'resident strip must touch the bottom dock').toBeLessThanOrEqual(2);
   await color(page); await expect(page.locator('#mobileNudge')).toBeHidden();
   await page.locator('[data-mp-action="done"]').tap(); await expect(page.locator('#mobileNudge')).toBeVisible();
   await page.locator('#historyToggle').tap(); await expect(page.locator('#mobileNudge')).toBeHidden();

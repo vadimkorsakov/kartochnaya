@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { validateShapeCatalog as validate } from '../src/core/shape-catalog.mjs';
-import { tightVectorPlacement, vectorPathTransform } from '../src/core/vector-geometry.mjs';
+import { tightVectorPlacement, vectorPathTransform, vectorPointInFrame } from '../src/core/vector-geometry.mjs';
 
 const shape = (overrides = {}) => ({ id: 'a', d: 'M0 0L10 10Z', ...overrides });
 const catalog = (...shapes) => [{ name: 'Group', shapes }];
@@ -91,4 +91,13 @@ test('legacy vectors keep their untouched 0..100 Path2D mapping',()=>{
  for(const invalid of [null,{x:0,y:0,w:0,h:100},{x:0,y:0,w:100,h:0},{x:NaN,y:0,w:100,h:100}]){
   assert.equal(tightVectorPlacement({x:100,y:100,w:400,h:300},invalid),null);
  }
+});
+
+test('boundary text and text-on-path sample the same tight geometry as the filled SVG',()=>{
+ const box={x:7,y:7,w:86,h:86};
+ assert.deepEqual(vectorPointInFrame(box,7,7),{x:0,y:0});
+ assert.deepEqual(vectorPointInFrame(box,93,93),{x:1,y:1});
+ assert.deepEqual(vectorPointInFrame(undefined,7,93),{x:.07,y:.93});
+ const asymmetric={x:-5,y:14,w:108,h:72};
+ assert.deepEqual(vectorPointInFrame(asymmetric,49,50),{x:.5,y:.5});
 });

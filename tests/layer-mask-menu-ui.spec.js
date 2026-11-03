@@ -13,7 +13,11 @@ async function openLayerFixture(page){
   id=saved?.id;return id;
  }).toBeTruthy();
  await openLibraryDocument(page,id);
- await expect(page.locator('#layers [data-layer="independent"]')).toBeVisible();
+ // On mobile, the desktop layer list is intentionally hidden until the
+ // mobile sheet is opened. The fixture itself must still be loaded.
+ if((page.viewportSize()?.width||1280)>760)
+  await expect(page.locator('#layers [data-layer="independent"]')).toBeVisible();
+ else await expect.poll(async()=>Boolean((await exportedDocument(page)).elements.find(e=>e.id==='independent'))).toBe(true);
 }
 const independent=page=>page.locator('#layers [data-layer="independent"]');
 const maskSource=async page=>(await exportedDocument(page)).elements.find(x=>x.id==='independent')?.layerMaskSrc||null;
@@ -26,7 +30,9 @@ test('desktop group and ordinary layer actions are hidden until hover or focus; 
  for(const row of [group,ordinary]){
   const actions=row.locator(':scope > .layer-actions');
   await expect(actions).toHaveCSS('opacity','0');
-  await row.hover();
+  // Hovering the initially invisible action itself must wake up the row.
+  // This matches Playwright's normal user-click path, which first moves the pointer.
+  await row.locator('[data-layeract="visibility"]').hover();
   await expect(actions).toHaveCSS('opacity','1');
   await page.mouse.move(0,0);
   await expect(actions).toHaveCSS('opacity','0');

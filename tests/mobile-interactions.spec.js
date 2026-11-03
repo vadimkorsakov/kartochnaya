@@ -136,7 +136,7 @@ async function undoRedo(page, before, after, input = 'tap') {
 
 for (const cancel of [false, true]) test(`nudge ${cancel ? 'pointercancel' : 'pointerup'} settles one actual change once`, async ({ page }) => {
   await open(page); const before = await exportedDocument(page), h = await history(page);
-  await tool(page, 'nudge'); const t = await touch(page, '[data-mp-nudge="right"]');
+  await expect(page.locator('#mobileNudge')).toBeVisible(); const t = await touch(page, '[data-mp-nudge="right"]');
   expect((await exportedDocument(page)).elements[0].x).toBe(41);
   await resetAudit(page); await t.end(cancel);
   expect((await audit(page)).saves, 'one finish, no second generic commit').toBe(1);
@@ -160,7 +160,7 @@ test('foreign and repeated cancellation cannot finalize a pending numeric edit',
 });
 
 test('foreign pointerup/cancel and second down cannot steal a held nudge', async ({ page }) => {
-  await open(page); await tool(page, 'nudge'); await freezeClock(page);
+  await open(page); await expect(page.locator('#mobileNudge')).toBeVisible(); await freezeClock(page);
   await pointer(page, '[data-mp-nudge="right"]', 'pointerdown', 11);
   await resetAudit(page); const h = await history(page);
   await pointer(page, '[data-mp-nudge="left"]', 'pointerdown', 12);
@@ -279,7 +279,7 @@ test('foreign cancellation leaves captured color plane active', async ({ page })
 });
 
 test('closing a held nudge stops repeats and releases capture', async ({ page }) => {
-  await open(page); await tool(page, 'nudge'); const h = await history(page);
+  await open(page); await expect(page.locator('#mobileNudge')).toBeVisible(); const h = await history(page);
   const t = await touch(page, '[data-mp-nudge="down"]');
   await page.locator('#mobileConfirm').dispatchEvent('click');
   await page.waitForTimeout(600); expect((await exportedDocument(page)).elements[0].y).toBe(41);
@@ -288,7 +288,7 @@ test('closing a held nudge stops repeats and releases capture', async ({ page })
 });
 
 test('locked nudge and idle cancellation create no selection-only history', async ({ page }) => {
-  await open(page, { locked: true }); const before = await exportedDocument(page), h = await history(page); await tool(page, 'nudge');
+  await open(page, { locked: true }); const before = await exportedDocument(page), h = await history(page); await expect(page.locator('#mobileNudge')).toBeVisible();
   await resetAudit(page); const t = await touch(page, '[data-mp-nudge="right"]'); await t.end(true);
   expect(await history(page)).toEqual(h); expect((await audit(page)).saves).toBe(0);
   expect(await exportedDocument(page)).toEqual(before);
@@ -322,7 +322,7 @@ for (const kind of ['tap', 'hold', 'color cancel']) test(`baseline control: ${ki
     await color(page); const t = await touch(page, '[data-mp-plane]', .7, .7); const preview = await exportedDocument(page);
     await t.end(true); expect((await exportedDocument(page)).elements).toEqual(preview.elements);
   } else {
-    await tool(page, 'nudge'); await freezeClock(page); await pointer(page, '[data-mp-nudge="right"]', 'pointerdown', 21);
+    await expect(page.locator('#mobileNudge')).toBeVisible(); await freezeClock(page); await pointer(page, '[data-mp-nudge="right"]', 'pointerdown', 21);
     if (kind === 'hold') await page.clock.runFor(640);
     await pointer(page, '[data-mp-nudge="right"]', 'pointerup', 21);
     expect((await exportedDocument(page)).elements[0].x).toBe(kind === 'hold' ? 44 : 41);
@@ -356,7 +356,7 @@ test('two-finger canvas router cancels tentative drag, zooms and leaves no point
   await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   expect(await page.locator('#zoomLabel').textContent()).not.toBe(zoom);
   expect((await exportedDocument(page)).elements).toEqual(before.elements); expect(await history(page)).toEqual(h);
-  await tool(page, 'nudge'); await page.locator('[data-mp-nudge="right"]').tap();
+  await expect(page.locator('#mobileNudge')).toBeVisible(); await page.locator('[data-mp-nudge="right"]').tap();
   let after = await exportedDocument(page); expect(after.elements[0].x).toBe(41);
   await page.locator('#mobileConfirm').tap();
   const nextBox = await page.locator('#canvas').boundingBox();
@@ -424,7 +424,7 @@ test('un-grouped multi-selection copy/paste retains available parents and intern
 });
 
 test('matching pointerup outside the panel works without pointer capture', async ({ page }) => {
-  await open(page); await tool(page, 'nudge'); const h = await history(page);
+  await open(page); await expect(page.locator('#mobileNudge')).toBeVisible(); const h = await history(page);
   await pointer(page, '[data-mp-nudge="up"]', 'pointerdown', 31);
   await resetAudit(page); await pointer(page, 'body', 'pointerup', 31);
   const after = await exportedDocument(page); expect(after.elements[0].y).toBe(39); expect((await audit(page)).saves).toBe(1);
@@ -491,6 +491,60 @@ for (const mode of ['gradient', 'effect']) test(`color cancellation retains ${mo
 
 
 const residentRight = '#mobileNudge [data-mp-nudge="right"]';
+
+for (const mode of ['text', 'shape']) test(`no duplicate mobile nudge menu entry on ${mode}; resident strip covers full width`, async ({ page }) => {
+ await open(page, { graph: mode === 'text' });
+ if (mode === 'text') await select(page, 'title');
+ await expect(page.locator('#mobileContext [data-mobile="nudge"]')).toHaveCount(0);
+ const strip=page.locator('#mobileNudge');
+ await expect(strip).toBeVisible();
+ await expect(strip.locator('[data-mp-nudge]')).toHaveCount(4);
+ const geometry=await strip.evaluate(el=>{
+  const b=el.getBoundingClientRect(),dock=document.querySelector('#mobileToolbars').getBoundingClientRect();
+  const v=window.visualViewport,items=[...el.querySelectorAll('button')].map(btn=>btn.getBoundingClientRect());
+  return {x:b.x,right:b.right,width:b.width,height:b.height,bottom:b.bottom,dockTop:dock.top,
+    screenLeft:v?.offsetLeft||0,screenRight:(v?.offsetLeft||0)+(v?.width||innerWidth),
+    radius:getComputedStyle(el).borderTopLeftRadius,layout:getComputedStyle(el).display,
+    buttons:items.map(r=>({x:r.x,width:r.width,height:r.height}))};
+ });
+ expect(Math.abs(geometry.x-geometry.screenLeft),'left edge of strip').toBeLessThanOrEqual(2);
+ expect(Math.abs(geometry.right-geometry.screenRight),'right edge of strip').toBeLessThanOrEqual(2);
+ expect(Math.abs(geometry.bottom-geometry.dockTop),'flush with bottom tool dock').toBeLessThanOrEqual(2);
+ expect(geometry.height,'compact bar height').toBeLessThanOrEqual(52);
+ expect(geometry.radius).toBe('0px');
+ expect(geometry.layout).toBe('grid');
+ for(const button of geometry.buttons){
+  expect(button.height).toBeGreaterThanOrEqual(40);
+  expect(button.width).toBeGreaterThan((geometry.width/4)-16);
+ }
+ // Live nudge remains wired through the resident controls.
+ const before=await exportedDocument(page);
+ await strip.locator('[data-mp-nudge="right"]').tap();
+ const after=await exportedDocument(page);
+ const selectedId=mode==='text'?'title':'independent';
+ const oldLayer=before.elements.find(e=>e.id===selectedId),newLayer=after.elements.find(e=>e.id===selectedId);
+ expect(newLayer.x).toBe(oldLayer.x+1);
+});
+
+test('resident strip remains docked when the quick-action bubble shares the viewport',async({page})=>{
+ await open(page);
+ const strip=page.locator('#mobileNudge');
+ await expect(strip).toBeVisible();
+ // Reposition a selected shape near the bottom; the strip itself must not jump.
+ const before=await strip.boundingBox();
+ const bubble=page.locator('#quickBubble');
+ if(await bubble.isVisible()){
+  await expect.poll(async()=>strip.boundingBox().then(r=>r.y)).toBeCloseTo(before.y,0);
+ }
+ await page.setViewportSize({width:360,height:740});
+ await expect(strip).toBeVisible();
+ const bottom=await strip.evaluate(el=>el.getBoundingClientRect().bottom);
+ const dockTop=await page.locator('#mobileToolbars').evaluate(el=>el.getBoundingClientRect().top);
+ expect(Math.abs(bottom-dockTop)).toBeLessThanOrEqual(2);
+ const width=await strip.evaluate(el=>el.getBoundingClientRect().width);
+ expect(Math.abs(width-360)).toBeLessThanOrEqual(2);
+});
+
 test('resident arrows follow selection, menus, properties, viewport and home', async ({ page }) => {
   await open(page); await expect(page.locator('#mobileNudge')).toBeVisible();
   const panel = await page.locator('#mobileNudge').boundingBox(), toolbar = await page.locator('#mobileToolbars').boundingBox();

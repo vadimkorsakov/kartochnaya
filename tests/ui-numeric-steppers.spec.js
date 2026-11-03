@@ -48,8 +48,17 @@ test('compact inspector number keeps its spacing and commits exactly as an ordin
  const position=page.locator('#inspector input[data-key="x"]');
  await expect(position).toBeVisible();
  const before=Number(await position.inputValue());
+ // Tight SVG bounds may give a fractional X. Native stepUp() aligns to the
+ // input's min/step grid rather than always adding 1 to that fraction.
+ const expected=await position.evaluate(field=>{
+  const native=document.createElement('input');
+  native.type='number';native.min=field.min;native.max=field.max;native.step=field.step;
+  native.value=field.value;native.stepUp();
+  return native.value;
+ });
+ expect(Number(expected)).toBeGreaterThan(before);
  await stepButton(position,'up').click();
- await expect(position).toHaveValue(String(before+1));
+ await expect(position).toHaveValue(expected);
  const metrics=await position.evaluate(el=>{
   const field=el.getBoundingClientRect(),buttons=el.parentElement.querySelector('.k-num-steps').getBoundingClientRect();
   return {inputRight:field.right,controlsRight:buttons.right,paddingRight:parseFloat(getComputedStyle(el).paddingRight)};

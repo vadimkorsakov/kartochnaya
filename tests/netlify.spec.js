@@ -10,6 +10,8 @@ const sha = data => createHash('sha256').update(data).digest('hex');
 async function ready(page) {
   await openHome(page);
   await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
+  await expect(page.locator('#pwaToggle')).toHaveAttribute('data-state', 'ready');
+  await expect(page.locator('#pwaStatus')).toBeHidden();
   await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller?.state)).toBe('activated');
   return page.locator('#pwaStatus').getAttribute('data-version');
 }
@@ -99,8 +101,21 @@ for (const mobile of [false, true]) test(`complete update waits for explicit cli
   const other = await context.newPage(); await ready(other);
   await createDocument(other, 'Other window'); await addShape(other);
   await savedDocument(other, 'Other window', 1);
+  const layoutBefore = await page.locator('#app').evaluate(el => ({
+    top: el.getBoundingClientRect().top,
+    height: el.getBoundingClientRect().height,
+    padding: getComputedStyle(document.body).paddingTop,
+  }));
   await deploy('next'); await update(page);
   await expect(page.locator('#pwaStatus')).toContainText('Доступна новая версия');
+  await expect(page.locator('#pwaStatus')).toBeHidden();
+  await expect(page.locator('#pwaToggle')).toHaveAttribute('data-state', 'update');
+  const layoutAfter = await page.locator('#app').evaluate(el => ({
+    top: el.getBoundingClientRect().top,
+    height: el.getBoundingClientRect().height,
+    padding: getComputedStyle(document.body).paddingTop,
+  }));
+  expect(layoutAfter, 'PWA update must not move or resize the editor').toEqual(layoutBefore);
   if (mobile) {
     await expect(page.locator('#pwaStatus')).toBeHidden();
     await expect(page.locator('#pwaToggle')).toBeHidden();
@@ -135,7 +150,9 @@ test('failed candidate integrity leaves old active worker and complete cache ava
   await update(page, 'redundant');
   await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
   await expect(page.locator('#pwaStatus')).toContainText('Не удалось обновить');
+  await expect(page.locator('#pwaStatus')).toBeHidden();
   await expect(page.locator('#pwaToggle')).toHaveAttribute('data-state', 'error');
+  await expect(page.locator('#pwaToggle')).toHaveAttribute('data-ready', 'true');
   await page.locator('#pwaToggle').click();
   await page.locator('#pwaDetailsToggle').click();
   await expect(page.locator('#pwaDetails')).toContainText('Прежняя рабочая копия сохранена');
@@ -203,6 +220,7 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
   await writeFile(filename, original);
   await page.locator('#pwaRetry').click();
   await expect(page.locator('#pwaStatus')).toHaveAttribute('data-offline-ready', 'true');
+  await expect(page.locator('#pwaToggle')).toHaveAttribute('data-state', 'ready');
   await expect(page.locator('#pwaMessage')).toHaveText('Офлайн-копия готова');
   await page.clock.runFor(4001);
   await expect(page.locator('#pwaStatus')).toBeHidden();
@@ -223,6 +241,7 @@ test('stalled registration stops preparation after deadline and offers retry', a
   });
   await openHome(page);
   await expect(page.locator('#pwaStatus')).toContainText('Подготовка');
+  await expect(page.locator('#pwaToggle .pwa-icon-loading')).toBeVisible();
   await expect(page.locator('#pwaStatus')).toBeHidden();
   await expect(page.locator('#pwaToggle')).toHaveAttribute('data-state', 'loading');
   await page.clock.runFor(30001);

@@ -224,7 +224,10 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
   await expect(page.locator('#pwaMessage')).toHaveText('Офлайн-копия готова');
   await page.clock.runFor(4001);
   await expect(page.locator('#pwaStatus')).toBeHidden();
-  await page.locator('#pwaToggle').click(); await expect(page.locator('#pwaMessage')).toHaveText('Готово к работе офлайн');
+  await page.locator('#pwaToggle').click();
+  await expect(page.locator('#pwaStatus')).toBeVisible();
+  await expect(page.locator('#pwaMessage')).toHaveText('Офлайн-копия готова');
+  await expect(page.locator('#pwaToggle')).toHaveAttribute('data-state', 'ready');
   await page.locator('#pwaClose').click();
   expect(await page.evaluate(() => caches.has('unrelated-working-cache'))).toBe(true);
   await context.setOffline(true); await page.reload();

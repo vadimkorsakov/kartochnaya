@@ -675,6 +675,20 @@ function setImageFit(e,mode){
  }
  e.imageFit=mode;
 }
+// During canvas pointer drags, update the existing inspector inputs in place.
+// Rebuilding the inspector here would replace controls and interfere with focus,
+// delegated listeners, the numeric stepper and the single Undo commit on release.
+function syncInspectorTransformDuringDrag(){
+ if(app.selectedIds.length!==1||!['move','resize','rotate'].includes(app.drag?.type))return;
+ const e=active(),panel=$('#inspector');
+ if(!e||!panel)return;
+ for(const key of ['x','y','w','h','rotation']){
+  const input=panel.querySelector('input[data-key="'+key+'"]');
+  if(!input)continue;
+  const value=String(fmt(e[key]??0));
+  if(input.value!==value)input.value=value;
+ }
+}
 function refreshInspector(){
  if(app.maskEditId&&app.doc?.elements.find(e=>e.id===app.maskEditId)){const el=app.doc.elements.find(e=>e.id===app.maskEditId);$('#inspector').innerHTML=`<div class="ins-object-title">◩ Маска · ${html(el.name)}</div><section class="ins-section"><p class="layer-mask-edit-note">Режим маски: кисть рисует только по непрозрачности слоя. Чёрный скрывает, белый проявляет. X переключает цвет независимо от раскладки.</p><div class="layer-mask-btns"><button class="linebtn" data-mask-fill="black">Залить чёрным</button><button class="linebtn" data-mask-fill="white">Залить белым</button></div><button class="linebtn wide" data-mask-exit="1">Редактировать изображение</button></section>`;return}
 
@@ -2629,7 +2643,7 @@ else{const e=app.doc.elements.find(x=>x.id===dr.id);if(!e)return;if(dr.type==='r
  else if(vx)factor=bx/(vx*r.w/2);
  else if(vy)factor=by/(vy*r.h/2);
  if(Number.isFinite(factor))e.cropZoom=clamp((dr.orig.cropZoom??1)*factor,.02,20);
-}else if(dr.type==='cropRotate'){const r=cropImageRect(dr.orig),center=toLocal(dr.orig,p),a=toLocal(dr.orig,dr.start);let ang=(dr.orig.cropRotation||0)+(Math.atan2(center.y-r.cy,center.x-r.cx)-Math.atan2(a.y-r.cy,a.x-r.cx))*180/Math.PI;if(ev.shiftKey)ang=Math.round(ang/15)*15;e.cropRotation=fmt(ang)}}paint()});
+}else if(dr.type==='cropRotate'){const r=cropImageRect(dr.orig),center=toLocal(dr.orig,p),a=toLocal(dr.orig,dr.start);let ang=(dr.orig.cropRotation||0)+(Math.atan2(center.y-r.cy,center.x-r.cx)-Math.atan2(a.y-r.cy,a.x-r.cx))*180/Math.PI;if(ev.shiftKey)ang=Math.round(ang/15)*15;e.cropRotation=fmt(ang)}}syncInspectorTransformDuringDrag();paint()});
 function endDrag(ev){if(app.altBrushDrag){app.altBrushDrag=null;$('#inkSizeBadge').classList.add('hidden');inkPersist();paint();return}if(app.maskDraft){maskPaintEnd();return}if(app.inkDraft){if(ev.pointerId!==app.inkDraft.pointerId)return;if(ev.type==='pointercancel')inkCancel();else inkEnd();return}if(app.drag?.type==='textPathCreate'||app.drag?.type==='textPathEdit'){const edited=app.drag.type==='textPathEdit';app.drag=null;if(edited){commit('Редактирование кривой текста');refreshInspector()}paint();return}if(app.drag?.type==='penCreate'||app.drag?.type==='penEdit'){const changed=app.drag.type==='penEdit'&&app.drag.changed;touchPointers.delete(ev.pointerId);app.drag=null;if(changed){const e=app.doc.elements.find(v=>v.id===app.penEditId);if(e)reboundPath(e);commit();refreshInspector()}else paint();return}if(app.drag?.type==='guideMove'){const p=clientDocPoint(ev),g=app.doc.rulers?.[app.drag.index];if(g&&(g.axis==='x'&&(p.x<0||p.x>app.doc.width)||g.axis==='y'&&(p.y<0||p.y>app.doc.height)))app.doc.rulers.splice(app.drag.index,1)}touchPointers.delete(ev.pointerId);if(touchPointers.size<2)app.pinch=null;if(app.drag?.type==='newText'){const dr=app.drag;app.drag=null;createTextBoxFromDrag(dr);return}if(app.drag?.type==='pixelSelect'){finishPixelSelection(app.drag)}else if(app.drag?.type==='selectionMove'||app.drag?.type==='selectionResize'){selectionApplyTransform(app.drag)}else if(app.drag?.changed||app.drag?.duplicated){commit();refreshInspector();refreshLayers()}if(app.drag?.type==='gradient'&&!$('#fillPopover').classList.contains('hidden')){renderFillPopover()}app.guides=[];app.drag=null;paint()}
 canvas.addEventListener('pointerup',endDrag);canvas.addEventListener('pointercancel',endDrag);
 canvas.addEventListener('lostpointercapture',ev=>{if(app.inkDraft?.pointerId===ev.pointerId)inkCancel()});

@@ -93,7 +93,9 @@ test('mobile effect HEX editor uses the same legacy glow color as the shared pic
  await hex.tap();
  const editor=page.locator('#mobilePropertyUI [data-mp-plane]');
  await expect(editor).toBeVisible();
- await editor.tap({position:{x:25,y:125}});
+ // On short mobile viewports the color plane is clipped to its visible area.
+ // Tap inside that visible area instead of at a fixed 125px offset below it.
+ await editor.tap({position:{x:25,y:25}});
  await expect.poll(async()=> (await layer(page)).mobileGlowColor.toLowerCase()).not.toBe('#7857de');
  const setHex=page.locator('#mobilePropertyUI [data-mp-hex]');
  await setHex.fill('#14AABB');

@@ -24,26 +24,15 @@ export function waitForOfflineWorker(registration, timeoutMs = 30000) {
 
 export function installNetlifyPWA({ prepare, resume }) {
   if (!('serviceWorker' in navigator)) return;
-  // Reserve space below the tabs instead of covering the canvas or mobile tools.
+  // The icon and optional popover never reserve vertical layout space.
   const style = document.createElement('style');
-  style.textContent = `
-    :root{--pwa-notice-height:0px}
-    body{padding-top:calc(var(--document-tab-height) + var(--pwa-notice-height))}
-    #app{height:calc(var(--v41-visual-height,100dvh) - var(--document-tab-height) - var(--pwa-notice-height))!important}
-    .home-screen{top:calc(var(--document-tab-height) + var(--pwa-notice-height))}
-    #pwaStatus{position:fixed;top:var(--document-tab-height);left:0;right:0;z-index:13;background:#242429;color:#f3efff;font:12px system-ui;box-shadow:inset 0 -1px #51475f}
-    #pwaStatus [hidden],#pwaStatus[hidden]{display:none!important}
-    #pwaStatus .pwa-row{height:36px;display:flex;align-items:center;gap:8px;padding:0 8px}
-    #pwaMessage{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    #pwaStatus button,#pwaToggle{flex:0 0 auto;border:1px solid #625475;border-radius:6px;background:#37313f;color:#f3efff;font:12px system-ui;min-height:32px;padding:4px 8px}
-    #documentTabs #pwaToggle{order:4;border-radius:0;min-width:64px}
-    #pwaStatus button:focus-visible,#pwaToggle:focus-visible{outline:2px solid #b99aff;outline-offset:-2px}
-    #pwaToggle[hidden]{display:none}
-    #pwaDetails{height:60px;overflow:auto;overflow-wrap:anywhere;margin:0;padding:4px 8px;white-space:pre-wrap}
-  `;
+  style.textContent = "\n#pwaStatus{position:fixed;z-index:610;box-sizing:border-box;width:min(340px,calc(100vw - 16px));max-height:min(72dvh,420px);overflow:auto;border:1px solid #625475;border-radius:10px;background:#292630;color:#f3efff;box-shadow:0 16px 35px #0009;font:12px/1.4 system-ui}\n#pwaStatus[hidden],#pwaStatus [hidden],#pwaToggle[hidden]{display:none!important}\n#pwaStatus .pwa-row{display:flex;align-items:center;gap:8px;padding:9px 10px;min-height:36px}\n#pwaStatus .pwa-row+.pwa-row{padding-top:0}\n#pwaMessage{flex:1;min-width:0;overflow-wrap:anywhere}\n#pwaStatus button{flex:0 0 auto;border:1px solid #625475;border-radius:6px;background:#37313f;color:#f3efff;font:12px system-ui;min-height:30px;padding:4px 8px}\n#pwaStatus button:focus-visible,#pwaToggle:focus-visible{outline:2px solid #b99aff;outline-offset:2px}\n#pwaDetails{max-height:150px;overflow:auto;overflow-wrap:anywhere;margin:0;padding:0 10px 10px;white-space:pre-wrap}\n#pwaToggle{position:relative;display:grid;place-items:center;flex:0 0 32px;width:32px;height:30px;padding:5px;border:1px solid #625475;border-radius:6px;background:#302d38;color:#f3efff;cursor:pointer}\n#pwaToggle:hover{background:#423b4b}\n#documentTabs #pwaToggle{order:4;flex:0 0 32px;margin:0 5px 0 2px}\n#homePwaStatus #pwaToggle{margin:0}\n#pwaToggle .pwa-icon{display:block;width:20px;height:20px;fill:currentColor;flex:none}\n#pwaToggle .pwa-icon-saved{display:none}\n#pwaToggle[data-state=\"ready\"] .pwa-icon-loading,\n#pwaToggle[data-state=\"update\"] .pwa-icon-loading,\n#pwaToggle[data-state=\"error\"][data-ready=\"true\"] .pwa-icon-loading{display:none}\n#pwaToggle[data-state=\"ready\"] .pwa-icon-saved,\n#pwaToggle[data-state=\"update\"] .pwa-icon-saved,\n#pwaToggle[data-state=\"error\"][data-ready=\"true\"] .pwa-icon-saved{display:block}\n#pwaToggle[data-state=\"loading\"] .pwa-icon-loading{animation:pwa-cloud-pulse 1.35s ease-in-out infinite}\n#pwaToggle[data-state=\"update\"]::after,#pwaToggle[data-state=\"error\"]::after{content:'';position:absolute;top:2px;right:2px;width:6px;height:6px;border-radius:50%;background:#e2b1ff;box-shadow:0 0 0 1px #292630}\n#pwaToggle[data-state=\"error\"]::after{background:#ff999f}\n@keyframes pwa-cloud-pulse{0%,100%{opacity:1}50%{opacity:.35}}\n@media(prefers-reduced-motion:reduce){#pwaToggle[data-state=\"loading\"] .pwa-icon-loading{animation:none}}\n";
   document.head.append(style);
   const panel = document.createElement('aside');
   panel.id = 'pwaStatus';
+  panel.hidden = true;
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Состояние офлайн-копии');
   panel.setAttribute('aria-live', 'polite');
   panel.dataset.offlineReady = 'false';
   const label = document.createElement('span');
@@ -53,9 +42,15 @@ export function installNetlifyPWA({ prepare, resume }) {
   const retry = document.createElement('button');
   retry.id = 'pwaRetry'; retry.textContent = 'Повторить подготовку'; retry.hidden = true;
   const toggle = document.createElement('button');
-  toggle.id = 'pwaToggle'; toggle.setAttribute('aria-controls', panel.id);
+  toggle.id = 'pwaToggle'; toggle.type = 'button';
+  toggle.dataset.state = 'loading'; toggle.dataset.ready = 'false';
+  toggle.setAttribute('aria-controls', panel.id);
+  toggle.setAttribute('aria-label', 'Офлайн: подготовка версии…');
+  toggle.title = 'Подготовка офлайн-версии…';
+  // Two monochrome silhouettes are traced from the supplied reference icons.
+  toggle.innerHTML = "<svg class=\"pwa-icon pwa-icon-loading\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill-rule=\"evenodd\" d=\"M252,192 247,194 240,204 240,440 198,401 189,400 182,403 177,410 176,418 179,425 247,493 259,495 264,493 333,424 335,412 328,402 323,400 313,401 271,440 271,204 264,194Z M491,225 480,199 466,180 445,162 414,147 409,117 397,89 381,66 365,50 342,34 311,21 283,16 260,16 220,25 201,34 183,46 162,66 146,89 134,117 128,144 104,146 78,155 59,167 43,182 27,206 20,224 16,245 16,266 20,287 32,314 44,330 69,351 90,361 117,367 195,367 200,365 206,358 207,348 205,343 198,337 119,336 96,330 79,320 63,304 53,287 47,264 48,241 57,216 68,201 79,191 96,181 108,177 147,175 157,168 161,137 169,113 181,93 199,74 226,57 259,48 284,48 300,51 327,62 344,74 362,93 374,113 382,137 386,169 392,175 412,180 434,193 454,217 463,244 463,267 459,283 449,302 434,318 412,331 398,335 313,337 306,343 304,348 305,358 311,365 316,367 401,366 426,359 453,343 474,321 486,300 491,286 495,264 495,247Z\"/></svg><svg class=\"pwa-icon pwa-icon-saved\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill-rule=\"evenodd\" d=\"M20,12 7,27 0,48 0,463 4,478 12,491 29,505 48,511 463,511 478,507 491,499 504,484 511,463 511,108 509,103 408,2 403,0 48,0 33,4Z M128,316 137,306 148,302 363,302 374,306 383,316 386,327 386,481 126,482 125,327Z M125,30 352,29 353,157 350,164 340,174 330,177 148,177 139,174 128,163 125,152Z M301,64 296,66 289,76 289,130 295,139 308,141 318,131 318,75 311,66Z M38,35 50,29 96,30 96,153 98,166 107,184 118,195 140,205 332,206 349,202 361,195 374,181 382,161 383,29 394,29 482,117 482,461 473,476 461,482 415,481 414,317 408,301 398,288 381,277 366,273 145,273 122,281 107,295 97,317 96,481 50,482 42,479 35,473 29,461 29,50 32,42Z\"/></svg>";
   const close = document.createElement('button');
-  close.id = 'pwaClose'; close.textContent = '×'; close.setAttribute('aria-label', 'Свернуть уведомление офлайн-копии');
+  close.id = 'pwaClose'; close.textContent = '×'; close.setAttribute('aria-label', 'Закрыть сведения об офлайн-копии');
   const detailsToggle = document.createElement('button');
   detailsToggle.id = 'pwaDetailsToggle'; detailsToggle.textContent = 'Подробнее'; detailsToggle.setAttribute('aria-controls', 'pwaDetails');
   const details = document.createElement('p');
@@ -65,11 +60,18 @@ export function installNetlifyPWA({ prepare, resume }) {
   heading.append(label, close); actions.append(button, retry, detailsToggle);
   panel.append(heading, actions, details); document.body.append(panel);
   document.getElementById('documentTabs').append(toggle);
+
   const mobile = window.matchMedia('(max-width:760px)');
   let screen = document.getElementById('homeScreen')?.classList.contains('hidden') ? 'editor' : 'home';
   let expanded = false;
   let preparing = false, confirmedReady = false, announceSuccess = false, displayedWorker, collapseTimer;
   const registrationDisplay = new WeakMap();
+  function positionPanel() {
+    const rect = toggle.getBoundingClientRect();
+    const width = Math.min(340, window.innerWidth - 16);
+    panel.style.left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width)) + 'px';
+    panel.style.top = Math.max(8, Math.min(window.innerHeight - 110, rect.bottom + 7)) + 'px';
+  }
   function layout() {
     const visible = !mobile.matches || screen === 'home';
     const host = document.getElementById(mobile.matches ? 'homePwaStatus' : 'documentTabs');
@@ -78,14 +80,22 @@ export function installNetlifyPWA({ prepare, resume }) {
     panel.hidden = !visible || !expanded;
     toggle.setAttribute('aria-expanded', String(!panel.hidden));
     detailsToggle.setAttribute('aria-expanded', String(!details.hidden));
-    document.documentElement.style.setProperty('--pwa-notice-height', (panel.hidden ? 0 : 36 + (actions.hidden ? 0 : 36) + (details.hidden ? 0 : 60)) + 'px');
+    if (!panel.hidden) positionPanel();
   }
-  document.addEventListener('karto-screen-change', event => { screen = event.detail.screen; layout(); });
-  mobile.addEventListener('change', layout);
+  document.addEventListener('karto-screen-change', event => { screen = event.detail.screen; expanded = false; layout(); });
+  mobile.addEventListener('change', () => { expanded = false; layout(); });
+  window.addEventListener('resize', layout);
+  document.addEventListener('pointerdown', event => {
+    if (expanded && !panel.contains(event.target) && !toggle.contains(event.target)) collapse();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (expanded && event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); collapse();
+    }
+  }, true);
   function collapse() {
     clearTimeout(collapseTimer); expanded = false; details.hidden = true;
-    // Keep keyboard focus on a visible control after closing or auto-collapse.
-    if (!toggle.hidden && panel.contains(document.activeElement)) toggle.focus();
+    if (panel.contains(document.activeElement) && !toggle.hidden) toggle.focus();
     layout();
   }
   close.onclick = collapse;
@@ -94,18 +104,19 @@ export function installNetlifyPWA({ prepare, resume }) {
     clearTimeout(collapseTimer); expanded = true; layout();
   };
   detailsToggle.onclick = () => { details.hidden = !details.hidden; layout(); };
-  function notice(message, { expanded: showExpanded = true, detail = '', retryable = false, update = false, success = false } = {}) {
+  function notice(message, { detail = '', retryable = false, update = false, success = false } = {}) {
     clearTimeout(collapseTimer);
     label.textContent = label.title = message;
     details.textContent = detail; details.hidden = true; detailsToggle.hidden = !detail;
     retry.hidden = !retryable; button.hidden = !update;
     actions.hidden = !detail && !retryable && !update;
-    toggle.textContent = update ? 'Версия ↑' : retryable ? 'Офлайн !' : confirmedReady ? 'Офлайн ✓' : 'Офлайн …';
+    const state = update ? 'update' : retryable ? 'error' : confirmedReady ? 'ready' : 'loading';
+    toggle.dataset.state = state; toggle.dataset.ready = String(confirmedReady);
+    toggle.title = message;
     toggle.setAttribute('aria-label', 'Офлайн: ' + message);
-    expanded = showExpanded; layout();
-    if (success) collapseTimer = setTimeout(() => {
-      label.textContent = label.title = 'Готово к работе офлайн'; collapse();
-    }, 4000);
+    // The panel is never opened automatically, including on success or error.
+    layout();
+    if (success && expanded) collapseTimer = setTimeout(collapse, 4000);
   }
   function failed(error) {
     notice(confirmedReady ? 'Не удалось обновить офлайн-копию' : 'Не удалось подготовить офлайн-копию', {

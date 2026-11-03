@@ -24,15 +24,17 @@ async function geometry(page, element) {
       return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height };
     };
     const canvas = rect('#canvas'), bubble = rect('#quickBubble'), stage = rect('#stageScroller'), toolbar = rect('#mobileToolbars');
+    const stripEl=document.querySelector('#mobileNudge');
+    const strip=stripEl&&!stripEl.classList.contains('hidden')&&getComputedStyle(stripEl).display!=='none' ? rect('#mobileNudge') : null;
     const sx = canvas.width / 320, sy = canvas.height / 240;
-    return { bubble, canvas, stage, toolbar, selection: { left: canvas.left + e.x * sx, right: canvas.left + (e.x + e.w) * sx, top: canvas.top + e.y * sy, bottom: canvas.top + (e.y + e.h) * sy } };
+    return { bubble, canvas, stage, toolbar, strip, selection: { left: canvas.left + e.x * sx, right: canvas.left + (e.x + e.w) * sx, top: canvas.top + e.y * sy, bottom: canvas.top + (e.y + e.h) * sy } };
   }, element);
 }
-function safe({ bubble: b, stage, toolbar }) {
+function safe({ bubble: b, stage, toolbar, strip }) {
   expect(b.left).toBeGreaterThanOrEqual(stage.left + 7);
   expect(b.right).toBeLessThanOrEqual(stage.right - 7);
   expect(b.top).toBeGreaterThanOrEqual(stage.top + 7);
-  expect(b.bottom).toBeLessThanOrEqual(Math.min(stage.bottom, toolbar.top) - 7);
+  expect(b.bottom).toBeLessThanOrEqual(Math.min(stage.bottom, toolbar.top, strip?.top ?? Infinity) - 7);
 }
 async function above(page, element) {
   await expect.poll(async () => {
@@ -91,9 +93,14 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
     const element = { x: 120, y: -240, w: 80, h: 480 };
     await open(page, [element]);
     // The object extends above the workspace and ends at the card's bottom edge.
+    // A full-width resident arrow strip limits the height available for
+    // floating actions. The bubble may approach the object by a few pixels,
+    // but it must remain below the selection and above the resident strip.
     await expect.poll(async () => {
-      const g = await geometry(page, element); return Math.round(g.bubble.top - g.selection.bottom);
-    }).toBe(8);
+      const g = await geometry(page, element);
+      const gap = Math.round(g.bubble.top - g.selection.bottom);
+      return gap >= 4 && gap <= 8;
+    }).toBe(true);
     const g = await geometry(page, element);
     safe(g); expect(g.bubble.top).toBeGreaterThan(g.canvas.bottom);
   });

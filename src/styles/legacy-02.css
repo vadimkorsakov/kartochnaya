@@ -9,8 +9,11 @@
 [data-mp-nudge]{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none;}
 #mobileNudge{display:none;}
 @media(max-width:760px){
- #mobileNudge:not(.hidden){position:fixed;z-index:55;display:flex;gap:4px;transform:translateX(-50%);padding:5px;border:1px solid #696374;border-radius:16px;background:#292630;box-shadow:0 4px 16px #0005;}
- #mobileNudge button{width:42px;height:42px;font-size:22px;border:0;border-radius:10px;background:#423b50;color:#fff;}
+ /* Resident nudge strip: fixed rectangular row, full visual viewport width. */
+ #mobileNudge:not(.hidden){position:fixed;z-index:55;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:center;gap:6px;box-sizing:border-box;height:50px;min-height:50px;margin:0;padding:2px 6px;border:0;border-top:1px solid #575166;border-radius:0;transform:none;background:#292630;box-shadow:0 -3px 12px #0004;overflow:hidden;}
+ #mobileNudge button{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;min-width:0;height:44px;min-height:44px;padding:0;font-size:22px;line-height:1;border:1px solid #575166;border-radius:7px;background:#423b50;color:#fff;touch-action:none;}
+ #mobileNudge button:active{background:#625079;}
+ #mobileNudge button:focus-visible{outline:2px solid #c4a7ff;outline-offset:-3px;}
  #mobileNudge button:disabled{opacity:.4;}
  #mobilePropertyUI [data-mp-nudge]{height:41px;font-size:20px;}
 }

@@ -1206,7 +1206,30 @@ function selectionBounds(es=picked()){if(!es.length)return null;const bs=es.map(
 function drawHandle(c,x,y,s=8){const z=1/app.zoom;c.fillStyle='#fff';c.strokeStyle='#7358ed';c.lineWidth=1.5*z;c.beginPath();c.rect(x-s*z/2,y-s*z/2,s*z,s*z);c.fill();c.stroke()}
 function drawLabel(c,text,x,y){const z=1/app.zoom;c.save();c.font=`${11*z}px Arial`;c.textAlign='center';c.textBaseline='middle';const w=c.measureText(text).width+12*z;c.fillStyle='#775bef';c.fillRect(x-w/2,y-10*z,w,20*z);c.fillStyle='#fff';c.fillText(text,x,y);c.restore()}
 function cropImageRect(e){const g=imageGeometry(e);if(!g)return null;return {x:g.dx,y:g.dy,w:g.dw,h:g.dh,cx:g.dx+g.dw/2,cy:g.dy+g.dh/2}}
-function drawCropControls(c,e){const r=cropImageRect(e);if(!r)return;const z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.translate(r.cx,r.cy);c.rotate((e.cropRotation||0)*Math.PI/180);c.translate(-r.w/2,-r.h/2);c.strokeStyle='#fb923c';c.lineWidth=2*z;c.setLineDash([8*z,5*z]);c.strokeRect(0,0,r.w,r.h);c.setLineDash([]);for(const [key,x,y] of [['nw',0,0],['n',r.w/2,0],['ne',r.w,0],['e',r.w,r.h/2],['se',r.w,r.h],['s',r.w/2,r.h],['sw',0,r.h],['w',0,r.h/2]])drawHandle(c,x,y,key.length===2?11:8);c.beginPath();c.moveTo(r.w/2,0);c.lineTo(r.w/2,-28*z);c.stroke();c.fillStyle='#fff';c.beginPath();c.arc(r.w/2,-30*z,6*z,0,Math.PI*2);c.fill();c.stroke();c.restore()}
+// The hit targets and crop overlay use the same photo-local coordinates.
+// Draw controls on cropPreview, which extends outside the artboard.
+function cropResizeHandles(r){return [['nw',0,0],['n',r.w/2,0],['ne',r.w,0],['e',r.w,r.h/2],['se',r.w,r.h],['s',r.w/2,r.h],['sw',0,r.h],['w',0,r.h/2]]}
+function cropRotateHandles(r,z){const o=29*z;return [[r.w/2,0,r.w/2,-o],[r.w,r.h/2,r.w+o,r.h/2],[r.w/2,r.h,r.w/2,r.h+o],[0,r.h/2,-o,r.h/2]]}
+function drawCropControls(c,e){
+ const r=cropImageRect(e);if(!r)return;
+ const z=1/app.zoom,hover=app.drag?.type?.startsWith('crop')?app.drag.type:app.cropHover;
+ c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);
+ c.translate(-e.w/2,-e.h/2);c.translate(r.cx,r.cy);
+ c.rotate((e.cropRotation||0)*Math.PI/180);c.translate(-r.w/2,-r.h/2);
+ c.strokeStyle='#32a0ff';c.lineWidth=2*z;c.setLineDash([7*z,5*z]);c.strokeRect(0,0,r.w,r.h);c.setLineDash([]);
+ c.lineWidth=1.6*z;
+ for(const [x,y,rx,ry] of cropRotateHandles(r,z)){
+  c.strokeStyle='#32a0ff';c.fillStyle=hover==='cropRotate'?'#d7f2ff':'#fff';
+  c.beginPath();c.moveTo(x,y);c.lineTo(rx,ry);c.stroke();
+  c.beginPath();c.arc(rx,ry,6*z,0,Math.PI*2);c.fill();c.stroke();
+ }
+ for(const [kind,x,y] of cropResizeHandles(r)){
+  const side=kind.length===2?10:8,selected=hover==='cropScale-'+kind;
+  c.fillStyle=selected?'#d7f2ff':'#fff';c.strokeStyle='#32a0ff';
+  c.lineWidth=1.7*z;c.beginPath();c.rect(x-side*z/2,y-side*z/2,side*z,side*z);c.fill();c.stroke();
+ }
+ c.restore();
+}
 function drawGuides(c){const z=1/app.zoom;c.save();c.lineWidth=z;c.strokeStyle='#f14b9a';c.fillStyle='#f14b9a';for(const guide of app.guides){c.beginPath();if(guide.axis==='x'){c.moveTo(guide.pos,0);c.lineTo(guide.pos,app.doc.height)}else{c.moveTo(0,guide.pos);c.lineTo(app.doc.width,guide.pos)}c.stroke()}c.restore()}
 function drawMeasurements(c){if(!app.altDown||!app.selectedIds.length||app.drag)return;const a=selectionBounds(),hover=app.mouseDoc&&hitElement(app.mouseDoc),other=hover&&!app.selectedIds.includes(hover.id)?boundsOf(hover):null;const z=1/app.zoom;c.save();c.strokeStyle='#ee4fa3';c.fillStyle='#ee4fa3';c.lineWidth=z;const measure=(p1,p2,axis,labelX,labelY)=>{if(Math.abs(p2-p1)<.4)return;c.beginPath();if(axis==='x'){c.moveTo(p1,labelY);c.lineTo(p2,labelY);for(const n of [p1,p2]){c.moveTo(n,labelY-5*z);c.lineTo(n,labelY+5*z)}}else{c.moveTo(labelX,p1);c.lineTo(labelX,p2);for(const n of [p1,p2]){c.moveTo(labelX-5*z,n);c.lineTo(labelX+5*z,n)}}c.stroke();drawLabel(c,String(Math.round(Math.abs(p2-p1))),axis==='x'?(p1+p2)/2:labelX,axis==='y'?(p1+p2)/2:labelY)};
 if(other){const cy=clamp((Math.max(a.y,other.y)+Math.min(a.bottom,other.bottom))/2,0,app.doc.height);const cx=clamp((Math.max(a.x,other.x)+Math.min(a.right,other.right))/2,0,app.doc.width);if(a.right<=other.x)measure(a.right,other.x,'x',0,cy);else if(other.right<=a.x)measure(other.right,a.x,'x',0,cy);if(a.bottom<=other.y)measure(a.bottom,other.y,'y',cx,0);else if(other.bottom<=a.y)measure(other.bottom,a.y,'y',cx,0)}else{const y=clamp((a.y+a.bottom)/2,10*z,app.doc.height-10*z),x=clamp((a.x+a.right)/2,10*z,app.doc.width-10*z);if(a.x>0)measure(0,a.x,'x',0,y);if(a.right<app.doc.width)measure(a.right,app.doc.width,'x',0,y);if(a.y>0)measure(0,a.y,'y',x,0);if(a.bottom<app.doc.height)measure(a.bottom,app.doc.height,'y',x,0)}c.restore()}
@@ -1299,8 +1322,8 @@ function paintCropPreview(){
  pc.save();pc.translate(cx,cy);pc.rotate(rad);pc.translate(-e.w/2,-e.h/2);
  // Even-odd hole: original shape stays fully opaque on the main canvas.
  pc.beginPath();pc.rect(-100000,-100000,200000,200000);pathFor(pc,e,false);pc.clip('evenodd');pc.globalAlpha=.43;imageInside(pc,e);pc.restore();
- pc.save();pc.translate(cx,cy);pc.rotate(rad);pc.translate(-e.w/2,-e.h/2);
- pc.translate(g.dx+g.dw/2,g.dy+g.dh/2);pc.rotate(rot);pc.translate(-g.dw/2,-g.dh/2);pc.lineWidth=2/app.zoom;pc.setLineDash([7/app.zoom,5/app.zoom]);pc.strokeStyle='#32a0ff';pc.strokeRect(0,0,g.dw,g.dh);pc.setLineDash([]);pc.restore();
+ // Handles and dashed photo bounds must be rendered on the same top canvas.
+ drawCropControls(pc,e);
 }
 function findClipBase(d,e){
  const i=d.elements.indexOf(e);if(i<1)return null;
@@ -1964,7 +1987,7 @@ function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDo
  const t=c.getTransform(),nativeRegion=(t.a!==1||t.d!==1||t.b!==0||t.c!==0)&&stack.elements.some(e=>e.isFxRegion&&isLayerVisible(e,stack)&&(e.effects||[]).some(f=>f.type==='pixelate'&&f.enabled!==false));
  if(nativeRegion){const native=fxCanvas(d);paintDocument(native.getContext('2d'),stack);c.drawImage(native,0,0)}
  else{c.fillStyle=hexAlpha(d.background||'#ffffff',d.backgroundAlpha??100);c.fillRect(0,0,d.width,d.height);paintStack(c,stack)}if(withSelection){drawSavedGuides(c);drawGuideEdgeMeasurements(c);drawGuides(c);drawPixelSelectionOverlay(c);
-const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>!e.isFxRegion&&isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();if(app.cropMode)drawCropControls(c,e);drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(chosen),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);drawMobileNudgeMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
+const chosen=app.marqueeTool?[]:picked().map(e=>d.elements.find(x=>x.id===e.id)||e).filter(e=>!e.isFxRegion&&isLayerVisible(e));if(chosen.length===1){const e=chosen[0],z=1/app.zoom;c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.translate(-e.w/2,-e.h/2);c.lineWidth=2*z;c.strokeStyle=app.cropMode?'#f5934c':'#785cf3';c.strokeRect(0,0,e.w,e.h);if(!isLayerLocked(e)&&!app.cropMode&&app.penEditId!==e.id){for(const [key,x,y] of handleCoords(e))drawHandle(c,x,y,key.length===2?9:7);for(const [hx,hy,ex,ey] of rotateHandles(e)){c.beginPath();c.moveTo(hx,hy);c.lineTo(ex,ey);c.stroke();c.beginPath();c.arc(ex,ey,6*z,0,Math.PI*2);c.fillStyle='white';c.fill();c.stroke()}}c.restore();drawGradientOverlay(c,e);if(e.type==='text'&&e.textMode==='path')drawTextPathControls(c,e)}else if(chosen.length>1){const b=selectionBounds(chosen),z=1/app.zoom;c.save();c.strokeStyle='#785cf3';c.lineWidth=2*z;c.strokeRect(b.x,b.y,b.right-b.x,b.bottom-b.y);if(chosen.some(e=>!isLayerLocked(e)))for(const [x,y] of [[b.x,b.y],[b.right,b.y],[b.right,b.bottom],[b.x,b.bottom]])drawHandle(c,x,y);c.restore()}drawMeasurements(c);drawMobileNudgeMeasurements(c);penOverlay(c);drawTextPathDraft(c)}c.restore()}
 function paint(){if(!app.doc)return;if(app.inkTool)inkMoveCursor(lastInkPointer);ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);const ratio=app.renderScale||1;ctx.setTransform(app.zoom*ratio,0,0,app.zoom*ratio,0,0);paintDocument(ctx,app.doc,true);if(app.drag?.type==='newText'){const a=app.drag.start,b=app.drag.current||a;ctx.save();ctx.lineWidth=1/app.zoom;ctx.setLineDash([5/app.zoom,3/app.zoom]);ctx.strokeStyle='#ab8aff';ctx.fillStyle='#9a73ee22';ctx.fillRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(a.x-b.x),Math.abs(a.y-b.y));ctx.restore()}scheduleInkPreview();ctx.restore();paintCropPreview();updateQuickBubble()}
 // Give the quick-actions bubble its normal placement. If the resident arrows
 // would overlap it, move the arrows instead of pushing the bubble over selection.

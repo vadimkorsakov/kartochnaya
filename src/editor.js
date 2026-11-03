@@ -4026,6 +4026,12 @@ const mobileNudgeObserver=new MutationObserver(()=>mobileNudgeSync());
 for(const id of ['app','homeScreen','mobilePropertyUI','mobileLayersSheet','rightPanel','mobileSeriesSheet','shapeTray','assetsPopover','selectionMenu','historyPopover','editorProjectMenu','mobileLayerActionMenu','fillPopover','boundaryFloatingPanel','inkPopover','textModeMenu','documentTabsMenu','shade']){
  const el=$('#'+id);if(el)mobileNudgeObserver.observe(el,{attributes:true,attributeFilter:['class'],childList:id==='mobilePropertyUI'});
 }
+// Browser chrome and the on-screen keyboard can change VisualViewport without
+// changing classes on the editor. Keep the full-width strip docked in that case.
+window.addEventListener('resize',mobileNudgeSync,{passive:true});
+window.visualViewport?.addEventListener('resize',mobileNudgeSync,{passive:true});
+window.visualViewport?.addEventListener('scroll',mobileNudgeSync,{passive:true});
+new ResizeObserver(mobileNudgeSync).observe($('#mobileToolbars'));
 function drawMobileNudgeMeasurements(c){
  if(mobileNudgeMeasureDoc!==app.doc?.id||!mobileV36Small()||!app.selectedIds.length)return;
  const selected=picked().filter(e=>!e.isFxRegion&&isLayerVisible(e)),a=selectionBounds(selected);if(!a)return;

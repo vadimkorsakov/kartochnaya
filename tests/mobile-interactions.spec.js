@@ -287,9 +287,12 @@ test('closing a held nudge stops repeats and releases capture', async ({ page })
   const after = await exportedDocument(page); await reload(page, after);
 });
 
-test('locked nudge and idle cancellation create no selection-only history', async ({ page }) => {
-  await open(page, { locked: true }); const before = await exportedDocument(page), h = await history(page); await expect(page.locator('#mobileNudge')).toBeVisible();
-  await resetAudit(page); const t = await touch(page, '[data-mp-nudge="right"]'); await t.end(true);
+test('locked resident nudge is disabled and idle cancellation creates no selection-only history', async ({ page }) => {
+  await open(page, { locked: true }); const before = await exportedDocument(page), h = await history(page);
+  await expect(page.locator('#mobileNudge')).toBeVisible();
+  await expect(page.locator('#mobileNudge [data-mp-nudge="right"]')).toBeDisabled();
+  await resetAudit(page);
+  await pointer(page, 'body', 'pointercancel', 97);
   expect(await history(page)).toEqual(h); expect((await audit(page)).saves).toBe(0);
   expect(await exportedDocument(page)).toEqual(before);
 });

@@ -51,3 +51,10 @@ export function vectorPathTransform(box,w,h){
  const sx=w/box.w,sy=h/box.h;
  return [sx,0,0,sy,-box.x*sx,-box.y*sy];
 }
+
+// Sampled SVG contour points (text-on-path, boundary text) use the same
+// local frame as Path2D, including the viewBox translation for new vectors.
+export function vectorPointInFrame(box,x,y){
+ if(!box)return {x:x/100,y:y/100};
+ return {x:(x-box.x)/box.w,y:(y-box.y)/box.h};
+}

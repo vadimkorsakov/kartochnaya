@@ -30,6 +30,9 @@ export function installNetlifyPWA({ prepare, resume }) {
   document.head.append(style);
   const panel = document.createElement('aside');
   panel.id = 'pwaStatus';
+  panel.hidden = true;
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Состояние офлайн-копии');
   panel.setAttribute('aria-live', 'polite');
   panel.dataset.offlineReady = 'false';
   const label = document.createElement('span');
@@ -39,9 +42,15 @@ export function installNetlifyPWA({ prepare, resume }) {
   const retry = document.createElement('button');
   retry.id = 'pwaRetry'; retry.textContent = 'Повторить подготовку'; retry.hidden = true;
   const toggle = document.createElement('button');
-  toggle.id = 'pwaToggle'; toggle.setAttribute('aria-controls', panel.id);
+  toggle.id = 'pwaToggle'; toggle.type = 'button';
+  toggle.dataset.state = 'loading'; toggle.dataset.ready = 'false';
+  toggle.setAttribute('aria-controls', panel.id);
+  toggle.setAttribute('aria-label', 'Офлайн: подготовка версии…');
+  toggle.title = 'Подготовка офлайн-версии…';
+  // Two monochrome silhouettes are traced from the supplied reference icons.
+  toggle.innerHTML = "<svg class=\"pwa-icon pwa-icon-loading\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill-rule=\"evenodd\" d=\"M252,192 247,194 240,204 240,440 198,401 189,400 182,403 177,410 176,418 179,425 247,493 259,495 264,493 333,424 335,412 328,402 323,400 313,401 271,440 271,204 264,194Z M491,225 480,199 466,180 445,162 414,147 409,117 397,89 381,66 365,50 342,34 311,21 283,16 260,16 220,25 201,34 183,46 162,66 146,89 134,117 128,144 104,146 78,155 59,167 43,182 27,206 20,224 16,245 16,266 20,287 32,314 44,330 69,351 90,361 117,367 195,367 200,365 206,358 207,348 205,343 198,337 119,336 96,330 79,320 63,304 53,287 47,264 48,241 57,216 68,201 79,191 96,181 108,177 147,175 157,168 161,137 169,113 181,93 199,74 226,57 259,48 284,48 300,51 327,62 344,74 362,93 374,113 382,137 386,169 392,175 412,180 434,193 454,217 463,244 463,267 459,283 449,302 434,318 412,331 398,335 313,337 306,343 304,348 305,358 311,365 316,367 401,366 426,359 453,343 474,321 486,300 491,286 495,264 495,247Z\"/></svg><svg class=\"pwa-icon pwa-icon-saved\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill-rule=\"evenodd\" d=\"M20,12 7,27 0,48 0,463 4,478 12,491 29,505 48,511 463,511 478,507 491,499 504,484 511,463 511,108 509,103 408,2 403,0 48,0 33,4Z M128,316 137,306 148,302 363,302 374,306 383,316 386,327 386,481 126,482 125,327Z M125,30 352,29 353,157 350,164 340,174 330,177 148,177 139,174 128,163 125,152Z M301,64 296,66 289,76 289,130 295,139 308,141 318,131 318,75 311,66Z M38,35 50,29 96,30 96,153 98,166 107,184 118,195 140,205 332,206 349,202 361,195 374,181 382,161 383,29 394,29 482,117 482,461 473,476 461,482 415,481 414,317 408,301 398,288 381,277 366,273 145,273 122,281 107,295 97,317 96,481 50,482 42,479 35,473 29,461 29,50 32,42Z\"/></svg>";
   const close = document.createElement('button');
-  close.id = 'pwaClose'; close.textContent = '×'; close.setAttribute('aria-label', 'Свернуть уведомление офлайн-копии');
+  close.id = 'pwaClose'; close.textContent = '×'; close.setAttribute('aria-label', 'Закрыть сведения об офлайн-копии');
   const detailsToggle = document.createElement('button');
   detailsToggle.id = 'pwaDetailsToggle'; detailsToggle.textContent = 'Подробнее'; detailsToggle.setAttribute('aria-controls', 'pwaDetails');
   const details = document.createElement('p');

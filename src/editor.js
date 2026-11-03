@@ -3344,6 +3344,12 @@ function updatePickerAlpha(alpha,final=false){if(app.wysiwyg&&!fallbackInlineWys
 function syncEffectColorSwatches(){
  const p=$('#fillPopover');if(p.dataset.key!=='_effect')return;
  const id=p.dataset.effectId,field=p.dataset.effectField||'color',color=cpCurrentHex();
+ const mobileType=p.dataset.effectType;
+ if(mobileType){for(const el of document.querySelectorAll('#mobilePropertyUI [data-mp-effect-color]')){
+  if(el.dataset.mpEffectColor!==mobileType||el.dataset.mpColorKey!==field)continue;
+  el.value=color;const button=el.parentElement?.querySelector('[data-unified-color]');
+  if(button)button.style.backgroundColor=color;
+ }}
  for(const el of document.querySelectorAll('#inspector input[data-fx-field][data-fx-key],#fxPopover input[data-fx-field][data-fx-key]'))if(el.dataset.fxField===id&&el.dataset.fxKey===field){el.value=color;const btn=el.parentElement?.querySelector('[data-unified-color]');if(btn)btn.style.backgroundColor=color;}
  for(const el of document.querySelectorAll('#inspector [data-fx-color-id],#inspector [data-effect-color],#inspector [data-fx-color]')){
   if(el.dataset.fxColorId===id||el.dataset.effectColor===field||el.dataset.fxColor===field){

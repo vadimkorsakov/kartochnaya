@@ -380,6 +380,9 @@ function layerRows(){
  }
  walk(null,0);return out;
 }
+// Exact silhouette of the two overlapping T glyphs supplied for text layers.
+// The vector follows the reference bitmap contours, but inherits the UI color.
+const textLayerIcon='<svg class="text-layer-glyph" viewBox="0 0 512 512" aria-hidden="true" focusable="false"><path d="M0 32H351V127H320V64H191V447H255V479H96V448H160V64H32V127H0Z M224 160H511V223H480V192H383V447H447V479H288V448H352V192H256V223H224Z"/></svg>';
 function layerThumbnail(e){
  try{
   const thumb=document.createElement('canvas');thumb.width=46;thumb.height=36;
@@ -410,13 +413,13 @@ function layerHTML(mobile=false){if(mobile)return mobileLayerHTML();return rende
  const maskBase=!group&&findClipBase(app.doc,e);
  const effectiveVisible=group?groupEffectiveVisible(g):isLayerVisible(e);
  const effectiveLocked=group?groupEffectiveLocked(g):isLayerLocked(e);
- const icon=group?uiIcon('folder'):e?`<img draggable="false" src="${layerThumbnail(e)}" alt="">`:'';
+ const icon=group?uiIcon('folder'):e?.type==='text'?textLayerIcon:e?`<img draggable="false" src="${layerThumbnail(e)}" alt="">`:'';
  return `<div class="${mobile?'mobile-layer':'layer'} layer-sort ${selected?'selected active':''} ${group?'group-row':''} ${e?.clipped?'clipped-row':''} ${!effectiveVisible?'tree-hidden':''} ${effectiveLocked?'tree-locked':''}" style="--depth:${row.depth}" data-layer="${group?'':row.id}" data-sort="${group?row.groupId:row.id}" ${group?`data-group-id="${row.groupId}"`:''} draggable="false">
   ${!group&&e.clipped&&maskBase?`<span class="clip-tag" title="Обтравочная маска">↳</span>`:''}
   ${group?folderToggle(g):''}
-  <span class="layer-symbol layer-thumb ${group?'folder-icon':''} ${!group&&app.maskEditId!==e.id&&selected?'layer-image-active':''}" ${!group?`data-select-layer-thumb="${e.id}" title="Редактировать содержимое слоя"`:``}>${icon}</span>${!group&&e.layerMaskSrc?`<span class="layer-mask-link" title="Связь слоя и маски">♧</span><button type="button" class="layer-mask-thumb ${app.maskEditId===e.id?'active':''}" data-select-mask="${e.id}" title="Выбрать маску · повторный клик — удалить маску"><img src="${e.layerMaskSrc}" alt="Маска"></button>`:''}
+  <span class="layer-symbol layer-thumb ${group?'folder-icon':''} ${e?.type==='text'?'text-layer-thumb':''} ${!group&&app.maskEditId!==e.id&&selected?'layer-image-active':''}" ${!group?`data-select-layer-thumb="${e.id}" title="Редактировать содержимое слоя"`:``}>${icon}</span>${!group&&e.layerMaskSrc?`<span class="layer-mask-link" title="Связь слоя и маски">♧</span><button type="button" class="layer-mask-thumb ${app.maskEditId===e.id?'active':''}" data-select-mask="${e.id}" title="Выбрать маску · правый клик — действия с маской" aria-label="Выбрать маску слоя"><img src="${e.layerMaskSrc}" alt="Маска"></button>`:''}
   ${mobile?`<span class="mobile-drag-handle" title="Перетащить слой" aria-label="Перетащить слой">⠿</span>`:''}<span class="layer-name" data-rename="${group?g.id:e.id}" title="Двойной клик — переименовать">${html(group?g.name:e.name)}</span>
-  <span class="layer-actions">${!group?`<button type="button" class="layer-mask-create" data-create-mask="${e.id}" title="${e.layerMaskSrc?'Редактировать маску':'Добавить маску слоя'}" aria-label="Добавить маску слоя">◩</button>`:''}${!group&&e?.type==='text'?`<button type="button" class="layer-title-button ${e.isTitleLayer?'active':''}" data-title-toggle="${e.id}" aria-pressed="${e.isTitleLayer?'true':'false'}" title="Использовать как заголовок карточки" aria-label="Использовать как заголовок карточки">H1</button>${e.isTitleLayer&&app.doc.type==='card'&&app.doc.hasCustomName?`<button type="button" class="layer-title-button" data-reset-autoname="true" title="Вернуть автоматическое название карточки" aria-label="Вернуть автоматическое название карточки">↻</button>`:''}`:''}<button type="button" data-layeract="visibility" data-kind="${group?'group':'layer'}" data-id="${group?g.id:e.id}" title="${effectiveVisible?'Скрыть':'Показать'} ${group?'группу':'слой'}" aria-label="${effectiveVisible?'Скрыть':'Показать'} ${group?'группу':'слой'}">${uiIcon(effectiveVisible?'eye':'eyeOff')}</button><button type="button" data-layeract="lock" data-kind="${group?'group':'layer'}" data-id="${group?g.id:e.id}" title="${effectiveLocked?'Разблокировать':'Заблокировать'} ${group?'группу':'слой'}" aria-label="${effectiveLocked?'Разблокировать':'Заблокировать'} ${group?'группу':'слой'}">${uiIcon(effectiveLocked?'lock':'unlock')}</button></span>
+  <span class="layer-actions">${!group&&e?.type==='text'?`<button type="button" class="layer-title-button ${e.isTitleLayer?'active':''}" data-title-toggle="${e.id}" aria-pressed="${e.isTitleLayer?'true':'false'}" title="Использовать как заголовок карточки" aria-label="Использовать как заголовок карточки">H1</button>${e.isTitleLayer&&app.doc.type==='card'&&app.doc.hasCustomName?`<button type="button" class="layer-title-button" data-reset-autoname="true" title="Вернуть автоматическое название карточки" aria-label="Вернуть автоматическое название карточки">↻</button>`:''}`:''}<button type="button" data-layeract="visibility" data-kind="${group?'group':'layer'}" data-id="${group?g.id:e.id}" title="${effectiveVisible?'Скрыть':'Показать'} ${group?'группу':'слой'}" aria-label="${effectiveVisible?'Скрыть':'Показать'} ${group?'группу':'слой'}">${uiIcon(effectiveVisible?'eye':'eyeOff')}</button><button type="button" data-layeract="lock" data-kind="${group?'group':'layer'}" data-id="${group?g.id:e.id}" title="${effectiveLocked?'Разблокировать':'Заблокировать'} ${group?'группу':'слой'}" aria-label="${effectiveLocked?'Разблокировать':'Заблокировать'} ${group?'группу':'слой'}">${uiIcon(effectiveLocked?'lock':'unlock')}</button></span>
   ${!group&&findClipBase(app.doc,e)?`<span class="layer-clip-hit" data-clip-layer="${e.id}" title="Alt+клик — ${e.clipped?'снять':'создать'} обтравочную маску"></span>`:''}
  </div>`})}
 
@@ -428,10 +431,10 @@ function mobileLayerHTML(){return renderLayerTree(row=>{
  const id=group?row.groupId:row.id,key=mobileLayerKey(row);
  const selected=mobileLayerMulti?mobileLayerChoice.has(key):(group?(app.selectedGroupIds||[]).includes(id):app.selectedIds.includes(id));
  const shown=group?groupEffectiveVisible(g):isLayerVisible(e),locked=group?groupEffectiveLocked(g):isLayerLocked(e);
- const icon=group?uiIcon('folder'):`<img draggable="false" src="${layerThumbnail(e)}" alt="">`;
+ const icon=group?uiIcon('folder'):e.type==='text'?textLayerIcon:`<img draggable="false" src="${layerThumbnail(e)}" alt="">`;
  return `<div class="mobile-layer layer-sort ${selected?'selected active':''} ${group?'group-row':''} ${locked?'tree-locked':''} ${!shown?'tree-hidden':''}" data-sort="${id}" ${group?`data-group-id="${id}"`:`data-layer="${id}"`} style="--depth:${row.depth}" draggable="false">
  ${mobileLayerMulti?`<input class="mobile-layer-check" type="checkbox" data-mobile-select="${key}" ${selected?'checked':''} aria-label="Выбрать ${html(group?g.name:e.name)}">`:''}${group?folderToggle(g):''}
- <span class="layer-symbol layer-thumb ${group?'folder-icon':''}">${icon}</span>
+ <span class="layer-symbol layer-thumb ${group?'folder-icon':''} ${e?.type==='text'?'text-layer-thumb':''}">${icon}</span>
  ${!mobileLayerMulti?'<span class="mobile-drag-handle" aria-label="Перетащить слой" title="Перетащить слой">⠿</span>':''}
  <span class="layer-name" data-rename="${id}">${html(group?g.name:e.name)}</span>
  ${!mobileLayerMulti?`<span class="layer-actions"><button type="button" data-layeract="visibility" data-kind="${group?'group':'layer'}" data-id="${id}" title="${shown?'Скрыть':'Показать'}">${uiIcon(shown?'eye':'eyeOff')}</button><button type="button" data-layeract="lock" data-kind="${group?'group':'layer'}" data-id="${id}" title="${locked?'Разблокировать':'Заблокировать'}">${uiIcon(locked?'lock':'unlock')}</button><button type="button" class="mobile-layer-more" data-mobile-layer-menu="${key}" title="Действия со слоем" aria-label="Действия со слоем">⋯</button></span>`:''}
@@ -456,7 +459,7 @@ function openMobileLayerMenu(key,trigger){const menu=$('#mobileLayerActionMenu')
  if(!menu.classList.contains('hidden')&&menu.dataset.key===key){closeMobileLayerMenu();return}
  menu.dataset.key=key;
  const opts=[];if(!group&&e.type==='text')opts.push(['title',e.isTitleLayer?'Убрать статус заголовка':'Сделать заголовком','heading']);
- if(!group)opts.push(['mask',e.layerMaskSrc?'Удалить маску':'Добавить маску','mask']);
+ if(!group)opts.push(['mask',e.layerMaskSrc?'Редактировать маску':'Создать маску','mask']);
  if(group)opts.push(['ungroup','Разгруппировать','layers']);
  opts.push(['rename','Переименовать','edit']);
  if(mobileLayerChoice.size>1)opts.push(['group','Сгруппировать выбранные','folder']);
@@ -470,7 +473,7 @@ function mobileLayerAction(key,action){const group=key.startsWith('g:'),id=key.s
  if(action==='delete'){deleteLayerOrGroup(key);return}
  if(action==='rename'){const row=[...$('#mobileLayerList').querySelectorAll('.layer-sort')].find(x=>x.dataset.sort===id);const el=row?.querySelector('[data-rename]');if(el)renameLayerFromName(el);return}
  if(action==='title'&&e?.type==='text'){const next=!e.isTitleLayer;for(const el of app.doc.elements)if(el.type==='text')el.isTitleLayer=false;e.isTitleLayer=next;syncAutoCardTitle();commit('Назначение заголовка карточки');refreshLayers();refreshInspector();return}
- if(action==='mask'&&e){if(e.layerMaskSrc)removeLayerMask(id);else addLayerMask(id);refreshLayers();return}
+ if(action==='mask'&&e){addLayerMask(id);refreshLayers();return}
  if(action==='ungroup'&&group){setSelected(groupMembers(id).map(x=>x.id),true);app.selectedGroupIds=[id];app.focusGroupId=id;ungroupSelected();refreshLayers();return}
  if(action==='group'){mobileGroupSelection();if(groupSelected())exitMobileLayerMulti();return}
 }
@@ -802,8 +805,7 @@ function layerInteraction(root){
    const next=!el.isTitleLayer;for(const other of app.doc.elements)if(other.type==='text')other.isTitleLayer=false;el.isTitleLayer=next;
    syncAutoCardTitle();commit('Назначение заголовка карточки');refreshLayers();refreshInspector();return;
   }
-  const addmask=ev.target.closest('[data-create-mask]');if(addmask){ev.stopPropagation();addLayerMask(addmask.dataset.createMask);return}
-  const selectmask=ev.target.closest('[data-select-mask]');if(selectmask){ev.stopPropagation();const id=selectmask.dataset.selectMask;if(app.maskEditId===id){removeLayerMask(id);return}app.maskEditId=id;setSelected([id],true);inkRefreshColor();return}
+  const selectmask=ev.target.closest('[data-select-mask]');if(selectmask){ev.stopPropagation();const id=selectmask.dataset.selectMask;app.maskEditId=id;setSelected([id],true);inkRefreshColor();return}
   const selectlayer=ev.target.closest('[data-select-layer-thumb]');if(selectlayer){ev.stopPropagation();app.maskEditId=null;setSelected([selectlayer.dataset.selectLayerThumb],true);inkRefreshColor();return}
   const act=ev.target.closest('[data-layeract]');if(act){
    ev.preventDefault();ev.stopPropagation();
@@ -3161,7 +3163,7 @@ function alignPicked(action){const es=picked().filter(e=>!e.locked);if(!es.lengt
  if(action==='top')dy=area.y-B.y;if(action==='bottom')dy=area.bottom-B.bottom;if(action==='vcenter')dy=(area.y+area.bottom-B.y-B.bottom)/2;
  e.x=fmt(e.x+dx);e.y=fmt(e.y+dy);
  }commit();refreshInspector()}
-function contextAction(key){const es=picked();if(key==='delete-guide'){if(app.contextGuide>=0){app.doc.rulers.splice(app.contextGuide,1);app.contextGuide=-1;commit();toast('Направляющая удалена')}}else if(key==='saveShape')openSaveSelectedShape();else if(key==='replaceImage'){const e=active();if(e&&(e.type==='image'||e.fillType==='image')){app.pendingImage={kind:'replace',id:e.id};$('#imageInput').click()}}else if(key==='titleLayer'){const e=active();if(e?.type==='text'){const next=!e.isTitleLayer;for(const el of app.doc.elements)if(el.type==='text')el.isTitleLayer=false;e.isTitleLayer=next;syncAutoCardTitle();commit('Заголовок карточки');refreshLayers();refreshInspector()}}else if(key==='copy')copyLayers();else if(key==='paste')pasteLayers();else if(key==='delete')deleteElement();else if(key==='lock'){const value=!es.every(x=>x.locked);es.forEach(x=>x.locked=value);commit();refreshLayers();refreshInspector()}
+function contextAction(key){const es=picked();if(key==='createMask'){const e=active();if(e&&!e.layerMaskSrc)addLayerMask(e.id)}else if(key==='delete-guide'){if(app.contextGuide>=0){app.doc.rulers.splice(app.contextGuide,1);app.contextGuide=-1;commit();toast('Направляющая удалена')}}else if(key==='saveShape')openSaveSelectedShape();else if(key==='replaceImage'){const e=active();if(e&&(e.type==='image'||e.fillType==='image')){app.pendingImage={kind:'replace',id:e.id};$('#imageInput').click()}}else if(key==='titleLayer'){const e=active();if(e?.type==='text'){const next=!e.isTitleLayer;for(const el of app.doc.elements)if(el.type==='text')el.isTitleLayer=false;e.isTitleLayer=next;syncAutoCardTitle();commit('Заголовок карточки');refreshLayers();refreshInspector()}}else if(key==='copy')copyLayers();else if(key==='paste')pasteLayers();else if(key==='delete')deleteElement();else if(key==='lock'){const value=!es.every(x=>x.locked);es.forEach(x=>x.locked=value);commit();refreshLayers();refreshInspector()}
  else if(['front','back','forward','backward'].includes(key))arrangeLayer(key);
  else if(['left','right','top','bottom','hcenter','vcenter'].includes(key))alignPicked(key);
  else if(key==='flipH'||key==='flipV'){for(const e of es){e[key==='flipH'?'flipX':'flipY']=!e[key==='flipH'?'flipX':'flipY']}commit()}
@@ -3169,9 +3171,9 @@ function contextAction(key){const es=picked();if(key==='delete-guide'){if(app.co
 $('#contextMenu').addEventListener('click',ev=>{const item=ev.target.closest('[data-menu]');if(item){ev.stopPropagation();contextAction(item.dataset.menu)}});
 document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#contextMenu'))hideContextMenu()},true);
 document.addEventListener('contextmenu',ev=>{const layer=ev.target.closest('[data-layer]'),overCanvas=ev.target.closest('#canvas');if(!overCanvas&&!layer&&!ev.target.closest('#stageScroller'))return;ev.preventDefault();
- if(layer&&!app.selectedIds.includes(layer.dataset.layer))select(layer.dataset.layer);
+ if(layer?.dataset.layer&&!app.selectedIds.includes(layer.dataset.layer))select(layer.dataset.layer);
  if(overCanvas){const p=clientDocPoint(ev),e=hitElement(p);app.contextGuide=hitSavedGuide(p);if(e&&app.contextGuide<0&&!app.selectedIds.includes(e.id))select(e.id)}else app.contextGuide=-1;$('#deleteGuideAction').classList.toggle('hidden',app.contextGuide<0)
- $('#contextSaveShape').classList.toggle('hidden',!['path','vector'].includes(active()?.type));$('#contextReplaceImage').classList.toggle('hidden',!(active()?.type==='image'||active()?.fillType==='image'));$('#contextTitleLayer').classList.toggle('hidden',active()?.type!=='text');$('#contextTitleLayerText').textContent=active()?.isTitleLayer?'Убрать статус заголовка':'Сделать заголовком';showContextMenu(ev.clientX,ev.clientY)
+ $('#contextSaveShape').classList.toggle('hidden',!['path','vector'].includes(active()?.type));$('#contextReplaceImage').classList.toggle('hidden',!(active()?.type==='image'||active()?.fillType==='image'));$('#contextTitleLayer').classList.toggle('hidden',active()?.type!=='text');$('#contextCreateMask').classList.toggle('hidden',!active()||!!active().layerMaskSrc||(layer&&!layer.dataset.layer));$('#contextTitleLayerText').textContent=active()?.isTitleLayer?'Убрать статус заголовка':'Сделать заголовком';showContextMenu(ev.clientX,ev.clientY)
 });
 function bindInspectorNumericEvents(root){
 // Figma-style Alt + drag on numeric fields (horizontal scrub).

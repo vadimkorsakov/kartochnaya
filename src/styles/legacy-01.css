@@ -1626,3 +1626,32 @@ html,body{background:#1e1f27!important;}
  .tf43-pair>.k-num-wrap{width:78px;flex-basis:78px}
  .cp-channels{grid-template-columns:72px minmax(0,1fr) 94px}
 }
+
+
+/* Layers: one consistent desktop hover/focus policy, including groups.
+   Touch screens retain visible actions because they have no reliable hover. */
+@media (min-width:761px) and (hover:hover) {
+  #layers .layer-sort>.layer-actions {
+    opacity:0!important;
+    /* Keep hit-testing enabled: hovering a currently transparent button must
+       also hover its parent row, revealing the actions before click. */
+    transition:opacity .12s ease;
+  }
+  #layers .layer-sort:is(:hover,:focus-within)>.layer-actions {
+    opacity:1!important;
+  }
+}
+/* The supplied layered-T symbol, vectorized for resolution-independent,
+   theme-aware thumbnails; avoid unreadable text-preview rendering. */
+.layer-sort .layer-thumb.text-layer-thumb {
+  color:#d2c7eb;
+  background:#282530;
+}
+.layer-sort .layer-thumb.text-layer-thumb svg.text-layer-glyph {
+  display:block;
+  width:25px!important;
+  height:25px!important;
+  flex:0 0 25px;
+  fill:currentColor!important;
+  stroke:none!important;
+}

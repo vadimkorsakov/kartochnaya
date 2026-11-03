@@ -154,7 +154,12 @@ for (const reason of ['pointercancel', 'lostpointercapture', 'Escape', 'tool', '
     if (reason === 'layer' || reason === 'mask') {
       await page.locator('#newPaintLayerBtn').click();
       if (reason === 'mask') {
-        await page.locator('#layers [data-create-mask]').last().click();
+        // The row no longer has a direct mask button; create from its context menu.
+        await page.locator('#layers [data-layer]').last().click({button:'right'});
+        const createMask=page.locator('#contextCreateMask');
+        await expect(createMask).toBeVisible();
+        await createMask.click();
+        await expect(page.locator('#layers [data-select-mask]')).toHaveCount(1);
         await page.locator('#layers [data-select-layer-thumb]').last().click();
       }
     }

@@ -48,32 +48,48 @@ export function legacyAlphabeticBaseline(context, text, style) {
   try {
     context.font = richTextFont(style); context.fontKerning = 'normal';
     context.letterSpacing = style.letterSpacing + 'px';
-    context.textBaseline = 'top'; const top = context.measureText(text).actualBoundingBoxAscent;
-    context.textBaseline = 'alphabetic'; const alphabetic = context.measureText(text).actualBoundingBoxAscent;
-    if (!Number.isFinite(top) || !Number.isFinite(alphabetic)) throw Error('Legacy baseline unavailable');
-    return alphabetic - top;
+    context.textBaseline = 'top'; const top = context.measureText(text);
+    context.textBaseline = 'alphabetic'; const alphabetic = context.measureText(text);
+    const baseline = alphabetic.actualBoundingBoxAscent - top.actualBoundingBoxAscent;
+    if (![top.width, alphabetic.width, top.actualBoundingBoxAscent, top.actualBoundingBoxDescent,
+      alphabetic.actualBoundingBoxAscent, alphabetic.actualBoundingBoxDescent].every(Number.isFinite) ||
+      Math.abs(top.width - alphabetic.width) > .000001 ||
+      Math.abs(top.actualBoundingBoxDescent - alphabetic.actualBoundingBoxDescent - baseline) > .000001)
+      throw Error('Legacy baseline unavailable');
+    return baseline;
   } finally { context.restore(); }
 }
-// The new DOM projection is deliberately limited to uniform Arial 32 with LF.
-// Color may split spans, but fonts/sizes/spacing must still match the layer.
+// Color may split spans, but typography must still match the layer. Admission
+// depends on measured rows, never a family name or a calibrated reference size.
 // Returns session-only geometry; never writes a mode into the source layer.
 export function legacyTopProjection(context, e) {
   if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && (usesRichTextLayout(e) || e.textLayoutMode !== undefined)) return null;
   if (String(e.text ?? '').split('\n').some(text => !text)) return null;
   const base = resolveRichTextStyle(e);
-  if (base.fontFamily !== 'Arial' || base.fontSize !== 32 || base.fontWeight !== '400' || base.fontStyle !== 'normal' || (e.lineHeight || 1.15) !== 1.15) return null;
   if (richTextSpans(e).some(p => ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing'].some(k => p.style[k] !== base[k]))) return null;
   context.save();
   try {
     context.font = richTextFont(base); context.textBaseline = 'alphabetic';
+    context.fontKerning = 'normal'; context.letterSpacing = base.letterSpacing + 'px';
     const m = context.measureText('Mg'), height = base.fontSize * (e.lineHeight || 1.15);
-    if (!Number.isFinite(m.fontBoundingBoxAscent) || !Number.isFinite(m.fontBoundingBoxDescent) || m.fontBoundingBoxAscent + m.fontBoundingBoxDescent > height) return null;
+    const fits = m => [m.width, m.fontBoundingBoxAscent, m.fontBoundingBoxDescent, height].every(Number.isFinite) &&
+      m.width > 0 && m.fontBoundingBoxAscent >= 0 && m.fontBoundingBoxDescent >= 0 &&
+      m.fontBoundingBoxAscent + m.fontBoundingBoxDescent <= height;
+    if (!fits(m)) return null;
     const natural = m.fontBoundingBoxAscent + (height - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2;
-    const offsets = String(e.text ?? '').split('\n').map(text => legacyAlphabeticBaseline(context, text || 'Mg', base) - natural);
+    const offsets = []; let naturalMatches = true;
+    for (const text of String(e.text ?? '').split('\n')) {
+      const row = context.measureText(text), baseline = legacyAlphabeticBaseline(context, text, base);
+      const rowNatural = row.fontBoundingBoxAscent + (height - row.fontBoundingBoxAscent - row.fontBoundingBoxDescent) / 2;
+      if (!fits(row) || baseline <= 0 || baseline > height ||
+        Math.abs(rowNatural - natural) > .5) return null;
+      if (Math.abs(baseline - rowNatural) > .5) naturalMatches = false;
+      offsets.push(baseline - natural);
+    }
     if (offsets.some(offset => Math.abs(offset - offsets[0]) > .000001)) return null;
-    if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && Math.abs(offsets[0]) <= .5) return null;
+    if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && naturalMatches) return null;
     return {offset: offsets[0], baseline: natural + offsets[0], height};
-  } finally { context.restore(); }
+  } catch { return null; } finally { context.restore(); }
 }
 
 // One persisted reference size is needed to scale absolute run sizes without

@@ -34,6 +34,8 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  const safe={phase:'confirmed', deferred:false};
  let savedSelection=null, preview=null;
  const abort=new AbortController(), listen=(name,fn)=>host.addEventListener(name,fn,{signal:abort.signal});
+ const offsets=new Map();
+ for(const event of ['loadingdone','loadingerror'])document.fonts.addEventListener(event,()=>offsets.clear(),{signal:abort.signal});
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
  function stop(reason){pending=null;pasteText=null;fallback=reason;safe.phase='recovery-required';if(!inactive)onRecovery(reason);}
  function project(value,selection){
@@ -42,9 +44,17 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const base=resolveRichTextStyle(value),spans=richTextSpans(value);
   const styles=[base,...spans.map(p=>p.style)];
   for(const style of styles)if(!available(style.fontFamily)||!document.fonts.check(richTextFont(style)))throw Error('Font unavailable');
-  const projection=(startedPlain||value.textLayoutMode===LEGACY_TOP_LAYOUT)?legacyTopProjection(ctx,value):null;
+  const projection=(startedPlain||!usesRichTextLayout(value)||value.textLayoutMode===LEGACY_TOP_LAYOUT)?legacyTopProjection(ctx,value):null;
   const heights=styles.map(style=>lineHeight(value,style));
-  const offset=projection?legacyDOMOffset(base,projection,value.text):0;
+  let offset=0;
+  if(projection){
+   const key=JSON.stringify([richTextFont(base),base.letterSpacing,projection.height,projection.baseline,value.text.split('\n')[0],document.fonts.size]);
+   if(!offsets.has(key)){
+    if(offsets.size>=64)offsets.clear();
+    offsets.set(key,legacyDOMOffset(base,projection,value.text));
+   }
+   offset=offsets.get(key);
+  }
   const nodes=spans.map((p,i)=>{const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:heights[i+1],letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});if(projection)Object.assign(span.style,{position:'relative',top:offset+'px'});return span;});
   const next=structuredClone(value);
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
@@ -81,6 +91,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const origin=preview?.element||structuredClone(layer);
   if(startedPlain&&!usesRichTextLayout(origin)&&!plainCompatible(origin))return false;
   const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
+  if(usesRichTextLayout(origin)&&!next.textRuns?.length){delete next.textLayoutMode;delete next.textRunsBaseFontSize;}
   if(startedPlain&&!usesRichTextLayout(origin)&&next.textRuns?.length&&legacyTopProjection(ctx,origin)){
    if(Math.min(selection.anchor,selection.focus)===0&&Math.max(selection.anchor,selection.focus)===origin.text.length)return false;
    next.textLayoutMode=LEGACY_TOP_LAYOUT;

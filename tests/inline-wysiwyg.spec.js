@@ -298,6 +298,82 @@ async function zoomTo(page,zoom){
  await expect(page.locator('#zoomLabel')).toHaveText(zoom+'%');
 }
 const canvasPixels=page=>page.locator('#canvas').evaluate(c=>c.toDataURL());
+// Independent native measurements for the uniform ABCD matrix. Do not read app
+// eligibility or change any metrics: failures retain their numerical evidence.
+async function measuredPlainAdmission(page,e){
+ return page.evaluate(e=>{
+  const c=document.createElement('canvas').getContext('2d');c.font=`${e.fontStyle||'normal'} ${e.fontWeight||'400'} ${e.fontSize}px "${e.fontFamily}"`;c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';
+  c.textBaseline='top';const top=c.measureText('ABCD');c.textBaseline='alphabetic';const m=c.measureText('ABCD'),sample=c.measureText('Mg');
+  const baseline=m.actualBoundingBoxAscent-top.actualBoundingBoxAscent,step=e.fontSize*e.lineHeight,fontHeight=m.fontBoundingBoxAscent+m.fontBoundingBoxDescent;
+  const natural=m.fontBoundingBoxAscent+(Math.max(step,fontHeight)-fontHeight)/2;
+  const pairs=Array.from('BCD',(ch,i)=>c.measureText('ABCD'[i]).width+c.measureText(ch).width-c.measureText('ABCD'.slice(i,i+2)).width),loss=pairs.filter(n=>n>0).sort((a,b)=>b-a).slice(0,2).reduce((a,b)=>a+b,0);
+  const naturalMatches=Math.abs(natural-baseline)<=.5&&Math.abs(natural+Math.max(step,fontHeight)-baseline-step)<=.5&&Math.abs(Math.max(step,fontHeight)-step)<=.5;
+  const projectionFits=fontHeight<=step&&sample.fontBoundingBoxAscent+sample.fontBoundingBoxDescent<=step&&baseline>0&&baseline<=step;
+  let reason=null;
+  if(!document.fonts.check(c.font))reason='font not loaded';
+  else if(pairs.some(n=>Math.abs(n)>.5))reason='pair shaping exceeds 0.5px';
+  else if(!naturalMatches&&pairs.map(Math.abs).sort((a,b)=>b-a).slice(0,2).reduce((a,b)=>a+b,0)>.5)reason='two shaping boundaries exceed 0.5px on projected reopen';
+  else if(m.width+loss>e.w)reason='insufficient width after shaping boundaries';
+  else if(!naturalMatches&&!projectionFits)reason='font box exceeds legacy line step';
+  return {compatible:!reason,modeNecessary:!naturalMatches,reason,baseline,natural,step,fontHeight,width:m.width,pairs,loss};
+ },e);
+}
+async function selectMeasuredRange(page,compatible,anchor,focus){
+ if(compatible)return selectRange(page,anchor,focus);
+ const editor=page.locator('#inlineText');await editor.focus();await editor.press('Control+Home');
+ for(let i=0;i<anchor;i++)await editor.press('ArrowRight');
+ for(let i=0;i<Math.abs(focus-anchor);i++)await editor.press(focus<anchor?'Shift+ArrowLeft':'Shift+ArrowRight');
+ expect(await editor.evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([Math.min(anchor,focus),Math.max(anchor,focus)]);
+}
+async function assertMeasuredRange(page,compatible,text,anchor,focus){
+ if(compatible)return assertRange(page,text,anchor,focus);
+ await page.locator('#inlineText').focus();expect(await page.locator('#inlineText').evaluate(el=>[el.value,el.selectionStart,el.selectionEnd])).toEqual([text,Math.min(anchor,focus),Math.max(anchor,focus)]);await expect(page.locator(surface)).toBeHidden();
+}
+
+const measuredCases=[];
+for(const fontFamily of ['Arial','Georgia'])for(const fontSize of [24,32,40])for(const lineHeight of [1,1.15,1.3])measuredCases.push({fontFamily,fontSize,lineHeight});
+for(const fontFamily of ['Verdana','Courier New','Times New Roman'])for(const fontSize of [24,40])for(const lineHeight of [1,1.15,1.3])measuredCases.push({fontFamily,fontSize,lineHeight});
+for(const fontSize of [26,32])for(const lineHeight of [1,1.03,1.15,1.3])measuredCases.push({fontFamily:'Nimbus Sans',fontSize,lineHeight});
+for(const fontFamily of ['Arial','Georgia'])for(const variant of [{fontWeight:'700'},{fontStyle:'italic'},{fontWeight:'700',fontStyle:'italic'}])for(const lineHeight of [1,1.15,1.3])measuredCases.push({fontFamily,fontSize:32,lineHeight,...variant});
+for(const patch of measuredCases)test('measured legacy-top matrix: '+JSON.stringify(patch),async({page},testInfo)=>{
+ await page.setViewportSize({width:2200,height:1600});await observePlainGeometry(page);
+ const doc=await seedPlain(page,{text:'ABCD\nABCD',y:80,h:180,...patch}),initial=getLayer(doc);expect(initial).not.toHaveProperty('textRuns');expect(initial).not.toHaveProperty('textLayoutMode');
+ await page.locator('#layers [data-layer="title"] .layer-name').click();
+ const measured=await measuredPlainAdmission(page,initial),evidence={patch,measured,status:measured.compatible?'WYSIWYG':'textarea',zooms:[]};
+ // Attach admission even if the first assertion fails.
+ await testInfo.attach('admission.json',{body:JSON.stringify(evidence,null,2),contentType:'application/json'});
+ const expectedBaselines=[];
+ for(const zoom of [50,100,200]){
+  await zoomTo(page,zoom);const canvas=await plainFrame(page),pixels=await canvasPixels(page);expectedBaselines.splice(0,expectedBaselines.length,...canvas.map(r=>r.baseline));
+  await edit(page);await expect(page.locator(measured.compatible?surface:'#inlineText')).toBeFocused();expect(await snapshotValue(page)).toEqual(initial);
+  if(measured.compatible){
+   await selectRange(page,1,3);await assertRange(page,initial.text,1,3);const dom=await arialRanges(page);
+   for(const [i,char] of dom.entries()){expect(Math.abs(char.baseline-canvas[Math.floor(i/4)].baseline)).toBeLessThanOrEqual(.5);expect(Math.abs(char.x-char.canvasX)).toBeLessThanOrEqual(.5);expect(Math.abs(char.width-char.canvasWidth)).toBeLessThanOrEqual(.5)}
+   evidence.zooms.push({zoom,canvas,dom});
+  }
+  await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);expect(await canvasPixels(page)).toBe(pixels);
+ }
+ if(measured.compatible){
+  await edit(page);await selectRange(page,1,3);await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await assertRange(page,initial.text,1,3);
+  const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);expect(changed).not.toHaveProperty('textRunsBaseFontSize');
+  if(measured.modeNecessary)expect(changed.textLayoutMode).toBe('legacy-top');else expect(changed).not.toHaveProperty('textLayoutMode');
+  const formatted=await arialRanges(page);for(const [i,char] of formatted.entries())expect(Math.abs(char.baseline-expectedBaselines[Math.floor(i/4)])).toBeLessThanOrEqual(.5);
+  await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);
+  await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
+  await edit(page);await selectRange(page,1,3);await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await assertRange(page,initial.text,1,3);await page.keyboard.press('Control+Enter');
+  const mixed=await plainFrame(page);for(const part of mixed)expect(Math.min(...expectedBaselines.map(y=>Math.abs(y-part.baseline)))).toBeLessThanOrEqual(.5);
+  await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(changed);await page.reload();await openLibraryDocument(page,doc.id);expect(await snapshotValue(page)).toEqual(changed);expect(await plainFrame(page)).toEqual(mixed);
+  await page.evaluate(()=>{window.plainExportFrame=[];window.capturePlainExport=true});await exportPNG(page);const png=await page.evaluate(()=>{window.capturePlainExport=false;return window.plainExportFrame});expect(png.slice(-mixed.length)).toEqual(mixed);
+  for(const zoom of [50,100,200]){
+   await zoomTo(page,zoom);await edit(page);await expect(page.locator(surface)).toBeFocused();const dom=await arialRanges(page);
+   for(const [i,char] of dom.entries()){expect(Math.abs(char.baseline-expectedBaselines[Math.floor(i/4)])).toBeLessThanOrEqual(.5);expect(Math.abs(char.x-char.canvasX)).toBeLessThanOrEqual(.5)}
+   evidence.zooms.push({afterColor:true,zoom,dom});await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(changed);
+  }
+  evidence.mixed=mixed;evidence.png=png;
+ }
+ await testInfo.attach('measured-geometry.json',{body:JSON.stringify(evidence,null,2),contentType:'application/json'});
+});
+
 const plainCases=[
  ['single line',{text:'ABCD'},true],
  ['explicit LF',{text:'ABCD\nABCD'},true],
@@ -407,7 +483,7 @@ for(const text of ['ABCD','ABCD\nABCD'])test('Arial legacy-top baseline, DOM Ran
  evidence.push({mixed,png});const path=testInfo.outputPath('arial-legacy-top.json');await require('node:fs/promises').writeFile(path,JSON.stringify(evidence,null,2));await testInfo.attach('arial-legacy-top.json',{path,contentType:'application/json'});
 });
 
-for(const [name,patch] of Object.entries({autoFit:{autoFontSize:true},rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'},ArialKerning:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'AV'},ArialSoftWrap:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
+for(const [name,patch] of Object.entries({unavailableFont:{fontFamily:'DefinitelyMissingFont987'},autoFit:{autoFontSize:true},rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'},ArialKerning:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'AV'},ArialSoftWrap:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
  const doc=await seedPlain(page,patch);await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(getLayer(doc));
 });
 test('plain without flag retains textarea',async({page})=>{await seedPlain(page,{}, {flag:false});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden()});
@@ -442,11 +518,12 @@ test('plain typing stronger kerning hands off with exact UTF-16 caret and absent
 });
 
 
-test('plain native metrics guard explicitly records the Nimbus 32 Firefox exception',async({page,browserName},testInfo)=>{
+test('plain native metrics guard measures the Nimbus 32 former Firefox exception',async({page,browserName},testInfo)=>{
  const initial=getLayer(await seedPlain(page,{fontSize:32,lineHeight:1}));
  const metrics=await page.evaluate(()=>{const c=document.createElement('canvas').getContext('2d');c.font='32px "Nimbus Sans"';c.textBaseline='top';const top=c.measureText('ABCD').actualBoundingBoxAscent;c.textBaseline='alphabetic';const m=c.measureText('ABCD'),legacy=m.actualBoundingBoxAscent-top,rich=m.fontBoundingBoxAscent+(Math.max(32,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;return {legacy,rich,delta:rich-legacy}});
  if(browserName==='firefox')expect(Math.abs(metrics.delta)).toBeGreaterThan(.5);else expect(Math.abs(metrics.delta)).toBeLessThanOrEqual(.5);
- await edit(page);await expect(page.locator(browserName==='firefox'?'#inlineText':surface)).toBeFocused();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);await testInfo.attach('nimbus32-native-metrics.json',{body:JSON.stringify(metrics,null,2),contentType:'application/json'});
+ const measured=await measuredPlainAdmission(page,initial);
+ await edit(page);await expect(page.locator(measured.compatible?surface:'#inlineText')).toBeFocused();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);await testInfo.attach('nimbus32-native-metrics.json',{body:JSON.stringify({...metrics,...measured},null,2),contentType:'application/json'});
 });
 
 
@@ -464,4 +541,36 @@ test('old unmarked Arial rich document keeps its original baseline and PNG geome
 
 test('legacy-top unsupported empty row hands off confirmed input without losing its mode',async({page})=>{
  await seedPlain(page,{text:'ABCD',fontFamily:'Arial',fontSize:32,lineHeight:1.15,textLayoutMode:'legacy-top',textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]});await edit(page);await page.keyboard.press('End');await page.keyboard.press('Enter');await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator('#wysiwygRecovery')).toBeHidden();const changed=await snapshotValue(page);expect(changed.text).toBe('ABCD\n');expect(changed.textLayoutMode).toBe('legacy-top');expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
+});
+
+for(const marked of [false,true])test('legacy-top mixed font handoff is atomic with one history action: '+marked,async({page})=>{
+ const doc=await seedPlain(page,{fontFamily:'Arial',fontSize:24,lineHeight:1.3,...(marked?{textLayoutMode:'legacy-top',textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]}:{})}),initial=getLayer(doc);
+ await edit(page);await selectRange(page,3,1);await page.locator('#inspector [data-font-open]').click();await page.locator('#inspector [data-font-option="Georgia"]').click();
+ await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#wysiwygRecovery')).toBeHidden();
+ expect(await page.locator('#inlineText').evaluate(el=>[el.value,el.selectionStart,el.selectionEnd,el.selectionDirection])).toEqual(['ABCD',1,3,'backward']);
+ const changed=await snapshotValue(page);expect(changed.text).toBe(initial.text);expect(changed.fontFamily).toBe('Arial');expect(changed.textLayoutMode).toBe('legacy-top');
+ expect(changed.textRuns).toEqual([{start:1,end:3,style:{...(marked?{textColor:'#11aa33'}:{}),fontFamily:'Georgia'}}]);
+ expect(await page.locator(surface+' span').evaluateAll(spans=>spans.some(s=>s.style.fontFamily.includes('Georgia')))).toBe(false);
+ await page.locator('#inlineText').focus();await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);
+ await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
+});
+
+test('legacy-top clearing the last sparse override removes only the now-unused marker',async({page})=>{
+ await observePlainGeometry(page);await seedPlain(page,{fontFamily:'Georgia',fontSize:24,lineHeight:1.3,textColor:'#222222',textLayoutMode:'legacy-top',textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]});
+ await page.locator('#layers [data-layer="title"] .layer-name').click();const initial=await snapshotValue(page),before=await plainFrame(page);
+ const {compatible}=await measuredPlainAdmission(page,initial);
+ await edit(page);await expect(page.locator(compatible?surface:'#inlineText')).toBeFocused();await selectMeasuredRange(page,compatible,1,3);await openColor(page);await hexColor(page,'#222222');await page.locator('[data-fill-close]').click();await assertMeasuredRange(page,compatible,'ABCD',1,3);
+ const cleared={...initial};delete cleared.textRuns;delete cleared.textLayoutMode;expect(await snapshotValue(page)).toEqual(cleared);
+ if(compatible){const ranges=await arialRanges(page);for(const char of ranges)expect(Math.abs(char.baseline-before[0].baseline)).toBeLessThanOrEqual(.5);}
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(cleared);
+ await page.keyboard.press('Control+Enter');expect((await plainFrame(page))[0].baseline).toBeCloseTo(before[0].baseline,5);
+ await edit(page);await expect(page.locator(compatible?surface:'#inlineText')).toBeFocused();if(compatible){const ranges=await arialRanges(page);for(const char of ranges)expect(Math.abs(char.baseline-before[0].baseline)).toBeLessThanOrEqual(.5);}
+ await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(cleared);
+});
+
+for(const fontFamily of ['Arial','Georgia'])test('legacy-top generalized typing and no-op style leave no marker: '+fontFamily,async({page})=>{
+ const initial=getLayer(await seedPlain(page,{fontFamily,fontSize:40,lineHeight:1.3})),{compatible}=await measuredPlainAdmission(page,initial);await edit(page);await expect(page.locator(compatible?surface:'#inlineText')).toBeFocused();await selectMeasuredRange(page,compatible,1,3);
+ const size=page.locator('#inspector [data-key=fontSize]');await size.fill('40');await size.press('Tab');await assertMeasuredRange(page,compatible,'ABCD',1,3);expect(await snapshotValue(page)).toEqual(initial);
+ await selectMeasuredRange(page,compatible,4,4);await page.keyboard.type('H');const typed=await snapshotValue(page);expect(typed.text).toBe('ABCDH');expect(typed).not.toHaveProperty('textRuns');expect(typed).not.toHaveProperty('textLayoutMode');
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);expect(await page.locator('#undoBtn').isEnabled()).toBe(false);
 });

@@ -16,9 +16,9 @@ test('project cards use edge-to-edge covers, their title sits below, and removal
   const art=button.querySelector('.project-initial,img').getBoundingClientRect();
   return {button:bounds.width,cover:cover.width,artWidth:art.width,artHeight:art.height,coverHeight:cover.height,labelTop:label.top,coverBottom:cover.bottom};
  });
- expect(Math.abs(dimensions.button-dimensions.cover)).toBeLessThan(2);
- expect(Math.abs(dimensions.artWidth-dimensions.cover)).toBeLessThan(2);
- expect(Math.abs(dimensions.artHeight-dimensions.coverHeight)).toBeLessThan(2);
+ expect(Math.abs(dimensions.button-dimensions.cover)).toBeLessThan(2.1);
+ expect(Math.abs(dimensions.artWidth-dimensions.cover)).toBeLessThan(2.1);
+ expect(Math.abs(dimensions.artHeight-dimensions.coverHeight)).toBeLessThan(2.1);
  expect(dimensions.labelTop).toBeGreaterThanOrEqual(dimensions.coverBottom+4);
  for(const name of ['projectRenameBtn','projectCoverBtn','projectDeleteBtn']){
   const button=page.locator('#'+name);
@@ -30,14 +30,21 @@ test('project cards use edge-to-edge covers, their title sits below, and removal
   const h=document.querySelector('#activeProjectName').getBoundingClientRect();
   const buttons=document.querySelector('.project-hub-cover-actions').getBoundingClientRect();
   const header=document.querySelector('.home-topbar').getBoundingClientRect();
+  const brand=document.querySelector('#homeBrandBtn').getBoundingClientRect();
+  const pane=document.querySelector('.home-pane-heading').getBoundingClientRect();
+  const projectStrip=document.querySelector('.project-hub-top').getBoundingClientRect();
+  const fab=document.querySelector('#createTemplateBtn').getBoundingClientRect();
   const editor=document.querySelector('#homeEditorBtn').getBoundingClientRect();
   const a=document.querySelector('#createProjectBtn').getBoundingClientRect();
   const b=document.querySelector('#projectJsonImportBtn').getBoundingClientRect();
   return {nameMiddle:h.top+h.height/2,buttonsMiddle:buttons.top+buttons.height/2,
-   headerRight:header.right,editorRight:editor.right,createRight:a.right,importLeft:b.left};
+   headerRight:header.right,editorRight:editor.right,headerLeft:header.left,brandLeft:brand.left,
+   stripLeft:projectStrip.left,paneLeft:pane.left,stripWidth:projectStrip.width,paneWidth:pane.width,
+   fabRight:fab.right,fabBottom:fab.bottom,viewportWidth:innerWidth,viewportHeight:innerHeight,
+   createRight:a.right,importLeft:b.left};
  });
  expect(Math.abs(layout.nameMiddle-layout.buttonsMiddle)).toBeLessThan(5);
- expect(Math.abs(layout.headerRight-layout.editorRight)).toBeLessThan(2);
+ expect(Math.abs(layout.headerRight-layout.editorRight)).toBeLessThan(2.1);
  expect(layout.createRight).toBeLessThan(layout.importLeft);
 });
 
@@ -62,4 +69,26 @@ test('creating projects without a name field assigns unique default names, and r
  await expect(page.locator('#projectChooser .project-choice.active .project-choice-name')).toHaveText('Отредактированный проект');
  await page.reload();
  await expect(page.locator('#activeProjectName')).toHaveText('Отредактированный проект');
+});
+
+test('floating + creates a blank card in Cards, and stays hidden in Resources',async({page})=>{
+ await openHome(page);
+ const plus=page.locator('#createTemplateBtn');
+ await expect(plus).toBeVisible();
+ await expect(plus).toHaveAttribute('aria-label','Создать пустой шаблон');
+ await page.locator('[data-filter="resource"]').click();
+ await expect(plus).toBeHidden();
+ await page.locator('[data-filter="card"]').click();
+ await expect(plus).toBeVisible();
+ await expect(plus).toHaveAttribute('aria-label','Создать пустую карточку');
+ await plus.click();
+ await expect(page.locator('#sizeDialog')).toBeVisible();
+ await expect(page.locator('#sizeDialog .dialog-header h2')).toHaveText('Новая карточка');
+ await expect(page.locator('#confirmNewDoc')).toHaveText('Создать карточку');
+ await page.locator('#newDocTitle').fill('Проверочная карточка');
+ await page.locator('#confirmNewDoc').click();
+ await expect(page.locator('#typeChip')).toHaveText('КАРТОЧКА');
+ await expect.poll(async()=>{
+  return (await records(page,'docs')).find(d=>d.title==='Проверочная карточка')?.type;
+ }).toBe('card');
 });

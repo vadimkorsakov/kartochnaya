@@ -3664,14 +3664,33 @@ function ensureStagePanRoom(){
  stagePanAdjusting=true;
  try{setStagePanRoom(room)}finally{stagePanAdjusting=false}
 }
-function centerStageCanvas(){
+// Fit considers the unobstructed editing area, not the full scroll viewport.
+// On desktop the bottom dock overlays the stage, so its actual top edge sets
+// the lower boundary. Both zoom buttons and Ctrl+0 share this measurement.
+function desktopCanvasFitRegion(){
+ const stage=$('#stageScroller'),bounds=stage.getBoundingClientRect();
+ const top=bounds.top+8,stageBottom=bounds.top+stage.clientHeight-8;
+ const dock=$('.floating-docks'),dockBox=dock?.getBoundingClientRect();
+ const dockVisible=dockBox&&dockBox.height>0&&getComputedStyle(dock).display!=='none';
+ const bottom=dockVisible?Math.min(stageBottom,dockBox.top-6):stageBottom;
+ const usableBottom=Math.max(top+80,bottom);
+ return {x:bounds.left+stage.clientWidth/2,y:(top+usableBottom)/2,
+  maxHeight:usableBottom-top};
+}
+function centerStageCanvas(target=null){
  const stage=$('#stageScroller'),a=stage.getBoundingClientRect(),b=canvas.getBoundingClientRect();
- stage.scrollLeft+=b.left+b.width/2-(a.left+stage.clientWidth/2);
- stage.scrollTop+=b.top+b.height/2-(a.top+stage.clientHeight/2);
+ const centerX=target?.x??a.left+stage.clientWidth/2;
+ const centerY=target?.y??a.top+stage.clientHeight/2;
+ stage.scrollLeft+=b.left+b.width/2-centerX;
+ stage.scrollTop+=b.top+b.height/2-centerY;
  ensureStagePanRoom();
 }
 function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');if(isArtboardSeries()){const d=app.doc;ensureCardSlides(d);const total=d.slides.reduce((s,slide)=>s+slide.width,0)+ARTBOARD_GAP*Math.max(0,d.slides.length-1);const mh=Math.max(...d.slides.map(slide=>slide.height));const narrow=window.matchMedia('(max-width:760px)').matches;const margin=narrow?8:90;app.zoom=narrow?clamp(Math.min((area.clientWidth-margin*2)/d.width,(area.clientHeight-margin*2-16)/d.height),.04,3):clamp(Math.min((area.clientWidth-180)/total,(area.clientHeight-175)/mh),.04,3);app.lastZoom=app.zoom;resetStagePanRoom();applyZoom();requestAnimationFrame(()=>seriesFocus(d.activeSlideIndex,'instant'));return}
- const viewport=$('#stageViewport');viewport.classList.remove('multi-artboard');viewport.style.width='';viewport.style.height='';$('#canvasHost').style.left='';$('#canvasHost').style.top='';$('#canvasHost').style.width='';$('#canvasHost').style.height='';const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=Math.max(80,area.clientHeight-gutter*2);app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);app.lastZoom=app.zoom;resetStagePanRoom();applyZoom();centerStageCanvas()}
+ const viewport=$('#stageViewport');viewport.classList.remove('multi-artboard');viewport.style.width='';viewport.style.height='';$('#canvasHost').style.left='';$('#canvasHost').style.top='';$('#canvasHost').style.width='';$('#canvasHost').style.height='';const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;
+ const region=mobile?null:desktopCanvasFitRegion();
+ const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=region?.maxHeight??Math.max(80,area.clientHeight-gutter*2);
+ app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);
+ app.lastZoom=app.zoom;resetStagePanRoom();applyZoom();centerStageCanvas(region)}
 function applyZoom(anchor){if(!app.doc)return;const d=app.doc,stage=$('#stageScroller'),old=app.lastZoom||app.zoom;
  if(isArtboardSeries()){ensureCardSlides(d);const r=stage.getBoundingClientRect();const target=anchor||{x:r.left+stage.clientWidth/2,y:r.top+stage.clientHeight/2};const screenX=target.x-r.left,screenY=target.y-r.top;const worldX=(stage.scrollLeft+screenX-stagePanRoom.left-ARTBOARD_MARGIN)/old,worldY=(stage.scrollTop+screenY-stagePanRoom.top-80)/old;
  const ratio=Math.min(devicePixelRatio||1,8192/(d.width*app.zoom),8192/(d.height*app.zoom),Math.sqrt(23000000/(d.width*d.height*app.zoom*app.zoom)));app.renderScale=ratio;canvas.style.width=Math.max(1,d.width*app.zoom)+'px';canvas.style.height=Math.max(1,d.height*app.zoom)+'px';canvas.width=Math.max(1,Math.round(d.width*app.zoom*ratio));canvas.height=Math.max(1,Math.round(d.height*app.zoom*ratio));app.lastZoom=app.zoom;

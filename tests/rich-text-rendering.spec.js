@@ -168,9 +168,26 @@ test('long text with forty ranges renders within budget and avoids repeated full
 
 test('at document scale the real display Canvas and PNG are pixel-identical',async({page})=>{
  await seed(page,{text:'Цвет 😀 размер\nВторая строка',fillOpacity:50,textColor:'#f00',textRuns:[{start:5,end:7,style:{fontSize:32,textColor:'#0000ff'}},{start:8,end:14,style:{fontFamily:'monospace',italic:true}}]});
- const stageHeight=await page.locator('#stageScroller').evaluate(el=>el.clientHeight);
- await page.setViewportSize({width:1280,height:900+308-stageHeight});await page.locator('#zoomLabel').click();
+ // The Fit command now uses the height above the floating tool dock, not
+ // the entire scroller minus a constant gutter. Size the viewport so this
+ // clear working region is precisely 240px: zoom must then be EXACTLY 1:1
+ // (a rounded "100%" label can otherwise conceal 1.002x and extra pixels).
+ await page.setViewportSize({width:1280,height:900});
+ for(let i=0;i<3;i++){
+  const available=await page.evaluate(()=>{
+   const stage=document.querySelector('#stageScroller'),dock=document.querySelector('.floating-docks');
+   const s=stage.getBoundingClientRect(),d=dock.getBoundingClientRect();
+   const top=s.top+8,bottom=Math.min(s.top+stage.clientHeight-8,d.top-6);
+   return Math.max(top+80,bottom)-top;
+  });
+  const delta=Math.round(240-available);
+  if(delta===0)break;
+  const size=page.viewportSize();
+  await page.setViewportSize({width:1280,height:size.height+delta});
+ }
+ await page.locator('#zoomLabel').click();
  await expect(page.locator('#zoomLabel')).toHaveText('100%');
+ await expect.poll(()=>page.locator('#canvas').evaluate(el=>[el.width,el.height])).toEqual([320,240]);
  const screen=await canvasImage(page);expect([screen.width,screen.height]).toEqual([320,240]);
  const png=(await exportPNG(page)).image;expect(png.data.equals(screen.data)).toBe(true);
  let fadedRed=0;for(let i=0;i<png.data.length;i+=4)if(png.data[i]>=248&&png.data[i+1]>=120&&png.data[i+1]<=123&&png.data[i+2]>=117&&png.data[i+2]<=120)fadedRed++;expect(fadedRed).toBeGreaterThan(10);

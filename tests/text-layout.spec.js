@@ -131,7 +131,12 @@ test('live auto sizing keeps native row breaks and caret; actual overflow scroll
   const size = page.locator('#inspector [data-key="fontSize"]'); await size.fill('24'); await size.press('Enter');
   const p = await canvasPoint(page, 60, 45); await page.mouse.dblclick(p.x, p.y);
   const long = Array(40).fill('Длинный текст доступен целиком').join('\n');
-  await editor.fill(long); await editor.press('ControlOrMeta+End');
+  await editor.fill(long);
+  // Opening the textarea schedules a focus frame. It must not collapse the
+  // selection that Playwright.fill() uses to replace the previous 48-char text.
+  expect(await editor.inputValue()).toBe(long);
+  await editor.press('ControlOrMeta+End');
+  expect(await editor.inputValue()).toBe(long);
   expect(await editor.evaluate(el => el.selectionEnd)).toBe(long.length);
   expect(await editor.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
   await editor.press('ControlOrMeta+Home');

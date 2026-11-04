@@ -1877,3 +1877,27 @@ html,body{background:#1e1f27!important;}
  .home-screen .project-hub .project-grid.resource-grid .asset-card .resource-card-footer{gap:4px}
  .home-screen .project-hub .project-grid.resource-grid .asset-card .resource-card-footer .card-action{width:28px;height:28px}
 }
+
+/* Editor stage scrollbars: narrow, quiet native tracks (Figma-like).
+   The dock is positioned relative to the entire stage column, which also
+   contains the status footer. Reserve footer + scrollbar + breathing room
+   so the dock can never intercept horizontal scrollbar dragging. */
+@media (min-width:761px){
+ #stageScroller{
+  scrollbar-width:thin;
+  scrollbar-color:#777682 transparent;
+ }
+ #stageScroller::-webkit-scrollbar{width:8px;height:8px}
+ #stageScroller::-webkit-scrollbar-track,
+ #stageScroller::-webkit-scrollbar-corner{background:transparent}
+ #stageScroller::-webkit-scrollbar-thumb{
+  background:#777682;
+  border:1px solid transparent;
+  background-clip:padding-box;
+  border-radius:999px;
+ }
+ #stageScroller::-webkit-scrollbar-thumb:hover{background:#a4a2ad}
+ #stageScroller::-webkit-scrollbar-button{display:none;width:0;height:0}
+ .stage-column .floating-docks{bottom:60px}
+ .stage-column:has(.stage-status.has-emergency) .floating-docks{bottom:78px}
+}

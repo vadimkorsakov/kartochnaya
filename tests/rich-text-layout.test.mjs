@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveRichTextStyle,richTextSpans,retainRichTextSizeBase,usesRichTextLayout,createRichTextLayoutEngine,LEGACY_TOP_LAYOUT} from '../src/render/rich-text-layout.mjs';
+import {resolveRichTextStyle,richTextSpans,retainRichTextSizeBase,usesRichTextLayout,supportsHorizontalTextLayout,createRichTextLayoutEngine,LEGACY_TOP_LAYOUT} from '../src/render/rich-text-layout.mjs';
 
 const base={text:'А😀 Б',fontSize:20,fontWeight:'500',fontStyle:'oblique',textColor:'#123456',letterSpacing:2};
 test('explicit keys win within a scope, run aliases override the base, missing keys inherit',()=>{
@@ -23,7 +23,14 @@ test('render projection repairs UTF-16 ranges without mutating source or unknown
  e.fontSize=10;assert.equal(richTextSpans(e)[1].style.fontSize,20);
  assert.deepEqual(e.textRuns,before.textRuns);
 });
-test('plain, vertical, path, boundary, arc and justified text retain legacy dispatch',()=>{
+test('plain horizontal text uses the shared painter while specialized modes keep their own geometry',()=>{
+ assert.equal(supportsHorizontalTextLayout({...base}),true);
+ assert.equal(supportsHorizontalTextLayout({...base,textRuns:[]}),true);
+ assert.equal(supportsHorizontalTextLayout({...base,textRuns:[{start:0,end:1,style:{textColor:'red'}}]}),true);
+ for(const patch of [{textMode:'vertical'},{textMode:'path'},{textMode:'boundary'},{mobileArcRadius:30},{textAlign:'justify'}])
+  assert.equal(supportsHorizontalTextLayout({...base,...patch}),false);
+});
+test('sparse-run editing predicate continues to distinguish plain layers',()=>{
  for(const patch of [{textRuns:undefined},{textRuns:[]},{textMode:'vertical'},{textMode:'path'},{textMode:'boundary'},{mobileArcRadius:30},{textAlign:'justify'}])
   assert.equal(usesRichTextLayout({...base,textRuns:[{start:0,end:1,style:{bold:true}}],...patch}),false);
 });

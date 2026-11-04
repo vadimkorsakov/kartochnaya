@@ -44,7 +44,16 @@ test('project cards use edge-to-edge covers, their title sits below, and removal
    createRight:a.right,importLeft:b.left};
  });
  expect(Math.abs(layout.nameMiddle-layout.buttonsMiddle)).toBeLessThan(5);
- expect(Math.abs(layout.headerRight-layout.editorRight)).toBeLessThan(2.1);
+ // The header now has deliberate, small insets on BOTH sides.
+ expect(layout.headerRight-layout.editorRight).toBeGreaterThanOrEqual(10);
+ expect(layout.headerRight-layout.editorRight).toBeLessThanOrEqual(16);
+ expect(layout.brandLeft-layout.headerLeft).toBeGreaterThanOrEqual(10);
+ expect(layout.brandLeft-layout.headerLeft).toBeLessThanOrEqual(16);
+ expect(Math.abs(layout.stripLeft-layout.paneLeft)).toBeLessThan(2.1);
+ expect(layout.stripWidth).toBeLessThan(layout.paneWidth/2);
+ expect(layout.viewportWidth-layout.fabRight).toBeGreaterThan(15);
+ expect(layout.viewportHeight-layout.fabBottom).toBeGreaterThan(15);
+ await expect(page.locator('#homeBrandBtn .home-version')).toHaveCount(0);
  expect(layout.createRight).toBeLessThan(layout.importLeft);
 });
 

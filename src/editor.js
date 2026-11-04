@@ -1007,6 +1007,22 @@ function plainWysiwygLayoutCompatible(e){
   const c=textFitContext,projection=legacyTopProjection(c,e);
   const rows=richTextEngine.layout(projection?{...e,textLayoutMode:LEGACY_TOP_LAYOUT}:e).rows,lines=wrapLines(c,e);
   if(e.textLayoutMode===LEGACY_TOP_LAYOUT&&!projection)return false;
+  // Match the Canvas clip rectangle, including explicit LF rows. The editable
+  // surface must not reveal glyphs that the Canvas/PNG painter clips away.
+  c.save();try{
+   c.textBaseline='alphabetic';c.fontKerning='normal';
+   for(const row of rows)for(const p of row.fragments){
+    c.font=richTextFont(p.style);c.letterSpacing=p.style.letterSpacing+'px';const m=c.measureText(p.text);
+    if(![m.actualBoundingBoxLeft,m.actualBoundingBoxRight,m.actualBoundingBoxAscent,m.actualBoundingBoxDescent].every(Number.isFinite)||
+     p.x-m.actualBoundingBoxLeft<0||p.x+m.actualBoundingBoxRight>e.w||p.y-m.actualBoundingBoxAscent<0||p.y+m.actualBoundingBoxDescent>e.h)return false;
+   }
+  }finally{c.restore()}
+  if(projection?.mixed){
+   const spans=richTextSpans(e),row=rows[0];
+   return rows.length===1&&!row.softWrap&&row.width<=Math.max(1,e.w)&&
+    Math.abs(row.width-projection.width)<=.5&&Math.abs(row.baseline-projection.baseline)<=.5&&
+    row.fragments.length===spans.length&&row.fragments.every((p,i)=>p.start===spans[i].start&&p.end===spans[i].end&&JSON.stringify(p.style)===JSON.stringify(spans[i].style));
+  }
   if(projection&&rows.some(row=>row.softWrap))return false;
   if(rows.length!==lines.length)return false;
   c.save();
@@ -1022,16 +1038,19 @@ function plainWysiwygLayoutCompatible(e){
     const source=lines[i],text=source||'Mg',chars=Array.from(source);
     // A color boundary also separates Canvas shaping runs. Refuse a plain
     // row whose glyph advances depend on cross-boundary shaping/kerning.
-    let previousWidth=0,largest=0,second=0;
+    let previousWidth=0,largest=0,second=0,largestChange=0,secondChange=0;
     for(let j=0;j<chars.length;j++){
      const width=c.measureText(chars[j]).width;
      if(j){
       const delta=previousWidth+width-c.measureText(chars[j-1]+chars[j]).width;
       if(Math.abs(delta)>.5)return false;
+      const change=Math.abs(delta);
+      if(change>largestChange){secondChange=largestChange;largestChange=change}else secondChange=Math.max(secondChange,change);
       if(delta>largest){second=largest;largest=delta}else second=Math.max(second,delta);
      }
      previousWidth=width;
     }
+    if(projection&&largestChange+secondChange>.5)return false;
     // A single first range introduces at most two shaping boundaries. Keep
     // enough room for both; even small kerning loss must not add a soft wrap.
     if(c.measureText(source).width+largest+second>Math.max(1,e.w))return false;
@@ -1043,6 +1062,12 @@ function plainWysiwygLayoutCompatible(e){
    });
   }finally{c.restore()}
  }catch{return false}
+}
+function wysiwygLayoutCompatible(e){
+ // Admission is read-only, including for fitted layers. Never repair a stale
+ // stored size merely by opening its editor; the textarea remains available.
+ if(e.autoFontSize){const fitted=clone(e);autoFitTextFont(fitted);if(fitted.fontSize!==e.fontSize)return false;}
+ return plainWysiwygLayoutCompatible(e);
 }
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
 function autoFitTextFont(e){
@@ -2065,9 +2090,10 @@ function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=n
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
 function startInlineWysiwyg(e){
  const host=$('#inlineWysiwyg');app.inlineSession.wysiwyg=true;app.inlineSession.formatted=true;
- app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:plainWysiwygLayoutCompatible,
+ app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:wysiwygLayoutCompatible,
   available:family=>!v41FontUnavailable(family),
-  onChange(){syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();},
+  prepare(next,key){if(key==='fontSize')next.autoFontSize=false;autoFitTextFont(next);},
+  onChange(){positionInlineText();document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=!!e.autoFontSize);syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();},
   onFallback(selection,reason){finishWysiwygFallback(selection,reason);},
   onRecovery(){ $('#wysiwygRecovery').classList.remove('hidden');$('#wysiwygRecoveryMessage').textContent='Ввод не подтверждён и не сохранён. При использовании IME завершите композицию. Скопируйте нужный текст перед восстановлением.';}
  });
@@ -2107,7 +2133,7 @@ $('#canvasHost').addEventListener('keydown',ev=>{if(ev.target.id!=='inlineWysiwy
  if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(true);canvas.focus();}
  if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText();}
 });
-function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),plainWysiwygLayoutCompatible)){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
+function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),wysiwygLayoutCompatible)){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
 function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');
  if(!e.textMode||e.textMode==='horizontal'){
   editor.style.width=Math.max(1,e.w)+'px';editor.style.height=Math.max(1,e.h)+'px';
@@ -2203,7 +2229,8 @@ function styleInlineSelection(key,value,final){
  app.inlineSession.states[app.inlineSession.index].caret=clone(c);
  const next=applyTextStyle(e,c.start,c.end,patch);
  if(session.wysiwyg&&!usesRichTextLayout(session.states[0].element)&&!usesRichTextLayout(e)&&next.textRuns?.length&&(c.start>0||c.end<e.text.length)&&legacyTopProjection(textFitContext,e))next.textLayoutMode=LEGACY_TOP_LAYOUT;
- restoreTextRuns(e,next.textRuns);if(next.textLayoutMode===LEGACY_TOP_LAYOUT)e.textLayoutMode=LEGACY_TOP_LAYOUT;
+ if(usesRichTextLayout(e)&&!next.textRuns?.length){delete e.textLayoutMode;delete e.textRunsBaseFontSize;}
+ restoreTextRuns(e,next.textRuns);if(next.textLayoutMode===LEGACY_TOP_LAYOUT&&next.textRuns?.length)e.textLayoutMode=LEGACY_TOP_LAYOUT;
  // A manual size uses the fitted scale, then opts out of fitting just like
  // the layer size field. Other fragments keep both their units and scale.
  if(key==='fontSize'){e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}

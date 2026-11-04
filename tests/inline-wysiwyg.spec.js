@@ -465,3 +465,21 @@ test('old unmarked Arial rich document keeps its original baseline and PNG geome
 test('legacy-top unsupported empty row hands off confirmed input without losing its mode',async({page})=>{
  await seedPlain(page,{text:'ABCD',fontFamily:'Arial',fontSize:32,lineHeight:1.15,textLayoutMode:'legacy-top',textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]});await edit(page);await page.keyboard.press('End');await page.keyboard.press('Enter');await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator('#wysiwygRecovery')).toBeHidden();const changed=await snapshotValue(page);expect(changed.text).toBe('ABCD\n');expect(changed.textLayoutMode).toBe('legacy-top');expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
 });
+
+
+test('unified first edit of ordinary Arial title uses WYSIWYG without legacy layout mode',async({page})=>{
+ const doc=await seedPlain(page,{text:'Ваш заголовок',fontFamily:'Arial',fontSize:24,lineHeight:1.1,w:260,h:70,autoFontSize:false});
+ const initial=getLayer(doc);expect(initial).not.toHaveProperty('textRuns');
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await selectRange(page,1,4);await openColor(page);await hexColor(page,'#11aa33');
+ await page.locator('[data-fill-close]').click();
+ const changed=await snapshotValue(page);
+ expect(changed.textRuns).toEqual([{start:1,end:4,style:{textColor:'#11aa33'}}]);
+ expect(changed).not.toHaveProperty('textLayoutMode');
+ await expect(page.locator(surface)).toBeVisible();
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(changed);
+ await page.reload();await openLibraryDocument(page,doc.id);
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+});

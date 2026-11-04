@@ -89,3 +89,24 @@ test('plain and color-only styles preserve the same line metrics in unified layo
  assert.equal(b.rows[0].fragments.map(f=>f.text).join(''),'HHHH HHHH');
  assert.equal(a.height,b.height);
 });
+
+test('color-only range boundaries retain contextual kerning and wrapping',()=>{
+ const context={measureText(text){
+  const characters=[...text].length;
+  const pairs=(text.match(/AV/g)||[]).length;
+  return {width:characters*12-pairs*3,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4};
+ }};
+ const engine=createRichTextLayoutEngine(context);
+ const source={text:'AVATAR',w:70,h:90,fontFamily:'Arial',fontSize:20,lineHeight:1.15};
+ const colorOnly={...source,textRuns:[{start:1,end:3,style:{textColor:'#ff2211'}}]};
+ const plain=engine.layout(source),styled=engine.layout(colorOnly);
+ assert.equal(plain.rows.length,1);
+ assert.equal(styled.rows.length,1,'a color boundary must not introduce a wrap');
+ assert.equal(styled.rows[0].width,plain.rows[0].width);
+ assert.equal(styled.rows[0].baseline,plain.rows[0].baseline);
+ assert.deepEqual(styled.rows[0].fragments.map(f=>f.text),['A','VA','TAR']);
+ assert.deepEqual(styled.rows[0].fragments.map(f=>f.x),[0,12,33]);
+ assert.deepEqual(styled.rows[0].fragments.map(f=>f.width),[12,21,36]);
+ assert.equal(styled.rows[0].fragments[1].style.textColor,'#ff2211');
+ assert.equal(source.textRuns,undefined,'rendering must not mutate the plain source');
+});

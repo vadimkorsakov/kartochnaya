@@ -40,7 +40,7 @@ test('plain and styled horizontal layers use the same alphabetic layout in Canva
  expect(exported.length).toBeGreaterThan(2);
  expect(exported.every(g=>g.baseline==='alphabetic')).toBe(true);
  const docAgain=(await records(page,'docs')).find(d=>d.id===doc.id);
- expect(docAgain.elements[0].textRuns).toBeUndefined();
- expect(docAgain.elements[1].textRuns).toHaveLength(1);
+ expect(docAgain.elements.find(e=>e.name==='Plain unified').textRuns).toBeUndefined();
+ expect(docAgain.elements.find(e=>e.name==='Styled unified').textRuns).toHaveLength(1);
 });
 

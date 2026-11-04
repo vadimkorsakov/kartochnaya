@@ -59,7 +59,9 @@ test('hand drag can pan into an empty workspace in all directions; Ctrl+0 recove
  await page.keyboard.press('Control+Digit0');
  await expect.poll(async()=>{
   const g=await stageGeometry(page);
-  return Math.max(Math.abs(g.canvas.cx-g.stage.cx),Math.abs(g.canvas.cy-g.stage.cy));
+  const dockTop=await page.locator('.floating-docks').evaluate(el=>el.getBoundingClientRect().top);
+  const top=g.stage.top+8,bottom=Math.min(g.stage.top+(await page.locator('#stageScroller').evaluate(el=>el.clientHeight))-8,dockTop-6);
+  return Math.max(Math.abs(g.canvas.cx-g.stage.cx),Math.abs(g.canvas.cy-(top+Math.max(top+80,bottom))/2));
  }).toBeLessThan(4);
 });
 

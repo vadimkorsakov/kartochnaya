@@ -45,7 +45,11 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const heights=styles.map(style=>lineHeight(value,style));
   // A plain layer stays in the unified Canvas coordinate system even after
   // its first sparse color/size override. Do not persist a compatibility mode.
-  const firstRow=startedPlain?layout(value)?.rows?.[0]:null;
+  // The same one-row Canvas baseline must apply both before and after the
+  // first style override, including a later reopen with saved textRuns. Using
+  // startedPlain here made the DOM jump by the font baseline offset on reopen.
+  const projection=layout(value);
+  const firstRow=projection?.rows?.length===1?projection.rows[0]:null;
   const offset=firstRow?unifiedDOMOffset(base,{height:firstRow.height,baseline:firstRow.baseline},value.text):0;
   const nodes=spans.map((p,i)=>{const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:heights[i+1],letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});if(firstRow)Object.assign(span.style,{position:'relative',top:offset+'px'});return span;});
   const next=structuredClone(value);

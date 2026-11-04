@@ -132,15 +132,26 @@ export function createRichTextLayoutEngine(context, fontSet) {
     }
     const rows = []; let fragments = [], rowWidth = 0, rowStart = 0;
     const styleKey = s => JSON.stringify(s);
+    // Paint colors must not alter shaping or move subsequent glyphs. A color
+    // split preserves the advance of the full contiguous font/spacing sequence,
+    // while keeping separate fragments for per-range drawing and ink bounds.
+    const geometryKey = ({ textColor, ...geometry }) => JSON.stringify(geometry);
     function append(parts, cluster) {
       const last = parts.at(-1), id = styleKey(cluster.style);
+      const geometry = geometryKey(cluster.style);
+      const sameGeometry = last?.geometry === geometry;
+      const previousShapeWidth = sameGeometry ? last.shapeWidth : 0;
+      const shapeText = sameGeometry ? last.shapeText + cluster.text : cluster.text;
+      const shapeWidth = measure(shapeText, cluster.style).width;
       if (last?.id === id) {
-        const next = { ...last, text: last.text + cluster.text, end: cluster.end };
-        next.metrics = measure(next.text, next.style); parts[parts.length - 1] = next;
-        return next.metrics.width - last.metrics.width;
+        const next = { ...last, text: last.text + cluster.text, end: cluster.end,
+          metrics: measure(last.text + cluster.text, last.style), shapeText, shapeWidth };
+        parts[parts.length - 1] = next;
+      } else {
+        parts.push({ ...cluster, id, geometry, shapeText, shapeWidth,
+          metrics: measure(cluster.text, cluster.style) });
       }
-      const part = { ...cluster, id, metrics: measure(cluster.text, cluster.style) };
-      parts.push(part); return part.metrics.width;
+      return shapeWidth - previousShapeWidth;
     }
     function finish(breakCluster, final = false) {
       const samples = fragments.length ? fragments : [{ style: base, metrics: measure('Mg', base) }];
@@ -193,8 +204,13 @@ export function createRichTextLayoutEngine(context, fontSet) {
     for (const row of rows) {
       let x = e.textAlign === 'center' ? (width - row.width) / 2 : e.textAlign === 'right' ? width - row.width : 0;
       row.y = y; row.baseline += y;
-      row.fragments = row.fragments.map(({ text, style, metrics, start, end }) => {
-        const part = { text, style, start, end, x, y: row.baseline, width: metrics.width }; x += metrics.width; return part;
+      let previousGeometry = null, previousShapeWidth = 0;
+      row.fragments = row.fragments.map(({ text, style, start, end, geometry, shapeWidth }) => {
+        const advance = geometry === previousGeometry ? shapeWidth - previousShapeWidth : shapeWidth;
+        const part = { text, style, start, end, x, y: row.baseline, width: advance };
+        x += advance;
+        previousGeometry = geometry; previousShapeWidth = shapeWidth;
+        return part;
       });
       y += row.height;
     }

@@ -72,3 +72,20 @@ test('legacy-top opts in per layer and cannot collide with the old rich cache en
  assert.equal(marked.rows[1].baseline-marked.rows[0].baseline,32*1.15);
  assert.equal(engine.layout(source),old);assert.equal(engine.layout({...source,textLayoutMode:LEGACY_TOP_LAYOUT}),marked);assert.deepEqual(source,before);
 });
+
+test('plain and color-only styles preserve the same line metrics in unified layout',()=>{
+ const context={measureText(text){
+  const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);
+  return {width:[...text].length*size*.6,fontBoundingBoxAscent:size*.8,fontBoundingBoxDescent:size*.2};
+ }};
+ const engine=createRichTextLayoutEngine(context);
+ const plain={text:'HHHH HHHH',w:300,h:90,fontFamily:'Arial',fontSize:24,lineHeight:1.2};
+ const decorated={...plain,textRuns:[{start:2,end:6,style:{textColor:'#ff0000'}}]};
+ const a=engine.layout(plain),b=engine.layout(decorated);
+ assert.equal(a.rows[0].baseline,b.rows[0].baseline);
+ assert.equal(a.rows[0].height,b.rows[0].height);
+ assert.equal(a.rows[0].width,b.rows[0].width);
+ assert.equal(a.rows[0].fragments[0].text,'HHHH HHHH');
+ assert.equal(b.rows[0].fragments.map(f=>f.text).join(''),'HHHH HHHH');
+ assert.equal(a.height,b.height);
+});

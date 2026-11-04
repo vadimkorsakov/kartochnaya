@@ -61,8 +61,13 @@ async function imported(page, name = archive.project.name) {
   let p; await expect.poll(async () => { p = (await records(page, 'projects')).find(p => p.name === name + ' (импорт)'); return !!p; }).toBe(true); return p;
 }
 async function removeProject(page, id) {
+  // Deletion lives in the current-project header, not in project thumbnails.
+  const choice=page.locator(`[data-switch-project="${id}"]`);
+  await expect(choice).toBeVisible();
+  if(!await choice.evaluate(node=>node.classList.contains('active')))await choice.click();
+  await expect(choice).toHaveClass(/active/);
   page.once('dialog', dialog => dialog.accept());
-  await page.locator(`[data-delete-project="${id}"]`).click();
+  await page.locator('#projectDeleteBtn').click();
 }
 async function aborted(page) {
   await expect.poll(() => page.evaluate(() => integrity.aborts)).toBeGreaterThan(0);

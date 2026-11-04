@@ -2957,9 +2957,11 @@ async function deleteResourceFolder(id){const p=currentProject(),folder=resource
 function renderLibrary(){
  const p=currentProject();if(!p)return;const grid=$('#projectGrid');if(!Array.isArray(p.resourceFolders))p.resourceFolders=[];if(app.resourceFolderId&&!p.resourceFolders.some(f=>f.id===app.resourceFolderId))app.resourceFolderId=null;
  $('#activeProjectName').textContent=p.name;
- $('#projectChooser').innerHTML=app.projects.map(project=>`<button type="button" class="project-choice ${project.id===app.currentProjectId?'active':''}" data-switch-project="${project.id}" title="${html(project.name)}">${project.cover?`<img src="${project.cover}" alt="">`:`<span class="project-initial">${html(project.name.slice(0,1).toUpperCase())}</span>`}<span>${html(project.name)}</span><span class="project-choice-delete" role="button" tabindex="0" data-delete-project="${project.id}" title="Удалить проект «${html(project.name)}»" aria-label="Удалить проект">${libraryIcon('trash')}</span></button>`).join('');
+ $('#projectChooser').innerHTML=app.projects.map(project=>`<button type="button" class="project-choice ${project.id===app.currentProjectId?'active':''}" data-switch-project="${project.id}" title="${html(project.name)}" aria-current="${project.id===app.currentProjectId?'true':'false'}"><span class="project-choice-cover">${project.cover?`<img src="${project.cover}" alt="" loading="lazy">`:`<span class="project-initial">${html(project.name.slice(0,1).toUpperCase())}</span>`}</span><span class="project-choice-name">${html(project.name)}</span></button>`).join('');
  $$('.project-tabs .tab').forEach(x=>x.classList.toggle('active',x.dataset.filter===app.filter));
- $('#docLibraryActions').classList.toggle('hidden',app.filter!=='template');
+ $('#docLibraryActions').classList.toggle('hidden',app.filter==='resource');
+ const newCanvasTitle=app.filter==='card'?'Создать пустую карточку':'Создать пустой шаблон';
+ $('#createTemplateBtn').title=newCanvasTitle;$('#createTemplateBtn').setAttribute('aria-label',newCanvasTitle);
  $('#cardListControls').classList.toggle('hidden',app.filter!=='card');
  $('#resourceControls').classList.toggle('hidden',app.filter!=='resource');
  const resource=app.filter==='resource';
@@ -3026,8 +3028,24 @@ document.addEventListener('pointerdown',ev=>{if(!$('#assetsPopover').classList.c
 async function zipOriginal_insertResourceAsset(asset){if(!asset)return;if(documentTabSession.activeId==='home'){const target=app.doc?.projectId===app.currentProjectId?app.doc:(projectDocs()[0]||newDoc());openDocumentTab(target)}if(!app.doc)return;const im=new Image();im.src=asset.src;try{await im.decode()}catch{toast('Ресурс не удалось открыть');return}
  const e=defaultElement('image');positionNewImage(e,{width:im.naturalWidth,height:im.naturalHeight});e.name=asset.name;e.imageSrc=asset.src;e.fillType='image';e.imageFit='fill';app.doc.elements.push(e);setSelected([e.id],true);commit();refreshLayers();refreshInspector();refreshMobileTools();closeDialogs();openEditor();toast('Ресурс добавлен на холст');
 }
-async function createProject(){const input=$('#newProjectName');const name=input.value.trim();if(!name){input.focus();toast('Укажи название проекта');return}if(name.length>90)return;
- if(!await flushSave())return;const p={id:uid(),name,cover:'',resources:[],resourceFolders:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};if(!await persistProjectForUI(p))return;app.projects.push(p);useProjectId(p.id);const doc=newDoc({title:'Новый шаблон'});setDoc(doc);if(!await flushSave())return;input.value='';app.filter='template';renderLibrary();toast('Проект создан');
+let creatingProject=false;
+async function createProject(){
+ if(creatingProject)return;
+ creatingProject=true;
+ const button=$('#createProjectBtn');button.disabled=true;
+ try{
+  // Existing project names are retained; choose the first free default name.
+  const taken=new Set(app.projects.map(p=>(p.name||'').trim().toLocaleLowerCase('ru')));
+  let index=1;while(taken.has('проект '+index))index++;
+  const name='Проект '+index;
+  if(!await flushSave())return;
+  const p={id:uid(),name,cover:'',resources:[],resourceFolders:[],exportCounters:{},createdAt:Date.now(),updatedAt:Date.now()};
+  if(!await persistProjectForUI(p))return;
+  app.projects.push(p);useProjectId(p.id);
+  const doc=newDoc({title:'Новый шаблон'});setDoc(doc);
+  if(!await flushSave())return;
+  app.filter='template';renderLibrary();toast('Проект создан');
+ }finally{creatingProject=false;button.disabled=false}
 }
 async function switchProject(id){if(id===app.currentProjectId)return;useProjectId(id);app.filter='template';renderLibrary();toast('Проект переключён');}
 async function zipOriginal_addProjectResources(files){const p=currentProject();if(!p||!files.length)return;let added=0;for(const file of files){if(!file.type.startsWith('image/'))continue;try{const image=await compressImage(file);p.resources||=[];p.resources.push({id:uid(),name:file.name,src:image.src,folderId:app.resourceFolderId||null,createdAt:Date.now(),width:image.width,height:image.height});added++}catch(e){console.error(e);toast('Не удалось добавить '+file.name)}}if(added){try{await persistProject(p);renderLibrary();toast('Добавлено ресурсов: '+added)}catch(e){console.error(e);toast('Недостаточно места для сохранения ресурсов')}}}
@@ -3116,8 +3134,8 @@ $('#libraryBtn').onclick=()=>{$('#editorProjectMenu').classList.toggle('hidden')
 $$('[data-home-nav]').forEach(b=>b.onclick=()=>showHome(b.dataset.homeNav));
 $('#homeScreen').addEventListener('click',ev=>{const b=ev.target.closest('[data-home-action]');if(!b)return;const action=b.dataset.homeAction;if(action==='export-backup')$('#zipCreate').click()});$('#dockAssets').onclick=showAssets;$('#assetsBtn').onclick=showAssets;$('#newCardBtn').onclick=()=>makeCardFrom(app.doc);
 $('#createProjectBtn').onclick=createProject;
-$('#newProjectName').addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();createProject()}});
-$('#projectChooser').addEventListener('click',ev=>{const remove=ev.target.closest('[data-delete-project]');if(remove){ev.stopPropagation();deleteProject(remove.dataset.deleteProject);return}const b=ev.target.closest('[data-switch-project]');if(b)switchProject(b.dataset.switchProject)});$('#projectChooser').addEventListener('keydown',ev=>{if((ev.key==='Enter'||ev.key===' ')&&ev.target.matches('[data-delete-project]')){ev.preventDefault();ev.stopPropagation();deleteProject(ev.target.dataset.deleteProject)}});$('#projectDeleteBtn').onclick=()=>deleteProject(app.currentProjectId);
+$('#projectChooser').addEventListener('click',ev=>{const b=ev.target.closest('[data-switch-project]');if(b)switchProject(b.dataset.switchProject)});
+$('#projectDeleteBtn').onclick=()=>deleteProject(app.currentProjectId);
 $('#projectRenameBtn').onclick=()=>{const el=$('#activeProjectName');const p=currentProject();if(!p)return;const input=document.createElement('input');input.className='rename-project';input.value=p.name;el.replaceWith(input);input.focus();input.select();let finishing=false;const done=async()=>{if(finishing)return;finishing=true;const name=input.value.trim();const next={...clone(p),name:name||p.name};const ok=await persistProjectForUI(next);if(ok)Object.assign(p,next);const heading=document.createElement('h3');heading.id='activeProjectName';heading.textContent=p.name;input.replaceWith(heading);updateProjectBadge();renderLibrary()};input.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault();done()}if(ev.key==='Escape'){input.value=p.name;done()}});input.addEventListener('blur',()=>{if(input.isConnected)done()},{once:true})};
 $('#projectCoverBtn').onclick=()=>$('#projectCoverInput').click();
 $('#projectCoverInput').onchange=async ev=>{const file=ev.target.files?.[0];ev.target.value='';if(!file)return;try{const photo=await compressImage(file);const im=new Image();im.src=photo.src;await im.decode();const c=document.createElement('canvas');const scale=Math.min(1,360/Math.max(im.naturalWidth,im.naturalHeight));c.width=Math.round(im.naturalWidth*scale);c.height=Math.round(im.naturalHeight*scale);c.getContext('2d').drawImage(im,0,0,c.width,c.height);const p=currentProject();p.cover=c.toDataURL('image/webp',.84);await persistProject(p);renderLibrary()}catch(e){console.error(e);toast('Обложку не удалось загрузить')}};
@@ -3127,7 +3145,21 @@ $('#projectGrid').addEventListener('drop',async ev=>{if(app.filter!=='resource')
 $('#uploadResourcesBtn').onclick=()=>$('#resourceInput').click();
 $('#resourceInput').onchange=async ev=>{const files=[...ev.target.files];ev.target.value='';await addProjectResources(files);if(!$('#assetsPopover').classList.contains('hidden'))renderAssetsPopover()};
 $('#cardSearch').oninput=renderLibrary;$('#cardSort').onchange=renderLibrary;
-$('#createTemplateBtn').onclick=()=>{showDialog('sizeDialog');updateCanvasPresetSelection($('#sizeDialog'))};$('#confirmNewDoc').onclick=()=>{const width=Number($('#newDocW').value),height=Number($('#newDocH').value);if(!(width>=100&&width<=5000&&height>=100&&height<=5000)){toast('Размер: от 100 до 5000 px');return}const d=newDoc({title:$('#newDocTitle').value||'Новый шаблон',width,height});openDocumentTab(d)};
+$('#createTemplateBtn').onclick=()=>{
+ const kind=app.filter==='card'?'card':'template';
+ const name=kind==='card'?'Новая карточка':'Новый шаблон';
+ $('#newDocTitle').value=name;
+ $('#sizeDialog .dialog-header h2').textContent=kind==='card'?'Новая карточка':'Новый холст';
+ $('#confirmNewDoc').textContent=kind==='card'?'Создать карточку':'Создать шаблон';
+ showDialog('sizeDialog');updateCanvasPresetSelection($('#sizeDialog'));
+};
+$('#confirmNewDoc').onclick=()=>{
+ const width=Number($('#newDocW').value),height=Number($('#newDocH').value);
+ if(!(width>=100&&width<=5000&&height>=100&&height<=5000)){toast('Размер: от 100 до 5000 px');return}
+ const type=app.filter==='card'?'card':'template',defaultName=type==='card'?'Новая карточка':'Новый шаблон';
+ const d=newDoc({title:$('#newDocTitle').value||defaultName,width,height,type});
+ openDocumentTab(d);
+};
 
 $$('.dialog-close').forEach(x=>x.onclick=closeDialogs);$('#shade').onclick=()=>{closeDialogs();hideInspector()};
 $$('.tab').forEach(t=>t.onclick=()=>{app.filter=t.dataset.filter;renderLibrary()});

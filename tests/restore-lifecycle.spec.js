@@ -113,7 +113,7 @@ test('F-08 retry cannot bypass sticky workspace writeFailure', async ({ page }) 
   });
   await openHome(page); const before = await contents(page);
   // The ordinary project handler crosses dbOp/workspaceBarrier and aborts a real write.
-  await page.evaluate(() => { window.failProjectWrite = true; document.querySelector('#newProjectName').value = 'Failed project'; document.querySelector('#createProjectBtn').click(); });
+  await page.evaluate(() => { window.failProjectWrite = true; document.querySelector('#createProjectBtn').click(); });
   await expect.poll(() => page.evaluate(() => restoreProbe.aborts)).toBeGreaterThan(0);
   await page.evaluate(() => { window.failProjectWrite = false; });
   await load(page, (await archive()).bytes); await selectReplace(page); await retryable(page, 'неподтверждённая запись');

@@ -10,25 +10,46 @@ function lineHeight(layer, style) {
 }
 // CSS inline baselines need not equal Canvas fontBoundingBox baselines.
 // Measure the actual inline baseline before positioning any editable glyphs.
-function legacyDOMOffset(base, projection, text) {
+function legacyDOMOffset(base, projection, text, spans, width) {
  const probe=document.createElement('div'),baseline=document.createElement('span');
  Object.assign(probe.style,{position:'fixed',left:'-100000px',top:'0',visibility:'hidden',padding:'0',margin:'0',border:'0',font:richTextFont(base),fontKerning:'normal',lineHeight:projection.height+'px',letterSpacing:base.letterSpacing+'px',whiteSpace:'break-spaces',width:'max-content'});
  baseline.style.cssText='display:inline-block;width:0;height:0;padding:0;margin:0;border:0;vertical-align:baseline;line-height:0';
- probe.append(document.createTextNode(text.split('\n')[0]||'Mg'),baseline);document.body.append(probe);
- try {return projection.baseline-(baseline.getBoundingClientRect().bottom-probe.getBoundingClientRect().top);}
+ if(projection.single){
+  probe.style.width=width+'px';
+  for(const p of spans){const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:projection.height+'px',letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});probe.append(span);}
+ }else probe.append(document.createTextNode(text.split('\n')[0]||'Mg'));
+ probe.append(baseline);document.body.append(probe);
+ try {
+  if(projection.single){
+   const left=probe.getBoundingClientRect().left;let x=0;
+   for(let i=0;i<spans.length;i++){
+    const p=spans[i],range=document.createRange();range.selectNodeContents(probe.children[i]);const rect=range.getBoundingClientRect();
+    ctx.font=richTextFont(p.style);ctx.fontKerning='normal';ctx.letterSpacing=p.style.letterSpacing+'px';const expected=ctx.measureText(p.text).width;
+    if(Math.abs(rect.x-left-x)>.5||Math.abs(rect.width-expected)>.5)throw Error('Mixed DOM advances differ from Canvas');
+    x+=expected;
+   }
+  }
+  return projection.baseline-(baseline.getBoundingClientRect().bottom-probe.getBoundingClientRect().top);
+ }
  finally {probe.remove();}
 }
 export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompatible=()=>false) {
  if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')!=='1'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
- if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.autoFontSize||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
+ if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||e.strokeWidth||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
- if((!usesRichTextLayout(e)||e.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(e))return false;
- try {return [resolveRichTextStyle(e),...richTextSpans(e).map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(e,s));}catch{return false;}
+ if((e.autoFontSize||!usesRichTextLayout(e)||e.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(e))return false;
+ try {
+  const base=resolveRichTextStyle(e),spans=richTextSpans(e);
+  if(![base,...spans.map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(e,s)))return false;
+  const projection=(!usesRichTextLayout(e)||e.textLayoutMode===LEGACY_TOP_LAYOUT)?legacyTopProjection(ctx,e):null;
+  if(projection?.single)legacyDOMOffset(base,projection,e.text,spans,e.w);
+  return true;
+ }catch{return false;}
 }
 
 // Canonical layer + the editor's existing session history own all confirmed data.
 // Unknown DOM remains on screen until explicit recovery; it is never persisted.
-export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false}) {
+export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false, prepare=()=>{}, withinBounds=()=>true}) {
  const startedPlain=!usesRichTextLayout(element);
  let layer=element, composing=false, pending=null, fallback=null, pasteText=null, confirmedHTML, inactive=false;
  const safe={phase:'confirmed', deferred:false};
@@ -42,13 +63,13 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const base=resolveRichTextStyle(value),spans=richTextSpans(value);
   const styles=[base,...spans.map(p=>p.style)];
   for(const style of styles)if(!available(style.fontFamily)||!document.fonts.check(richTextFont(style)))throw Error('Font unavailable');
-  const projection=(startedPlain||value.textLayoutMode===LEGACY_TOP_LAYOUT)?legacyTopProjection(ctx,value):null;
-  const heights=styles.map(style=>lineHeight(value,style));
-  const offset=projection?legacyDOMOffset(base,projection,value.text):0;
+  const projection=(startedPlain||!usesRichTextLayout(value)||value.textLayoutMode===LEGACY_TOP_LAYOUT)?legacyTopProjection(ctx,value):null;
+  const heights=styles.map(style=>projection?.single?projection.height+'px':lineHeight(value,style));
+  const offset=projection?legacyDOMOffset(base,projection,value.text,spans,value.w):0;
   const nodes=spans.map((p,i)=>{const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:heights[i+1],letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});if(projection)Object.assign(span.style,{position:'relative',top:offset+'px'});return span;});
   const next=structuredClone(value);
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
-  Object.assign(host.style,{font:richTextFont(base),lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
+  Object.assign(host.style,{font:richTextFont(base),fontKerning:'normal',lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
   host.replaceChildren(...nodes);
   if(!host.childNodes.length)host.append(document.createTextNode(''));
   if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';host.append(br);}
@@ -61,7 +82,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  }
  function clean(){try{return !composing&&!pending&&!fallback&&!safe.deferred&&host.innerHTML===confirmedHTML&&readText()===layer.text;}catch{return false;}}
  const caret=c=>({start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'});
- function commit(value,before,after){recordInlineHistory(history,layer,caret(before));recordInlineHistory(history,value,caret(after));project(value,after);onChange();}
+ function commit(value,before,after){prepare(value);const origin=structuredClone(layer);project(value,after);recordInlineHistory(history,origin,caret(before));recordInlineHistory(history,layer,caret(after));onChange();}
  function travel(direction){finishPreview();if(!clean()){stop('История недоступна до восстановления ввода');return;}const state=moveInlineHistory(history,direction);if(state){project(state.element,state.caret);onChange();}}
  function requestFallback(reason){
   if(!clean()){stop('Нужно восстановить подтверждённый ввод');return false;}
@@ -73,22 +94,31 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   if(!preview)return;
   recordInlineHistory(history,layer,caret(preview.selection));preview=null;onChange();
  }
+ function rejectStyle(){
+  // A preview and its eventual textarea handoff are the same user action.
+  // Restore its origin before handing off, instead of publishing two steps.
+  if(preview){try{project(preview.element,preview.selection);preview=null;}catch{stop('Не удалось восстановить начало форматирования');return true;}}
+  return false;
+ }
  function applyRangeStyle(patch,{key,final=false}={}){
   if(!clean()||safe.phase!=='confirmed'||inactive){stop('Нужно восстановить подтверждённый ввод');return true;}
   let selection;try{selection=rememberSelection();}catch{return false;}
   if(selection.anchor===selection.focus)return false;
   if(preview&&(preview.key!==key||preview.selection.anchor!==selection.anchor||preview.selection.focus!==selection.focus))finishPreview();
   const origin=preview?.element||structuredClone(layer);
-  if(startedPlain&&!usesRichTextLayout(origin)&&!plainCompatible(origin))return false;
+  if(startedPlain&&!usesRichTextLayout(origin)&&!plainCompatible(origin))return rejectStyle();
   const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
+  if(usesRichTextLayout(origin)&&!next.textRuns?.length){delete next.textLayoutMode;delete next.textRunsBaseFontSize;}
   if(startedPlain&&!usesRichTextLayout(origin)&&next.textRuns?.length&&legacyTopProjection(ctx,origin)){
-   if(Math.min(selection.anchor,selection.focus)===0&&Math.max(selection.anchor,selection.focus)===origin.text.length)return false;
+   if(Math.min(selection.anchor,selection.focus)===0&&Math.max(selection.anchor,selection.focus)===origin.text.length)return rejectStyle();
    next.textLayoutMode=LEGACY_TOP_LAYOUT;
   }
-  if(next.textLayoutMode===LEGACY_TOP_LAYOUT&&!legacyTopProjection(ctx,next))return false;
   retainRichTextSizeBase(next);
+  prepare(next,JSON.stringify(next)===JSON.stringify(origin)?undefined:key);
+  if(!withinBounds(next))return rejectStyle();
+  if(next.textLayoutMode===LEGACY_TOP_LAYOUT&&!plainCompatible(next))return rejectStyle();
   // project preflights fonts and metrics; a failure leaves layer/history intact.
-  try{project(next,selection);}catch{return false;}
+  try{project(next,selection);}catch{return rejectStyle();}
   if(!preview){recordInlineHistory(history,origin,caret(selection));preview={key,element:origin,selection};}
   if(final)finishPreview();else onChange();
   return true;
@@ -124,8 +154,10 @@ function offsetToDomPoint(offset){
  // Prefer the structural end position for the final empty row.
  const sentinel=host.querySelector(':scope > br[data-caret-sentinel]');
  if(sentinel&&offset===map.text.length)return {node:host,offset:[...host.childNodes].indexOf(sentinel)};
- const leaves=[...map.leaves].reverse();
- const leaf=leaves.find(p=>offset>=p.start&&offset<=p.end);
+ // Insertion inherits the left character in replaceText(). At a style boundary
+ // use that same native caret font; the next row still owns a point after LF.
+ const leaf=(map.text[offset-1]!=='\n'&&map.leaves.find(p=>offset>p.start&&offset<=p.end))||
+  [...map.leaves].reverse().find(p=>offset>=p.start&&offset<=p.end);
  if(leaf)return {node:leaf.node,offset:offset-leaf.start};
  for(const [node,offsets] of map.points){const i=offsets.indexOf(offset);if(i>=0)return {node,offset:i};}
  throw Error('Unmapped offset');
@@ -184,7 +216,7 @@ listen('beforeinput',e=>{
   commit(next,selection,{anchor:start+1,focus:start+1});
 
   safe.phase='confirmed';
-  if(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
+  if(!withinBounds(layer)||(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer)))requestFallback('Изменилась раскладка обычного текста');
   // A canceled operation has no pending native edit, even if an input is sent.
   return;
  }
@@ -230,7 +262,7 @@ listen('input',e=>{
   commit(next,previous.selection,selection);
 
   safe.phase='confirmed';
-  if(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
+  if(!withinBounds(layer)||(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer)))requestFallback('Изменилась раскладка обычного текста');
  }catch{stop('unsupported native DOM or selection');}
 });
 

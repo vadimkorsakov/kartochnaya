@@ -6,11 +6,13 @@ async function seed(page,{flag=true,patch={},palette,fonts}={}){
  await openHome(page,flag?'/?experimentalTextWysiwyg=1':'/');
  const payload=structuredClone(fixture);if(fonts)payload.fonts=fonts;payload.documents=[payload.documents[0]];
  const doc=payload.documents[0];if(palette)doc.palette=palette;doc.groups=[];doc.elements=doc.elements.filter(e=>e.id==='title');
- Object.assign(doc.elements[0],{text:'A',textRuns:[{start:0,end:1,style:{fontWeight:'700',textColor:'#ff0000'}}],autoFontSize:false,rotation:0,textAlign:'left',verticalAlign:'top',...patch});
+ // Positive input/formatting workflows reserve room for their glyphs and LF.
+ // Tight frames are explicit negative fixtures below.
+ Object.assign(doc.elements[0],{h:120,text:'A',textRuns:[{start:0,end:1,style:{fontWeight:'700',textColor:'#ff0000'}}],autoFontSize:false,rotation:0,textAlign:'left',verticalAlign:'top',...patch});
  await importPayload(page,payload);await expect(page.locator('#toast')).toContainText('Импортировано проектов');
  const stored=(await records(page,'docs')).find(d=>getLayer(d));await openLibraryDocument(page,stored.id);return stored;
 }
-async function edit(page){const p=await canvasPoint(page,100,175);await page.mouse.dblclick(p.x,p.y);await expect(page.locator('#inlineText:visible,#inlineWysiwyg:visible')).toBeFocused();}
+async function edit(page,{x=100,y=175}={}){const p=await canvasPoint(page,x,y);await page.mouse.dblclick(p.x,p.y);await expect(page.locator('#inlineText:visible,#inlineWysiwyg:visible')).toBeFocused();}
 async function state(page){return page.locator(surface).evaluate(el=>{
  const sel=getSelection();const offset=(node,n)=>{const r=document.createRange();r.setStart(el,0);r.setEnd(node,n);return r.toString().length;};
  return {text:el.textContent,anchor:offset(sel.anchorNode,sel.anchorOffset),focus:offset(sel.focusNode,sel.focusOffset)};
@@ -229,11 +231,84 @@ test('collapsed WYSIWYG caret hands off for a whole-layer size change',async({pa
 // A real uploaded font with compatible top/alphabetic metrics. Arial 32 is an
 // explicit failing transition below; this fixture does not stand in for it.
 const plainFont={name:'Nimbus Sans Regular',family:'Nimbus Sans',weight:400,style:'normal',data:'data:font/otf;base64,'+require('node:fs').readFileSync(require('node:path').join(__dirname,'fixtures/fonts/NimbusSans-Regular.otf')).toString('base64')};
+
+async function ordinaryRanges(page){
+ return page.locator(surface).evaluate(el=>{
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  const parts=[...el.querySelectorAll(':scope > span')].map(span=>{
+   const range=document.createRange();range.selectNodeContents(span);const rect=range.getBoundingClientRect();
+   const probe=document.createElement('span');probe.style.cssText='display:inline-block;width:0;height:0;padding:0;margin:0;border:0;vertical-align:baseline;line-height:0';span.append(probe);
+   const baseline=(probe.getBoundingClientRect().bottom-host.y)/scale;probe.remove();
+   return {text:span.textContent,x:(rect.x-host.x)/scale,width:rect.width/scale,baseline};
+  });
+  const selection=getSelection(),rect=selection.getRangeAt(0).getBoundingClientRect(),style=getComputedStyle(selection.focusNode.parentElement);
+  const c=document.createElement('canvas').getContext('2d');c.font=[style.fontStyle,style.fontWeight,style.fontSize,style.fontFamily].join(' ');
+  return {parts,caret:{x:(rect.x-host.x)/scale,y:(rect.y-host.y)/scale,height:rect.height/scale,fontSize:parseFloat(style.fontSize),ascent:c.measureText('Mg').fontBoundingBoxAscent}};
+ });
+}
+async function mouseSelectOrdinaryRange(page){
+ const points=await page.locator(surface).evaluate(el=>[3,1].map(offset=>{
+  const range=document.createRange();range.setStart(el.firstChild.firstChild,offset);range.collapse(true);const r=range.getBoundingClientRect();return {x:r.x,y:r.y+r.height/2};
+ }));
+ await page.mouse.move(points[0].x,points[0].y);await page.mouse.down();await page.mouse.move(points[1].x,points[1].y,{steps:8});await page.mouse.up();
+ expect(await state(page)).toEqual({text:'ABCD',anchor:3,focus:1});
+}
+
+for(const key of ['textColor','fontSize','fontFamily'])for(const [zoom,autoFit] of [[50,false],[100,false],[200,false],[100,true]])test(`first ordinary edit ${key} at ${zoom}%${autoFit?' autoFit':''}`,async({page},testInfo)=>{
+ // Includes session/document history, IDB reload, raster caret and PNG export.
+ test.setTimeout(90_000);await page.setViewportSize({width:2200,height:1600});await observePlainGeometry(page);
+ const doc=await seedPlain(page,{fontFamily:'Arial',fontSize:24,lineHeight:autoFit?1.1:1.3,w:500,h:autoFit?28:120,autoFontSize:autoFit}),initial=getLayer(doc);
+ expect(initial).not.toHaveProperty('textRuns');await zoomTo(page,zoom);const legacy=await plainFrame(page);
+ await edit(page,{x:60,y:autoFit?176:210});await expect(page.locator(surface)).toBeFocused();const nativeCaret=await checkArialCaret(page,zoom,legacy[0].baseline);await mouseSelectOrdinaryRange(page);
+ if(key==='textColor'){await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click()}
+ else if(key==='fontSize'){const field=page.locator('#inspector [data-key=fontSize]');await field.fill(autoFit?'16':'40');await field.press('Tab')}
+ else {await page.locator('#inspector [data-font-open]').click();await page.locator('#inspector [data-font-option="Georgia"]').click()}
+ await assertRange(page,'ABCD',3,1);const formatted=await snapshotValue(page);
+ expect(formatted.textRuns).toEqual([{start:1,end:3,style:{[key]:key==='textColor'?'#11aa33':key==='fontSize'?(autoFit?16:40):'Georgia'}}]);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await assertRange(page,'ABCD',3,1);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(formatted);await assertRange(page,'ABCD',3,1);
+ await page.keyboard.type('X');await assertRange(page,'AXD',2,2);const typed=await snapshotValue(page);
+ expect(typed.textRuns).toEqual([{start:1,end:2,style:formatted.textRuns[0].style}]);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(formatted);await assertRange(page,'ABCD',3,1);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(typed);
+ const dom=await ordinaryRanges(page);expect(Math.abs(dom.caret.x-dom.parts.slice(0,2).reduce((n,p)=>n+p.width,0))).toBeLessThanOrEqual(.5);expect(dom.caret.height).toBeGreaterThan(0);
+ expect(dom.caret.fontSize).toBe(key==='fontSize'?(autoFit?16:40):24);expect(Math.abs(dom.caret.y+dom.caret.ascent-dom.parts[1].baseline)).toBeLessThanOrEqual(.5);
+ await page.keyboard.press('Control+Enter');const mixed=await plainFrame(page);
+ expect(dom.parts).toHaveLength(mixed.length);
+ for(let i=0;i<mixed.length;i++)for(const k of ['x','width','baseline'])expect(Math.abs(dom.parts[i][k]-mixed[i][k]),k).toBeLessThanOrEqual(.5);
+ if(key==='textColor')for(const p of mixed)expect(Math.abs(p.baseline-legacy[0].baseline)).toBeLessThanOrEqual(.5);
+ await page.locator('#undoBtn').click();expect(await snapshotValue(page)).toEqual(initial);
+ await page.locator('#redoBtn').click();expect(await snapshotValue(page)).toEqual(typed);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(typed);
+ await page.reload();await openLibraryDocument(page,doc.id);expect(await plainFrame(page)).toEqual(mixed);
+ await edit(page,{x:60,y:autoFit?176:210});await expect(page.locator(surface)).toBeFocused();expect(await snapshotValue(page)).toEqual(typed);
+ await page.keyboard.type('Y');await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(typed);
+ await page.evaluate(()=>{window.plainExportFrame=[];window.capturePlainExport=true});await exportPNG(page);
+ const png=await page.evaluate(()=>{window.capturePlainExport=false;return window.plainExportFrame});expect(png.slice(-mixed.length)).toEqual(mixed);
+ const path=testInfo.outputPath('first-edit-geometry.json');await require('node:fs/promises').writeFile(path,JSON.stringify({zoom,key,legacy,nativeCaret,dom,mixed,png},null,2));await testInfo.attach('first-edit-geometry.json',{path,contentType:'application/json'});
+});
 async function seedPlain(page,patch={},options={}){
  return seed(page,{fonts:[plainFont],...options,patch:{text:'ABCD',fontFamily:'Nimbus Sans',fontSize:26,lineHeight:1.03,textRuns:undefined,...patch}});
 }
 
-for(const [label,patch] of [['Nimbus',{}],['Arial',{fontFamily:'Arial',fontSize:32,lineHeight:1.15}]])test('plain compatible layer opens with a virtual span; no-op close has no model, history or IDB writes: '+label,async({page})=>{
+test('first fitted input recomputes size, Undo and Escape restore the original fitted layer',async({page})=>{
+ const initial=getLayer(await seedPlain(page,{fontFamily:'Arial',fontSize:24,lineHeight:1.3,w:68,h:33,autoFontSize:true}));
+ await edit(page,{x:50,y:176});await expect(page.locator(surface)).toBeFocused();await selectRange(page,4,4);await page.keyboard.type('E');
+ await assertRange(page,'ABCDE',5,5);const typed=await snapshotValue(page);expect(typed.fontSize).toBeLessThan(initial.fontSize);expect(typed.autoFontSize).toBe(true);expect(typed).not.toHaveProperty('textRuns');expect(typed).not.toHaveProperty('textLayoutMode');
+ expect(await page.locator(surface).evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(typed.fontSize);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await assertRange(page,'ABCD',4,4);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(typed);await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
+});
+
+test('first default title measured shaping blocker retains exact legacy geometry',async({page},testInfo)=>{
+ await observePlainGeometry(page);const initial=getLayer(await seedPlain(page,{text:'Ваш заголовок',fontFamily:'Arial',fontSize:24,lineHeight:1.1,w:500,h:28,autoFontSize:true}));await page.locator('#layers [data-layer="title"] .layer-name').click();const before=await plainFrame(page),pixels=await canvasPixels(page);
+ const pairs=await page.evaluate(()=>{const c=document.createElement('canvas').getContext('2d');c.font='24px Arial';c.fontKerning='normal';const chars=Array.from('Ваш заголовок');return chars.slice(1).map((ch,i)=>({pair:chars[i]+ch,delta:c.measureText(chars[i]).width+c.measureText(ch).width-c.measureText(chars[i]+ch).width}))});
+ expect(Math.max(...pairs.map(p=>Math.abs(p.delta)))).toBeGreaterThan(.5);
+ await edit(page,{x:60,y:174});await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);expect(await plainFrame(page)).toEqual(before);expect(await canvasPixels(page)).toBe(pixels);
+ const path=testInfo.outputPath('default-title-blocker.json');await require('node:fs/promises').writeFile(path,JSON.stringify({initial,before,pairs},null,2));await testInfo.attach('default-title-blocker.json',{path,contentType:'application/json'});
+});
+
+for(const [label,patch] of [['Nimbus',{}],['Arial',{fontFamily:'Arial',fontSize:32,lineHeight:1.15}],['Arial fitted',{fontFamily:'Arial',fontSize:24,lineHeight:1.3,w:500,h:33,autoFontSize:true}],['Arial default line step',{fontFamily:'Arial',fontSize:24,lineHeight:1.1,w:500,h:28,autoFontSize:true}]])test('plain compatible layer opens with a virtual span; no-op close has no model, history or IDB writes: '+label,async({page})=>{
  await page.addInitScript(()=>{window.docWrites=0;const put=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(...args){if(this.name==='docs')window.docWrites++;return put.apply(this,args)};});
  const doc=await seedPlain(page,patch),initial=getLayer(doc);expect(initial).not.toHaveProperty('textRuns');expect(initial).not.toHaveProperty('textRunsBaseFontSize');
  const undo=await page.locator('#undoBtn').isEnabled();await page.waitForTimeout(700);const writes=await page.evaluate(()=>window.docWrites);
@@ -268,10 +343,10 @@ test('plain typing formatting typing mixed history and Escape preserve exact str
 });
 
 for(const key of ['fontFamily','fontSize'])test('plain first '+key+' works without closing and Escape removes first runs',async({page})=>{
- const doc=await seedPlain(page),initial=getLayer(doc);await edit(page);await selectRange(page,1,3);
+ const doc=await seedPlain(page,{h:120}),initial=getLayer(doc);await edit(page);await selectRange(page,1,3);
  if(key==='fontFamily'){await page.locator('#inspector [data-font-open]').click();await page.locator('#inspector [data-font-option="Georgia"]').click()}
- else {const field=page.locator('#inspector [data-key=fontSize]');await field.fill('40');await expect(field).toBeFocused();await field.press('Tab')}
- await assertRange(page,'ABCD',1,3);const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{[key]:key==='fontSize'?40:'Georgia'}}]);
+ else {const field=page.locator('#inspector [data-key=fontSize]');await field.fill('38');await expect(field).toBeFocused();await field.press('Tab')}
+ await assertRange(page,'ABCD',1,3);const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{[key]:key==='fontSize'?38:'Georgia'}}]);
  const styles=await page.locator(surface+' span').evaluateAll(spans=>spans.map(s=>[getComputedStyle(s).fontFamily,getComputedStyle(s).fontSize]));expect(styles[0]).toEqual(['"Nimbus Sans"','26px']);expect(styles[2]).toEqual(styles[0]);
  await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);
  await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
@@ -342,7 +417,7 @@ for(const [name,patch,compatible] of plainCases)test('plain real geometry at 50/
 async function arialRanges(page){
  return page.locator(surface).evaluate(el=>{
    const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width),walk=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),out=[];
-   const c=document.createElement('canvas').getContext('2d');c.font=getComputedStyle(el).font;c.textBaseline='alphabetic';const m=c.measureText('ABCD');
+   const c=document.createElement('canvas').getContext('2d');const style=getComputedStyle(el);c.font=[style.fontStyle,style.fontWeight,style.fontSize,style.fontFamily].join(' ');c.fontKerning='normal';c.textBaseline='alphabetic';const m=c.measureText('ABCD');
    for(let n;n=walk.nextNode();)for(let i=0;i<n.length;i++){if(n.data[i]==='\n')continue;const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+1);const b=r.getBoundingClientRect();const prefix=el.textContent.split('\n')[Math.floor(out.length/4)].slice(0,out.length%4);out.push({text:n.data[i],x:(b.x-host.x)/scale,width:b.width/scale,canvasX:c.measureText(prefix).width,canvasWidth:c.measureText(n.data[i]).width,top:(b.y-host.y)/scale})}
    const baselines=[];let end=0;
    for(const row of el.textContent.split('\n')){
@@ -357,7 +432,7 @@ async function checkArialCaret(page,zoom,baseline){
  await selectRange(page,2,2);await page.bringToFront();await page.locator(surface).evaluate(el=>el.style.setProperty('caret-color','#ff00fe','important'));
  // Native arrows restart the caret blink; the screenshot keeps the real caret.
  await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowLeft');
- const caret=await page.locator(surface).evaluate(el=>{const r=getSelection().getRangeAt(0).getBoundingClientRect(),host=el.getBoundingClientRect();const c=document.createElement('canvas').getContext('2d');c.font=getComputedStyle(el).font;c.textBaseline='alphabetic';return {x:r.x,y:r.y,bottom:r.bottom,hostY:host.y,ascent:c.measureText('ABCD').fontBoundingBoxAscent}});
+ const caret=await page.locator(surface).evaluate(el=>{const r=getSelection().getRangeAt(0).getBoundingClientRect(),host=el.getBoundingClientRect();const c=document.createElement('canvas').getContext('2d');const style=getComputedStyle(el);c.font=[style.fontStyle,style.fontWeight,style.fontSize,style.fontFamily].join(' ');c.fontKerning='normal';c.textBaseline='alphabetic';return {x:r.x,y:r.y,bottom:r.bottom,hostY:host.y,ascent:c.measureText('ABCD').fontBoundingBoxAscent}});
  const box=await page.locator(surface).boundingBox(),clip={x:box.x-12,y:box.y-12,width:box.width+24,height:box.height+24};
  expect(caret.bottom-caret.y).toBeGreaterThan(0);
  if(page.context().browser().browserType().name()==='firefox'){
@@ -464,4 +539,52 @@ test('old unmarked Arial rich document keeps its original baseline and PNG geome
 
 test('legacy-top unsupported empty row hands off confirmed input without losing its mode',async({page})=>{
  await seedPlain(page,{text:'ABCD',fontFamily:'Arial',fontSize:32,lineHeight:1.15,textLayoutMode:'legacy-top',textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]});await edit(page);await page.keyboard.press('End');await page.keyboard.press('Enter');await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator('#wysiwygRecovery')).toBeHidden();const changed=await snapshotValue(page);expect(changed.text).toBe('ABCD\n');expect(changed.textLayoutMode).toBe('legacy-top');expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
+});
+
+test('legacy-top mixed multiline handoff preserves backward range and one history action',async({page})=>{
+ const initial=getLayer(await seedPlain(page,{text:'ABCD\nABCD',fontFamily:'Arial',fontSize:24,lineHeight:1.3,h:120}));
+ await edit(page);await expect(page.locator(surface)).toBeFocused();await selectRange(page,3,1);
+ await page.locator('#inspector [data-font-open]').click();await page.locator('#inspector [data-font-option="Georgia"]').click();
+ await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#wysiwygRecovery')).toBeHidden();
+ expect(await page.locator('#inlineText').evaluate(el=>[el.selectionStart,el.selectionEnd,el.selectionDirection])).toEqual([1,3,'backward']);
+ const changed=await snapshotValue(page);expect(changed.text).toBe(initial.text);expect(changed.textLayoutMode).toBe('legacy-top');expect(changed.textRuns).toEqual([{start:1,end:3,style:{fontFamily:'Georgia'}}]);
+ await page.locator('#inlineText').focus();await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
+});
+
+test('legacy-top preview handoff is one numeric history action',async({page})=>{
+ const initial=getLayer(await seedPlain(page,{fontFamily:'Arial',fontSize:24,lineHeight:1.3,w:300,h:120}));await edit(page);await selectRange(page,3,1);
+ const size=page.locator('#inspector [data-key=fontSize]');await size.fill('40');await expect(page.locator(surface)).toBeVisible();await size.fill('200');await size.press('Tab');
+ await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#wysiwygRecovery')).toBeHidden();const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{fontSize:200}}]);
+ await page.locator('#inlineText').focus();await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
+});
+
+for(const [label,patch] of [['Arial fitted',{fontFamily:'Arial',fontSize:24,lineHeight:1.1,h:28,w:500,autoFontSize:true}],['Nimbus fitted',{h:28,w:500,autoFontSize:true}],['Nimbus fixed',{h:30,w:500}]])test('legacy-top clipped manual size hands off before hiding glyphs only in Canvas: '+label,async({page})=>{
+ const initial=getLayer(await seedPlain(page,patch));await edit(page,{x:60,y:174});await selectRange(page,3,1);
+ const size=page.locator('#inspector [data-key=fontSize]');await size.fill('40');await size.press('Tab');await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#wysiwygRecovery')).toBeHidden();
+ const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{fontSize:40}}]);expect(changed.autoFontSize).toBe(false);expect(changed.h).toBe(initial.h);
+ await page.locator('#inlineText').focus();await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
+});
+
+test('legacy-top clear last override and fitted no-op size leave no extra history',async({page})=>{
+ const initial=getLayer(await seedPlain(page,{fontFamily:'Arial',fontSize:24,lineHeight:1.3,h:33,w:500,autoFontSize:true}));await edit(page);await selectRange(page,1,3);
+ const size=page.locator('#inspector [data-key=fontSize]');for(const n of ['40','24'])await size.fill(n);await size.press('Tab');await assertRange(page,'ABCD',1,3);expect(await snapshotValue(page)).toEqual(initial);expect(await page.locator('#undoBtn').isEnabled()).toBe(false);
+ await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await assertRange(page,'ABCD',1,3);const colored=await snapshotValue(page);
+ await openColor(page);await hexColor(page,initial.textColor);await page.locator('[data-fill-close]').click();await assertRange(page,'ABCD',1,3);expect(await snapshotValue(page)).toEqual(initial);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(colored);await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);
+ await page.keyboard.press('Control+Enter');expect(await page.locator('#undoBtn').isEnabled()).toBe(false);
+});
+
+
+test('legacy-top Nimbus 40 browser ink metrics preserve the measured clip boundary',async({page,browserName},testInfo)=>{
+ await observePlainGeometry(page);const initial=getLayer(await seedPlain(page,{h:120,w:500}));await edit(page,{x:60,y:174});await selectRange(page,3,1);
+ const size=page.locator('#inspector [data-key=fontSize]');await size.fill('40');await size.press('Tab');
+ const supported=browserName==='firefox';let dom=null;
+ if(supported){await assertRange(page,'ABCD',3,1);dom=await ordinaryRanges(page)}else{await expect(page.locator(surface)).toBeHidden();await page.locator('#inlineText').focus()}
+ const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{fontSize:40}}]);expect(changed).not.toHaveProperty('textLayoutMode');
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);await page.keyboard.press('Control+Enter');
+ const frame=await plainFrame(page),top=Math.min(...frame.map(p=>p.top));if(supported)expect(top).toBeGreaterThanOrEqual(0);else expect(top).toBeCloseTo(-.4,6);
+ if(dom)for(let i=0;i<frame.length;i++)for(const key of ['x','width','baseline'])expect(Math.abs(dom.parts[i][key]-frame[i][key])).toBeLessThanOrEqual(.5);
+ await page.evaluate(()=>{window.capturePlainExport=true;window.plainExportFrame=[]});await exportPNG(page);const png=await page.evaluate(()=>{window.capturePlainExport=false;return window.plainExportFrame});expect(png.slice(-frame.length)).toEqual(frame);
+ await page.locator('#undoBtn').click();expect(await snapshotValue(page)).toEqual(initial);await page.locator('#redoBtn').click();expect(await snapshotValue(page)).toEqual(changed);
+ const path=testInfo.outputPath('natural-ink.json');await require('node:fs/promises').writeFile(path,JSON.stringify({browserName,top,frame,dom,png},null,2));await testInfo.attach('natural-ink.json',{path,contentType:'application/json'});
 });

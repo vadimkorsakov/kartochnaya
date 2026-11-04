@@ -54,26 +54,86 @@ export function legacyAlphabeticBaseline(context, text, style) {
     return alphabetic - top;
   } finally { context.restore(); }
 }
-// The new DOM projection is deliberately limited to uniform Arial 32 with LF.
-// Color may split spans, but fonts/sizes/spacing must still match the layer.
+// Stronger metric checks belong to admission, not the existing Canvas painter.
+function measuredProjectionBaseline(context, text, style) {
+  context.save();
+  try {
+    context.font = richTextFont(style); context.fontKerning = 'normal';
+    context.letterSpacing = style.letterSpacing + 'px';
+    context.textBaseline = 'top'; const top = context.measureText(text);
+    context.textBaseline = 'alphabetic'; const alphabetic = context.measureText(text);
+    const baseline = alphabetic.actualBoundingBoxAscent - top.actualBoundingBoxAscent;
+    if (![top.width, alphabetic.width, top.actualBoundingBoxAscent, top.actualBoundingBoxDescent,
+      alphabetic.actualBoundingBoxAscent, alphabetic.actualBoundingBoxDescent].every(Number.isFinite) ||
+      Math.abs(top.width - alphabetic.width) > .000001 ||
+      Math.abs(top.actualBoundingBoxDescent - alphabetic.actualBoundingBoxDescent - baseline) > .000001)
+      throw Error('Legacy baseline unavailable');
+    return baseline;
+  } finally { context.restore(); }
+}
+// Uniform LF rows and single mixed rows are admitted by measured geometry,
+// never a family name or a calibrated reference size.
 // Returns session-only geometry; never writes a mode into the source layer.
 export function legacyTopProjection(context, e) {
   if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && (usesRichTextLayout(e) || e.textLayoutMode !== undefined)) return null;
   if (String(e.text ?? '').split('\n').some(text => !text)) return null;
   const base = resolveRichTextStyle(e);
-  if (base.fontFamily !== 'Arial' || base.fontSize !== 32 || base.fontWeight !== '400' || base.fontStyle !== 'normal' || (e.lineHeight || 1.15) !== 1.15) return null;
-  if (richTextSpans(e).some(p => ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing'].some(k => p.style[k] !== base[k]))) return null;
+  const spans = richTextSpans(e);
+  const mixed = spans.some(p => ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing'].some(k => p.style[k] !== base[k]));
+  // A single row needs no font-box/line-step equivalence: glyphs may overflow
+  // its line box just as in the legacy Canvas painter. Measure its actual CSS
+  // baseline and advances before publication. Mixed LF rows remain unsupported.
+  if (!e.text.includes('\n')) {
+    if (mixed && e.textLayoutMode !== LEGACY_TOP_LAYOUT) return null;
+    const height = Math.max(...spans.map(p => p.style.fontSize)) * (e.lineHeight || 1.15);
+    context.save();
+    try {
+      let baseline = 0, width = 0, ascent = 0, descent = 0;const ink=[];
+      for (const {text, style} of spans) {
+        context.font = richTextFont(style); context.textBaseline = 'alphabetic';
+        context.fontKerning = 'normal'; context.letterSpacing = style.letterSpacing + 'px';
+        const m = context.measureText(text), y = measuredProjectionBaseline(context, e.text, style);
+        if (![m.width, m.fontBoundingBoxAscent, m.fontBoundingBoxDescent, m.actualBoundingBoxAscent,
+          m.actualBoundingBoxDescent, m.actualBoundingBoxLeft, m.actualBoundingBoxRight, y, height].every(Number.isFinite) ||
+          m.fontBoundingBoxAscent < 0 || m.fontBoundingBoxDescent < 0 ||
+          y <= 0 || y > height) return null;
+        ink.push({left:width-m.actualBoundingBoxLeft,right:width+m.actualBoundingBoxRight,ascent:m.actualBoundingBoxAscent,descent:m.actualBoundingBoxDescent});
+        baseline = Math.max(baseline, y); width += m.width;
+        ascent = Math.max(ascent, m.fontBoundingBoxAscent);descent = Math.max(descent, m.fontBoundingBoxDescent);
+      }
+      if (width > Math.max(1, e.w)) return null;
+      // Canvas clips to the layer rectangle; the editable surface is visible
+      // overflow. Do not admit glyphs that would be hidden only by Canvas/PNG.
+      if(ink.some(m=>m.left<0||m.right>e.w||baseline-m.ascent<0||baseline+m.descent>e.h))return null;
+      const natural = ascent + (Math.max(height, ascent + descent) - ascent - descent) / 2;
+      if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && Math.abs(baseline - natural) <= .5) return null;
+      return {baseline, height, width, mixed, single: true};
+    } catch { return null; } finally { context.restore(); }
+  }
+  if (mixed) return null;
   context.save();
   try {
     context.font = richTextFont(base); context.textBaseline = 'alphabetic';
+    context.fontKerning = 'normal'; context.letterSpacing = base.letterSpacing + 'px';
     const m = context.measureText('Mg'), height = base.fontSize * (e.lineHeight || 1.15);
-    if (!Number.isFinite(m.fontBoundingBoxAscent) || !Number.isFinite(m.fontBoundingBoxDescent) || m.fontBoundingBoxAscent + m.fontBoundingBoxDescent > height) return null;
+    const fits = m => [m.width, m.fontBoundingBoxAscent, m.fontBoundingBoxDescent, height].every(Number.isFinite) &&
+      m.width > 0 && m.fontBoundingBoxAscent >= 0 && m.fontBoundingBoxDescent >= 0 &&
+      m.fontBoundingBoxAscent + m.fontBoundingBoxDescent <= height;
+    if (!fits(m)) return null;
     const natural = m.fontBoundingBoxAscent + (height - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2;
-    const offsets = String(e.text ?? '').split('\n').map(text => legacyAlphabeticBaseline(context, text || 'Mg', base) - natural);
+    const offsets = []; let naturalMatches = true;
+    for (const text of String(e.text ?? '').split('\n')) {
+      const row = context.measureText(text), baseline = measuredProjectionBaseline(context, text, base);
+      const rowNatural = row.fontBoundingBoxAscent + (height - row.fontBoundingBoxAscent - row.fontBoundingBoxDescent) / 2;
+      if (!fits(row) || baseline <= 0 || baseline > height ||
+        Math.abs(rowNatural - natural) > .5) return null;
+      if (Math.abs(baseline - rowNatural) > .5) naturalMatches = false;
+      offsets.push(baseline - natural);
+    }
     if (offsets.some(offset => Math.abs(offset - offsets[0]) > .000001)) return null;
-    if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && Math.abs(offsets[0]) <= .5) return null;
+    if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && naturalMatches) return null;
     return {offset: offsets[0], baseline: natural + offsets[0], height};
-  } finally { context.restore(); }
+  } catch { return null; } finally { context.restore(); }
 }
 
 // One persisted reference size is needed to scale absolute run sizes without

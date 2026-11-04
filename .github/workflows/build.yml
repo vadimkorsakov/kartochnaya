@@ -131,6 +131,20 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - run: npm run test:selection:firefox
+      - run: npx playwright test --config=playwright.wysiwyg.config.js
+      - name: Preserve first-edit WYSIWYG measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wysiwyg-first-edit-measurements
+          path: |
+            test-results/wysiwyg-firefox-results.json
+            test-results/wysiwyg-firefox/**/first-edit-geometry.json
+            test-results/wysiwyg-firefox/**/default-title-blocker.json
+            test-results/wysiwyg-firefox/**/arial-legacy-top.json
+            test-results/wysiwyg-firefox/**/natural-ink.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Preserve Firefox browser failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

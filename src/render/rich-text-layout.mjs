@@ -1,7 +1,12 @@
 import { normalizeRuns } from '../model/rich-text.mjs';
 
-export const usesRichTextLayout = e => Array.isArray(e.textRuns) && e.textRuns.length > 0 &&
+// Ordinary horizontal text always uses one renderer, whether or not styled
+// ranges exist. A formatting operation must not switch the rendering engine.
+export const supportsHorizontalTextLayout = e =>
   (!e.textMode || e.textMode === 'horizontal') && !e.mobileArcRadius && e.textAlign !== 'justify';
+// Keep the sparse-range predicate separate for session/model migrations.
+export const usesRichTextLayout = e => supportsHorizontalTextLayout(e) &&
+  Array.isArray(e.textRuns) && e.textRuns.length > 0;
 
 const positive = (n, fallback) => Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : fallback;
 const spacing = n => Number.isFinite(Number(n)) ? Number(n) : 0;

@@ -49,7 +49,7 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompat
 
 // Canonical layer + the editor's existing session history own all confirmed data.
 // Unknown DOM remains on screen until explicit recovery; it is never persisted.
-export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false, prepare=()=>{}}) {
+export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false, prepare=()=>{}, withinBounds=()=>true}) {
  const startedPlain=!usesRichTextLayout(element);
  let layer=element, composing=false, pending=null, fallback=null, pasteText=null, confirmedHTML, inactive=false;
  const safe={phase:'confirmed', deferred:false};
@@ -115,6 +115,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   }
   retainRichTextSizeBase(next);
   prepare(next,JSON.stringify(next)===JSON.stringify(origin)?undefined:key);
+  if(!withinBounds(next))return rejectStyle();
   if(next.textLayoutMode===LEGACY_TOP_LAYOUT&&!plainCompatible(next))return rejectStyle();
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return rejectStyle();}
@@ -215,7 +216,7 @@ listen('beforeinput',e=>{
   commit(next,selection,{anchor:start+1,focus:start+1});
 
   safe.phase='confirmed';
-  if(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
+  if(!withinBounds(layer)||(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer)))requestFallback('Изменилась раскладка обычного текста');
   // A canceled operation has no pending native edit, even if an input is sent.
   return;
  }
@@ -261,7 +262,7 @@ listen('input',e=>{
   commit(next,previous.selection,selection);
 
   safe.phase='confirmed';
-  if(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
+  if(!withinBounds(layer)||(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer)))requestFallback('Изменилась раскладка обычного текста');
  }catch{stop('unsupported native DOM or selection');}
 });
 

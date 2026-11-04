@@ -998,15 +998,11 @@ function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
  return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
 }
-// Opening a plain layer must not opt it into the mixed Canvas painter. Compare
-// the real legacy rows and baseline with the virtual rich projection instead.
-// Incompatible fonts/wraps remain on textarea until the engines are reconciled.
-function plainWysiwygLayoutCompatible(e){
- if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
+// Shared by plain admission and every candidate style/input projection.
+function wysiwygInkWithinBounds(e,rows){
+ const c=textFitContext;
  try{
-  const c=textFitContext,projection=legacyTopProjection(c,e);
-  const rows=richTextEngine.layout(projection?{...e,textLayoutMode:LEGACY_TOP_LAYOUT}:e).rows,lines=wrapLines(c,e);
-  if(e.textLayoutMode===LEGACY_TOP_LAYOUT&&!projection)return false;
+  if(!rows){const projection=legacyTopProjection(c,e);rows=richTextEngine.layout(projection?{...e,textLayoutMode:LEGACY_TOP_LAYOUT}:e).rows;}
   // Match the Canvas clip rectangle, including explicit LF rows. The editable
   // surface must not reveal glyphs that the Canvas/PNG painter clips away.
   c.save();try{
@@ -1017,6 +1013,19 @@ function plainWysiwygLayoutCompatible(e){
      p.x-m.actualBoundingBoxLeft<0||p.x+m.actualBoundingBoxRight>e.w||p.y-m.actualBoundingBoxAscent<0||p.y+m.actualBoundingBoxDescent>e.h)return false;
    }
   }finally{c.restore()}
+  return true;
+ }catch{return false;}
+}
+// Opening a plain layer must not opt it into the mixed Canvas painter. Compare
+// the real legacy rows and baseline with the virtual rich projection instead.
+// Incompatible fonts/wraps remain on textarea until the engines are reconciled.
+function plainWysiwygLayoutCompatible(e){
+ if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
+ try{
+  const c=textFitContext,projection=legacyTopProjection(c,e);
+  const rows=richTextEngine.layout(projection?{...e,textLayoutMode:LEGACY_TOP_LAYOUT}:e).rows,lines=wrapLines(c,e);
+  if(e.textLayoutMode===LEGACY_TOP_LAYOUT&&!projection)return false;
+  if(!wysiwygInkWithinBounds(e,rows))return false;
   if(projection?.mixed){
    const spans=richTextSpans(e),row=rows[0];
    return rows.length===1&&!row.softWrap&&row.width<=Math.max(1,e.w)&&
@@ -2090,7 +2099,7 @@ function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=n
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
 function startInlineWysiwyg(e){
  const host=$('#inlineWysiwyg');app.inlineSession.wysiwyg=true;app.inlineSession.formatted=true;
- app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:wysiwygLayoutCompatible,
+ app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:wysiwygLayoutCompatible,withinBounds:wysiwygInkWithinBounds,
   available:family=>!v41FontUnavailable(family),
   prepare(next,key){if(key==='fontSize')next.autoFontSize=false;autoFitTextFont(next);},
   onChange(){positionInlineText();document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=!!e.autoFontSize);syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();},

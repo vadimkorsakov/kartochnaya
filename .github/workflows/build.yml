@@ -142,6 +142,7 @@ jobs:
             test-results/wysiwyg-firefox/**/first-edit-geometry.json
             test-results/wysiwyg-firefox/**/default-title-blocker.json
             test-results/wysiwyg-firefox/**/arial-legacy-top.json
+            test-results/wysiwyg-firefox/**/natural-ink.json
           if-no-files-found: warn
           retention-days: 14
       - name: Preserve Firefox browser failure diagnostics

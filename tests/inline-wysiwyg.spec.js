@@ -330,11 +330,10 @@ for(const [name,patch,compatible] of plainCases)test('plain real geometry at 50/
   const mixed=await plainFrame(page),legacy=evidence.at(-1).canvas;expect(mixed.every(d=>d.mode==='alphabetic')).toBe(true);
   for(const part of mixed){const row=legacy.find(d=>Math.abs(d.baseline-part.baseline)<=.5);expect(row).toBeTruthy();expect(part.font).toBe(row.font);expect(part.spacing).toBe(row.spacing)}
   const expected=await page.evaluate(({mixed,legacy})=>{
-   // Independent Canvas measurements for the new explicit draw-call fragments.
-   // An old unsplit string cannot predict kerning across separately painted
-   // color ranges (notably emoji/font fallback); it was the wrong x oracle.
-   const c=document.createElement('canvas').getContext('2d'),advances=legacy.map(()=>0);
-   return mixed.map(part=>{const i=legacy.findIndex(r=>Math.abs(r.baseline-part.baseline)<=.5),row=legacy[i];c.font=part.font;c.fontKerning='normal';c.letterSpacing=part.spacing||'0px';c.textBaseline='alphabetic';const m=c.measureText(part.text),x=row.x+advances[i];advances[i]+=m.width;return {x,width:m.width,top:row.baseline-m.actualBoundingBoxAscent,bottom:row.baseline+m.actualBoundingBoxDescent}});
+   // Color-only changes must not move glyph origins: compare each fragment's
+   // x to an independent measurement of the original unsplit source prefix.
+   const c=document.createElement('canvas').getContext('2d'),offsets=legacy.map(()=>0);
+   return mixed.map(part=>{const i=legacy.findIndex(r=>Math.abs(r.baseline-part.baseline)<=.5),row=legacy[i];c.font=row.font;c.fontKerning='normal';c.letterSpacing=row.spacing||'0px';c.textBaseline='alphabetic';const m=c.measureText(part.text),x=row.x+c.measureText(row.text.slice(0,offsets[i])).width;offsets[i]+=part.text.length;return {x,width:m.width,top:row.baseline-m.actualBoundingBoxAscent,bottom:row.baseline+m.actualBoundingBoxDescent}});
   },{mixed,legacy});
   mixed.forEach((part,i)=>{expect(Math.abs(part.x-expected[i].x)).toBeLessThanOrEqual(1);expect(Math.abs(part.top-expected[i].top)).toBeLessThanOrEqual(.5);expect(Math.abs(part.bottom-expected[i].bottom)).toBeLessThanOrEqual(.5);expect(part.width).toBeCloseTo(expected[i].width,5)});
   expect(mixed.map(d=>d.text).join('')).toBe(legacy.map(d=>d.text).join(''));evidence.push({firstColor:mixed});

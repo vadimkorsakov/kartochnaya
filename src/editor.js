@@ -1,7 +1,7 @@
 import {eligibleWysiwyg, createWysiwygSession} from './editor/wysiwyg-session.mjs';
 import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
 import { applyTextStyle, updateText, transformText, replaceText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
-import { usesRichTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine, LEGACY_TOP_LAYOUT, legacyTopProjection } from './render/rich-text-layout.mjs';
+import { usesRichTextLayout, supportsHorizontalTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine, LEGACY_TOP_LAYOUT, legacyTopProjection } from './render/rich-text-layout.mjs';
 import { createReplacementSession } from './backup/replace.mjs';
 import { createInstanceGuard } from './backup/instances.mjs';
 import { installBackupUI } from './backup/ui.mjs';
@@ -1051,7 +1051,7 @@ function autoFitTextFont(e){
  const before=e.fontSize,lh=Math.max(.5,Number(e.lineHeight)||1.15),maxW=Math.max(10,e.w)-1,maxH=Math.max(1,e.h)-1;
  const fits=size=>{
   const sample={...e,fontSize:size};
-  if(usesRichTextLayout(sample)){const layout=richTextEngine.layout(sample);return layout.height<=maxH&&layout.width<=maxW}
+  if(supportsHorizontalTextLayout(sample)){const layout=richTextEngine.layout(sample);return layout.height<=maxH&&layout.width<=maxW}
   textFitContext.font=fontString(sample);
   const lines=wrapLines(textFitContext,sample);
   return lines.length*size*lh<=maxH&&lines.every(line=>measuredTextWidth(textFitContext,sample,line)<=maxW);
@@ -1067,7 +1067,7 @@ function fitTextBoxToContent(e){
  // Match Canvas wrapping; do not accidentally turn soft-wrapped paragraphs into
  // enormously wide single lines. Grow only if a single glyph cannot fit.
  textFitContext.font=fontString(e);
- const mixed=usesRichTextLayout(e)?richTextEngine.layout(e):null,lines=mixed?null:wrapLines(textFitContext,e);
+ const mixed=supportsHorizontalTextLayout(e)?richTextEngine.layout(e):null,lines=mixed?null:wrapLines(textFitContext,e);
  const naturalWidth=mixed?Math.max(12,Math.ceil(mixed.width+2)):Math.max(12,...lines.map(line=>Math.ceil(measuredTextWidth(textFitContext,e,line)+2)));
  const nextW=Math.max(12,naturalWidth+2),nextSample={...e,w:nextW};
  const nextH=mixed?Math.max(12,Math.ceil(richTextEngine.layout(nextSample).height+2)):Math.max(12,Math.ceil(wrapLines(textFitContext,nextSample).length*(e.fontSize||24)*(e.lineHeight||1.15)+2));
@@ -1164,7 +1164,7 @@ function drawTextPathDraft(c){const dr=app.textPathDraft;if(!dr?.nodes.length)re
 function drawTextGlyphs(c,e,method='fill'){
  if(e.textMode==='path'&&method==='fill'&&paintTextOnPath(c,e))return;
  if(e.textMode==='vertical'){c.save();c.font=fontString(e);c.textBaseline='top';c.textAlign='center';const sz=e.fontSize||24,step=sz*(e.lineHeight||1.15);let y=0;let x=sz/2;for(const ch of String(e.text||'')){if(ch==='\n'||y+step>e.h){x+=step;y=0;if(ch==='\n')continue}if(x>e.w)break;if(method==='stroke')c.strokeText(ch,x,y);else c.fillText(ch,x,y);y+=step}c.restore();return}
- if(usesRichTextLayout(e)){drawMixedTextGlyphs(c,e,method);return}
+ if(supportsHorizontalTextLayout(e)){drawMixedTextGlyphs(c,e,method);return}
  c.save();c.font=fontString(e);c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';c.textBaseline='top';c.textAlign=e.textAlign||'left';const lh=(e.lineHeight||1.15)*(e.fontSize||24),lines=wrapLines(c,e),blockH=lines.length*lh,offsetY=e.verticalAlign==='middle'?Math.max(0,(e.h-blockH)/2):e.verticalAlign==='bottom'?Math.max(0,e.h-blockH):0;
  c.beginPath();c.rect(-Math.max(0,e.strokeWidth||0),-Math.max(0,e.strokeWidth||0),e.w+2*Math.max(0,e.strokeWidth||0),e.h+2*Math.max(0,e.strokeWidth||0));c.clip();
  const paint=(s,x,y)=>method==='stroke'?c.strokeText(s,x,y):c.fillText(s,x,y);
@@ -1738,7 +1738,7 @@ function tf43Backdrop(e,f,d,raw){
  const pad=Math.max(0,Number(f.spread??9)),alpha=clamp(Number(f.opacity??100)/100,0,1);
  c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.scale(e.flipX?-1:1,e.flipY?-1:1);c.translate(-e.w/2,-e.h/2);
  const rows=[];
- if(usesRichTextLayout(e)){
+ if(supportsHorizontalTextLayout(e)){
   c.textBaseline='alphabetic';c.fontKerning='normal';
   for(const row of mixedTextLayout(e).rows){
    if(row.y>=e.h)break;
@@ -4748,7 +4748,7 @@ for(const root of [$('#app'),$('#shade'),$('#mobilePropertyUI'),$('#documentTabs
 // Draw mobile-only text enhancements through the same Canvas path used for PNG export.
 const mobileV36BaseDrawText=drawTextGlyphs;
 drawTextGlyphs=function(c,e,method='fill'){
- if(usesRichTextLayout(e))return mobileV36BaseDrawText(c,e,method);
+ if(supportsHorizontalTextLayout(e))return mobileV36BaseDrawText(c,e,method);
  if(e.type==='text'&&e.mobileArcRadius&&e.textMode!=='path'){
   c.save();c.font=fontString(e);c.textBaseline='middle';c.textAlign='center';
   const source=String(e.text||'').split('\n')[0],r=Math.max(70,Math.abs(e.mobileArcRadius)*3),dir=Math.sign(e.mobileArcRadius)||1;

@@ -16,13 +16,16 @@ test('new card dialog offers a current-project template picker and creates an in
  await expect(page.locator('#tabPickerDialog')).toBeVisible();
  await expect(page.locator('#tabPickerTitle')).toHaveText('Из шаблона');
  await expect(page.locator('[data-tab-picker-new-blank-card]')).toHaveCount(0);
- await expect(page.locator('[data-tab-picker-from-template]')).toHaveCount(1);
+ // The starter project already contains a bundled template; do not assume
+ // the newly created template is the only item in this project's picker.
+ const sourceChoice=page.locator(`[data-tab-picker-from-template="${original.id}"]`);
+ await expect(sourceChoice).toBeVisible();
  await expect(page.locator('#tabPickerGrid')).toContainText('Source for home card');
  await page.locator('#tabPickerBack').click();
  await expect(page.locator('#sizeDialog')).toBeVisible();
  await expect(page.locator('#createCardFromTemplateBtn')).toBeVisible();
  await page.locator('#createCardFromTemplateBtn').click();
- await page.locator('[data-tab-picker-from-template]').click();
+ await sourceChoice.click();
  await expect(page.locator('#typeChip')).toHaveText('КАРТОЧКА');
  const newCard=await exportedDocument(page);
  expect(newCard.id).not.toBe(original.id);

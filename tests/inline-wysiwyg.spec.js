@@ -330,8 +330,11 @@ for(const [name,patch,compatible] of plainCases)test('plain real geometry at 50/
   const mixed=await plainFrame(page),legacy=evidence.at(-1).canvas;expect(mixed.every(d=>d.mode==='alphabetic')).toBe(true);
   for(const part of mixed){const row=legacy.find(d=>Math.abs(d.baseline-part.baseline)<=.5);expect(row).toBeTruthy();expect(part.font).toBe(row.font);expect(part.spacing).toBe(row.spacing)}
   const expected=await page.evaluate(({mixed,legacy})=>{
-   const c=document.createElement('canvas').getContext('2d'),offsets=legacy.map(()=>0);
-   return mixed.map(part=>{const i=legacy.findIndex(r=>Math.abs(r.baseline-part.baseline)<=.5),row=legacy[i];c.font=row.font;c.fontKerning='normal';c.letterSpacing=row.spacing||'0px';c.textBaseline='alphabetic';const m=c.measureText(part.text),x=c.measureText(row.text.slice(0,offsets[i])).width;offsets[i]+=part.text.length;return {x,width:m.width,top:row.baseline-m.actualBoundingBoxAscent,bottom:row.baseline+m.actualBoundingBoxDescent}});
+   // Independent Canvas measurements for the new explicit draw-call fragments.
+   // An old unsplit string cannot predict kerning across separately painted
+   // color ranges (notably emoji/font fallback); it was the wrong x oracle.
+   const c=document.createElement('canvas').getContext('2d'),advances=legacy.map(()=>0);
+   return mixed.map(part=>{const i=legacy.findIndex(r=>Math.abs(r.baseline-part.baseline)<=.5),row=legacy[i];c.font=part.font;c.fontKerning='normal';c.letterSpacing=part.spacing||'0px';c.textBaseline='alphabetic';const m=c.measureText(part.text),x=row.x+advances[i];advances[i]+=m.width;return {x,width:m.width,top:row.baseline-m.actualBoundingBoxAscent,bottom:row.baseline+m.actualBoundingBoxDescent}});
   },{mixed,legacy});
   mixed.forEach((part,i)=>{expect(Math.abs(part.x-expected[i].x)).toBeLessThanOrEqual(1);expect(Math.abs(part.top-expected[i].top)).toBeLessThanOrEqual(.5);expect(Math.abs(part.bottom-expected[i].bottom)).toBeLessThanOrEqual(.5);expect(part.width).toBeCloseTo(expected[i].width,5)});
   expect(mixed.map(d=>d.text).join('')).toBe(legacy.map(d=>d.text).join(''));evidence.push({firstColor:mixed});
@@ -424,7 +427,7 @@ for(const text of ['ABCD','ABCD\nABCD'])test('Arial unified baseline or multilin
  evidence.push({mixed,png});const path=testInfo.outputPath('arial-legacy-top.json');await require('node:fs/promises').writeFile(path,JSON.stringify(evidence,null,2));await testInfo.attach('arial-legacy-top.json',{path,contentType:'application/json'});
 });
 
-for(const [name,patch] of Object.entries({autoFit:{autoFontSize:true},rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'},ArialKerning:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'AV'},ArialSoftWrap:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
+for(const [name,patch] of Object.entries({autoFit:{autoFontSize:true},rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'},ArialSoftWrap:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
  const doc=await seedPlain(page,patch);await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(getLayer(doc));
 });
 test('plain without flag retains textarea',async({page})=>{await seedPlain(page,{}, {flag:false});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden()});
@@ -454,8 +457,18 @@ test('plain near-width shaping reproducer stays on textarea before first color a
 });
 
 
-test('plain typing stronger kerning hands off with exact UTF-16 caret and absent runs',async({page})=>{
- const initial=getLayer(await seedPlain(page));await edit(page);await page.keyboard.type('X');await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();expect(await page.locator('#inlineText').evaluate(el=>[el.value,el.selectionStart,el.selectionEnd])).toEqual(['ABCDX',5,5]);expect(await snapshotValue(page)).not.toHaveProperty('textRuns');await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
+test('plain ordinary typing preserves native WYSIWYG caret, absent runs and Escape',async({page})=>{
+ const initial=getLayer(await seedPlain(page));await edit(page);await page.keyboard.type('X');
+ await expect(page.locator(surface)).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();
+ expect(await state(page)).toEqual({text:'ABCDX',anchor:5,focus:5});
+ expect(await snapshotValue(page)).not.toHaveProperty('textRuns');
+ await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
+});
+test('plain Arial kerning opens without a legacy textarea handoff',async({page})=>{
+ const initial=getLayer(await seedPlain(page,{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'AV'}));
+ await edit(page);await expect(page.locator(surface)).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();
+ expect(await state(page)).toEqual({text:'AV',anchor:2,focus:2});
+ await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);
 });
 
 
@@ -479,8 +492,15 @@ test('old unmarked Arial rich document keeps its original baseline and PNG geome
 });
 
 
-test('legacy-top unsupported empty row hands off confirmed input without losing its mode',async({page})=>{
- await seedPlain(page,{text:'ABCD',fontFamily:'Arial',fontSize:32,lineHeight:1.15,textLayoutMode:'legacy-top',textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]});await edit(page);await page.keyboard.press('End');await page.keyboard.press('Enter');await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator('#wysiwygRecovery')).toBeHidden();const changed=await snapshotValue(page);expect(changed.text).toBe('ABCD\n');expect(changed.textLayoutMode).toBe('legacy-top');expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
+test('legacy-marked rich Enter keeps confirmed text, caret and history without textarea',async({page})=>{
+ const initial=getLayer(await seedPlain(page,{text:'ABCD',fontFamily:'Arial',fontSize:32,lineHeight:1.15,textLayoutMode:'legacy-top',textRuns:[{start:1,end:3,style:{textColor:'#11aa33'}}]}));
+ await edit(page);await page.keyboard.press('End');await page.keyboard.press('Enter');
+ await expect(page.locator(surface)).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();await expect(page.locator('#wysiwygRecovery')).toBeHidden();
+ expect(await state(page)).toEqual({text:'ABCD\n',anchor:5,focus:5});
+ const changed=await snapshotValue(page);expect(changed.text).toBe('ABCD\n');expect(changed.textLayoutMode).toBe('legacy-top');expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);
+ await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(changed);
 });
 
 

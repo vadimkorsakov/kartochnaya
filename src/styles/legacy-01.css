@@ -1655,3 +1655,91 @@ html,body{background:#1e1f27!important;}
   fill:currentColor!important;
   stroke:none!important;
 }
+
+
+/* Home / Projects — direct-cover cards and a compact current-project header. */
+.home-screen .project-hub .project-chooser{
+ min-height:0;align-items:flex-start;gap:16px;padding:1px 2px 5px;
+}
+.home-screen .project-hub .project-choice{
+ box-sizing:border-box;width:148px;flex:0 0 148px;min-height:0;
+ padding:0!important;margin:0;gap:8px;
+ display:flex;flex-direction:column;align-items:stretch;
+ background:transparent!important;border:0!important;border-radius:0;
+ color:#e9e7f2;box-shadow:none;cursor:pointer;
+}
+.home-screen .project-hub .project-choice-cover{
+ display:flex;align-items:stretch;justify-content:center;
+ width:100%;aspect-ratio:1/1;overflow:hidden;
+ border:1px solid #585465;border-radius:12px;background:#343240;
+ transition:border-color .14s ease,box-shadow .14s ease;
+}
+.home-screen .project-hub .project-choice-cover img,
+.home-screen .project-hub .project-choice-cover .project-initial{
+ width:100%;height:100%;min-width:0;min-height:0;
+ border-radius:0;display:grid;place-items:center;
+ object-fit:cover;flex:1 1 100%;
+}
+.home-screen .project-hub .project-choice-cover .project-initial{
+ background:#7756d9;color:white;font-size:46px;font-weight:800;
+}
+.home-screen .project-hub .project-choice-name{
+ display:block;max-width:100%;padding:0 3px;
+ text-align:center;font-size:12px;font-weight:650;line-height:1.35;
+ overflow-wrap:anywhere;white-space:normal;
+}
+.home-screen .project-hub .project-choice:hover .project-choice-cover{
+ border-color:#b295fa;
+}
+.home-screen .project-hub .project-choice.active .project-choice-cover{
+ border-color:#ad83f5;box-shadow:0 0 0 1px #ad83f5;
+}
+.home-screen .project-hub .project-choice:focus-visible{
+ outline:2px solid #ad83f5;outline-offset:5px;border-radius:2px;
+}
+.home-screen .project-hub .project-choice.active .project-choice-name{color:#ded0ff}
+.home-screen .project-hub-heading{justify-content:flex-start;align-items:flex-start;gap:0}
+.home-screen .project-hub-title{min-width:0;max-width:100%}
+.home-screen .project-hub-title-row{
+ display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px;min-height:34px;
+}
+.home-screen .project-hub-heading .project-hub-title-row h3{
+ margin:0;min-width:0;overflow-wrap:anywhere;
+}
+.home-screen .project-hub-cover-actions{
+ display:flex;align-items:center;gap:3px;flex-wrap:nowrap;
+}
+.home-screen .project-hub-cover-actions .project-icon-action{
+ width:31px;height:31px;min-width:31px;
+ display:grid;place-items:center;
+ background:transparent;border:1px solid transparent;
+ color:#d6d1e4;padding:5px;border-radius:7px;
+ cursor:pointer;
+}
+.home-screen .project-hub-cover-actions .project-icon-action svg{
+ width:20px;height:20px;display:block;
+}
+.home-screen .project-hub-cover-actions .project-icon-action:hover{
+ background:#383444;border-color:#696079;color:#fff;
+}
+.home-screen .project-hub-cover-actions .project-icon-danger{color:#db686d}
+.home-screen .project-hub-cover-actions .project-icon-danger:hover{
+ color:#ff898e;background:#432a34;border-color:#86515d;
+}
+.home-screen .project-hub-title-row .rename-project{width:min(300px,65vw);margin:0}
+.home-screen .home-shortcuts{align-items:center}
+.home-screen .home-shortcuts #createProjectBtn{white-space:nowrap}
+.home-screen .home-topbar{padding-right:0}
+.home-screen .home-editor-btn{margin-right:0}
+#documentTabs #pwaToggle{align-self:center!important;margin-top:0!important;margin-bottom:0!important}
+#homePwaStatus{align-self:center;display:inline-flex;align-items:center;justify-content:center;min-height:30px}
+#homePwaStatus:empty{display:none}
+@media(max-width:760px){
+ .home-screen .project-hub .project-chooser{gap:12px}
+ .home-screen .project-hub .project-choice{width:122px;flex-basis:122px}
+ .home-screen .project-hub-heading{align-items:flex-start;flex-direction:row}
+ .home-screen .project-hub-title-row{gap:7px}
+ .home-screen .home-shortcuts{display:flex;flex-wrap:wrap}
+ .home-screen .home-shortcuts .btn{flex:1 1 auto}
+ .home-screen .home-topbar{padding-right:0}
+}

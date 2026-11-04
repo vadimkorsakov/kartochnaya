@@ -77,17 +77,6 @@ test('hidden groups, disabled effects and unused sources do not block PNG',async
   const [saved]=await seed(page,[d]);await openLibraryDocument(page,saved.id);expect(pixels(await finish(await start(page)))).toEqual([red,red]);
 });
 
-// Independent reference for the unified horizontal painter: derive a line's
-// alphabetic baseline from the loaded font's Canvas metrics, without relying
-// on the historical top-baseline painter or an application helper.
-function paintHorizontalReference(ctx,value='WWMi',size=64,leading=1.1) {
- ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fontKerning='normal';ctx.letterSpacing='0px';
- const metrics=ctx.measureText(value);
- const ascent=metrics.fontBoundingBoxAscent??metrics.actualBoundingBoxAscent??size*.8;
- const descent=metrics.fontBoundingBoxDescent??metrics.actualBoundingBoxDescent??size*.2;
- const rowHeight=Math.max(size*leading,ascent+descent);
- ctx.fillText(value,0,ascent+(rowHeight-ascent-descent)/2);
-}
 function text(extra={}) {return layer({type:'text',text:'WWMi',fontFamily:'PNG Custom',fontWeight:'700',fontStyle:'italic',fontSize:64,textColor:'#000000',textAlign:'left',lineHeight:1.1,letterSpacing:0,...extra});}
 test('custom face: exact family, weight, style and legacy alias render real glyphs after cold start',async({page},info)=>{
   const bytes=await readFile(require.resolve('./fixtures/fonts/DejaVuSans.ttf'));
@@ -96,7 +85,12 @@ test('custom face: exact family, weight, style and legacy alias render real glyp
   const actual=await finish(await start(page));
   const reference=await page.evaluate(async data=>{
     const face=new FontFace('PNG Reference',`url("${data}")`,{weight:'700',style:'italic'});await face.load();document.fonts.add(face);
-    const c=document.createElement('canvas');c.width=320;c.height=240;const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,320,240);ctx.fillStyle='#000';ctx.font='italic 700 64px "PNG Reference"';paintHorizontalReference(ctx);
+    const c=document.createElement('canvas');c.width=320;c.height=240;const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,320,240);ctx.fillStyle='#000';ctx.font='italic 700 64px "PNG Reference"';(ctx=>{
+      ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fontKerning='normal';ctx.letterSpacing='0px';
+      const m=ctx.measureText('WWMi'),a=m.fontBoundingBoxAscent??m.actualBoundingBoxAscent??51.2,
+        d=m.fontBoundingBoxDescent??m.actualBoundingBoxDescent??12.8;
+      ctx.fillText('WWMi',0,a+(Math.max(64*1.1,a+d)-a-d)/2);
+    })(ctx);
     const fallback=document.createElement('canvas').getContext('2d');fallback.font='italic 700 64px Arial';
     return {pixels:[...ctx.getImageData(0,0,320,240).data],width:ctx.measureText('WWMi').width,fallbackWidth:fallback.measureText('WWMi').width,faces:[...document.fonts].filter(f=>f.family.replaceAll('\"','')==='PNG Custom').map(f=>({weight:f.weight,style:f.style,status:f.status}))};
   },fonts[0].data);
@@ -191,12 +185,22 @@ test('cold startup waits for a delayed custom font and renders its legacy alias'
   const [saved]=await seed(page,[doc('Legacy font',[text({fontFamily:'PNG Legacy',fontWeight:'400',fontStyle:'normal'})])],[f]);
   delayed=true;const before=requested;await page.reload({waitUntil:'domcontentloaded'});await expect.poll(()=>requested).toBeGreaterThan(before);expect(await page.locator('#homeScreen').isVisible()).toBe(false);delayed=false;release();
   await expect(page.locator('#homeScreen')).toBeVisible();await openLibraryDocument(page,saved.id);const actual=await finish(await start(page));
-  const reference=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=240;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,320,240);x.fillStyle='#000';x.font='normal 400 64px "PNG Legacy"';paintHorizontalReference(x);return {data:[...x.getImageData(0,0,320,240).data],faces:[...document.fonts].map(f=>({family:f.family,weight:f.weight,style:f.style,status:f.status}))};});
+  const reference=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=240;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,320,240);x.fillStyle='#000';x.font='normal 400 64px "PNG Legacy"';(ctx=>{
+      ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fontKerning='normal';ctx.letterSpacing='0px';
+      const m=ctx.measureText('WWMi'),a=m.fontBoundingBoxAscent??m.actualBoundingBoxAscent??51.2,
+        d=m.fontBoundingBoxDescent??m.actualBoundingBoxDescent??12.8;
+      ctx.fillText('WWMi',0,a+(Math.max(64*1.1,a+d)-a-d)/2);
+    })(x);return {data:[...x.getImageData(0,0,320,240).data],faces:[...document.fonts].map(f=>({family:f.family,weight:f.weight,style:f.style,status:f.status}))};});
   await evidence(info,'delayed-startup-fonts',reference.faces);expect([...actual.data]).toEqual(reference.data);expect(reference.faces.some(f=>f.family.includes('PNG Legacy')&&f.status==='loaded')).toBe(true);
 });
 
 test('font menu preview during preparation cannot replace the snapshot font',async({page})=>{
   const g=await gate(page,'font-preview');const [saved]=await seed(page,[doc('Font preview',[text({fontFamily:'Arial'}),layer({id:'wait',type:'raster',fillType:'none',rasterSrc:url('font-preview'),x:300,w:20})])]);await openLibraryDocument(page,saved.id);
   const downloads=await start(page);await page.locator('#layers [data-select-layer-thumb]').last().click();await page.locator('#inspector [data-font-open]').click();await page.locator('#inspector [data-font-option="Courier New"]').hover();g.release();
-  const actual=await finish(downloads),reference=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=240;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,320,240);x.font='italic 700 64px Arial';x.fillStyle='#000';paintHorizontalReference(x);x.fillStyle='#f00';x.fillRect(300,0,20,240);return [...x.getImageData(0,0,320,240).data];});expect([...actual.data]).toEqual(reference);
+  const actual=await finish(downloads),reference=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=320;c.height=240;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,320,240);x.font='italic 700 64px Arial';x.fillStyle='#000';(ctx=>{
+      ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fontKerning='normal';ctx.letterSpacing='0px';
+      const m=ctx.measureText('WWMi'),a=m.fontBoundingBoxAscent??m.actualBoundingBoxAscent??51.2,
+        d=m.fontBoundingBoxDescent??m.actualBoundingBoxDescent??12.8;
+      ctx.fillText('WWMi',0,a+(Math.max(64*1.1,a+d)-a-d)/2);
+    })(x);x.fillStyle='#f00';x.fillRect(300,0,20,240);return [...x.getImageData(0,0,320,240).data];});expect([...actual.data]).toEqual(reference);
 });

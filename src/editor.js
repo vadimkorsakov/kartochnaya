@@ -2936,9 +2936,30 @@ function resourceFolderPath(folderId=app.resourceFolderId,project=currentProject
 }
 function currentResourceFolder(){return resourceFolders().find(f=>f.id===app.resourceFolderId)||null}
 function folderBreadcrumbHTML(){const path=resourceFolderPath();return `<button data-folder-open="root" title="Корень библиотеки">Все ресурсы</button>`+path.map(f=>`<span>›</span><button data-folder-open="${html(f.id)}">${html(f.name)}</button>`).join('')}
-function folderHTML(folder,popover=false){const folderIcon='<svg viewBox="0 0 64 48" aria-hidden="true"><path d="M5 13V9Q5 6 9 6H26L32 12H55Q59 12 59 17V40Q59 44 55 44H9Q5 44 5 40Z"/></svg>';
+function folderHTML(folder,popover=false){
+ const folderIcon='<svg viewBox="0 0 64 48" aria-hidden="true"><path d="M5 13V9Q5 6 9 6H26L32 12H55Q59 12 59 17V40Q59 44 55 44H9Q5 44 5 40Z"/></svg>';
  if(popover)return `<div class="asset-folder asset-pop-folder" data-drop-folder="${html(folder.id)}"><button type="button" data-folder-open="${html(folder.id)}" class="folder-open-icon" title="Открыть папку">${folderIcon}</button><span class="assets-name folder-name" data-rename-folder="${html(folder.id)}" title="Дважды нажми для переименования">${html(folder.name)}</span></div>`;
- return `<article class="project-card resource-folder-card" data-folder-card="${html(folder.id)}" data-drop-folder="${html(folder.id)}"><button class="asset-folder" data-folder-open="${html(folder.id)}" title="Открыть папку">${folderIcon}</button><div class="folder-name" data-rename-folder="${html(folder.id)}" title="Двойной клик — переименовать">${html(folder.name)}</div><div class="asset-folder-actions"><button title="Переименовать папку" data-folder-rename="${html(folder.id)}">✎</button><button title="Удалить папку" data-folder-delete="${html(folder.id)}">♲</button></div></article>`;
+ const project=currentProject(),descendants=folderChildren(project,folder.id);
+ const direct=(project.resources||[]).filter(a=>a.folderId===folder.id&&a.src);
+ const nested=(project.resources||[]).filter(a=>a.folderId!==folder.id&&descendants.has(a.folderId)&&a.src);
+ const previews=[...direct,...nested].slice(0,4);
+ const cells=Array.from({length:4},(_,i)=>previews[i]
+  ?`<span class="folder-preview-cell"><img src="${html(previews[i].src)}" alt="" loading="lazy"></span>`
+  :'<span class="folder-preview-cell folder-preview-placeholder"></span>').join('');
+ const pencil='<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l11-11a2.1 2.1 0 0 0-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></svg>';
+ const trash='<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5h18M9 3h6M5.5 6.5l1.1 14h10.8l1.1-14M10 10v7M14 10v7"/></svg>';
+ return `<article class="project-card resource-folder-card" data-folder-card="${html(folder.id)}" data-drop-folder="${html(folder.id)}" data-preview-count="${previews.length}">
+ <button type="button" class="resource-folder-preview" data-folder-open="${html(folder.id)}" title="Открыть папку «${html(folder.name)}»" aria-label="Открыть папку «${html(folder.name)}»">
+  <span class="folder-preview-grid" aria-hidden="true">${cells}</span>
+  ${previews.length?'':`<span class="folder-preview-empty" aria-hidden="true">${folderIcon}</span>`}
+ </button>
+ <div class="resource-folder-footer">
+  <div class="folder-name" data-rename-folder="${html(folder.id)}" title="Дважды нажми для переименования">${html(folder.name)}</div>
+  <div class="asset-folder-actions">
+   <button type="button" aria-label="Переименовать папку" title="Переименовать папку" data-folder-rename="${html(folder.id)}">${pencil}</button>
+   <button type="button" class="folder-delete" aria-label="Удалить папку" title="Удалить папку" data-folder-delete="${html(folder.id)}">${trash}</button>
+  </div>
+ </div></article>`;
 }
 function resourceMoveSelect(asset){return `<select class="resource-move" data-asset-move="${html(asset.id)}" title="Переместить в папку"><option value="" ${!asset.folderId?'selected':''}>↳ Корень</option>`+resourceFolders().map(f=>`<option value="${html(f.id)}" ${f.id===asset.folderId?'selected':''}>${'· '.repeat(resourceFolderPath(f.id).length-1)}${html(f.name)}</option>`).join('')+'</select>'}
 function folderChildren(project,folderId){const folders=resourceFolders(project);const found=new Set([folderId]),queue=[folderId];for(const id of queue){for(const f of folders){if(f.parentId===id&&!found.has(f.id)){found.add(f.id);queue.push(f.id)}}}return found}
@@ -2965,6 +2986,7 @@ function renderLibrary(){
  $('#cardListControls').classList.toggle('hidden',app.filter!=='card');
  $('#resourceControls').classList.toggle('hidden',app.filter!=='resource');
  const resource=app.filter==='resource';
+ $('#resourceFabActions').classList.toggle('hidden',!resource);
  const switcher=$('#libraryViewControls');switcher.classList.toggle('hidden',resource);
  const mode=resource?'grid':libraryViews[app.filter]||'grid';
  switcher.querySelectorAll('[data-library-view]').forEach(btn=>{const active=btn.dataset.libraryView===mode;btn.classList.toggle('active',active);btn.setAttribute('aria-pressed',active?'true':'false')});
@@ -2974,7 +2996,7 @@ function renderLibrary(){
   const folders=resourceFolders(p).filter(f=>(f.parentId||null)===(app.resourceFolderId||null));
   const resources=(p.resources||[]).filter(a=>(a.folderId||null)===(app.resourceFolderId||null));
   $('#resourceBreadcrumbs').innerHTML=folderBreadcrumbHTML();
-  grid.innerHTML=folders.map(f=>folderHTML(f)).join('')+resources.map(asset=>`<article class="project-card asset-card" data-assetid="${html(asset.id)}" draggable="true"><div class="project-thumb" role="button" tabindex="0" data-assetact="insert" title="Добавить на холст"><img src="${asset.src}" alt="${html(asset.name)}" loading="lazy"></div><div class="project-title" data-rename="asset" title="Дважды нажми для переименования">${html(asset.name)}</div>${resourceMoveSelect(asset)}<div class="project-controls">${libraryAction('plus','Добавить на холст','insert','assetact')}${libraryAction('trash','Удалить ресурс','remove','assetact',true)}</div></article>`).join('')||'<div class="empty-state">В этой папке пусто. Добавь изображения или создай папку.</div>';
+  grid.innerHTML=folders.map(f=>folderHTML(f)).join('')+resources.map(asset=>`<article class="project-card asset-card" data-assetid="${html(asset.id)}" draggable="true"><div class="project-thumb" role="button" tabindex="0" data-assetact="insert" title="Добавить на холст"><img src="${asset.src}" alt="${html(asset.name)}" loading="lazy"></div><div class="project-title" data-rename="asset" title="Дважды нажми для переименования">${html(asset.name)}</div><div class="resource-card-footer">${resourceMoveSelect(asset)}<div class="project-controls">${libraryAction('plus','Добавить на холст','insert','assetact')}${libraryAction('trash','Удалить ресурс','remove','assetact',true)}</div></div></article>`).join('')||'<div class="empty-state">В этой папке пусто. Добавь изображения или создай папку.</div>';
   return;
  }
  let docs=projectDocs().filter(d=>d.type===app.filter);
@@ -3151,6 +3173,7 @@ $('#createTemplateBtn').onclick=()=>{
  $('#newDocTitle').value=name;
  $('#sizeDialog .dialog-header h2').textContent=kind==='card'?'Новая карточка':'Новый холст';
  $('#confirmNewDoc').textContent=kind==='card'?'Создать карточку':'Создать шаблон';
+ $('#createCardFromTemplateBtn').classList.toggle('hidden',kind!=='card');
  showDialog('sizeDialog');updateCanvasPresetSelection($('#sizeDialog'));
 };
 $('#confirmNewDoc').onclick=()=>{
@@ -3921,7 +3944,13 @@ $('#documentTabsHome').onclick=()=>activateDocumentTab('home');
 $('#documentTabsPlus').onclick=openTabPicker;
 
 // v0.34: project-first tab picker. Browsing the dialog never changes the active editor.
-const tabPicker={step:'projects',projectId:null,category:'template'};
+const tabPicker={step:'projects',projectId:null,category:'template',fromHomeCard:false};
+$('#createCardFromTemplateBtn').onclick=()=>{
+ if(app.filter!=='card')return;
+ tabPicker.step='cardSource';tabPicker.projectId=app.currentProjectId;
+ tabPicker.category='template';tabPicker.fromHomeCard=true;
+ showDialog('tabPickerDialog');renderTabPicker();
+};
 function tabPickerDocuments(projectId,type){
  const docs=new Map();
  for(const doc of projectDocs(projectId))if(doc.type===type)docs.set(doc.id,doc);
@@ -3929,7 +3958,7 @@ function tabPickerDocuments(projectId,type){
  return [...docs.values()].sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0));
 }
 function openTabPicker(){
- tabPicker.step='projects';tabPicker.projectId=null;tabPicker.category='template';
+ tabPicker.step='projects';tabPicker.projectId=null;tabPicker.category='template';tabPicker.fromHomeCard=false;
  showDialog('tabPickerDialog');renderTabPicker();
 }
 function tabPickerImagePreviews(){
@@ -3962,10 +3991,11 @@ function renderTabPicker(){
  const projectName=p?.name||'Проект';
  $('#tabPickerEyebrow').textContent=projectName;
  if(tabPicker.step==='cardSource'){
-  $('#tabPickerTitle').textContent='Основа новой карточки';
-  $('#tabPickerHint').textContent='Начни с чистого холста или создай карточку на основе готового шаблона';
+  $('#tabPickerTitle').textContent=tabPicker.fromHomeCard?'Из шаблона':'Основа новой карточки';
+  $('#tabPickerHint').textContent=tabPicker.fromHomeCard?'Выбери шаблон текущего проекта для новой карточки':'Начни с чистого холста или создай карточку на основе готового шаблона';
   const templates=tabPickerDocuments(tabPicker.projectId,'template');
-  grid.innerHTML=`<button class="tab-picker-item" type="button" data-tab-picker-new-blank-card><span class="tab-picker-cover">＋</span><span class="tab-picker-name">Чистый холст</span><span class="tab-picker-meta">1080 × 1350 px</span></button>`+templates.map(d=>`<button type="button" class="tab-picker-item" data-tab-picker-from-template="${html(d.id)}"><span class="tab-picker-cover" data-tab-picker-preview="${html(d.id)}"></span><span class="tab-picker-name">${html(d.title)}</span><span class="tab-picker-meta">На основе шаблона · ${d.width} × ${d.height}</span></button>`).join('');
+  const blank=tabPicker.fromHomeCard?'':`<button class="tab-picker-item" type="button" data-tab-picker-new-blank-card><span class="tab-picker-cover">＋</span><span class="tab-picker-name">Чистый холст</span><span class="tab-picker-meta">1080 × 1350 px</span></button>`;
+  grid.innerHTML=blank+templates.map(d=>`<button type="button" class="tab-picker-item" data-tab-picker-from-template="${html(d.id)}"><span class="tab-picker-cover" data-tab-picker-preview="${html(d.id)}"></span><span class="tab-picker-name">${html(d.title)}</span><span class="tab-picker-meta">На основе шаблона · ${d.width} × ${d.height}</span></button>`).join('')+(tabPicker.fromHomeCard&&!templates.length?'<div class="tab-picker-empty">В этом проекте пока нет шаблонов.</div>':'');
   requestAnimationFrame(tabPickerImagePreviews);return;
  }
  $('#tabPickerTitle').textContent='Выбери макет';
@@ -3988,6 +4018,9 @@ async function tabPickerLaunch(doc){
 }
 $('#tabPickerDialog').addEventListener('keydown',ev=>{if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeDialogs()}});
 $('#tabPickerBack').onclick=()=>{
+ if(tabPicker.step==='cardSource'&&tabPicker.fromHomeCard){
+  tabPicker.fromHomeCard=false;showDialog('sizeDialog');return;
+ }
  if(tabPicker.step==='cardSource'){tabPicker.step='documents';tabPicker.category='card'}
  else{tabPicker.step='projects';tabPicker.projectId=null}
  renderTabPicker();

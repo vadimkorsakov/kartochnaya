@@ -143,12 +143,12 @@ jobs:
           retention-days: 14
 
   browser:
-    name: browser-shard-${{ matrix.shard }}-of-2
+    name: browser-shard-${{ matrix.shard }}-of-3
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
       PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: ${{ github.workspace }}/.cache/chrome-linux64/chrome
@@ -166,8 +166,8 @@ jobs:
           curl --fail --show-error --location --retry 3 "https://storage.googleapis.com/chrome-for-testing-public/${chromium_version}/linux64/chrome-linux64.zip" -o "$RUNNER_TEMP/chromium.zip"
           unzip -q "$RUNNER_TEMP/chromium.zip" -d "$GITHUB_WORKSPACE/.cache"
           "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" --version
-      - name: Full Playwright suite (shard ${{ matrix.shard }}/2)
-        run: npm run test:all -- --shard=${{ matrix.shard }}/2
+      - name: Full Playwright suite (shard ${{ matrix.shard }}/3)
+        run: npm run test:all -- --shard=${{ matrix.shard }}/3
       - name: Preserve browser failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

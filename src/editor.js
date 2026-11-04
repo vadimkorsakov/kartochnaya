@@ -1001,47 +1001,17 @@ function mixedTextLayout(e){
 // Opening a plain layer must not opt it into the mixed Canvas painter. Compare
 // the real legacy rows and baseline with the virtual rich projection instead.
 // Incompatible fonts/wraps remain on textarea until the engines are reconciled.
+// The plain-text guard now checks the same layout that Canvas/PNG paints.
+// Stage 2A supports a single unwrapped line; additional rows and auto-fit
+// remain on textarea until DOM caret/wrap parity is tested independently.
 function plainWysiwygLayoutCompatible(e){
  if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
+ if(String(e.text||'').includes('\n'))return false;
  try{
-  const c=textFitContext,projection=legacyTopProjection(c,e);
-  const rows=richTextEngine.layout(projection?{...e,textLayoutMode:LEGACY_TOP_LAYOUT}:e).rows,lines=wrapLines(c,e);
-  if(e.textLayoutMode===LEGACY_TOP_LAYOUT&&!projection)return false;
-  if(projection&&rows.some(row=>row.softWrap))return false;
-  if(rows.length!==lines.length)return false;
-  c.save();
-  try{
-   c.font=fontString(e);const legacyFont=c.font;
-   c.font=richTextFont(resolveRichTextStyle(e));if(c.font!==legacyFont)return false;
-   c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';
-   const step=(e.lineHeight||1.15)*(e.fontSize||24);
-   // Half a document pixel is at most one screen pixel at the checked 200%.
-   return rows.every((row,i)=>{
-    // Fallback glyphs (including emoji) may change the legacy top baseline.
-    // Measure the actual row, not a Latin sample such as Mg.
-    const source=lines[i],text=source||'Mg',chars=Array.from(source);
-    // A color boundary also separates Canvas shaping runs. Refuse a plain
-    // row whose glyph advances depend on cross-boundary shaping/kerning.
-    let previousWidth=0,largest=0,second=0;
-    for(let j=0;j<chars.length;j++){
-     const width=c.measureText(chars[j]).width;
-     if(j){
-      const delta=previousWidth+width-c.measureText(chars[j-1]+chars[j]).width;
-      if(Math.abs(delta)>.5)return false;
-      if(delta>largest){second=largest;largest=delta}else second=Math.max(second,delta);
-     }
-     previousWidth=width;
-    }
-    // A single first range introduces at most two shaping boundaries. Keep
-    // enough room for both; even small kerning loss must not add a soft wrap.
-    if(c.measureText(source).width+largest+second>Math.max(1,e.w))return false;
-    c.textBaseline='top';const top=c.measureText(text).actualBoundingBoxAscent;
-    c.textBaseline='alphabetic';const baseline=c.measureText(text).actualBoundingBoxAscent-top;
-    return row.fragments.map(p=>p.text).join('')===lines[i]&&
-     Math.abs(row.width-c.measureText(lines[i]).width)<=.5&&
-     Math.abs(row.baseline-(baseline+i*step))<=.5&&Math.abs(row.y-i*step)<=.5;
-   });
-  }finally{c.restore()}
+  const rows=richTextEngine.layout(e).rows;
+  return rows.length===1&&!rows[0].softWrap&&
+   Number.isFinite(rows[0].baseline)&&rows[0].height>0&&
+   rows[0].width<=Math.max(1,e.w)-1;
  }catch{return false}
 }
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
@@ -2065,7 +2035,7 @@ function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=n
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
 function startInlineWysiwyg(e){
  const host=$('#inlineWysiwyg');app.inlineSession.wysiwyg=true;app.inlineSession.formatted=true;
- app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:plainWysiwygLayoutCompatible,
+ app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:plainWysiwygLayoutCompatible,layout:layer=>richTextEngine.layout(layer),
   available:family=>!v41FontUnavailable(family),
   onChange(){syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();},
   onFallback(selection,reason){finishWysiwygFallback(selection,reason);},

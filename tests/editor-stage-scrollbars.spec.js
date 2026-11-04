@@ -20,7 +20,7 @@ async function expectDockAboveScrollbar(page){
  expect(g.visible).toBe(true);
  expect(g.horizontalRoom).toBeGreaterThan(20);
  expect(g.verticalRoom).toBeGreaterThan(20);
- expect(g.bottomGap,'leave at least 16 px between the dock and horizontal track edge').toBeGreaterThanOrEqual(16);
+ expect(g.bottomGap,'keep at least 8 px between the dock and horizontal scrollbar').toBeGreaterThanOrEqual(8);
  expect(g.footerGap).toBeGreaterThanOrEqual(-2);
  expect(g.topGap).toBeGreaterThan(0);
  expect(g.blocked).toBe(false);

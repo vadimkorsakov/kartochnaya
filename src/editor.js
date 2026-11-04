@@ -2959,7 +2959,9 @@ function renderLibrary(){
  $('#activeProjectName').textContent=p.name;
  $('#projectChooser').innerHTML=app.projects.map(project=>`<button type="button" class="project-choice ${project.id===app.currentProjectId?'active':''}" data-switch-project="${project.id}" title="${html(project.name)}" aria-current="${project.id===app.currentProjectId?'true':'false'}"><span class="project-choice-cover">${project.cover?`<img src="${project.cover}" alt="" loading="lazy">`:`<span class="project-initial">${html(project.name.slice(0,1).toUpperCase())}</span>`}</span><span class="project-choice-name">${html(project.name)}</span></button>`).join('');
  $$('.project-tabs .tab').forEach(x=>x.classList.toggle('active',x.dataset.filter===app.filter));
- $('#docLibraryActions').classList.toggle('hidden',app.filter!=='template');
+ $('#docLibraryActions').classList.toggle('hidden',app.filter==='resource');
+ const newCanvasTitle=app.filter==='card'?'Создать пустую карточку':'Создать пустой шаблон';
+ $('#createTemplateBtn').title=newCanvasTitle;$('#createTemplateBtn').setAttribute('aria-label',newCanvasTitle);
  $('#cardListControls').classList.toggle('hidden',app.filter!=='card');
  $('#resourceControls').classList.toggle('hidden',app.filter!=='resource');
  const resource=app.filter==='resource';
@@ -3143,7 +3145,21 @@ $('#projectGrid').addEventListener('drop',async ev=>{if(app.filter!=='resource')
 $('#uploadResourcesBtn').onclick=()=>$('#resourceInput').click();
 $('#resourceInput').onchange=async ev=>{const files=[...ev.target.files];ev.target.value='';await addProjectResources(files);if(!$('#assetsPopover').classList.contains('hidden'))renderAssetsPopover()};
 $('#cardSearch').oninput=renderLibrary;$('#cardSort').onchange=renderLibrary;
-$('#createTemplateBtn').onclick=()=>{showDialog('sizeDialog');updateCanvasPresetSelection($('#sizeDialog'))};$('#confirmNewDoc').onclick=()=>{const width=Number($('#newDocW').value),height=Number($('#newDocH').value);if(!(width>=100&&width<=5000&&height>=100&&height<=5000)){toast('Размер: от 100 до 5000 px');return}const d=newDoc({title:$('#newDocTitle').value||'Новый шаблон',width,height});openDocumentTab(d)};
+$('#createTemplateBtn').onclick=()=>{
+ const kind=app.filter==='card'?'card':'template';
+ const name=kind==='card'?'Новая карточка':'Новый шаблон';
+ $('#newDocTitle').value=name;
+ $('#sizeDialog .dialog-header h2').textContent=kind==='card'?'Новая карточка':'Новый холст';
+ $('#confirmNewDoc').textContent=kind==='card'?'Создать карточку':'Создать шаблон';
+ showDialog('sizeDialog');updateCanvasPresetSelection($('#sizeDialog'));
+};
+$('#confirmNewDoc').onclick=()=>{
+ const width=Number($('#newDocW').value),height=Number($('#newDocH').value);
+ if(!(width>=100&&width<=5000&&height>=100&&height<=5000)){toast('Размер: от 100 до 5000 px');return}
+ const type=app.filter==='card'?'card':'template',defaultName=type==='card'?'Новая карточка':'Новый шаблон';
+ const d=newDoc({title:$('#newDocTitle').value||defaultName,width,height,type});
+ openDocumentTab(d);
+};
 
 $$('.dialog-close').forEach(x=>x.onclick=closeDialogs);$('#shade').onclick=()=>{closeDialogs();hideInspector()};
 $$('.tab').forEach(t=>t.onclick=()=>{app.filter=t.dataset.filter;renderLibrary()});

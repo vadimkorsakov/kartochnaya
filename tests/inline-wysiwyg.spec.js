@@ -300,10 +300,10 @@ async function zoomTo(page,zoom){
 const canvasPixels=page=>page.locator('#canvas').evaluate(c=>c.toDataURL());
 const plainCases=[
  ['single line',{text:'ABCD'},true],
- ['explicit LF',{text:'ABCD\nABCD'},true],
+ ['explicit LF',{text:'ABCD\nABCD'},false],
  ['automatic wrap',{text:'alpha beta gamma delta',w:170},false],
  ['long words',{text:'abcdefghijklmnop qrstuvwxyzabcdefghijklmnop',w:170},false],
- ['Cyrillic spaces emoji',{text:'Группа  А😀Б'},false],
+ ['Cyrillic spaces emoji',{text:'Группа  А😀Б'},true],
 ];
 for(const [name,patch,compatible] of plainCases)test('plain real geometry at 50/100/200: '+name,async({page},testInfo)=>{
  await page.setViewportSize({width:2200,height:1600});await observePlainGeometry(page);
@@ -375,10 +375,27 @@ async function checkArialCaret(page,zoom,baseline){
  const measured=await arialRanges(page);expect(Math.abs(measured[0].baseline-baseline)).toBeLessThanOrEqual(.05);
  await page.locator(surface).evaluate(el=>el.style.removeProperty('caret-color'));return {caret,painted};
 }
-for(const text of ['ABCD','ABCD\nABCD'])test('Arial legacy-top baseline, DOM Range and persistence: '+JSON.stringify(text),async({page},testInfo)=>{
+for(const text of ['ABCD','ABCD\nABCD'])test('Arial unified baseline or multiline fallback, with persistence: '+JSON.stringify(text),async({page},testInfo)=>{
  await page.setViewportSize({width:2200,height:1600});await observePlainGeometry(page);
  const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:32,lineHeight:1.15,y:80,h:120}),initial=getLayer(doc);
  await page.locator('#layers [data-layer="title"] .layer-name').click();const evidence=[];
+ if(text.includes('\n')){
+  // Multiline DOM wrapping is a separate migration stage. Verify that
+  // textarea still permits edits, Undo/Redo and persistence without legacy mode.
+  await edit(page);await expect(page.locator('#inlineText')).toBeFocused();
+  expect(await snapshotValue(page)).toEqual(initial);
+  await page.locator('#inlineText').fill(text+'\nE');
+  await page.keyboard.press('Control+Enter');
+  const changed=await snapshotValue(page);
+  expect(changed.text).toBe(text+'\nE');
+  expect(changed).not.toHaveProperty('textLayoutMode');
+  await page.locator('#undoBtn').click();expect(await snapshotValue(page)).toEqual(initial);
+  await page.locator('#redoBtn').click();expect(await snapshotValue(page)).toEqual(changed);
+  await page.reload();await openLibraryDocument(page,doc.id);
+  expect(await snapshotValue(page)).toEqual(changed);
+  await edit(page);await expect(page.locator('#inlineText')).toBeFocused();
+  await page.keyboard.press('Control+Enter');return;
+ }
  for(const zoom of [50,100,200]){
   await zoomTo(page,zoom);const before=await plainFrame(page),pixels=await canvasPixels(page);
   await edit(page);await expect(page.locator(surface)).toBeFocused();expect(await snapshotValue(page)).toEqual(initial);
@@ -390,7 +407,7 @@ for(const text of ['ABCD','ABCD\nABCD'])test('Arial legacy-top baseline, DOM Ran
   await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);expect(await canvasPixels(page)).toBe(pixels);
  }
  await edit(page);await selectRange(page,1,3);await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await assertRange(page,text,1,3);
- const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);expect(changed.textLayoutMode).toBe('legacy-top');expect(changed).not.toHaveProperty('textRunsBaseFontSize');
+ const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);expect(changed).not.toHaveProperty('textLayoutMode');expect(changed).not.toHaveProperty('textRunsBaseFontSize');
  await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);
  await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
  await edit(page);await selectRange(page,1,3);await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await assertRange(page,text,1,3);await page.keyboard.press('Control+Enter');

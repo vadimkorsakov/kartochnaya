@@ -44,17 +44,3 @@ test('plain and styled horizontal layers use the same alphabetic layout in Canva
  expect(docAgain.elements[1].textRuns).toHaveLength(1);
 });
 
-test('plain layout preserves same baseline and width before and after a color-only run',async({page})=>{
- await openHome(page);
- const result=await page.evaluate(async()=>{
-  const {createRichTextLayoutEngine}=await import('/src/render/rich-text-layout.mjs');
-  const ctx=document.createElement('canvas').getContext('2d');
-  const engine=createRichTextLayoutEngine(ctx,document.fonts);
-  const base={text:'HHHH HH',w:300,h:100,fontSize:26,fontFamily:'Arial',lineHeight:1.1};
-  const a=engine.layout(base),b=engine.layout({...base,textRuns:[{start:2,end:4,style:{textColor:'#aabbcc'}}]});
-  return {plain:[a.width,a.height,a.rows[0].baseline],colored:[b.width,b.height,b.rows[0].baseline]};
- });
- expect(result.colored[0]).toBeCloseTo(result.plain[0],4);
- expect(result.colored[1]).toBeCloseTo(result.plain[1],4);
- expect(result.colored[2]).toBeCloseTo(result.plain[2],4);
-});

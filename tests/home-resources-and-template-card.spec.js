@@ -28,7 +28,12 @@ test('new card dialog offers a current-project template picker and creates an in
  expect(newCard.id).not.toBe(original.id);
  expect(newCard.type).toBe('card');
  expect(newCard.projectId).toBe(original.projectId);
- expect(newCard.elements).toEqual(original.elements);
+ expect(newCard.elements).toHaveLength(original.elements.length);
+ expect(newCard.elements[0].id).not.toBe(original.elements[0].id);
+ expect(newCard.elements[0]).toMatchObject({
+  type:original.elements[0].type,x:original.elements[0].x,y:original.elements[0].y,
+  w:original.elements[0].w,h:original.elements[0].h,fill:original.elements[0].fill
+ });
  expect(newCard.slides).toHaveLength(1);
  await expect.poll(async()=> (await records(page,'docs')).find(x=>x.id===newCard.id)?.type).toBe('card');
  await page.locator('#documentTabsHome').click();

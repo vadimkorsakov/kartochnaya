@@ -170,12 +170,14 @@ function domPointToOffset(node,offset){
 }
 function offsetToDomPoint(offset){
  const map=index();if(!Number.isInteger(offset)||offset<0||offset>map.text.length)throw Error('Invalid UTF-16 offset');
- // Prefer the structural end position for the final empty row.
- const sentinel=host.querySelector(':scope > br[data-caret-sentinel]');
- if(sentinel&&offset===map.text.length)return {node:host,offset:[...host.childNodes].indexOf(sentinel)};
+ // Keep the selection anchored in a live text node whenever possible.
+ // The host-level point before a trailing <br> can be normalised by Chromium
+ // to the start of contenteditable after a controlled Enter, losing the caret.
  const leaves=[...map.leaves].reverse();
  const leaf=leaves.find(p=>offset>=p.start&&offset<=p.end);
  if(leaf)return {node:leaf.node,offset:offset-leaf.start};
+ const sentinel=host.querySelector(':scope > br[data-caret-sentinel]');
+ if(sentinel&&offset===map.text.length)return {node:host,offset:[...host.childNodes].indexOf(sentinel)};
  for(const [node,offsets] of map.points){const i=offsets.indexOf(offset);if(i>=0)return {node,offset:i};}
  throw Error('Unmapped offset');
 }

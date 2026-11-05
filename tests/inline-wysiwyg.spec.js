@@ -522,21 +522,19 @@ test('simple word soft-wrap has live Canvas rows, typing, Undo/Redo and persiste
  await page.keyboard.press('Control+Enter');
 });
 
-test('soft wrap with sparse runs or auto-fit retains textarea fallback',async({page})=>{
- for(const patch of [
-  {textRuns:[{start:0,end:5,style:{textColor:'#2255cc'}}]},
-  {autoFontSize:true},
- ]) {
-  const doc=await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
-   fontSize:24,w:135,h:140,...patch},{flag:'default'});
-  const initial=getLayer(doc);
-  await edit(page);
-  await expect(page.locator('#inlineText')).toBeFocused();
-  await expect(page.locator(surface)).toBeHidden();
-  await page.keyboard.press('Control+Enter');
-  expect(await snapshotValue(page)).toEqual(initial);
-  await page.reload();
- }
+for(const [label,patch] of [
+ ['sparse color',{text:'alpha beta gamma delta',w:135,
+  textRuns:[{start:0,end:5,style:{textColor:'#2255cc'}}]}],
+ ['long word',{text:'abcdefghijklmnopqrstuvwxy',w:85}],
+])test('unsupported soft wrap retains textarea: '+label,async({page})=>{
+ const doc=await seedPlain(page,{fontFamily:'Arial',fontSize:24,
+  h:140,autoFontSize:false,...patch},{flag:'default'});
+ const initial=getLayer(doc);
+ await edit(page);
+ await expect(page.locator('#inlineText')).toBeFocused();
+ await expect(page.locator(surface)).toBeHidden();
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(initial);
 });
 
 test('plain typing an incompatible wrap hands off without fabricating runs',async({page})=>{

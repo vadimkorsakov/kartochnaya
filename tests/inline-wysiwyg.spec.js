@@ -447,12 +447,57 @@ test.describe('plain mobile viewport',()=>{test.use({viewport:{width:390,height:
  await seedPlain(page);await page.locator('[data-mobile=layers]:visible').tap();await page.locator('#mobileLayerList [data-layer="title"] .layer-name').tap();await page.locator('#mobileLayersClose').tap();await page.locator('#mobileContext [data-mobile=edit]').tap();await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();expect(await snapshotValue(page)).not.toHaveProperty('textRuns');
 });});
 
-test('plain near-width shaping reproducer stays on textarea before first color adds a wrap',async({page},testInfo)=>{
+test('plain near-width fallback preserves Canvas/PNG geometry on first color',async({page},testInfo)=>{
  const editNarrow=async()=>{const p=await canvasPoint(page,64,175);await page.mouse.dblclick(p.x,p.y)};
- await observePlainGeometry(page);const doc=await seedPlain(page,{fontSize:32,lineHeight:1,w:88,h:100});await page.locator('#layers [data-layer="title"] .layer-name').click();const legacy=await plainFrame(page);expect(legacy).toHaveLength(1);
- await editNarrow();await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(getLayer(doc));
- await editNarrow();await page.keyboard.press('Control+Home');await page.keyboard.press('ArrowRight');await page.keyboard.press('Shift+ArrowRight');await page.keyboard.press('Shift+ArrowRight');expect(await page.locator('#inlineText').evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([1,3]);await openColor(page);await hexColor(page,'#11aa33');expect((await snapshotValue(page)).textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);await page.locator('[data-fill-close]').click();await page.locator('#inlineText').focus();await page.keyboard.press('Control+Enter');
- const mixed=await plainFrame(page);expect(new Set(mixed.map(d=>d.baseline)).size).toBe(2);await testInfo.attach('near-width-transition.json',{body:JSON.stringify({legacy,mixed},null,2),contentType:'application/json'});
+ await observePlainGeometry(page);
+ const doc=await seedPlain(page,{fontSize:32,lineHeight:1,w:88,h:100});
+ const original=getLayer(doc);
+ await page.locator('#layers [data-layer="title"] .layer-name').click();
+ const before=await plainFrame(page);
+ expect(before).toHaveLength(1);
+ expect(before[0].mode).toBe('alphabetic');
+ // Narrow text retains a fully usable textarea; editing it must not switch
+ // the painter or create runs on a no-op open/close.
+ await editNarrow();await expect(page.locator('#inlineText')).toBeFocused();
+ await expect(page.locator(surface)).toBeHidden();
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(original);
+ await editNarrow();
+ await page.keyboard.press('Control+Home');
+ await page.keyboard.press('ArrowRight');
+ await page.keyboard.press('Shift+ArrowRight');
+ await page.keyboard.press('Shift+ArrowRight');
+ expect(await page.locator('#inlineText').evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([1,3]);
+ await openColor(page);await hexColor(page,'#11aa33');
+ const changed=await snapshotValue(page);
+ expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
+ await page.locator('[data-fill-close]').click();
+ await page.locator('#inlineText').focus();
+ await page.keyboard.press('Control+Enter');
+ const after=await plainFrame(page);
+ expect(after.map(d=>d.text).join('')).toBe(before[0].text);
+ expect(after).toHaveLength(3);
+ expect(after.every(d=>d.mode==='alphabetic')).toBe(true);
+ expect(new Set(after.map(d=>d.baseline)).size).toBe(1);
+ expect(after[0].baseline).toBeCloseTo(before[0].baseline,6);
+ // The unchanged font's full-string prefix advances remain the positioning
+ // oracle even though colored fragments are painted by separate fillText calls.
+ const positions=await page.evaluate(({font,spacing,text,parts,x})=>{
+  const c=document.createElement('canvas').getContext('2d');
+  c.font=font;c.fontKerning='normal';c.letterSpacing=spacing||'0px';
+  let prefix='';
+  return parts.map(part=>{const position=x+c.measureText(prefix).width;prefix+=part;return position});
+ },{font:before[0].font,spacing:before[0].spacing,text:before[0].text,parts:after.map(d=>d.text),x:before[0].x});
+ for(let i=0;i<after.length;i++)expect(after[i].x).toBeCloseTo(positions[i],5);
+ await page.evaluate(()=>{window.plainExportFrame=[];window.capturePlainExport=true});
+ await exportPNG(page);
+ const png=await page.evaluate(()=>{window.capturePlainExport=false;return window.plainExportFrame});
+ expect(png.slice(-after.length)).toEqual(after);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(changed);
+ await page.reload();await openLibraryDocument(page,doc.id);
+ expect(await snapshotValue(page)).toEqual(changed);
+ expect(await plainFrame(page)).toEqual(after);
+ await testInfo.attach('near-width-unified-color.json',{body:JSON.stringify({before,after,png},null,2),contentType:'application/json'});
 });
 
 

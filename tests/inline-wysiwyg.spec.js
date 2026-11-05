@@ -607,6 +607,7 @@ test('soft-wrap cross-row keyboard selection, replace and history keep exact UTF
 
 test('regression: long Cyrillic paragraph at 31px and 772px keeps font changes live',async({page})=>{
  await page.setViewportSize({width:2200,height:1600});
+ await observePlainGeometry(page);
  const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
  await seedPlain(page,{text,fontFamily:'Arial',fontSize:31,lineHeight:1.1,
   w:772,h:443,autoFontSize:false},{flag:'default'});
@@ -621,7 +622,30 @@ test('regression: long Cyrillic paragraph at 31px and 772px keeps font changes l
  const changed=await snapshotValue(page);
  expect(changed.textRuns).toHaveLength(1);
  expect(changed.textRuns[0]).toMatchObject({start:0,end:text.length,style:{fontFamily:'Tahoma'}});
+ const domRows=await page.locator(surface).evaluate(el=>{
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  const rows=[],walk=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+  for(let node;node=walk.nextNode();)for(let i=0;i<node.length;i++){
+   const range=document.createRange();range.setStart(node,i);range.setEnd(node,i+1);
+   const rect=range.getBoundingClientRect(),cx=(rect.x-host.x)/scale,cy=(rect.y-host.y)/scale;
+   let row=rows.find(r=>Math.abs(r.y-cy)<.5);
+   if(!row)rows.push(row={text:'',x:cx,right:cx,y:cy});
+   row.text+=node.data[i];row.x=Math.min(row.x,cx);row.right=Math.max(row.right,cx+rect.width/scale);
+  }
+  return rows.sort((a,b)=>a.y-b.y);
+ });
  await page.keyboard.press('Control+Enter');
+ const canvas=await plainFrame(page),rows=[];
+ for(const part of canvas){
+  let row=rows.find(r=>Math.abs(r.y-part.baseline)<.5);
+  if(!row)rows.push(row={text:'',x:part.x,right:part.x,y:part.baseline});
+  row.text+=part.text;row.x=Math.min(row.x,part.x);row.right=Math.max(row.right,part.x+part.width);
+ }
+ expect(domRows.map(r=>r.text)).toEqual(rows.map(r=>r.text));
+ for(let i=0;i<domRows.length;i++){
+  expect(Math.abs(domRows[i].x-rows[i].x)).toBeLessThan(.75);
+  expect(Math.abs(domRows[i].right-domRows[i].x-(rows[i].right-rows[i].x))).toBeLessThan(.75);
+ }
 });
 
 for(const [label,update,expectedKey,expectedValue] of [

@@ -2,7 +2,8 @@ const { test, expect, openHome, createDocument, canvasPoint, exportedDocument, i
 const fixture = require('./fixtures/canvas-graph.json');
 
 async function drawTextFrame(page, value = 'Текст') {
-  await openHome(page);
+  // Native textarea-specific regressions retain their explicit fallback mode.
+  await openHome(page,'/?experimentalTextWysiwyg=0');
   await createDocument(page, 'Text autofit', 320, 240);
   await page.keyboard.press('t');
   const a = await canvasPoint(page, 30, 40), b = await canvasPoint(page, 270, 130);
@@ -68,7 +69,7 @@ test('double click on an edge fits text box to its content with a single Undo', 
   expect((await exportedDocument(page)).elements[0].w).toBe(after.w);
   const inside = await canvasPoint(page, after.x + after.w / 2, after.y + after.h / 2);
   await page.mouse.dblclick(inside.x, inside.y);
-  await expect(page.locator('#inlineWysiwyg')).toBeFocused();
+  await expect(page.locator('#inlineText')).toBeFocused();
 });
 
 test('fixed-size text keeps its Canvas line breaks while editing near the wrap boundary', async ({ page }) => {
@@ -102,7 +103,7 @@ test('fixed-size text keeps its Canvas line breaks while editing near the wrap b
 });
 
 test('auto font adjusts when text changes; empty text keeps a persistent frame', async ({ page }) => {
-  await openHome(page); await createDocument(page, 'Live sizing');
+  await openHome(page,'/?experimentalTextWysiwyg=0'); await createDocument(page, 'Live sizing');
   await page.keyboard.press('t');
   const a = await canvasPoint(page, 20, 20), b = await canvasPoint(page, 180, 65);
   await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y); await page.mouse.up();
@@ -119,6 +120,22 @@ test('auto font adjusts when text changes; empty text keeps a persistent frame',
   expect(e.autoFontSize).toBe(true);
   expect(e.w).toBe(160);
   expect(e.h).toBe(45);
+});
+
+
+test('new auto-fit text box opens live WYSIWYG and fits initial typing',async({page})=>{
+ await openHome(page);await createDocument(page,'Live auto sizing',320,240);
+ await page.keyboard.press('t');const a=await canvasPoint(page,30,40),b=await canvasPoint(page,270,130);
+ await page.mouse.move(a.x,a.y);await page.mouse.down();await page.mouse.move(b.x,b.y,{steps:5});await page.mouse.up();
+ await expect(page.locator('#inlineWysiwyg')).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const initial=(await exportedDocument(page)).elements[0];expect(initial.autoFontSize).toBe(true);expect(initial.text).toBe('');
+ await page.keyboard.type('Текст');
+ const changed=(await exportedDocument(page)).elements[0];
+ expect(changed.text).toBe('Текст');expect(changed.autoFontSize).toBe(true);expect(changed.fontSize).toBeGreaterThan(initial.fontSize);
+ expect(await page.locator('#inlineWysiwyg span').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(changed.fontSize);
+ await page.keyboard.press('ControlOrMeta+Enter');await expect(page.locator('#inlineWysiwyg')).toBeHidden();
+ expect((await exportedDocument(page)).elements[0]).toEqual(changed);
 });
 
 test.describe('mobile auto sizing', () => {

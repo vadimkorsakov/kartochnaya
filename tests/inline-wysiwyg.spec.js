@@ -64,7 +64,7 @@ test('UTF-16 emoji, full deletion, continued session and Escape restore exact la
 test('explicit opt-out keeps the textarea as a diagnostic fallback',async({page})=>{
  await seed(page,{flag:false});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await page.keyboard.type('X');await page.keyboard.press('Control+Enter');expect((await value(page)).text).toBe('AX');
 });
-for(const [name,patch] of Object.entries({autoFit:{autoFontSize:true},center:{textAlign:'center'},unavailableFont:{fontFamily:'DefinitelyMissingFont987'},mask:{layerMaskSrc:'data:image/png;base64,AA=='},CRLF:{text:'A\r\nБ',textRuns:[{start:0,end:4,style:{bold:true}}]}}))test('textarea eligibility and unchanged open/close: '+name,async({page})=>{
+for(const [name,patch] of Object.entries({center:{textAlign:'center'},unavailableFont:{fontFamily:'DefinitelyMissingFont987'},mask:{layerMaskSrc:'data:image/png;base64,AA=='},CRLF:{text:'A\r\nБ',textRuns:[{start:0,end:4,style:{bold:true}}]}}))test('textarea eligibility and unchanged open/close: '+name,async({page})=>{
  const initial=await seed(page,{patch});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await value(page)).toEqual(getLayer(initial));
 });
 test('geometry at 50, 100 and 200 percent uses document coordinates',async({page})=>{
@@ -426,7 +426,7 @@ for(const text of ['ABCD','ABCD\nABCD'])test('Arial unified baseline or multilin
  evidence.push({mixed,png});const path=testInfo.outputPath('arial-legacy-top.json');await require('node:fs/promises').writeFile(path,JSON.stringify(evidence,null,2));await testInfo.attach('arial-legacy-top.json',{path,contentType:'application/json'});
 });
 
-for(const [name,patch] of Object.entries({autoFit:{autoFontSize:true},rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'},ArialSoftWrap:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
+for(const [name,patch] of Object.entries({rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'},ArialSoftWrap:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
  const doc=await seedPlain(page,patch);await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(getLayer(doc));
 });
 test('plain with explicit opt-out retains textarea',async({page})=>{await seedPlain(page,{}, {flag:false});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden()});
@@ -528,6 +528,41 @@ test('normal desktop URL applies range color, font and size visibly while editin
  await page.keyboard.press('Control+Enter');
  expect(await snapshotValue(page)).toEqual(live);
  await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(live);
+});
+
+
+test('default auto-fit WYSIWYG shrinks with typing and styles selection live',async({page})=>{
+ await observePlainGeometry(page);
+ const doc=await seedPlain(page,{text:'AB',fontFamily:'Arial',fontSize:30,lineHeight:1.03,w:160,h:38,autoFontSize:true},{flag:'default'});
+ const initial=getLayer(doc);await edit(page);
+ await expect(page.locator(surface)).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();
+ expect(await snapshotValue(page)).toEqual(initial);
+ await page.keyboard.type('BBBBBBBBB');
+ const typed=await snapshotValue(page);expect(typed.text).toBe('ABBBBBBBBBB');expect(typed.autoFontSize).toBe(true);expect(typed.fontSize).toBeLessThan(initial.fontSize);
+ expect(await page.locator(surface+' span').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(typed.fontSize);
+ await page.keyboard.press('Control+z');expect((await snapshotValue(page)).text).toBe(typed.text.slice(0,-1));
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(typed);
+ await selectRange(page,1,3);await openColor(page);await hexColor(page,'#bb2255');await page.locator('[data-fill-close]').click();
+ await page.locator('#inspector [data-font-open]').click();await page.locator('#inspector [data-font-option="Georgia"]').click();
+ await assertRange(page,typed.text,1,3);
+ const formatted=await snapshotValue(page);expect(formatted.autoFontSize).toBe(true);
+ expect(formatted.textRuns).toEqual([{start:1,end:3,style:{fontFamily:'Georgia',textColor:'#bb2255'}}]);
+ const spans=await page.locator(surface+' span').evaluateAll(all=>all.map(el=>({text:el.textContent,font:getComputedStyle(el).fontFamily.replaceAll('"',''),color:getComputedStyle(el).color})));
+ expect(spans[1]).toEqual({text:'BB',font:'Georgia',color:'rgb(187, 34, 85)'});
+ await page.keyboard.press('Control+Enter');
+ const screen=await plainFrame(page);expect(screen.every(x=>x.mode==='alphabetic')).toBe(true);
+ await page.evaluate(()=>{window.capturePlainExport=true;window.plainExportFrame=[]});await exportPNG(page);
+ const png=await page.evaluate(()=>{window.capturePlainExport=false;return window.plainExportFrame});expect(png.slice(-screen.length)).toEqual(screen);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(formatted);
+ await page.reload();await openLibraryDocument(page,doc.id);expect(await snapshotValue(page)).toEqual(formatted);
+});
+test('auto-fit switches to textarea only when text becomes multirow',async({page})=>{
+ await seedPlain(page,{text:'A',fontFamily:'Arial',fontSize:20,lineHeight:1,w:96,h:100,autoFontSize:true},{flag:'default'});
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.insertText(' AAA BBB CCC DDD EEE FFF GGG HHH');
+ expect((await snapshotValue(page)).text).toBe('A AAA BBB CCC DDD EEE FFF GGG HHH');
+ await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#inlineText')).toBeVisible();
+ await page.keyboard.press('Control+Enter');expect((await snapshotValue(page)).autoFontSize).toBe(true);
 });
 
 test('plain ordinary typing preserves native WYSIWYG caret, absent runs and Escape',async({page})=>{

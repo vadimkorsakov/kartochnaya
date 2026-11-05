@@ -2035,9 +2035,13 @@ function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=n
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
 function startInlineWysiwyg(e){
  const host=$('#inlineWysiwyg');app.inlineSession.wysiwyg=true;app.inlineSession.formatted=true;
- app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:plainWysiwygLayoutCompatible,layout:layer=>richTextEngine.layout(layer),
+ app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:plainWysiwygLayoutCompatible,layout:layer=>richTextEngine.layout(layer),fit:autoFitTextFont,
   available:family=>!v41FontUnavailable(family),
-  onChange(){syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();},
+  onChange(){
+   // Do not interrupt a focused numeric field or an active color/font picker.
+   if(e.autoFontSize){const size=$('#inspector [data-key=fontSize]');if(size&&document.activeElement!==size)size.value=String(e.fontSize)}
+   syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();
+  },
   onFallback(selection,reason){finishWysiwygFallback(selection,reason);},
   onRecovery(){ $('#wysiwygRecovery').classList.remove('hidden');$('#wysiwygRecoveryMessage').textContent='Ввод не подтверждён и не сохранён. При использовании IME завершите композицию. Скопируйте нужный текст перед восстановлением.';}
  });

@@ -24,15 +24,17 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompat
  // A previous opt-in gate left normal users on plain textarea, making range
  // color/font/size changes invisible until the editor was closed.
  if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')==='0'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
- if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.autoFontSize||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
+ if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||e.strokeWidth||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
+ // Auto-fit participates only while Canvas projects a single unwrapped row.
+ if(e.autoFontSize&&!plainCompatible(e))return false;
  if(!usesRichTextLayout(e)&&!plainCompatible(e))return false;
  try {return [resolveRichTextStyle(e),...richTextSpans(e).map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(e,s));}catch{return false;}
 }
 
 // Canonical layer + the editor's existing session history own all confirmed data.
 // Unknown DOM remains on screen until explicit recovery; it is never persisted.
-export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false, layout=()=>null}) {
+export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false, layout=()=>null, fit=()=>false}) {
  const startedPlain=!usesRichTextLayout(element);
  let layer=element, composing=false, pending=null, fallback=null, pasteText=null, confirmedHTML, inactive=false;
  const safe={phase:'confirmed', deferred:false};
@@ -71,7 +73,14 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  }
  function clean(){try{return !composing&&!pending&&!fallback&&!safe.deferred&&host.innerHTML===confirmedHTML&&readText()===layer.text;}catch{return false;}}
  const caret=c=>({start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'});
- function commit(value,before,after){recordInlineHistory(history,layer,caret(before));recordInlineHistory(history,value,caret(after));project(value,after);onChange();}
+ function commit(value,before,after){
+  // Fit the next snapshot before history and DOM are committed: all renderers
+  // and Undo/Redo must use the same canonical fontSize.
+  if(value.autoFontSize)fit(value);
+  recordInlineHistory(history,layer,caret(before));
+  recordInlineHistory(history,value,caret(after));
+  project(value,after);onChange();
+ }
  function travel(direction){finishPreview();if(!clean()){stop('История недоступна до восстановления ввода');return;}const state=moveInlineHistory(history,direction);if(state){project(state.element,state.caret);onChange();}}
  function requestFallback(reason){
   if(!clean()){stop('Нужно восстановить подтверждённый ввод');return false;}
@@ -91,8 +100,9 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const origin=preview?.element||structuredClone(layer);
   if(startedPlain&&!plainCompatible(origin))return false;
   const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
-  if(startedPlain&&!plainCompatible(next))return false;
   retainRichTextSizeBase(next);
+  if(next.autoFontSize)fit(next);
+  if((startedPlain||next.autoFontSize)&&!plainCompatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}
   if(!preview){recordInlineHistory(history,origin,caret(selection));preview={key,element:origin,selection};}
@@ -190,7 +200,7 @@ listen('beforeinput',e=>{
   commit(next,selection,{anchor:start+1,focus:start+1});
 
   safe.phase='confirmed';
-  if(startedPlain&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемой строки');
+  if((startedPlain||layer.autoFontSize)&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемой строки');
   // A canceled operation has no pending native edit, even if an input is sent.
   return;
  }
@@ -236,7 +246,7 @@ listen('input',e=>{
   commit(next,previous.selection,selection);
 
   safe.phase='confirmed';
-  if(startedPlain&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемой строки');
+  if((startedPlain||layer.autoFontSize)&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемой строки');
  }catch{stop('unsupported native DOM or selection');}
 });
 

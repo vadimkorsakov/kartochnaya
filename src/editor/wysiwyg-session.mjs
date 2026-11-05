@@ -154,7 +154,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   if(next.autoFontSize)fit(next);
   if(!plainCompatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
-  try{project(next,selection);}catch(error){if(window.__textGateLogs)window.__textGateLogs.push({reason:'DOM-projection',message:String(error?.message||error)});return false;}
+  try{project(next,selection);}catch{return false;}
   if(!preview){recordInlineHistory(history,origin,caret(selection));preview={key,element:origin,selection};}
   if(final)finishPreview();else onChange();
   return true;

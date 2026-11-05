@@ -145,11 +145,20 @@ for(const [name,patch] of cases){
     textRuns:element.textRuns||[]},canvas,dom,summary:{
     canvasRows:canvas.length,domRows:dom.rows.length,
     mismatchedRows:differences.length,differences}};
+  // Also diagnose the existing entry path: color-only textRuns can bypass
+  // the plain-layer soft-wrap compatibility guard. Do not change behavior
+  // or assert that an unsafe editor mode is correct in this measurement PR.
+  const p=await canvasPoint(page,35,35);
+  await page.mouse.dblclick(p.x,p.y);
+  const activeEditor=page.locator('#inlineText:visible,#inlineWysiwyg:visible');
+  await expect(activeEditor).toBeFocused();
+  const editorMode=await activeEditor.getAttribute('id');
+  report.editorMode=editorMode;
   await testInfo.attach('soft-wrap-'+name+'.json',{
    body:JSON.stringify(report,null,2),contentType:'application/json'});
   console.log('[soft-wrap-diag] '+JSON.stringify({
    case:name,canvas:canvas.map(r=>r.text),dom:dom.rows.map(r=>r.text),
-   mismatchedRows:differences.length}));
+   mismatchedRows:differences.length,editorMode}));
   // Diagnostic invariants, NOT a parity gate: discrepancies are the output.
   expect(canvas.length).toBeGreaterThan(element.text.split('\n').length);
   expect(dom.rows.length).toBeGreaterThan(0);
@@ -157,12 +166,9 @@ for(const [name,patch] of cases){
   expect(dom.rows.map(r=>r.text).join('')).toBe(text);
   expect(canvas.every(r=>Number.isFinite(r.x)&&Number.isFinite(r.width))).toBe(true);
   expect(dom.rows.every(r=>Number.isFinite(r.x)&&Number.isFinite(r.width))).toBe(true);
-  // Select on the first painted line, not in blank frame space.
-  const p=await canvasPoint(page,35,35);
-  await page.mouse.dblclick(p.x,p.y);
-  await expect(page.locator('#inlineText')).toBeFocused();
-  await expect(page.locator('#inlineWysiwyg')).toBeHidden();
   await page.keyboard.press('ControlOrMeta+Enter');
+  await expect(page.locator('#inlineText')).toBeHidden();
+  await expect(page.locator('#inlineWysiwyg')).toBeHidden();
   expect((await exportedDocument(page)).elements.find(e=>e.id==='title')).toEqual(element);
  });
 }

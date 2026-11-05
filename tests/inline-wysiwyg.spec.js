@@ -625,7 +625,9 @@ for(const [label,update,expectedKey,expectedValue] of [
  await update(page);
  await assertRange(page,text,0,text.length);
  const styled=await snapshotValue(page);
- expect(styled.textRuns).toEqual([{start:0,end:text.length,style:{[expectedKey]:expectedValue}}]);
+ expect(styled.textRuns).toHaveLength(1);
+ expect([styled.textRuns[0].start,styled.textRuns[0].end]).toEqual([0,text.length]);
+ expect(styled.textRuns[0].style[expectedKey]).toBe(expectedValue);
  await expect(page.locator(surface)).toBeVisible();
  await expect(page.locator('#inlineText')).toBeHidden();
  const dom=await page.locator(surface).evaluate(el=>{

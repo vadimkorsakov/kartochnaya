@@ -1002,18 +1002,7 @@ function mixedTextLayout(e){
 // uniform font geometry across all characters. Mixed font geometry still
 // requires independent DOM/Canvas parity checks and uses textarea for now.
 function plainWysiwygLayoutCompatible(e){
- // Temporary Firefox reproduction diagnostics; removed after identifying the gate.
- const diagnose=(reason,rows=[])=>{
-  if(window.__textGateLogs)window.__textGateLogs.push({
-   reason,autoFontSize:e.autoFontSize,w:e.w,h:e.h,
-   textRuns:e.textRuns,
-   rows:rows.map(row=>({softWrap:row.softWrap,start:row.start,end:row.end,
-    prev:String(e.text||'')[row.end-1],next:String(e.text||'')[row.end],
-    width:row.width,height:row.height}))
-  });
-  return false;
- };
- if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return diagnose('mobile-effects');
+ if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
  try{
   const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
   const softWrap=rows.some(row=>row.softWrap);
@@ -1021,20 +1010,24 @@ function plainWysiwygLayoutCompatible(e){
    // Color splits cannot affect advances. A font/size/weight change is
    // also safe for the first stage when every character uses identical
    // resolved geometry, so CSS and Canvas both wrap one uniform font.
-   if(e.autoFontSize||text.includes('\n'))return diagnose('auto-fit-or-hard-lf',rows);
+   if(e.autoFontSize||text.includes('\n'))return false;
    const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','bold','italic']);
    if((e.textRuns||[]).some(run=>
-    Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return diagnose('unsupported-run-key',rows);
+    Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
    const spans=richTextSpans(e),keys=['fontFamily','fontWeight','fontStyle','fontSize','letterSpacing'];
    const uniform=spans.every(part=>keys.every(key=>part.style[key]===spans[0].style[key]));
    const colorOnly=(e.textRuns||[]).every(run=>
     Object.keys(run?.style||{}).every(key=>key==='textColor'));
-   if(!colorOnly&&!uniform)return diagnose('mixed-geometry',rows);
-   if(rows.some(row=>row.softWrap&&!/\s/u.test(text.slice(row.end-1,row.end))))return diagnose('nonwhitespace-wrap-boundary',rows);
-   if(rows.reduce((height,row)=>height+row.height,0)>Math.max(1,e.h)-1)return diagnose('height',rows);
+   if(!colorOnly&&!uniform)return false;
+   // A space may overflow to the following row. That is still a word
+   // boundary; only splitting a continuous word requires textarea.
+   if(rows.some(row=>row.softWrap&&
+    !/\s/u.test(text.slice(row.end-1,row.end))&&
+    !/\s/u.test(text.slice(row.end,row.end+1))))return false;
+   if(rows.reduce((height,row)=>height+row.height,0)>Math.max(1,e.h)-1)return false;
   }else if(rows.length!==text.split('\n').length)return false;
   if(rows.some(row=>!Number.isFinite(row.baseline)||row.height<=0||
-    row.width>Math.max(1,e.w)-1))return diagnose('width-or-metrics',rows);
+    row.width>Math.max(1,e.w)-1))return false;
   if(rows.length>1&&!softWrap){
    // Same glyph geometry across colored spans means the native hard lines
    // can use one font baseline/line-height per Canvas row.
@@ -1049,7 +1042,7 @@ function plainWysiwygLayoutCompatible(e){
    if(spans.some(part=>keys.some(key=>part.style[key]!==reference[key])))return false;
   }
   return true;
- }catch(error){return diagnose('exception:'+String(error?.message||error))}
+ }catch{return false}
 }
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
 function autoFitTextFont(e){

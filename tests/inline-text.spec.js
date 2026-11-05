@@ -1,7 +1,7 @@
 const { test, expect, openHome, createDocument, canvasPoint, exportedDocument, exportPNG, openLibraryDocument, savedDocument } = require('./helpers');
 
 const editor = '#inlineText';
-async function frame(page,url='/') {
+async function frame(page,url='/?experimentalTextWysiwyg=0') {
   await openHome(page,url);
   await createDocument(page, 'Редактирование текста');
   await page.keyboard.press('t');
@@ -40,7 +40,7 @@ test('creating a frame returns to Move while accepting input, then moves and res
 });
 
 test('empty frame survives deselection, exports invisibly and accepts text on double click', async ({ page }) => {
-  await openHome(page); await createDocument(page);
+  await openHome(page,'/?experimentalTextWysiwyg=0'); await createDocument(page);
   const blank = (await exportPNG(page)).image.data;
   await page.keyboard.press('t');
   const a = await canvasPoint(page, 30, 40), b = await canvasPoint(page, 270, 130);

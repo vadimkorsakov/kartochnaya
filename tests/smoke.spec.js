@@ -39,9 +39,10 @@ test('creates a text layer and edits its content through the inline editor', asy
   await page.locator('#dockSelect').click();
   const point = await canvasPoint(page, 70, 65);
   await page.mouse.dblclick(point.x, point.y);
-  await expect(page.locator('#inlineText')).toBeVisible();
-  await page.locator('#inlineText').fill('Изменённый текст\nВторая строка');
-  await page.locator('#inlineText').press('ControlOrMeta+Enter');
+  const editor=page.locator('#inlineWysiwyg:visible,#inlineText:visible');
+  await expect(editor).toBeVisible();
+  await editor.fill('Изменённый текст\nВторая строка');
+  await page.keyboard.press('ControlOrMeta+Enter');
   expect((await exportedDocument(page)).elements).toEqual([
     expect.objectContaining({ type: 'text', text: 'Изменённый текст\nВторая строка' }),
   ]);

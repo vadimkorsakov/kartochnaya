@@ -40,9 +40,10 @@ test('text edits keep the displayed Canvas and PNG export pixel-identical at 100
   expect((await canvasPixels(page)).data).toEqual(before.image.data);
   const point = await canvasPoint(page, 70, 65);
   await page.mouse.dblclick(point.x, point.y);
-  await expect(page.locator('#inlineText')).toBeVisible();
-  await page.locator('#inlineText').fill('Новый текст\nLine two');
-  await page.locator('#inlineText').press('ControlOrMeta+Enter');
+  const editor=page.locator('#inlineWysiwyg:visible,#inlineText:visible');
+  await expect(editor).toBeVisible();
+  await editor.fill('Новый текст\nLine two');
+  await page.keyboard.press('ControlOrMeta+Enter');
   await deselect(page);
   const after = await exportPNG(page);
   expect(after.image.data).not.toEqual(before.image.data);

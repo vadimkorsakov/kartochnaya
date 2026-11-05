@@ -21,7 +21,9 @@ async function captureDraws(page) {
 }
 async function setup(page, text, auto, spacing = 0) {
   await captureDraws(page);
-  await openHome(page); await createDocument(page, 'Согласованность строк');
+  // Native textarea Home/End/scroll tests explicitly use the fallback;
+  // default WYSIWYG is verified in separate browser regressions.
+  await openHome(page,'/?experimentalTextWysiwyg=0'); await createDocument(page, 'Согласованность строк');
   await page.keyboard.press('t');
   const a = await canvasPoint(page, 20, 20), b = await canvasPoint(page, 260, 220);
   await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y); await page.mouse.up();

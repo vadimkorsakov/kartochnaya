@@ -605,6 +605,25 @@ test('soft-wrap cross-row keyboard selection, replace and history keep exact UTF
  await page.keyboard.press('Control+Enter');
 });
 
+test('regression: long Cyrillic paragraph at 31px and 772px keeps font changes live',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
+ await seedPlain(page,{text,fontFamily:'Arial',fontSize:31,lineHeight:1.1,
+  w:772,h:443,autoFontSize:false},{flag:'default'});
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+a');
+ expect(await page.locator(surface).evaluate(()=>getSelection().toString())).toBe(text);
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Tahoma"]').click();
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const changed=await snapshotValue(page);
+ expect(changed.textRuns).toHaveLength(1);
+ expect(changed.textRuns[0]).toMatchObject({start:0,end:text.length,style:{fontFamily:'Tahoma'}});
+ await page.keyboard.press('Control+Enter');
+});
+
 for(const [label,update,expectedKey,expectedValue] of [
  ['family',async page=>{
   await page.locator('#inspector [data-font-open]').click();

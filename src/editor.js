@@ -1011,9 +1011,12 @@ function plainWysiwygLayoutCompatible(e){
   if(rows.length>1){
    // Same glyph geometry across colored spans means the native hard lines
    // can use one font baseline/line-height per Canvas row.
-   const base=resolveRichTextStyle(e);
+   // A sparse override may cover the whole text (e.g. all-bold title).
+   // What matters for hard-row baseline parity is uniform glyph geometry
+   // across *rendered* spans, not whether that geometry equals layer defaults.
+   const spans=richTextSpans(e),reference=spans[0]?.style||resolveRichTextStyle(e);
    const keys=['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing'];
-   if(richTextSpans(e).some(part=>keys.some(key=>part.style[key]!==base[key])))return false;
+   if(spans.some(part=>keys.some(key=>part.style[key]!==reference[key])))return false;
   }
   return true;
  }catch{return false}

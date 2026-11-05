@@ -503,6 +503,34 @@ test('hard-LF paragraphs preserve rows, cross-line selection, formatting and PNG
  await edit(page);await expect(page.locator(surface)).toBeFocused();
 });
 
+
+test('hard-LF mixed tracking stays in WYSIWYG with Canvas fragment x parity',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ await observePlainGeometry(page);
+ const doc=await seedPlain(page,{text:'ABCD\\nEFGH',fontFamily:'Arial',fontSize:32,lineHeight:1.15,w:260,h:140},{flag:'default'});
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await selectRange(page,1,3);
+ const field=page.locator('#inspector [data-key=letterSpacing]');
+ await field.fill('2');await field.press('Tab');
+ await assertRange(page,'ABCD\\nEFGH',1,3);
+ const current=await snapshotValue(page);
+ expect(current.textRuns).toEqual([{start:1,end:3,style:{letterSpacing:2}}]);
+ await page.keyboard.press('Control+Enter');
+ const draws=await plainFrame(page);
+ expect(draws.map(p=>p.text)).toEqual(['A','BC','D','EFGH']);
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ const dom=await page.locator(surface).evaluate(el=>{
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  return [...el.querySelectorAll('span')].map(span=>({
+   text:span.textContent.replaceAll('\\n',''),x:(span.getBoundingClientRect().x-host.x)/scale
+  })).filter(part=>part.text);
+ });
+ expect(dom.map(p=>p.text)).toEqual(draws.map(p=>p.text));
+ for(let i=0;i<dom.length;i++)expect(Math.abs(dom[i].x-draws[i].x)).toBeLessThan(1);
+ await page.keyboard.press('Control+Enter');
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(x=>x.id===doc.id))).toEqual(current);
+});
+
 test('plain near-width fallback preserves Canvas/PNG geometry on first color',async({page},testInfo)=>{
  const editNarrow=async()=>{const p=await canvasPoint(page,64,175);await page.mouse.dblclick(p.x,p.y)};
  await observePlainGeometry(page);

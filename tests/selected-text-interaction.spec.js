@@ -70,6 +70,15 @@ test('Firefox: uniform font change remains live in long Cyrillic soft wrap',asyn
  const payload=structuredClone(require('./fixtures/canvas-graph.json'));
  const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
  await page.setViewportSize({width:2200,height:1600});
+ await page.addInitScript(()=>{
+  window.softWrapCanvas=[];
+  const proto=CanvasRenderingContext2D.prototype,clear=proto.clearRect,fill=proto.fillText;
+  proto.clearRect=function(...args){if(this.canvas.id==='canvas')window.softWrapCanvas=[];return clear.apply(this,args);};
+  proto.fillText=function(text,x,y,...rest){
+   if(this.canvas.id==='canvas')window.softWrapCanvas.push({text,x,y,width:this.measureText(text).width});
+   return fill.call(this,text,x,y,...rest);
+  };
+ });
  await openHome(page,'/');
  payload.documents=[payload.documents[0]];
  const imported=payload.documents[0];imported.groups=[];
@@ -83,11 +92,34 @@ test('Firefox: uniform font change remains live in long Cyrillic soft wrap',asyn
  await expect(page.locator('#inlineWysiwyg')).toBeFocused();
  await page.keyboard.press('Control+a');
  expect(await page.locator('#inlineWysiwyg').evaluate(()=>getSelection().toString())).toBe(text);
- await page.evaluate(()=>window.__textGateLogs=[]);
  await page.locator('#inspector [data-font-open]').click();
  await page.locator('#inspector [data-font-option="Tahoma"]').click();
- console.log('LONG_SOFT_WRAP_GATE',JSON.stringify(await page.evaluate(()=>window.__textGateLogs)));
  await expect(page.locator('#inlineWysiwyg')).toBeVisible();
  await expect(page.locator('#inlineText')).toBeHidden();
+ // Compare the live DOM's actual wrapped character rows with Canvas rows.
+ const domRows=await page.locator('#inlineWysiwyg').evaluate(el=>{
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  const rows=[],walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+  for(let node;node=walker.nextNode();)for(let i=0;i<node.length;i++){
+   const range=document.createRange();range.setStart(node,i);range.setEnd(node,i+1);
+   const rect=range.getBoundingClientRect(),x=(rect.x-host.x)/scale,y=(rect.y-host.y)/scale,w=rect.width/scale;
+   let row=rows.find(r=>Math.abs(r.y-y)<.5);
+   if(!row)rows.push(row={y,text:'',x,right:x});
+   row.text+=node.data[i];row.x=Math.min(row.x,x);row.right=Math.max(row.right,x+w);
+  }
+  return rows.sort((a,b)=>a.y-b.y);
+ });
  await page.keyboard.press('Control+Enter');
+ const canvas=await page.evaluate(()=>window.softWrapCanvas);
+ const canvasRows=[];
+ for(const part of canvas){
+  let row=canvasRows.find(r=>Math.abs(r.y-part.y)<.5);
+  if(!row)canvasRows.push(row={y:part.y,text:'',x:part.x,right:part.x});
+  row.text+=part.text;row.x=Math.min(row.x,part.x);row.right=Math.max(row.right,part.x+part.width);
+ }
+ expect(domRows.map(r=>r.text)).toEqual(canvasRows.map(r=>r.text));
+ for(let i=0;i<domRows.length;i++){
+  expect(Math.abs(domRows[i].x-canvasRows[i].x)).toBeLessThan(.75);
+  expect(Math.abs(domRows[i].right-domRows[i].x-(canvasRows[i].right-canvasRows[i].x))).toBeLessThan(.75);
+ }
 });

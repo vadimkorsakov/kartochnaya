@@ -114,7 +114,11 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // and Undo/Redo must use the same canonical fontSize.
   if(value.autoFontSize)fit(value);
   recordInlineHistory(history,layer,caret(before));
+  const previousIndex=history.index;
   recordInlineHistory(history,value,caret(after));
+  // A confirmed input is distinct while editing, but adjacent inputs can be
+  // grouped into one document-history step when the session closes.
+  if(history.index!==previousIndex)history.states[history.index].action='input';
   project(value,after);onChange();
  }
  function travel(direction){finishPreview();if(!clean()){stop('История недоступна до восстановления ввода');return;}const state=moveInlineHistory(history,direction);if(state){project(state.element,state.caret);onChange();}}
@@ -126,7 +130,11 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  }
  function finishPreview(){
   if(!preview)return;
-  recordInlineHistory(history,layer,caret(preview.selection));preview=null;onChange();
+  const previousIndex=history.index;
+  recordInlineHistory(history,layer,caret(preview.selection));
+  // Only a completed, non-no-op style preview becomes a separate action.
+  if(history.index!==previousIndex)history.states[history.index].action='style';
+  preview=null;onChange();
  }
  function applyRangeStyle(patch,{key,final=false}={}){
   if(!clean()||safe.phase!=='confirmed'||inactive){stop('Нужно восстановить подтверждённый ввод');return true;}

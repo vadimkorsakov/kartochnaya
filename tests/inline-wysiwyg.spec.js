@@ -628,13 +628,6 @@ for(const [label,update,expectedKey,expectedValue] of [
  expect(styled.textRuns).toEqual([{start:0,end:text.length,style:{[expectedKey]:expectedValue}}]);
  await expect(page.locator(surface)).toBeVisible();
  await expect(page.locator('#inlineText')).toBeHidden();
- const canvas=await plainFrame(page);
- const painted=[];
- for(const p of canvas){
-  let row=painted.find(r=>Math.abs(r.baseline-p.baseline)<.5);
-  if(!row)painted.push(row={baseline:p.baseline,text:'',x:p.x,right:p.x});
-  row.text+=p.text;row.x=Math.min(row.x,p.x);row.right=Math.max(row.right,p.x+p.width);
- }
  const dom=await page.locator(surface).evaluate(el=>{
   const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
   const chars=[],walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
@@ -651,17 +644,24 @@ for(const [label,update,expectedKey,expectedValue] of [
   }
   return rows.sort((a,b)=>a.y-b.y);
  });
- expect(dom.map(r=>r.text)).toEqual(painted.map(r=>r.text));
- for(let i=0;i<dom.length;i++){
-  expect(Math.abs(dom[i].x-painted[i].x)).toBeLessThan(.75);
-  expect(Math.abs(dom[i].right-dom[i].x-(painted[i].right-painted[i].x))).toBeLessThan(.75);
- }
  await page.keyboard.press('Control+z');
  expect(await snapshotValue(page)).toEqual(original);
  await page.keyboard.press('Control+Shift+z');
  expect(await snapshotValue(page)).toEqual(styled);
  await page.keyboard.press('Control+Enter');
  expect(await snapshotValue(page)).toEqual(styled);
+ const canvas=await plainFrame(page);
+ const painted=[];
+ for(const p of canvas){
+  let row=painted.find(r=>Math.abs(r.baseline-p.baseline)<.5);
+  if(!row)painted.push(row={baseline:p.baseline,text:'',x:p.x,right:p.x});
+  row.text+=p.text;row.x=Math.min(row.x,p.x);row.right=Math.max(row.right,p.x+p.width);
+ }
+ expect(dom.map(r=>r.text)).toEqual(painted.map(r=>r.text));
+ for(let i=0;i<dom.length;i++){
+  expect(Math.abs(dom[i].x-painted[i].x)).toBeLessThan(.75);
+  expect(Math.abs(dom[i].right-dom[i].x-(painted[i].right-painted[i].x))).toBeLessThan(.75);
+ }
  await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(styled);
  await page.reload();await openLibraryDocument(page,doc.id);
  await edit(page);await expect(page.locator(surface)).toBeFocused();

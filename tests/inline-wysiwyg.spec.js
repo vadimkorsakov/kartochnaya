@@ -301,7 +301,7 @@ const canvasPixels=page=>page.locator('#canvas').evaluate(c=>c.toDataURL());
 const plainCases=[
  ['single line',{text:'ABCD'},true],
  ['explicit LF',{text:'ABCD\nABCD'},true],
- ['automatic wrap',{text:'alpha beta gamma delta',w:170},false],
+ ['automatic wrap',{text:'alpha beta gamma delta',w:170},true],
  ['long words',{text:'abcdefghijklmnop qrstuvwxyzabcdefghijklmnop',w:170},false],
  ['Cyrillic spaces emoji',{text:'Группа  А😀Б'},true],
 ];
@@ -325,7 +325,9 @@ for(const [name,patch,compatible] of plainCases)test('plain real geometry at 50/
   }else evidence.push({zoom,canvas:before,fallback:true});
   await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);expect(await plainFrame(page)).toEqual(before);expect(await canvasPixels(page)).toBe(pixels);
  }
- if(compatible){
+ // Color-only range formatting is intentionally a separate stage for soft wrap.
+ // Its safe handoff to textarea is checked by the dedicated test below.
+ if(compatible&&name!=='automatic wrap'){
   await edit(page);await selectRange(page,1,3);await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await assertRange(page,initial.text,1,3);await page.keyboard.press('Control+Enter');
   const mixed=await plainFrame(page),legacy=evidence.at(-1).canvas;expect(mixed.every(d=>d.mode==='alphabetic')).toBe(true);
   for(const part of mixed){const row=legacy.find(d=>Math.abs(d.baseline-part.baseline)<=.5);expect(row).toBeTruthy();expect(part.font).toBe(row.font);expect(part.spacing).toBe(row.spacing)}
@@ -467,6 +469,97 @@ test('rich WYSIWYG that grows into soft wrap hands off and preserves sparse colo
  expect(changed.textRuns).toEqual([{start:0,end:2,style:{textColor:'#2255cc'}}]);
  await page.locator('#inlineText').press('ControlOrMeta+Enter');
  expect(await value(page)).toEqual(changed);
+});
+
+
+test('soft-wrap range color hands off to textarea without stealing HEX input focus',async({page})=>{
+ await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
+  fontSize:24,w:170,h:140,autoFontSize:false},{flag:'default'});
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await selectRange(page,1,3);
+ await openColor(page);
+ await hexColor(page,'#11aa33');
+ await expect(page.locator(surface)).toBeHidden();
+ await expect(page.locator('#inlineText')).toBeVisible();
+ const colored=await snapshotValue(page);
+ expect(colored.text).toBe('alpha beta gamma delta');
+ expect(colored.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
+ await page.locator('[data-fill-close]').click();
+ await page.locator('#inlineText').focus();
+ expect(await page.locator('#inlineText').evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([1,3]);
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(colored);
+ await edit(page);
+ await expect(page.locator('#inlineText')).toBeFocused();
+ await page.keyboard.press('Control+Enter');
+});
+
+test('simple word soft-wrap has live Canvas rows, typing, Undo/Redo and persistence',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ await observePlainGeometry(page);
+ const doc=await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
+  fontSize:24,lineHeight:1.15,w:135,h:140,y:80,autoFontSize:false},{flag:'default'});
+ const initial=getLayer(doc);
+ const canvas=await plainFrame(page);
+ expect(canvas.map(row=>row.text)).toEqual(['alpha beta ','gamma ','delta']);
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const live=await page.locator(surface).evaluate(el=>{
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),chars=[];
+  for(let n;n=walker.nextNode();)for(let i=0;i<n.length;i++){
+   const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+1);
+   const box=r.getBoundingClientRect();
+   chars.push({char:n.data[i],x:(box.x-host.x)/scale,y:(box.y-host.y)/scale,w:box.width/scale});
+  }
+  const rows=[];
+  for(const c of chars){
+   let row=rows.find(r=>Math.abs(r.y-c.y)<.5);
+   if(!row)rows.push(row={text:'',x:c.x,end:c.x,y:c.y});
+   row.text+=c.char;row.x=Math.min(row.x,c.x);row.end=Math.max(row.end,c.x+c.w);
+  }
+  return rows.sort((a,b)=>a.y-b.y);
+ });
+ expect(live.map(row=>row.text)).toEqual(canvas.map(row=>row.text));
+ for(let i=0;i<canvas.length;i++){
+  expect(Math.abs(live[i].x-canvas[i].x)).toBeLessThan(.75);
+  expect(Math.abs(live[i].end-live[i].x-canvas[i].width)).toBeLessThan(.75);
+ }
+ expect(await snapshotValue(page)).toEqual(initial);
+ await page.keyboard.insertText(' word');
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const typed=await snapshotValue(page);
+ expect(typed.text).toBe(initial.text+' word');
+ expect(typed.textRuns).toBeUndefined();
+ await page.keyboard.press('Control+z');
+ expect(await snapshotValue(page)).toEqual(initial);
+ await page.keyboard.press('Control+Shift+z');
+ expect(await snapshotValue(page)).toEqual(typed);
+ await page.keyboard.press('Control+Enter');
+ expect((await snapshotValue(page)).text).toBe(typed.text);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(typed);
+ await page.reload();await openLibraryDocument(page,doc.id);
+ expect(await snapshotValue(page)).toEqual(typed);
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+Enter');
+});
+
+for(const [label,patch] of [
+ ['sparse color',{text:'alpha beta gamma delta',w:135,
+  textRuns:[{start:0,end:5,style:{textColor:'#2255cc'}}]}],
+ ['long word',{text:'abcdefghijklmnopqrstuvwxy',w:85}],
+])test('unsupported soft wrap retains textarea: '+label,async({page})=>{
+ const doc=await seedPlain(page,{fontFamily:'Arial',fontSize:24,
+  h:140,autoFontSize:false,...patch},{flag:'default'});
+ const initial=getLayer(doc);
+ await edit(page);
+ await expect(page.locator('#inlineText')).toBeFocused();
+ await expect(page.locator(surface)).toBeHidden();
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(initial);
 });
 
 test('plain typing an incompatible wrap hands off without fabricating runs',async({page})=>{

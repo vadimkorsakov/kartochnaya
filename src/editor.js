@@ -998,18 +998,20 @@ function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
  return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
 }
-// Canvas owns the geometry. Permit only ordinary word-boundary soft-wraps
-// with a single, unformatted font; other soft wraps stay in textarea until
-// their independent DOM/Canvas and caret-parity stages are complete.
+// Canvas owns the geometry. Permit word-boundary soft-wraps for one font
+// geometry; range color alone does not change glyph advances. Size, font,
+// tracking and other run effects retain the safe textarea fallback.
 function plainWysiwygLayoutCompatible(e){
  if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
  try{
   const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
   const softWrap=rows.some(row=>row.softWrap);
   if(softWrap){
-   // Stage 1: ordinary word-boundary wrapping only. A hard LF, auto-fit,
-   // styled range or a word split by anywhere wrapping uses the safe fallback.
-   if(e.autoFontSize||text.includes('\n')||(e.textRuns?.length||0))return false;
+   // Stage 2: color-only sparse runs are safe to project within native word
+   // wraps. Geometry-changing or unknown run keys remain unsupported.
+   if(e.autoFontSize||text.includes('\n'))return false;
+   if((e.textRuns||[]).some(run=>
+    Object.keys(run?.style||{}).some(key=>key!=='textColor')))return false;
    if(rows.some(row=>row.softWrap&&!/\s/u.test(text.slice(row.end-1,row.end))))return false;
    if(rows.reduce((height,row)=>height+row.height,0)>Math.max(1,e.h)-1)return false;
   }else if(rows.length!==text.split('\n').length)return false;

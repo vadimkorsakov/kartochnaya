@@ -1002,7 +1002,18 @@ function mixedTextLayout(e){
 // uniform font geometry across all characters. Mixed font geometry still
 // requires independent DOM/Canvas parity checks and uses textarea for now.
 function plainWysiwygLayoutCompatible(e){
- if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
+ // Temporary Firefox reproduction diagnostics; removed after identifying the gate.
+ const diagnose=(reason,rows=[])=>{
+  if(window.__textGateLogs)window.__textGateLogs.push({
+   reason,autoFontSize:e.autoFontSize,w:e.w,h:e.h,
+   textRuns:e.textRuns,
+   rows:rows.map(row=>({softWrap:row.softWrap,start:row.start,end:row.end,
+    prev:String(e.text||'')[row.end-1],next:String(e.text||'')[row.end],
+    width:row.width,height:row.height}))
+  });
+  return false;
+ };
+ if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return diagnose('mobile-effects');
  try{
   const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
   const softWrap=rows.some(row=>row.softWrap);
@@ -1010,20 +1021,20 @@ function plainWysiwygLayoutCompatible(e){
    // Color splits cannot affect advances. A font/size/weight change is
    // also safe for the first stage when every character uses identical
    // resolved geometry, so CSS and Canvas both wrap one uniform font.
-   if(e.autoFontSize||text.includes('\n'))return false;
+   if(e.autoFontSize||text.includes('\n'))return diagnose('auto-fit-or-hard-lf',rows);
    const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','bold','italic']);
    if((e.textRuns||[]).some(run=>
-    Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
+    Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return diagnose('unsupported-run-key',rows);
    const spans=richTextSpans(e),keys=['fontFamily','fontWeight','fontStyle','fontSize','letterSpacing'];
    const uniform=spans.every(part=>keys.every(key=>part.style[key]===spans[0].style[key]));
    const colorOnly=(e.textRuns||[]).every(run=>
     Object.keys(run?.style||{}).every(key=>key==='textColor'));
-   if(!colorOnly&&!uniform)return false;
-   if(rows.some(row=>row.softWrap&&!/\s/u.test(text.slice(row.end-1,row.end))))return false;
-   if(rows.reduce((height,row)=>height+row.height,0)>Math.max(1,e.h)-1)return false;
+   if(!colorOnly&&!uniform)return diagnose('mixed-geometry',rows);
+   if(rows.some(row=>row.softWrap&&!/\s/u.test(text.slice(row.end-1,row.end))))return diagnose('nonwhitespace-wrap-boundary',rows);
+   if(rows.reduce((height,row)=>height+row.height,0)>Math.max(1,e.h)-1)return diagnose('height',rows);
   }else if(rows.length!==text.split('\n').length)return false;
   if(rows.some(row=>!Number.isFinite(row.baseline)||row.height<=0||
-    row.width>Math.max(1,e.w)-1))return false;
+    row.width>Math.max(1,e.w)-1))return diagnose('width-or-metrics',rows);
   if(rows.length>1&&!softWrap){
    // Same glyph geometry across colored spans means the native hard lines
    // can use one font baseline/line-height per Canvas row.

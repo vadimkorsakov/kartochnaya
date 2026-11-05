@@ -2068,7 +2068,11 @@ function finishWysiwygFallback(c,reason){
  const session=app.wysiwyg;if(!session)return;app.wysiwyg=null;session.dispose();
  const e=app.doc.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');editor.value=e.text;
  app.inlineSession.formatted=true;app.inlineCaret={start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'};
- editor.classList.remove('hidden');positionInlineText();restoreInlineCaret();toast('Продолжение в обычном редакторе. Если действие не выполнено, повторите его.');
+ // A formatting control may own focus while the WYSIWYG layer hands off.
+ // Do not steal focus from a live HEX/numeric field halfway through input.
+ const keepPanelFocus=!!document.activeElement?.closest(inlineFormattingRoots);
+ editor.classList.remove('hidden');positionInlineText();restoreInlineCaret(!keepPanelFocus);
+ toast('Продолжение в обычном редакторе. Если действие не выполнено, повторите его.');
 }
 function fallbackInlineWysiwyg(reason){return !app.wysiwyg||app.wysiwyg.requestFallback(reason);}
 function preserveWysiwygRecovery(session){

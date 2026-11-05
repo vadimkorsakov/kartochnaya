@@ -325,7 +325,9 @@ for(const [name,patch,compatible] of plainCases)test('plain real geometry at 50/
   }else evidence.push({zoom,canvas:before,fallback:true});
   await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);expect(await plainFrame(page)).toEqual(before);expect(await canvasPixels(page)).toBe(pixels);
  }
- if(compatible){
+ // Color-only range formatting is intentionally a separate stage for soft wrap.
+ // Its safe handoff to textarea is checked by the dedicated test below.
+ if(compatible&&name!=='automatic wrap'){
   await edit(page);await selectRange(page,1,3);await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();await assertRange(page,initial.text,1,3);await page.keyboard.press('Control+Enter');
   const mixed=await plainFrame(page),legacy=evidence.at(-1).canvas;expect(mixed.every(d=>d.mode==='alphabetic')).toBe(true);
   for(const part of mixed){const row=legacy.find(d=>Math.abs(d.baseline-part.baseline)<=.5);expect(row).toBeTruthy();expect(part.font).toBe(row.font);expect(part.spacing).toBe(row.spacing)}
@@ -469,6 +471,29 @@ test('rich WYSIWYG that grows into soft wrap hands off and preserves sparse colo
  expect(await value(page)).toEqual(changed);
 });
 
+
+test('soft-wrap range color hands off to textarea without stealing HEX input focus',async({page})=>{
+ await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
+  fontSize:24,w:170,h:140,autoFontSize:false},{flag:'default'});
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await selectRange(page,1,3);
+ await openColor(page);
+ await hexColor(page,'#11aa33');
+ await expect(page.locator(surface)).toBeHidden();
+ await expect(page.locator('#inlineText')).toBeVisible();
+ const colored=await snapshotValue(page);
+ expect(colored.text).toBe('alpha beta gamma delta');
+ expect(colored.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
+ await page.locator('[data-fill-close]').click();
+ await page.locator('#inlineText').focus();
+ expect(await page.locator('#inlineText').evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([1,3]);
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(colored);
+ await edit(page);
+ await expect(page.locator('#inlineText')).toBeFocused();
+ await page.keyboard.press('Control+Enter');
+});
 
 test('simple word soft-wrap has live Canvas rows, typing, Undo/Redo and persistence',async({page})=>{
  await page.setViewportSize({width:2200,height:1600});

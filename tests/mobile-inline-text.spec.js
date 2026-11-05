@@ -16,7 +16,7 @@ async function edit(page, mobile = true, mouse = false) {
   await expect(page.locator(editor)).toBeFocused();
 }
 async function open(page, options = {}) {
-  if (page.url() === 'about:blank') await openHome(page);
+  if (page.url() === 'about:blank') await openHome(page,options.legacy?'/?experimentalTextWysiwyg=0':'/');
   const payload = structuredClone(fixture); payload.documents = [payload.documents[0]];
   const d = payload.documents[0];
   if (options.large) { d.width = Math.round((page.viewportSize().width - 16) / .29); d.height = 1350; Object.assign(d.elements.find(e => e.id === 'title'), { x: 50, y: 1100, w: 800, h: 100, fontSize: 64 }); }

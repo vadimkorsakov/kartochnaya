@@ -1015,7 +1015,10 @@ function plainWysiwygLayoutCompatible(e){
    // What matters for hard-row baseline parity is uniform glyph geometry
    // across *rendered* spans, not whether that geometry equals layer defaults.
    const spans=richTextSpans(e),reference=spans[0]?.style||resolveRichTextStyle(e);
-   const keys=['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing'];
+   // Tracking changes horizontal advances but not font ascent/descent or
+   // hard-row baseline. Keep font geometry homogeneous; Canvas still owns
+   // widths and the no-soft-wrap eligibility check above.
+   const keys=['fontFamily','fontSize','fontWeight','fontStyle'];
    if(spans.some(part=>keys.some(key=>part.style[key]!==reference[key])))return false;
   }
   return true;

@@ -62,3 +62,30 @@ for(const selected of [true,false])test(`native numeric input and Enter return $
   await page.keyboard.press('Escape');
  }finally{await trace(page,info)}
 });
+
+// Regression from a real Firefox session: a longer, multi-line Cyrillic
+// paragraph with ample box height must not lose live editing on font change.
+test('Firefox: uniform font change remains live in long Cyrillic soft wrap',async({page})=>{
+ const {openHome,importPayload,records,openLibraryDocument,canvasPoint}=require('./helpers');
+ const payload=structuredClone(require('./fixtures/canvas-graph.json'));
+ const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
+ await page.setViewportSize({width:2200,height:1600});
+ await openHome(page,'/');
+ payload.documents=[payload.documents[0]];
+ const imported=payload.documents[0];imported.groups=[];
+ imported.elements=imported.elements.filter(e=>e.id==='title');
+ Object.assign(imported.elements[0],{text,textRuns:undefined,fontFamily:'Arial',fontSize:31,
+  lineHeight:1.1,w:772,h:443,autoFontSize:false,rotation:0,textAlign:'left',verticalAlign:'top'});
+ await importPayload(page,payload);
+ const doc=(await records(page,'docs')).find(d=>d.elements?.some(e=>e.id==='title'));
+ await openLibraryDocument(page,doc.id);
+ const p=await canvasPoint(page,100,175);await page.mouse.dblclick(p.x,p.y);
+ await expect(page.locator('#inlineWysiwyg')).toBeFocused();
+ await page.keyboard.press('Control+a');
+ expect(await page.locator('#inlineWysiwyg').evaluate(()=>getSelection().toString())).toBe(text);
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Tahoma"]').click();
+ await expect(page.locator('#inlineWysiwyg')).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await page.keyboard.press('Control+Enter');
+});

@@ -62,3 +62,49 @@ for(const selected of [true,false])test(`native numeric input and Enter return $
   await page.keyboard.press('Escape');
  }finally{await trace(page,info)}
 });
+
+// Regression from a real Firefox session: a longer, multi-line Cyrillic
+// paragraph with ample box height must not lose live editing on font change.
+for(const autoFit of [false,true])test('Firefox: uniform font change remains live in long Cyrillic soft wrap, auto-fit '+autoFit,async({page})=>{
+ const {openHome,importPayload,records,openLibraryDocument,canvasPoint}=require('./helpers');
+ const payload=structuredClone(require('./fixtures/canvas-graph.json'));
+ const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
+ await page.setViewportSize({width:2200,height:1600});
+ await openHome(page,'/');
+ payload.documents=[payload.documents[0]];
+ const imported=payload.documents[0];imported.groups=[];
+ imported.elements=imported.elements.filter(e=>e.id==='title');
+ Object.assign(imported.elements[0],{text,textRuns:undefined,fontFamily:'Arial',fontSize:autoFit?61:31,
+  lineHeight:1.1,w:autoFit?814:772,h:autoFit?634:443,autoFontSize:autoFit,rotation:0,textAlign:'left',verticalAlign:'top'});
+ await importPayload(page,payload);
+ const doc=(await records(page,'docs')).find(d=>d.elements?.some(e=>e.id==='title'));
+ await openLibraryDocument(page,doc.id);
+ const p=await canvasPoint(page,100,175);await page.mouse.dblclick(p.x,p.y);
+ await expect(page.locator('#inlineWysiwyg')).toBeFocused();
+ await page.keyboard.press('Control+a');
+ expect(await page.locator('#inlineWysiwyg').evaluate(()=>getSelection().toString())).toBe(text);
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Tahoma"]').click();
+ await expect(page.locator('#inlineWysiwyg')).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ // Compare the live DOM's actual wrapped character rows with Canvas rows.
+ const domRows=await page.locator('#inlineWysiwyg').evaluate(el=>{
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  const rows=[],walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+  for(let node;node=walker.nextNode();)for(let i=0;i<node.length;i++){
+   const range=document.createRange();range.setStart(node,i);range.setEnd(node,i+1);
+   const rect=range.getBoundingClientRect(),x=(rect.x-host.x)/scale,y=(rect.y-host.y)/scale,w=rect.width/scale;
+   let row=rows.find(r=>Math.abs(r.y-y)<.5);
+   if(!row)rows.push(row={y,text:'',x,right:x});
+   row.text+=node.data[i];row.x=Math.min(row.x,x);row.right=Math.max(row.right,x+w);
+  }
+  return rows.sort((a,b)=>a.y-b.y);
+ });
+ expect(domRows.length).toBeGreaterThan(2);
+ expect(domRows.map(r=>r.text).join('')).toBe(text);
+ for(const row of domRows)expect(row.right-row.x).toBeLessThanOrEqual((autoFit?814:772)+1);
+ await page.keyboard.press('Control+Enter');
+ const styled=await model(page);
+ expect(styled.textRuns).toHaveLength(1);
+ expect(styled.textRuns[0].style.fontFamily).toBe('Tahoma');
+});

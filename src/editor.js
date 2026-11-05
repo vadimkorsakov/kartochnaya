@@ -998,21 +998,34 @@ function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
  return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
 }
-// Canvas owns the geometry. Permit word-boundary soft-wraps for one font
-// geometry; range color alone does not change glyph advances. Size, font,
-// tracking and other run effects retain the safe textarea fallback.
+// Canvas owns the geometry. A soft-wrap may use color-only ranges or one
+// uniform font geometry across all characters. Mixed font geometry still
+// requires independent DOM/Canvas parity checks and uses textarea for now.
 function plainWysiwygLayoutCompatible(e){
  if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
  try{
   const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
   const softWrap=rows.some(row=>row.softWrap);
   if(softWrap){
-   // Stage 2: color-only sparse runs are safe to project within native word
-   // wraps. Geometry-changing or unknown run keys remain unsupported.
-   if(e.autoFontSize||text.includes('\n'))return false;
+   // Color-only runs do not change glyph geometry. Other typography ranges
+   // are safe only if their resolved font, size and spacing are uniform
+   // across the entire text; mixed geometry retains the textarea fallback.
+   // Auto-fit supplies a concrete fontSize before the DOM projection. It is
+   // safe for the same uniform-font/color-only soft-wrap cases as manual size.
+   if(text.includes('\n'))return false;
+   const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','bold','italic']);
    if((e.textRuns||[]).some(run=>
-    Object.keys(run?.style||{}).some(key=>key!=='textColor')))return false;
-   if(rows.some(row=>row.softWrap&&!/\s/u.test(text.slice(row.end-1,row.end))))return false;
+    Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
+   const spans=richTextSpans(e),keys=['fontFamily','fontWeight','fontStyle','fontSize','letterSpacing'];
+   const uniform=spans.every(part=>keys.every(key=>part.style[key]===spans[0].style[key]));
+   const colorOnly=(e.textRuns||[]).every(run=>
+    Object.keys(run?.style||{}).every(key=>key==='textColor'));
+   if(!colorOnly&&!uniform)return false;
+   // A space may overflow to the following row. That is still a word
+   // boundary; only splitting a continuous word requires textarea.
+   if(rows.some(row=>row.softWrap&&
+    !/\s/u.test(text.slice(row.end-1,row.end))&&
+    !/\s/u.test(text.slice(row.end,row.end+1))))return false;
    if(rows.reduce((height,row)=>height+row.height,0)>Math.max(1,e.h)-1)return false;
   }else if(rows.length!==text.split('\n').length)return false;
   if(rows.some(row=>!Number.isFinite(row.baseline)||row.height<=0||
@@ -2058,6 +2071,7 @@ function startInlineWysiwyg(e){
   available:family=>!v41FontUnavailable(family),
   onChange(){
    // Do not interrupt a focused numeric field or an active color/font picker.
+   const autoBox=$('#inspector [data-text-auto-font]');if(autoBox)autoBox.checked=!!e.autoFontSize;
    if(e.autoFontSize){const size=$('#inspector [data-key=fontSize]');if(size&&document.activeElement!==size)size.value=String(e.fontSize)}
    syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();
   },

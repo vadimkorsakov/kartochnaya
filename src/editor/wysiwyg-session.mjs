@@ -62,11 +62,17 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // separate span would change browser word-wrap opportunities. For that
   // restricted case, one shared baseline correction applies to every row.
   const hasSoftWrap=projection?.rows?.some(row=>row.softWrap);
+  // If all rendered characters share one font, the native line-box strut
+  // must use that font too. The layer's default font can differ when an
+  // entire selected range receives a font/weight override.
+  const softStyle=hasSoftWrap&&spans.length?spans[0].style:null;
+  const hostStyle=softStyle||base;
+  const hostHeight=softStyle?lineHeight(value,softStyle):heights[0];
   const firstRow=projection?.rows?.length===1||(hasSoftWrap&&plainCompatible(value))?
    projection.rows[0]:null;
   const hardRows=projection?.rows?.length>1&&!hasSoftWrap&&plainCompatible(value)?
    projection.rows:null;
-  const offset=firstRow?unifiedDOMOffset(base,{height:firstRow.height,baseline:firstRow.baseline},value.text):0;
+  const offset=firstRow?unifiedDOMOffset(hostStyle,{height:firstRow.height,baseline:firstRow.baseline},value.text):0;
   const makeSpan=(text,style,height,top)=>{
    const span=document.createElement('span');span.textContent=text;
    Object.assign(span.style,{font:richTextFont(style),lineHeight:height+'px',letterSpacing:style.letterSpacing+'px',color:style.textColor});
@@ -93,7 +99,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // Capture ownership BEFORE the DOM change and restore it only for a session
   // that already owned focus. Inspector/color fields must keep their focus.
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
-  Object.assign(host.style,{font:richTextFont(base),lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
+  Object.assign(host.style,{font:richTextFont(hostStyle),lineHeight:hostHeight,letterSpacing:hostStyle.letterSpacing+'px'});
   host.replaceChildren(...nodes);
   if(!host.childNodes.length)host.append(document.createTextNode(''));
   if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';host.append(br);}
@@ -144,6 +150,9 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const origin=preview?.element||structuredClone(layer);
   if(!plainCompatible(origin))return false;
   const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
+  // An explicit font-size edit overrides automatic fitting. Font family,
+  // weight, color and spacing edits keep fitting and recalculate their size.
+  if(key==='fontSize')next.autoFontSize=false;
   retainRichTextSizeBase(next);
   if(next.autoFontSize)fit(next);
   if(!plainCompatible(next))return false;

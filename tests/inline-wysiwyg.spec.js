@@ -521,7 +521,6 @@ test('rich WYSIWYG that grows into word soft-wrap stays live and preserves spars
 
 
 for(const [label,width,height] of [
- ['near-width limit',135,205],
  ['insufficient height',135,60],
 ])test('rich soft-wrap safe fallback: '+label,async({page})=>{
  await seed(page,{patch:{
@@ -538,6 +537,20 @@ for(const [label,width,height] of [
  expect(changed.textRuns).toEqual([{start:0,end:2,style:{textColor:'#2255cc'}}]);
  await page.locator('#inlineText').press('ControlOrMeta+Enter');
  expect(await value(page)).toEqual(changed);
+});
+
+test('soft-wrap at a trailing space remains live instead of falling back',async({page})=>{
+ await seed(page,{patch:{
+  text:'ABCD',fontFamily:'Arial',fontSize:24,w:135,h:205,autoFontSize:false,
+  textRuns:[{start:0,end:2,style:{textColor:'#2255cc'}}]
+ }});
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.insertText(' alpha beta gamma delta');
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ expect((await snapshotValue(page)).text).toBe('ABCD alpha beta gamma delta');
+ await page.keyboard.press('Control+Enter');
 });
 
 test('soft-wrap visual Up/Down caret remains in the expected Canvas rows at three zooms',async({page})=>{
@@ -602,6 +615,208 @@ test('soft-wrap cross-row keyboard selection, replace and history keep exact UTF
  await page.reload();await openLibraryDocument(page,doc.id);
  expect(await snapshotValue(page)).toEqual(changed);
  await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+Enter');
+});
+
+test('new auto-fitted long Cyrillic text stays WYSIWYG through font, color, undo and reopen',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
+ const doc=await seedPlain(page,{text:'A',fontFamily:'Arial',fontSize:61,lineHeight:1.1,
+  w:814,h:634,y:80,autoFontSize:true},{flag:'default'});
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+a');
+ await page.keyboard.insertText(text); // Fresh text box grows into auto-fitted soft wraps.
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ expect((await snapshotValue(page)).text).toBe(text);
+ await page.keyboard.press('Control+a');
+ expect(await page.locator(surface).evaluate(()=>getSelection().toString())).toBe(text);
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Georgia"]').click();
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const georgia=await snapshotValue(page);
+ expect(georgia.autoFontSize).toBe(true);
+ expect(georgia.textRuns).toEqual([{start:0,end:text.length,style:{fontFamily:'Georgia'}}]);
+ expect(georgia.fontSize).toBeGreaterThan(0);
+ expect(await page.locator(surface+' span').first().evaluate(el=>getComputedStyle(el).fontFamily)).toContain('Georgia');
+ await openColor(page);
+ await hexColor(page,'#ef063d');
+ await page.locator('[data-fill-close]').click();
+ await expect(page.locator(surface)).toBeVisible();
+ const red=await snapshotValue(page);
+ expect(red.autoFontSize).toBe(true);
+ expect(red.textRuns).toHaveLength(1);
+ expect(red.textRuns[0].style).toMatchObject({fontFamily:'Georgia',textColor:'#ef063d'});
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(georgia);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(red);
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(red);
+ await page.reload();await openLibraryDocument(page,doc.id);
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ expect(await snapshotValue(page)).toEqual(red);
+ await page.keyboard.press('Control+Enter');
+});
+
+test('explicit selected font size turns off auto-fit without losing live text',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='alpha beta gamma delta';
+ await seedPlain(page,{text,fontFamily:'Arial',fontSize:24,w:300,h:250,
+  autoFontSize:true},{flag:'default'});
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+a');
+ const field=page.locator('#inspector [data-key=fontSize]');
+ await field.fill('32');await field.press('Tab');
+ const changed=await snapshotValue(page);
+ expect(changed.autoFontSize).toBe(false);
+ expect(changed.textRuns).toHaveLength(1);
+ expect(changed.textRuns[0].style.fontSize).toBeDefined();
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await page.keyboard.press('Control+Enter');
+});
+
+test('regression: long Cyrillic paragraph at 31px and 772px keeps font changes live',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
+ await seedPlain(page,{text,fontFamily:'Arial',fontSize:31,lineHeight:1.1,
+  w:772,h:443,autoFontSize:false},{flag:'default'});
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+a');
+ expect(await page.locator(surface).evaluate(()=>getSelection().toString())).toBe(text);
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Tahoma"]').click();
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const changed=await snapshotValue(page);
+ expect(changed.textRuns).toHaveLength(1);
+ expect(changed.textRuns[0]).toMatchObject({start:0,end:text.length,style:{fontFamily:'Tahoma'}});
+ const domRows=await page.locator(surface).evaluate(el=>{
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  const rows=[],walk=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+  for(let node;node=walk.nextNode();)for(let i=0;i<node.length;i++){
+   const range=document.createRange();range.setStart(node,i);range.setEnd(node,i+1);
+   const rect=range.getBoundingClientRect(),cx=(rect.x-host.x)/scale,cy=(rect.y-host.y)/scale;
+   let row=rows.find(r=>Math.abs(r.y-cy)<.5);
+   if(!row)rows.push(row={text:'',x:cx,right:cx,y:cy});
+   row.text+=node.data[i];row.x=Math.min(row.x,cx);row.right=Math.max(row.right,cx+rect.width/scale);
+  }
+  return rows.sort((a,b)=>a.y-b.y);
+ });
+ expect(domRows.length).toBeGreaterThan(2);
+ expect(domRows.map(r=>r.text).join('')).toBe(text);
+ expect(domRows.every(row=>row.right-row.x<=772+1)).toBe(true);
+ expect(await page.locator(surface+' span').first().evaluate(el=>getComputedStyle(el).fontFamily)).toContain('Tahoma');
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(changed);
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await page.keyboard.press('Control+Enter');
+});
+
+test('long Cyrillic range remains live after color, size and font changes in one session',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
+ const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:31,lineHeight:1.1,
+  w:772,h:443,autoFontSize:false},{flag:'default'});
+ const original=getLayer(doc);
+ await edit(page);await page.keyboard.press('Control+a');
+ expect(await page.locator(surface).evaluate(()=>getSelection().toString())).toBe(text);
+ await openColor(page);await hexColor(page,'#2266bb');await page.locator('[data-fill-close]').click();
+ const colored=await snapshotValue(page);
+ await expect(page.locator(surface)).toBeVisible();
+ const size=page.locator('#inspector [data-key=fontSize]');
+ await size.fill('44');await size.press('Tab');
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const sized=await snapshotValue(page);
+ expect(sized.textRuns?.[0]?.style?.fontSize).toBeDefined();
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Tahoma"]').click();
+ await assertRange(page,text,0,text.length);
+ const styled=await snapshotValue(page);
+ expect(styled.textRuns).toHaveLength(1);
+ expect(styled.textRuns[0].style.fontFamily).toBe('Tahoma');
+ expect(styled.textRuns[0].style.fontSize).toBeDefined();
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(sized);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(colored);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(original);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(colored);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(sized);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(styled);
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(styled);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(styled);
+});
+
+for(const [label,update,expectedKey,expectedValue] of [
+ ['family',async page=>{
+  await page.locator('#inspector [data-font-open]').click();
+  await page.locator('#inspector [data-font-option="Georgia"]').click();
+ },'fontFamily','Georgia'],
+ ['weight',async page=>{
+  await page.locator('#inspector [data-key=fontVariant]').selectOption('700:normal');
+ },'fontWeight','700'],
+])test('uniform '+label+' is live through ordinary soft wraps',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ await observePlainGeometry(page);
+ const text='alpha beta gamma delta';
+ const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:24,
+  lineHeight:1.15,w:170,h:150,y:80,autoFontSize:false},{flag:'default'});
+ const original=getLayer(doc);
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await selectRange(page,0,text.length);
+ await update(page);
+ await assertRange(page,text,0,text.length);
+ const styled=await snapshotValue(page);
+ expect(styled.textRuns).toHaveLength(1);
+ expect([styled.textRuns[0].start,styled.textRuns[0].end]).toEqual([0,text.length]);
+ expect(styled.textRuns[0].style[expectedKey]).toBe(expectedValue);
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const dom=await page.locator(surface).evaluate(el=>{
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  const chars=[],walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+  for(let n;n=walker.nextNode();)for(let i=0;i<n.length;i++){
+   const range=document.createRange();range.setStart(n,i);range.setEnd(n,i+1);
+   const box=range.getBoundingClientRect();
+   chars.push({char:n.data[i],x:(box.x-host.x)/scale,y:(box.y-host.y)/scale,width:box.width/scale});
+  }
+  const rows=[];
+  for(const c of chars){
+   let row=rows.find(r=>Math.abs(r.y-c.y)<.5);
+   if(!row)rows.push(row={y:c.y,text:'',x:c.x,right:c.x});
+   row.text+=c.char;row.x=Math.min(row.x,c.x);row.right=Math.max(row.right,c.x+c.width);
+  }
+  return rows.sort((a,b)=>a.y-b.y);
+ });
+ await page.keyboard.press('Control+z');
+ expect(await snapshotValue(page)).toEqual(original);
+ await page.keyboard.press('Control+Shift+z');
+ expect(await snapshotValue(page)).toEqual(styled);
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(styled);
+ const canvas=await plainFrame(page);
+ const painted=[];
+ for(const p of canvas){
+  let row=painted.find(r=>Math.abs(r.baseline-p.baseline)<.5);
+  if(!row)painted.push(row={baseline:p.baseline,text:'',x:p.x,right:p.x});
+  row.text+=p.text;row.x=Math.min(row.x,p.x);row.right=Math.max(row.right,p.x+p.width);
+ }
+ expect(dom.map(r=>r.text)).toEqual(painted.map(r=>r.text));
+ for(let i=0;i<dom.length;i++){
+  expect(Math.abs(dom[i].x-painted[i].x)).toBeLessThan(.75);
+  expect(Math.abs(dom[i].right-dom[i].x-(painted[i].right-painted[i].x))).toBeLessThan(.75);
+ }
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(styled);
+ await page.reload();await openLibraryDocument(page,doc.id);
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
  await page.keyboard.press('Control+Enter');
 });
 

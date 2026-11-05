@@ -664,7 +664,8 @@ test('long Cyrillic range remains live after color, size and font changes in one
  const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:31,lineHeight:1.1,
   w:772,h:443,autoFontSize:false},{flag:'default'});
  const original=getLayer(doc);
- await edit(page);await selectRange(page,0,text.length);
+ await edit(page);await page.keyboard.press('Control+a');
+ expect(await page.locator(surface).evaluate(()=>getSelection().toString())).toBe(text);
  await openColor(page);await hexColor(page,'#2266bb');await page.locator('[data-fill-close]').click();
  const colored=await snapshotValue(page);
  await expect(page.locator(surface)).toBeVisible();

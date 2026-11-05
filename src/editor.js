@@ -1011,7 +1011,7 @@ function plainWysiwygLayoutCompatible(e){
    // also safe for the first stage when every character uses identical
    // resolved geometry, so CSS and Canvas both wrap one uniform font.
    if(e.autoFontSize||text.includes('\n'))return false;
-   const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','bold','italic']);
+   const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','bold','italic']);
    if((e.textRuns||[]).some(run=>
     Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
    const spans=richTextSpans(e),keys=['fontFamily','fontWeight','fontStyle','fontSize','letterSpacing'];

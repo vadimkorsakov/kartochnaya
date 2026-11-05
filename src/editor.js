@@ -998,17 +998,24 @@ function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
  return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
 }
-// The Canvas painter owns row geometry. Native line breaks are eligible only
-// when every row is hard-broken: CSS and Canvas automatic word wrapping can
-// disagree, so soft-wrapped paragraphs still use the textarea fallback.
+// Canvas owns the geometry. Permit only ordinary word-boundary soft-wraps
+// with a single, unformatted font; other soft wraps stay in textarea until
+// their independent DOM/Canvas and caret-parity stages are complete.
 function plainWysiwygLayoutCompatible(e){
  if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
  try{
   const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
-  if(rows.length!==text.split('\n').length||rows.some(row=>row.softWrap||
-    !Number.isFinite(row.baseline)||row.height<=0||
+  const softWrap=rows.some(row=>row.softWrap);
+  if(softWrap){
+   // Stage 1: ordinary word-boundary wrapping only. A hard LF, auto-fit,
+   // styled range or a word split by anywhere wrapping uses the safe fallback.
+   if(e.autoFontSize||text.includes('\n')||(e.textRuns?.length||0))return false;
+   if(rows.some(row=>row.softWrap&&!/\s/u.test(text.slice(row.end-1,row.end))))return false;
+   if(rows.reduce((height,row)=>height+row.height,0)>Math.max(1,e.h)-1)return false;
+  }else if(rows.length!==text.split('\n').length)return false;
+  if(rows.some(row=>!Number.isFinite(row.baseline)||row.height<=0||
     row.width>Math.max(1,e.w)-1))return false;
-  if(rows.length>1){
+  if(rows.length>1&&!softWrap){
    // Same glyph geometry across colored spans means the native hard lines
    // can use one font baseline/line-height per Canvas row.
    // A sparse override may cover the whole text (e.g. all-bold title).

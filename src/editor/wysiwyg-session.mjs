@@ -58,8 +58,14 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // first style override, including a later reopen with saved textRuns. Using
   // startedPlain here made the DOM jump by the font baseline offset on reopen.
   const projection=layout(value);
-  const firstRow=projection?.rows?.length===1?projection.rows[0]:null;
-  const hardRows=projection?.rows?.length>1&&plainCompatible(value)?projection.rows:null;
+  // CSS wraps ordinary words natively; splitting each Canvas soft row into a
+  // separate span would change browser word-wrap opportunities. For that
+  // restricted case, one shared baseline correction applies to every row.
+  const hasSoftWrap=projection?.rows?.some(row=>row.softWrap);
+  const firstRow=projection?.rows?.length===1||(hasSoftWrap&&plainCompatible(value))?
+   projection.rows[0]:null;
+  const hardRows=projection?.rows?.length>1&&!hasSoftWrap&&plainCompatible(value)?
+   projection.rows:null;
   const offset=firstRow?unifiedDOMOffset(base,{height:firstRow.height,baseline:firstRow.baseline},value.text):0;
   const makeSpan=(text,style,height,top)=>{
    const span=document.createElement('span');span.textContent=text;

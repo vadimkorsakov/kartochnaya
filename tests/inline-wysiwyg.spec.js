@@ -618,6 +618,64 @@ test('soft-wrap cross-row keyboard selection, replace and history keep exact UTF
  await page.keyboard.press('Control+Enter');
 });
 
+test('new auto-fitted long Cyrillic text stays WYSIWYG through font, color, undo and reopen',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
+ const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:61,lineHeight:1.1,
+  w:814,h:634,y:80,autoFontSize:true},{flag:'default'});
+ const original=getLayer(doc);
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await page.keyboard.press('Control+a');
+ expect(await page.locator(surface).evaluate(()=>getSelection().toString())).toBe(text);
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Georgia"]').click();
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const georgia=await snapshotValue(page);
+ expect(georgia.autoFontSize).toBe(true);
+ expect(georgia.textRuns).toEqual([{start:0,end:text.length,style:{fontFamily:'Georgia'}}]);
+ expect(georgia.fontSize).toBeGreaterThan(0);
+ expect(await page.locator(surface+' span').first().evaluate(el=>getComputedStyle(el).fontFamily)).toContain('Georgia');
+ await openColor(page);
+ await hexColor(page,'#ef063d');
+ await page.locator('[data-fill-close]').click();
+ await expect(page.locator(surface)).toBeVisible();
+ const red=await snapshotValue(page);
+ expect(red.autoFontSize).toBe(true);
+ expect(red.textRuns).toHaveLength(1);
+ expect(red.textRuns[0].style).toMatchObject({fontFamily:'Georgia',textColor:'#ef063d'});
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(georgia);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(red);
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(red);
+ await page.reload();await openLibraryDocument(page,doc.id);
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ expect(await snapshotValue(page)).toEqual(red);
+ await page.keyboard.press('Control+Enter');
+});
+
+test('explicit selected font size turns off auto-fit without losing live text',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='alpha beta gamma delta';
+ await seedPlain(page,{text,fontFamily:'Arial',fontSize:24,w:300,h:250,
+  autoFontSize:true},{flag:'default'});
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+a');
+ const field=page.locator('#inspector [data-key=fontSize]');
+ await field.fill('32');await field.press('Tab');
+ const changed=await snapshotValue(page);
+ expect(changed.autoFontSize).toBe(false);
+ expect(changed.textRuns).toHaveLength(1);
+ expect(changed.textRuns[0].style.fontSize).toBeDefined();
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await page.keyboard.press('Control+Enter');
+});
+
 test('regression: long Cyrillic paragraph at 31px and 772px keeps font changes live',async({page})=>{
  await page.setViewportSize({width:2200,height:1600});
  const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';

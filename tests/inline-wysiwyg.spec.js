@@ -605,6 +605,70 @@ test('soft-wrap cross-row keyboard selection, replace and history keep exact UTF
  await page.keyboard.press('Control+Enter');
 });
 
+for(const [label,update,expectedKey,expectedValue] of [
+ ['family',async page=>{
+  await page.locator('#inspector [data-font-open]').click();
+  await page.locator('#inspector [data-font-option="Georgia"]').click();
+ },'fontFamily','Georgia'],
+ ['weight',async page=>{
+  await page.locator('#inspector [data-key=fontVariant]').selectOption('700:normal');
+ },'fontWeight','700'],
+])test('uniform '+label+' is live through ordinary soft wraps',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ await observePlainGeometry(page);
+ const text='alpha beta gamma delta';
+ const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:24,
+  lineHeight:1.15,w:170,h:150,y:80,autoFontSize:false},{flag:'default'});
+ const original=getLayer(doc);
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await selectRange(page,0,text.length);
+ await update(page);
+ await assertRange(page,text,0,text.length);
+ const styled=await snapshotValue(page);
+ expect(styled.textRuns).toEqual([{start:0,end:text.length,style:{[expectedKey]:expectedValue}}]);
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const canvas=await plainFrame(page);
+ const painted=[];
+ for(const p of canvas){
+  let row=painted.find(r=>Math.abs(r.baseline-p.baseline)<.5);
+  if(!row)painted.push(row={baseline:p.baseline,text:'',x:p.x,right:p.x});
+  row.text+=p.text;row.x=Math.min(row.x,p.x);row.right=Math.max(row.right,p.x+p.width);
+ }
+ const dom=await page.locator(surface).evaluate(el=>{
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  const chars=[],walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+  for(let n;n=walker.nextNode();)for(let i=0;i<n.length;i++){
+   const range=document.createRange();range.setStart(n,i);range.setEnd(n,i+1);
+   const box=range.getBoundingClientRect();
+   chars.push({char:n.data[i],x:(box.x-host.x)/scale,y:(box.y-host.y)/scale,width:box.width/scale});
+  }
+  const rows=[];
+  for(const c of chars){
+   let row=rows.find(r=>Math.abs(r.y-c.y)<.5);
+   if(!row)rows.push(row={y:c.y,text:'',x:c.x,right:c.x});
+   row.text+=c.char;row.x=Math.min(row.x,c.x);row.right=Math.max(row.right,c.x+c.width);
+  }
+  return rows.sort((a,b)=>a.y-b.y);
+ });
+ expect(dom.map(r=>r.text)).toEqual(painted.map(r=>r.text));
+ for(let i=0;i<dom.length;i++){
+  expect(Math.abs(dom[i].x-painted[i].x)).toBeLessThan(.75);
+  expect(Math.abs(dom[i].right-dom[i].x-(painted[i].right-painted[i].x))).toBeLessThan(.75);
+ }
+ await page.keyboard.press('Control+z');
+ expect(await snapshotValue(page)).toEqual(original);
+ await page.keyboard.press('Control+Shift+z');
+ expect(await snapshotValue(page)).toEqual(styled);
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(styled);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(styled);
+ await page.reload();await openLibraryDocument(page,doc.id);
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await page.keyboard.press('Control+Enter');
+});
+
 test('soft-wrap range color stays live, preserves HEX focus, Canvas/PNG and Undo/Redo',async({page})=>{
  await page.setViewportSize({width:2200,height:1600});
  await observePlainGeometry(page);

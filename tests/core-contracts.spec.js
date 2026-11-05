@@ -29,7 +29,7 @@ async function reopen(page, document) {
 test('text edits keep the displayed Canvas and PNG export pixel-identical at 100% zoom', async ({ page }) => {
   // The fit limit is exactly 300% at this viewport; UI zoom buttons reach 100%.
   await page.setViewportSize({ width: 1920, height: 1440 });
-  await openHome(page);
+  await openHome(page,'/?experimentalTextWysiwyg=0');
   await createDocument(page, 'Core text rendering');
   await expect(page.locator('#zoomLabel')).toHaveText('300%');
   for (let i = 0; i < 20; i++) await page.locator('#zoomOutBtn').click();

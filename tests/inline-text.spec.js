@@ -67,8 +67,8 @@ test('mouse drag selects text without closing editing or changing layer geometry
   expect((await exportedDocument(page)).elements).toEqual(before.elements);
 });
 
-test('Canvas font metrics fit without scrollbars and genuine overflow remains scrollable across zoom', async ({ page }) => {
-  await frame(page);
+test('textarea fallback Canvas metrics fit without scrollbars and overflow scrolls across zoom', async ({ page }) => {
+  await frame(page,'/?experimentalTextWysiwyg=0');
   // The legacy overflow contract concerns fixed-size text, not the new auto-fit mode.
   await finish(page);
   await page.locator('#inspector [data-text-auto-font]').uncheck();

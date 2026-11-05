@@ -150,6 +150,9 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const origin=preview?.element||structuredClone(layer);
   if(!plainCompatible(origin))return false;
   const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
+  // An explicit font-size edit overrides automatic fitting. Font family,
+  // weight, color and spacing edits keep fitting and recalculate their size.
+  if(key==='fontSize')next.autoFontSize=false;
   retainRichTextSizeBase(next);
   if(next.autoFontSize)fit(next);
   if(!plainCompatible(next))return false;

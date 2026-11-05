@@ -518,7 +518,7 @@ test('normal desktop URL applies range color, font and size visibly while editin
  await page.locator('#inspector [data-font-open]').click();
  await page.locator('#inspector [data-font-option="Georgia"]').click();
  await assertRange(page,'Тест текста',5,11);
- expect(await page.locator(surface+' span').last().evaluate(el=>getComputedStyle(el).fontFamily)).toBe('"Georgia"');
+ expect((await page.locator(surface+' span').last().evaluate(el=>getComputedStyle(el).fontFamily)).replaceAll('"','')).toBe('Georgia');
  const size=page.locator('#inspector [data-key=fontSize]');
  await size.fill('40');await size.press('Tab');
  await assertRange(page,'Тест текста',5,11);

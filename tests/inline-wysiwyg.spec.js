@@ -300,7 +300,7 @@ async function zoomTo(page,zoom){
 const canvasPixels=page=>page.locator('#canvas').evaluate(c=>c.toDataURL());
 const plainCases=[
  ['single line',{text:'ABCD'},true],
- ['explicit LF',{text:'ABCD\nABCD'},false],
+ ['explicit LF',{text:'ABCD\nABCD'},true],
  ['automatic wrap',{text:'alpha beta gamma delta',w:170},false],
  ['long words',{text:'abcdefghijklmnop qrstuvwxyzabcdefghijklmnop',w:170},false],
  ['Cyrillic spaces emoji',{text:'Группа  А😀Б'},true],
@@ -382,11 +382,13 @@ for(const text of ['ABCD','ABCD\nABCD'])test('Arial unified baseline or multilin
  const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:32,lineHeight:1.15,y:80,h:120}),initial=getLayer(doc);
  await page.locator('#layers [data-layer="title"] .layer-name').click();const evidence=[];
  if(text.includes('\n')){
-  // Multiline DOM wrapping is a separate migration stage. Verify that
-  // textarea still permits edits, Undo/Redo and persistence without legacy mode.
-  await edit(page);await expect(page.locator('#inlineText')).toBeFocused();
+  // Explicit LF paragraphs now stay in contenteditable, with history and
+  // exact UTF-16 selection persisted through a normal edit cycle.
+  await edit(page);await expect(page.locator(surface)).toBeFocused();
   expect(await snapshotValue(page)).toEqual(initial);
-  await page.locator('#inlineText').fill(text+'\nE');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('E');
   await page.keyboard.press('Control+Enter');
   const changed=await snapshotValue(page);
   expect(changed.text).toBe(text+'\nE');
@@ -395,7 +397,7 @@ for(const text of ['ABCD','ABCD\nABCD'])test('Arial unified baseline or multilin
   await page.locator('#redoBtn').click();expect(await snapshotValue(page)).toEqual(changed);
   await page.reload();await openLibraryDocument(page,doc.id);
   expect(await snapshotValue(page)).toEqual(changed);
-  await edit(page);await expect(page.locator('#inlineText')).toBeFocused();
+  await edit(page);await expect(page.locator(surface)).toBeFocused();
   await page.keyboard.press('Control+Enter');return;
  }
  for(const zoom of [50,100,200]){
@@ -446,6 +448,60 @@ test('plain no-op formatting keeps absent runs and native numeric undo ownership
 test.describe('plain mobile viewport',()=>{test.use({viewport:{width:390,height:844},isMobile:true,hasTouch:true});test('plain flag retains mobile textarea',async({page})=>{
  await seedPlain(page);await page.locator('[data-mobile=layers]:visible').tap();await page.locator('#mobileLayerList [data-layer="title"] .layer-name').tap();await page.locator('#mobileLayersClose').tap();await page.locator('#mobileContext [data-mobile=edit]').tap();await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();expect(await snapshotValue(page)).not.toHaveProperty('textRuns');
 });});
+
+
+test('hard-LF paragraphs preserve rows, cross-line selection, formatting and PNG',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});await observePlainGeometry(page);
+ const doc=await seedPlain(page,{text:'ABCD\nABCD',fontFamily:'Arial',fontSize:32,
+  lineHeight:1.15,y:80,h:140,w:260},{flag:'default'});
+ const initial=getLayer(doc);
+ await page.locator('#layers [data-layer="title"] .layer-name').click();
+ const originalCanvas=await plainFrame(page);
+ expect(originalCanvas.map(row=>row.text)).toEqual(['ABCD','ABCD']);
+ for(const zoom of [50,100,200]){
+  await zoomTo(page,zoom);await edit(page);await expect(page.locator(surface)).toBeFocused();
+  await expect(page.locator('#inlineText')).toBeHidden();
+  expect(await state(page)).toEqual({text:initial.text,anchor:9,focus:9});
+  const geometry=await page.locator(surface).evaluate(el=>{
+   const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width),
+    walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),chars=[];
+   for(let n;n=walker.nextNode();)for(let i=0;i<n.length;i++){
+    if(n.data[i]==='\n')continue;
+    const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+1);
+    const b=r.getBoundingClientRect();chars.push({text:n.data[i],x:(b.x-host.x)/scale,y:(b.y-host.y)/scale,w:b.width/scale});
+   }
+   return chars;
+  });
+  const rows=geometry.reduce((out,c)=>{
+   let row=out.find(x=>Math.abs(x.y-c.y)<.5);
+   if(!row)out.push(row={y:c.y,x:c.x,end:c.x,text:''});
+   row.text+=c.text;row.end=c.x+c.w;return out;
+  },[]);
+  expect(rows.map(x=>x.text)).toEqual(['ABCD','ABCD']);
+  for(let i=0;i<2;i++){
+   expect(Math.abs(rows[i].x-originalCanvas[i].x)).toBeLessThan(.5);
+   expect(Math.abs(rows[i].end-rows[i].x-originalCanvas[i].width)).toBeLessThan(.5);
+  }
+  await selectRange(page,3,7);await assertRange(page,initial.text,3,7);
+  await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(initial);
+ }
+ await edit(page);await selectRange(page,3,7);await openColor(page);
+ await hexColor(page,'#2288cc');await page.locator('[data-fill-close]').click();
+ await assertRange(page,initial.text,3,7);
+ const changed=await snapshotValue(page);
+ expect(changed.textRuns).toEqual([{start:3,end:7,style:{textColor:'#2288cc'}}]);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);
+ await page.keyboard.press('Control+Enter');
+ const screen=await plainFrame(page);
+ await page.evaluate(()=>{window.capturePlainExport=true;window.plainExportFrame=[]});await exportPNG(page);
+ const png=await page.evaluate(()=>{window.capturePlainExport=false;return window.plainExportFrame});
+ expect(png.slice(-screen.length)).toEqual(screen);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(changed);
+ await page.reload();await openLibraryDocument(page,doc.id);
+ expect(await snapshotValue(page)).toEqual(changed);
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+});
 
 test('plain near-width fallback preserves Canvas/PNG geometry on first color',async({page},testInfo)=>{
  const editNarrow=async()=>{const p=await canvasPoint(page,64,175);await page.mouse.dblclick(p.x,p.y)};

@@ -998,20 +998,24 @@ function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
  return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
 }
-// Opening a plain layer must not opt it into the mixed Canvas painter. Compare
-// the real legacy rows and baseline with the virtual rich projection instead.
-// Incompatible fonts/wraps remain on textarea until the engines are reconciled.
-// The plain-text guard now checks the same layout that Canvas/PNG paints.
-// Stage 2A supports a single unwrapped line; additional rows and auto-fit
-// remain on textarea until DOM caret/wrap parity is tested independently.
+// The Canvas painter owns row geometry. Native line breaks are eligible only
+// when every row is hard-broken: CSS and Canvas automatic word wrapping can
+// disagree, so soft-wrapped paragraphs still use the textarea fallback.
 function plainWysiwygLayoutCompatible(e){
  if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
- if(String(e.text||'').includes('\n'))return false;
  try{
-  const rows=richTextEngine.layout(e).rows;
-  return rows.length===1&&!rows[0].softWrap&&
-   Number.isFinite(rows[0].baseline)&&rows[0].height>0&&
-   rows[0].width<=Math.max(1,e.w)-1;
+  const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
+  if(rows.length!==text.split('\n').length||rows.some(row=>row.softWrap||
+    !Number.isFinite(row.baseline)||row.height<=0||
+    row.width>Math.max(1,e.w)-1))return false;
+  if(rows.length>1){
+   // Same glyph geometry across colored spans means the native hard lines
+   // can use one font baseline/line-height per Canvas row.
+   const base=resolveRichTextStyle(e);
+   const keys=['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing'];
+   if(richTextSpans(e).some(part=>keys.some(key=>part.style[key]!==base[key])))return false;
+  }
+  return true;
  }catch{return false}
 }
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}

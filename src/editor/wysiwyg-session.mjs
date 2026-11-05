@@ -28,6 +28,8 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompat
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||e.strokeWidth||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
  // Auto-fit participates only while Canvas projects a single unwrapped row.
  if(e.autoFontSize&&!plainCompatible(e))return false;
+ // Mixed-font/mixed-size hard rows are not enabled until baseline parity holds.
+ if(e.text.includes('\n')&&!plainCompatible(e))return false;
  if(!usesRichTextLayout(e)&&!plainCompatible(e))return false;
  try {return [resolveRichTextStyle(e),...richTextSpans(e).map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(e,s));}catch{return false;}
 }
@@ -56,8 +58,28 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // startedPlain here made the DOM jump by the font baseline offset on reopen.
   const projection=layout(value);
   const firstRow=projection?.rows?.length===1?projection.rows[0]:null;
+  const hardRows=projection?.rows?.length>1&&plainCompatible(value)?projection.rows:null;
   const offset=firstRow?unifiedDOMOffset(base,{height:firstRow.height,baseline:firstRow.baseline},value.text):0;
-  const nodes=spans.map((p,i)=>{const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:heights[i+1],letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});if(firstRow)Object.assign(span.style,{position:'relative',top:offset+'px'});return span;});
+  const makeSpan=(text,style,height,top)=>{
+   const span=document.createElement('span');span.textContent=text;
+   Object.assign(span.style,{font:richTextFont(style),lineHeight:height+'px',letterSpacing:style.letterSpacing+'px',color:style.textColor});
+   if(top!==null)Object.assign(span.style,{position:'relative',top:top+'px'});
+   return span;
+  };
+  // The real newline remains part of a text node, not a generated <br>.
+  // Each Canvas hard row gets its own baseline correction. This preserves
+  // UTF-16 Selection across boundaries and avoids duplicate native breaks.
+  const nodes=hardRows?hardRows.flatMap(row=>{
+   const text=value.text.slice(row.start,row.end),top=unifiedDOMOffset(base,
+    {height:row.height,baseline:row.baseline-row.y},text||'Mg');
+   const output=[];
+   for(const part of spans){
+    const start=Math.max(row.start,part.start),end=Math.min(row.nextStart,part.end);
+    if(end>start)output.push(makeSpan(value.text.slice(start,end),part.style,row.height,top));
+   }
+   return output;
+  }):spans.map((part,i)=>makeSpan(part.text,part.style,
+   parseFloat(heights[i+1]),firstRow?offset:null));
   const next=structuredClone(value);
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
   Object.assign(host.style,{font:richTextFont(base),lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
@@ -102,7 +124,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
   retainRichTextSizeBase(next);
   if(next.autoFontSize)fit(next);
-  if((startedPlain||next.autoFontSize)&&!plainCompatible(next))return false;
+  if((startedPlain||next.autoFontSize||origin.text.includes('\n'))&&!plainCompatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}
   if(!preview){recordInlineHistory(history,origin,caret(selection));preview={key,element:origin,selection};}
@@ -200,7 +222,7 @@ listen('beforeinput',e=>{
   commit(next,selection,{anchor:start+1,focus:start+1});
 
   safe.phase='confirmed';
-  if((startedPlain||layer.autoFontSize)&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемой строки');
+  if((startedPlain||layer.autoFontSize||layer.text.includes('\n'))&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
   // A canceled operation has no pending native edit, even if an input is sent.
   return;
  }
@@ -246,7 +268,7 @@ listen('input',e=>{
   commit(next,previous.selection,selection);
 
   safe.phase='confirmed';
-  if((startedPlain||layer.autoFontSize)&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемой строки');
+  if((startedPlain||layer.autoFontSize||layer.text.includes('\n'))&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
  }catch{stop('unsupported native DOM or selection');}
 });
 

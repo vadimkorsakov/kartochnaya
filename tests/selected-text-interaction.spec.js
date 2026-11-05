@@ -83,8 +83,10 @@ test('Firefox: uniform font change remains live in long Cyrillic soft wrap',asyn
  await expect(page.locator('#inlineWysiwyg')).toBeFocused();
  await page.keyboard.press('Control+a');
  expect(await page.locator('#inlineWysiwyg').evaluate(()=>getSelection().toString())).toBe(text);
+ await page.evaluate(()=>window.__textGateLogs=[]);
  await page.locator('#inspector [data-font-open]').click();
  await page.locator('#inspector [data-font-option="Tahoma"]').click();
+ console.log('LONG_SOFT_WRAP_GATE',JSON.stringify(await page.evaluate(()=>window.__textGateLogs)));
  await expect(page.locator('#inlineWysiwyg')).toBeVisible();
  await expect(page.locator('#inlineText')).toBeHidden();
  await page.keyboard.press('Control+Enter');

@@ -2140,7 +2140,19 @@ function closeInlineText(cancel=false){
  if(cancel||!changed){app.doc.title=titleBefore;updateProjectBadge()}else syncAutoCardTitle();
  if(!cancel&&changed){
   // Publish each settled action through the existing document history only once.
-  if(session?.formatted&&!session.wysiwyg){const final=clone(e);for(const state of session.states.slice(1,session.index+1)){restoreInlineElement(e,state.element);commit('Изменение текста')}restoreInlineElement(e,final)}
+  if(session?.formatted){
+   const final=clone(e),steps=session.states.slice(1,session.index+1);
+   // Publish each confirmed style as its own document Undo step, while adjacent
+   // character edits stay grouped to avoid exhausting the 50-step history.
+   // Preserve the existing per-snapshot behavior for textarea sessions.
+   for(let i=0;i<steps.length;i++){
+    const state=steps[i],next=steps[i+1];
+    if(session.wysiwyg&&state.action==='input'&&next?.action==='input')continue;
+    restoreInlineElement(e,state.element);
+    commit(state.action==='style'?'Форматирование текста':'Изменение текста');
+   }
+   restoreInlineElement(e,final);
+  }
   commit('Изменение текста');
  }else paint();
  refreshInspector();updateQuickBubble();

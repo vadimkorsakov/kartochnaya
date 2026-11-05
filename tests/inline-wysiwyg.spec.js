@@ -456,7 +456,7 @@ test('color-only rich soft-wrap opens WYSIWYG without changing sparse runs',asyn
 
 test('rich WYSIWYG that grows into word soft-wrap stays live and preserves sparse color',async({page})=>{
  await seed(page,{patch:{
-  text:'ABCD',fontFamily:'Arial',fontSize:24,w:135,h:205,autoFontSize:false,
+  text:'ABCD',fontFamily:'Arial',fontSize:24,w:175,h:140,autoFontSize:false,
   textRuns:[{start:0,end:2,style:{textColor:'#2255cc'}}]
  }});
  await edit(page);
@@ -472,9 +472,12 @@ test('rich WYSIWYG that grows into word soft-wrap stays live and preserves spars
 });
 
 
-test('rich text exceeding frame height falls back with exact sparse color',async({page})=>{
+for(const [label,width,height] of [
+ ['near-width limit',135,205],
+ ['insufficient height',135,60],
+])test('rich soft-wrap safe fallback: '+label,async({page})=>{
  await seed(page,{patch:{
-  text:'ABCD',fontFamily:'Arial',fontSize:24,w:135,h:60,autoFontSize:false,
+  text:'ABCD',fontFamily:'Arial',fontSize:24,w:width,h:height,autoFontSize:false,
   textRuns:[{start:0,end:2,style:{textColor:'#2255cc'}}]
  }});
  await edit(page);

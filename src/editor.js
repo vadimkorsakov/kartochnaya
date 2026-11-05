@@ -1007,11 +1007,11 @@ function plainWysiwygLayoutCompatible(e){
   const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
   const softWrap=rows.some(row=>row.softWrap);
   if(softWrap){
-   // Color splits cannot affect advances. A font/size/weight change is
-   // also safe for the first stage when every character uses identical
-   // resolved geometry, so CSS and Canvas both wrap one uniform font.
+   // Color-only runs do not change glyph geometry. Other typography ranges
+   // are safe only if their resolved font, size and spacing are uniform
+   // across the entire text; mixed geometry retains the textarea fallback.
    if(e.autoFontSize||text.includes('\n'))return false;
-   const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','bold','italic']);
+   const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','bold','italic']);
    if((e.textRuns||[]).some(run=>
     Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
    const spans=richTextSpans(e),keys=['fontFamily','fontWeight','fontStyle','fontSize','letterSpacing'];

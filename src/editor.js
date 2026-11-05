@@ -1010,7 +1010,9 @@ function plainWysiwygLayoutCompatible(e){
    // Color-only runs do not change glyph geometry. Other typography ranges
    // are safe only if their resolved font, size and spacing are uniform
    // across the entire text; mixed geometry retains the textarea fallback.
-   if(e.autoFontSize||text.includes('\n'))return false;
+   // Auto-fit supplies a concrete fontSize before the DOM projection. It is
+   // safe for the same uniform-font/color-only soft-wrap cases as manual size.
+   if(text.includes('\n'))return false;
    const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','bold','italic']);
    if((e.textRuns||[]).some(run=>
     Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;

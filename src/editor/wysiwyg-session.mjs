@@ -45,6 +45,10 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
  function stop(reason){pending=null;pasteText=null;fallback=reason;safe.phase='recovery-required';if(!inactive)onRecovery(reason);}
  function project(value,selection){
+  // Probe measurements also attach temporary DOM nodes. Capture the owner
+  // before any measurement, not just before replaceChildren: the browser can
+  // reset its contenteditable Range while those probes are attached.
+  const hadFocus=document.activeElement===host;
   if(selection?.start!==undefined)selection={anchor:selection.direction==='backward'?selection.end:selection.start,focus:selection.direction==='backward'?selection.start:selection.end};
   // Prepare every metric and node before touching the canonical layer or DOM.
   const base=resolveRichTextStyle(value),spans=richTextSpans(value);
@@ -85,7 +89,6 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // its current Range, particularly when a trailing LF gains a caret sentinel.
   // Capture ownership BEFORE the DOM change and restore it only for a session
   // that already owned focus. Inspector/color fields must keep their focus.
-  const hadFocus=document.activeElement===host;
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
   Object.assign(host.style,{font:richTextFont(base),lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
   host.replaceChildren(...nodes);

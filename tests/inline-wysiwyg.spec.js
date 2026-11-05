@@ -658,6 +658,40 @@ test('regression: long Cyrillic paragraph at 31px and 772px keeps font changes l
  await page.keyboard.press('Control+Enter');
 });
 
+test('long Cyrillic range remains live after color, size and font changes in one session',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
+ const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:31,lineHeight:1.1,
+  w:772,h:443,autoFontSize:false},{flag:'default'});
+ const original=getLayer(doc);
+ await edit(page);await selectRange(page,0,text.length);
+ await openColor(page);await hexColor(page,'#2266bb');await page.locator('[data-fill-close]').click();
+ const colored=await snapshotValue(page);
+ await expect(page.locator(surface)).toBeVisible();
+ const size=page.locator('#inspector [data-key=fontSize]');
+ await size.fill('44');await size.press('Tab');
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const sized=await snapshotValue(page);
+ expect(sized.textRuns?.[0]?.style?.fontSize).toBeDefined();
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Tahoma"]').click();
+ await assertRange(page,text,0,text.length);
+ const styled=await snapshotValue(page);
+ expect(styled.textRuns).toHaveLength(1);
+ expect(styled.textRuns[0].style.fontFamily).toBe('Tahoma');
+ expect(styled.textRuns[0].style.fontSize).toBeDefined();
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(sized);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(colored);
+ await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(original);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(colored);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(sized);
+ await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(styled);
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(styled);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(styled);
+});
+
 for(const [label,update,expectedKey,expectedValue] of [
  ['family',async page=>{
   await page.locator('#inspector [data-font-open]').click();

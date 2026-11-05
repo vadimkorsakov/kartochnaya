@@ -133,6 +133,54 @@ async function assertRange(page,text,anchor,focus){await page.locator(surface).f
 const boldRuns=[{start:0,end:4,style:{bold:true}}];
 const rangeRuns=color=>[{start:0,end:1,style:{bold:true}},{start:1,end:3,style:{bold:true,textColor:color}},{start:3,end:4,style:{bold:true}}];
 
+test('document Undo separates color and font changes after WYSIWYG closes',async({page})=>{
+ const original=getLayer(await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}}));
+ await edit(page);
+ await page.keyboard.type('XY');
+ const typed=await snapshotValue(page);
+ await selectRange(page,1,3);
+ await openColor(page);await hexColor(page,'#11aa33');
+ await page.locator('[data-fill-close]').click();
+ const colored=await snapshotValue(page);
+ expect(colored.textRuns.some(r=>r.style.textColor==='#11aa33')).toBe(true);
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Georgia"]').click();
+ const styled=await snapshotValue(page);
+ expect(styled.textRuns.some(r=>r.style.fontFamily==='Georgia')).toBe(true);
+ await assertRange(page,'ABCDXY',1,3);
+ await page.keyboard.press('Control+Enter');
+ await expect(page.locator(surface)).toBeHidden();
+ expect(await snapshotValue(page)).toEqual(styled);
+ // Two character inputs are one document step, each style action is another.
+ for(const expected of [colored,typed,original]){
+  await page.locator('#undoBtn').click();
+  expect(await snapshotValue(page)).toEqual(expected);
+ }
+ await expect(page.locator('#undoBtn')).toBeDisabled();
+ for(const expected of [typed,colored,styled]){
+  await page.locator('#redoBtn').click();
+  expect(await snapshotValue(page)).toEqual(expected);
+ }
+});
+
+test('document Undo retains style steps across WYSIWYG to textarea fallback',async({page})=>{
+ const original=getLayer(await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}}));
+ await edit(page);await selectRange(page,1,3);
+ await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();
+ const colored=await snapshotValue(page);
+ const height=page.locator('#inspector [data-key=lineHeight]');
+ await height.fill('1.5');await height.press('Tab');
+ await expect(page.locator('#inlineText')).toBeVisible();
+ const changed=await snapshotValue(page);
+ expect(changed.lineHeight).toBe(1.5);
+ await page.locator('#inlineText').focus();await page.keyboard.press('Control+Enter');
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await page.locator('#undoBtn').click();expect(await snapshotValue(page)).toEqual(colored);
+ await page.locator('#undoBtn').click();expect(await snapshotValue(page)).toEqual(original);
+ await page.locator('#redoBtn').click();expect(await snapshotValue(page)).toEqual(colored);
+ await page.locator('#redoBtn').click();expect(await snapshotValue(page)).toEqual(changed);
+});
+
 test('range color, one live preview history action, Canvas, document undo and reload',async({page})=>{
  const doc=await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}});await edit(page);const outsideColor=await page.locator(surface+' span').first().evaluate(s=>getComputedStyle(s).color);await selectRange(page,1,3);await openColor(page);
  for(const hex of ['#990011','#2244aa','#11aa33'])await hexColor(page,hex,false);

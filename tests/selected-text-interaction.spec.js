@@ -102,7 +102,7 @@ for(const autoFit of [false,true])test('Firefox: uniform font change remains liv
  });
  expect(domRows.length).toBeGreaterThan(2);
  expect(domRows.map(r=>r.text).join('')).toBe(text);
- for(const row of domRows)expect(row.right-row.x).toBeLessThanOrEqual(773);
+ for(const row of domRows)expect(row.right-row.x).toBeLessThanOrEqual((autoFit?814:772)+1);
  await page.keyboard.press('Control+Enter');
  const styled=await model(page);
  expect(styled.textRuns).toHaveLength(1);

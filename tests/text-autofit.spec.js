@@ -68,7 +68,7 @@ test('double click on an edge fits text box to its content with a single Undo', 
   expect((await exportedDocument(page)).elements[0].w).toBe(after.w);
   const inside = await canvasPoint(page, after.x + after.w / 2, after.y + after.h / 2);
   await page.mouse.dblclick(inside.x, inside.y);
-  await expect(page.locator('#inlineText')).toBeFocused();
+  await expect(page.locator('#inlineWysiwyg')).toBeFocused();
 });
 
 test('fixed-size text keeps its Canvas line breaks while editing near the wrap boundary', async ({ page }) => {

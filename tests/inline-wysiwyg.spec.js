@@ -441,22 +441,43 @@ test('plain ordinary typing commit and reopen never fabricates runs',async({page
 
 
 
-test('rich text with soft wraps opens native textarea without changing sparse runs',async({page})=>{
+test('color-only rich soft-wrap opens WYSIWYG without changing sparse runs',async({page})=>{
  const initial=getLayer(await seed(page,{patch:{
   text:'alpha beta gamma delta',fontFamily:'Arial',fontSize:24,
   w:135,h:140,autoFontSize:false,
   textRuns:[{start:0,end:5,style:{textColor:'#2255cc'}}]
  }}));
  await edit(page);
- await expect(page.locator('#inlineText')).toBeFocused();
- await expect(page.locator(surface)).toBeHidden();
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
  await page.keyboard.press('ControlOrMeta+Enter');
  expect(await value(page)).toEqual(initial);
 });
 
-test('rich WYSIWYG that grows into soft wrap hands off and preserves sparse color',async({page})=>{
+test('rich WYSIWYG that grows into word soft-wrap stays live and preserves sparse color',async({page})=>{
  await seed(page,{patch:{
-  text:'ABCD',fontFamily:'Arial',fontSize:24,w:135,h:140,autoFontSize:false,
+  text:'ABCD',fontFamily:'Arial',fontSize:24,w:175,h:140,autoFontSize:false,
+  textRuns:[{start:0,end:2,style:{textColor:'#2255cc'}}]
+ }});
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.insertText(' alpha beta gamma delta');
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ const changed=await value(page);
+ expect(changed.text).toBe('ABCD alpha beta gamma delta');
+ expect(changed.textRuns).toEqual([{start:0,end:2,style:{textColor:'#2255cc'}}]);
+ await page.keyboard.press('ControlOrMeta+Enter');
+ expect(await value(page)).toEqual(changed);
+});
+
+
+for(const [label,width,height] of [
+ ['near-width limit',135,205],
+ ['insufficient height',135,60],
+])test('rich soft-wrap safe fallback: '+label,async({page})=>{
+ await seed(page,{patch:{
+  text:'ABCD',fontFamily:'Arial',fontSize:24,w:width,h:height,autoFontSize:false,
   textRuns:[{start:0,end:2,style:{textColor:'#2255cc'}}]
  }});
  await edit(page);
@@ -470,7 +491,6 @@ test('rich WYSIWYG that grows into soft wrap hands off and preserves sparse colo
  await page.locator('#inlineText').press('ControlOrMeta+Enter');
  expect(await value(page)).toEqual(changed);
 });
-
 
 test('soft-wrap visual Up/Down caret remains in the expected Canvas rows at three zooms',async({page})=>{
  await page.setViewportSize({width:2200,height:1600});
@@ -537,26 +557,85 @@ test('soft-wrap cross-row keyboard selection, replace and history keep exact UTF
  await page.keyboard.press('Control+Enter');
 });
 
-test('soft-wrap range color hands off to textarea without stealing HEX input focus',async({page})=>{
- await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
-  fontSize:24,w:170,h:140,autoFontSize:false},{flag:'default'});
+test('soft-wrap range color stays live, preserves HEX focus, Canvas/PNG and Undo/Redo',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ await observePlainGeometry(page);
+ const doc=await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
+  fontSize:24,lineHeight:1.15,w:170,h:140,y:80,autoFontSize:false},{flag:'default'});
+ const initial=getLayer(doc),before=await plainFrame(page);
  await edit(page);
  await expect(page.locator(surface)).toBeFocused();
  await selectRange(page,1,3);
  await openColor(page);
  await hexColor(page,'#11aa33');
- await expect(page.locator(surface)).toBeHidden();
- await expect(page.locator('#inlineText')).toBeVisible();
- const colored=await snapshotValue(page);
- expect(colored.text).toBe('alpha beta gamma delta');
- expect(colored.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
  await page.locator('[data-fill-close]').click();
- await page.locator('#inlineText').focus();
- expect(await page.locator('#inlineText').evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([1,3]);
- await page.keyboard.press('Control+Enter');
+ await assertRange(page,initial.text,1,3);
+ const colored=await snapshotValue(page);
+ expect(colored.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
+ await expect(page.locator(surface+' span').nth(1)).toHaveCSS('color','rgb(17, 170, 51)');
+ // A color-only span split must not move words or introduce a wrap.
+ const domRows=await page.locator(surface).evaluate(el=>{
+  const box=el.getBoundingClientRect(),scale=box.width/parseFloat(el.style.width);
+  const chars=[],walk=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+  for(let n;n=walk.nextNode();)for(let i=0;i<n.length;i++){
+   const range=document.createRange();range.setStart(n,i);range.setEnd(n,i+1);
+   const r=range.getBoundingClientRect();
+   chars.push({char:n.data[i],x:(r.x-box.x)/scale,y:(r.y-box.y)/scale,width:r.width/scale});
+  }
+  const rows=[];
+  for(const char of chars){
+   let row=rows.find(x=>Math.abs(x.y-char.y)<.5);
+   if(!row)rows.push(row={text:'',x:char.x,right:char.x,y:char.y});
+   row.text+=char.char;
+   row.x=Math.min(row.x,char.x);
+   row.right=Math.max(row.right,char.x+char.width);
+  }
+  return rows.sort((a,b)=>a.y-b.y).map(({text,x,right})=>({text,x,width:right-x}));
+ });
+ expect(domRows.map(r=>r.text)).toEqual(before.map(r=>r.text));
+ for(let i=0;i<domRows.length;i++){
+  expect(Math.abs(domRows[i].x-before[i].x)).toBeLessThan(.75);
+  expect(Math.abs(domRows[i].width-before[i].width)).toBeLessThan(.75);
+ }
+ await page.keyboard.press('Control+z');
+ expect(await snapshotValue(page)).toEqual(initial);
+ await expect(page.locator(surface)).toBeVisible();
+ await page.keyboard.press('Control+Shift+z');
  expect(await snapshotValue(page)).toEqual(colored);
+ await expect(page.locator(surface)).toBeVisible();
+ await page.keyboard.press('Control+Enter');
+ const screen=await plainFrame(page);
+ await page.evaluate(()=>{window.capturePlainExport=true;window.plainExportFrame=[]});
+ await exportPNG(page);
+ const png=await page.evaluate(()=>{window.capturePlainExport=false;return window.plainExportFrame});
+ expect(png.slice(-screen.length)).toEqual(screen);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(colored);
+ await page.reload();await openLibraryDocument(page,doc.id);
  await edit(page);
- await expect(page.locator('#inlineText')).toBeFocused();
+ await expect(page.locator(surface)).toBeFocused();
+ expect(await snapshotValue(page)).toEqual(colored);
+ await expect(page.locator(surface+' span').nth(1)).toHaveCSS('color','rgb(17, 170, 51)');
+ await page.keyboard.press('Control+Enter');
+});
+
+test('soft-wrap cross-row range color remains editable with preserved UTF-16 selection',async({page})=>{
+ const doc=await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
+  fontSize:24,w:135,h:140,autoFontSize:false},{flag:'default'});
+ await edit(page);
+ await selectRange(page,6,16); // "beta gamma" crosses the first word wrap.
+ await openColor(page);
+ await hexColor(page,'#2266bb');
+ await page.locator('[data-fill-close]').click();
+ await assertRange(page,'alpha beta gamma delta',6,16);
+ await expect(page.locator(surface)).toBeVisible();
+ const colored=await snapshotValue(page);
+ expect(colored.textRuns).toEqual([{start:6,end:16,style:{textColor:'#2266bb'}}]);
+ await page.keyboard.press('Control+Enter');
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(colored);
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
  await page.keyboard.press('Control+Enter');
 });
 
@@ -613,8 +692,8 @@ test('simple word soft-wrap has live Canvas rows, typing, Undo/Redo and persiste
 });
 
 for(const [label,patch] of [
- ['sparse color',{text:'alpha beta gamma delta',w:135,
-  textRuns:[{start:0,end:5,style:{textColor:'#2255cc'}}]}],
+ ['sparse font weight',{text:'alpha beta gamma delta',w:135,
+  textRuns:[{start:0,end:5,style:{fontWeight:'700'}}]}],
  ['long word',{text:'abcdefghijklmnopqrstuvwxy',w:85}],
 ])test('unsupported soft wrap retains textarea: '+label,async({page})=>{
  const doc=await seedPlain(page,{fontFamily:'Arial',fontSize:24,

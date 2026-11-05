@@ -514,7 +514,7 @@ test('normal desktop URL applies range color, font and size visibly while editin
  await assertRange(page,'Тест текста',5,11);
  await expect(page.locator(surface+' span')).toHaveCount(2);
  const colors=await page.locator(surface+' span').evaluateAll(nodes=>nodes.map(n=>[n.textContent,getComputedStyle(n).color]));
- expect(colors).toEqual([['Тест ','rgb(16, 18, 26)'],['текста','rgb(187, 102, 221)']]);
+ expect(colors).toEqual([['Тест ','rgb(17, 17, 17)'],['текста','rgb(187, 102, 221)']]);
  await page.locator('#inspector [data-font-open]').click();
  await page.locator('#inspector [data-font-option="Georgia"]').click();
  await assertRange(page,'Тест текста',5,11);

@@ -1,4 +1,4 @@
-import {richTextSpans, resolveRichTextStyle, richTextFont, usesRichTextLayout, retainRichTextSizeBase} from '../render/rich-text-layout.mjs';
+import {richTextSpans, resolveRichTextStyle, richTextFont, retainRichTextSizeBase} from '../render/rich-text-layout.mjs';
 import {replaceText, applyTextStyle} from '../model/rich-text.mjs';
 import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-history.mjs';
 
@@ -26,18 +26,15 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompat
  if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')==='0'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
  if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||e.strokeWidth||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
- // Auto-fit participates only while Canvas projects a single unwrapped row.
- if(e.autoFontSize&&!plainCompatible(e))return false;
- // Mixed-font/mixed-size hard rows are not enabled until baseline parity holds.
- if(e.text.includes('\n')&&!plainCompatible(e))return false;
- if(!usesRichTextLayout(e)&&!plainCompatible(e))return false;
+ // One Canvas geometry gate for plain and sparse-rich text alike.
+ // Rich textRuns must never bypass the soft-wrap/hard-row parity guard.
+ if(!plainCompatible(e))return false;
  try {return [resolveRichTextStyle(e),...richTextSpans(e).map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(e,s));}catch{return false;}
 }
 
 // Canonical layer + the editor's existing session history own all confirmed data.
 // Unknown DOM remains on screen until explicit recovery; it is never persisted.
 export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false, layout=()=>null, fit=()=>false}) {
- const startedPlain=!usesRichTextLayout(element);
  let layer=element, composing=false, pending=null, fallback=null, pasteText=null, confirmedHTML, inactive=false;
  const safe={phase:'confirmed', deferred:false};
  let savedSelection=null, preview=null;
@@ -131,11 +128,11 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   if(selection.anchor===selection.focus)return false;
   if(preview&&(preview.key!==key||preview.selection.anchor!==selection.anchor||preview.selection.focus!==selection.focus))finishPreview();
   const origin=preview?.element||structuredClone(layer);
-  if(startedPlain&&!plainCompatible(origin))return false;
+  if(!plainCompatible(origin))return false;
   const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
   retainRichTextSizeBase(next);
   if(next.autoFontSize)fit(next);
-  if((startedPlain||next.autoFontSize||origin.text.includes('\n'))&&!plainCompatible(next))return false;
+  if(!plainCompatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}
   if(!preview){recordInlineHistory(history,origin,caret(selection));preview={key,element:origin,selection};}
@@ -235,7 +232,7 @@ listen('beforeinput',e=>{
   commit(next,selection,{anchor:start+1,focus:start+1});
 
   safe.phase='confirmed';
-  if((startedPlain||layer.autoFontSize||layer.text.includes('\n'))&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
+  if(!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
   // A canceled operation has no pending native edit, even if an input is sent.
   return;
  }
@@ -281,7 +278,7 @@ listen('input',e=>{
   commit(next,previous.selection,selection);
 
   safe.phase='confirmed';
-  if((startedPlain||layer.autoFontSize||layer.text.includes('\n'))&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
+  if(!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
  }catch{stop('unsupported native DOM or selection');}
 });
 

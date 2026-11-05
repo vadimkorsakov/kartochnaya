@@ -1049,7 +1049,7 @@ function plainWysiwygLayoutCompatible(e){
    if(spans.some(part=>keys.some(key=>part.style[key]!==reference[key])))return false;
   }
   return true;
- }catch{return false}
+ }catch(error){return diagnose('exception:'+String(error?.message||error))}
 }
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
 function autoFitTextFont(e){

@@ -441,20 +441,20 @@ test('plain ordinary typing commit and reopen never fabricates runs',async({page
 
 
 
-test('rich text with soft wraps opens native textarea without changing sparse runs',async({page})=>{
+test('color-only rich soft-wrap opens WYSIWYG without changing sparse runs',async({page})=>{
  const initial=getLayer(await seed(page,{patch:{
   text:'alpha beta gamma delta',fontFamily:'Arial',fontSize:24,
   w:135,h:140,autoFontSize:false,
   textRuns:[{start:0,end:5,style:{textColor:'#2255cc'}}]
  }}));
  await edit(page);
- await expect(page.locator('#inlineText')).toBeFocused();
- await expect(page.locator(surface)).toBeHidden();
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
  await page.keyboard.press('ControlOrMeta+Enter');
  expect(await value(page)).toEqual(initial);
 });
 
-test('rich WYSIWYG that grows into soft wrap hands off and preserves sparse color',async({page})=>{
+test('rich WYSIWYG that grows into word soft-wrap stays live and preserves sparse color',async({page})=>{
  await seed(page,{patch:{
   text:'ABCD',fontFamily:'Arial',fontSize:24,w:135,h:140,autoFontSize:false,
   textRuns:[{start:0,end:2,style:{textColor:'#2255cc'}}]
@@ -462,12 +462,12 @@ test('rich WYSIWYG that grows into soft wrap hands off and preserves sparse colo
  await edit(page);
  await expect(page.locator(surface)).toBeFocused();
  await page.keyboard.insertText(' alpha beta gamma delta');
- await expect(page.locator('#inlineText')).toBeFocused();
- await expect(page.locator(surface)).toBeHidden();
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
  const changed=await value(page);
  expect(changed.text).toBe('ABCD alpha beta gamma delta');
  expect(changed.textRuns).toEqual([{start:0,end:2,style:{textColor:'#2255cc'}}]);
- await page.locator('#inlineText').press('ControlOrMeta+Enter');
+ await page.keyboard.press('ControlOrMeta+Enter');
  expect(await value(page)).toEqual(changed);
 });
 

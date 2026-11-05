@@ -71,7 +71,7 @@ test('obsolete legacy-top metadata cannot change unified Canvas line geometry or
  const imported=engine.layout({...source,textLayoutMode:'legacy-top'});
  assert.strictEqual(imported,unified,'old metadata cannot create a second layout');
  assert.equal(unified.rows[0].baseline,29.4);
- assert.equal(unified.rows[1].baseline-unified.rows[0].baseline,Math.max(32*1.15,36));
+ assert.ok(Math.abs(unified.rows[1].baseline-unified.rows[0].baseline-Math.max(32*1.15,36))<1e-10);
  assert.deepEqual(source,before);
 });
 

@@ -998,20 +998,27 @@ function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
  return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
 }
-// Canvas owns the geometry. Permit word-boundary soft-wraps for one font
-// geometry; range color alone does not change glyph advances. Size, font,
-// tracking and other run effects retain the safe textarea fallback.
+// Canvas owns the geometry. A soft-wrap may use color-only ranges or one
+// uniform font geometry across all characters. Mixed font geometry still
+// requires independent DOM/Canvas parity checks and uses textarea for now.
 function plainWysiwygLayoutCompatible(e){
  if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
  try{
   const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
   const softWrap=rows.some(row=>row.softWrap);
   if(softWrap){
-   // Stage 2: color-only sparse runs are safe to project within native word
-   // wraps. Geometry-changing or unknown run keys remain unsupported.
+   // Color splits cannot affect advances. A font/size/weight change is
+   // also safe for the first stage when every character uses identical
+   // resolved geometry, so CSS and Canvas both wrap one uniform font.
    if(e.autoFontSize||text.includes('\n'))return false;
+   const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','bold','italic']);
    if((e.textRuns||[]).some(run=>
-    Object.keys(run?.style||{}).some(key=>key!=='textColor')))return false;
+    Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
+   const spans=richTextSpans(e),keys=['fontFamily','fontWeight','fontStyle','fontSize','letterSpacing'];
+   const uniform=spans.every(part=>keys.every(key=>part.style[key]===spans[0].style[key]));
+   const colorOnly=(e.textRuns||[]).every(run=>
+    Object.keys(run?.style||{}).every(key=>key==='textColor'));
+   if(!colorOnly&&!uniform)return false;
    if(rows.some(row=>row.softWrap&&!/\s/u.test(text.slice(row.end-1,row.end))))return false;
    if(rows.reduce((height,row)=>height+row.height,0)>Math.max(1,e.h)-1)return false;
   }else if(rows.length!==text.split('\n').length)return false;

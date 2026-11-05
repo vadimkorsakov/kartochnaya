@@ -1,8 +1,8 @@
 const { test, expect, openHome, createDocument, canvasPoint, exportedDocument, exportPNG, openLibraryDocument, savedDocument } = require('./helpers');
 
 const editor = '#inlineText';
-async function frame(page) {
-  await openHome(page);
+async function frame(page,url='/') {
+  await openHome(page,url);
   await createDocument(page, 'Редактирование текста');
   await page.keyboard.press('t');
   const a = await canvasPoint(page, 30, 40), b = await canvasPoint(page, 270, 130);

@@ -472,6 +472,71 @@ test('rich WYSIWYG that grows into soft wrap hands off and preserves sparse colo
 });
 
 
+test('soft-wrap visual Up/Down caret remains in the expected Canvas rows at three zooms',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
+  fontSize:24,lineHeight:1.15,w:135,h:140,y:80,autoFontSize:false},{flag:'default'});
+ const caretPosition=()=>page.locator(surface).evaluate(el=>{
+  const selection=getSelection(),range=selection.getRangeAt(0),rect=range.getBoundingClientRect();
+  const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
+  const prefix=document.createRange();
+  prefix.setStart(el,0);prefix.setEnd(selection.focusNode,selection.focusOffset);
+  return {offset:prefix.toString().length,collapsed:selection.isCollapsed,
+   x:(rect.x-host.x)/scale,y:(rect.y-host.y)/scale};
+ });
+ for(const zoom of [50,100,200]){
+  await zoomTo(page,zoom);
+  await edit(page);
+  await expect(page.locator(surface)).toBeFocused();
+  await selectRange(page,13,13); // Inside "gamma", on Canvas row 2.
+  const middle=await caretPosition();
+  expect(middle.collapsed).toBe(true);
+  await page.keyboard.press('ArrowUp');
+  const above=await caretPosition();
+  expect(above.collapsed).toBe(true);
+  expect(middle.y-above.y).toBeGreaterThan(20);
+  expect(middle.y-above.y).toBeLessThan(35);
+  await page.keyboard.press('ArrowDown');
+  const below=await caretPosition();
+  expect(below.collapsed).toBe(true);
+  expect(Math.abs(below.y-middle.y)).toBeLessThan(1.5);
+  expect(below.offset).toBeGreaterThanOrEqual(11);
+  expect(below.offset).toBeLessThanOrEqual(16);
+  await expect(page.locator('#inlineText')).toBeHidden();
+  await expect(page.locator('#wysiwygRecovery')).toBeHidden();
+  await page.keyboard.press('Control+Enter');
+ }
+});
+
+test('soft-wrap cross-row keyboard selection, replace and history keep exact UTF-16 text',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const doc=await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
+  fontSize:24,lineHeight:1.15,w:135,h:140,y:80,autoFontSize:false},{flag:'default'});
+ const initial=getLayer(doc);
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await selectRange(page,6,16); // Select "beta gamma" across the first wrap.
+ expect(await page.locator(surface).evaluate(el=>getSelection().toString())).toBe('beta gamma');
+ await page.keyboard.insertText('cat');
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ expect(await state(page)).toEqual({text:'alpha cat delta',anchor:9,focus:9});
+ const changed=await snapshotValue(page);
+ expect(changed.textRuns).toBeUndefined();
+ await page.keyboard.press('Control+z');
+ expect(await snapshotValue(page)).toEqual(initial);
+ expect(await state(page)).toEqual({text:initial.text,anchor:6,focus:16});
+ await page.keyboard.press('Control+Shift+z');
+ expect(await snapshotValue(page)).toEqual(changed);
+ expect(await state(page)).toEqual({text:changed.text,anchor:9,focus:9});
+ await page.keyboard.press('Control+Enter');
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(changed);
+ await page.reload();await openLibraryDocument(page,doc.id);
+ expect(await snapshotValue(page)).toEqual(changed);
+ await edit(page);await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+Enter');
+});
+
 test('soft-wrap range color hands off to textarea without stealing HEX input focus',async({page})=>{
  await seedPlain(page,{text:'alpha beta gamma delta',fontFamily:'Arial',
   fontSize:24,w:170,h:140,autoFontSize:false},{flag:'default'});

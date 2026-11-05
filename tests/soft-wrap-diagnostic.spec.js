@@ -39,7 +39,7 @@ async function setup(page,patch){
  document.elements=document.elements.filter(e=>e.id==='title');
  Object.assign(document.elements[0],{text:'',fontFamily:'Arial',fontWeight:'400',
   fontStyle:'normal',fontSize:24,lineHeight:1.15,letterSpacing:0,
-  x:20,y:130,w:150,h:105,textRuns:undefined,autoFontSize:false,
+  x:20,y:20,w:150,h:205,textRuns:undefined,autoFontSize:false,
   rotation:0,textAlign:'left',verticalAlign:'top',...patch});
  await importPayload(page,payload);
  const record=(await records(page,'docs')).find(d=>d.elements.some(e=>e.id==='title'));
@@ -157,7 +157,8 @@ for(const [name,patch] of cases){
   expect(dom.rows.map(r=>r.text).join('')).toBe(text);
   expect(canvas.every(r=>Number.isFinite(r.x)&&Number.isFinite(r.width))).toBe(true);
   expect(dom.rows.every(r=>Number.isFinite(r.x)&&Number.isFinite(r.width))).toBe(true);
-  const p=await canvasPoint(page,100,175);
+  // Select on the first painted line, not in blank frame space.
+  const p=await canvasPoint(page,35,35);
   await page.mouse.dblclick(p.x,p.y);
   await expect(page.locator('#inlineText')).toBeFocused();
   await expect(page.locator('#inlineWysiwyg')).toBeHidden();

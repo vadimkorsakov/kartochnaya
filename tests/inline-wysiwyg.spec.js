@@ -507,12 +507,12 @@ test('hard-LF paragraphs preserve rows, cross-line selection, formatting and PNG
 test('hard-LF mixed tracking stays in WYSIWYG with Canvas fragment x parity',async({page})=>{
  await page.setViewportSize({width:2200,height:1600});
  await observePlainGeometry(page);
- const doc=await seedPlain(page,{text:'ABCD\\nEFGH',fontFamily:'Arial',fontSize:32,lineHeight:1.15,w:260,h:140},{flag:'default'});
+ const doc=await seedPlain(page,{text:'ABCD\nEFGH',fontFamily:'Arial',fontSize:32,lineHeight:1.15,w:260,h:140},{flag:'default'});
  await edit(page);await expect(page.locator(surface)).toBeFocused();
  await selectRange(page,1,3);
  const field=page.locator('#inspector [data-key=letterSpacing]');
  await field.fill('2');await field.press('Tab');
- await assertRange(page,'ABCD\\nEFGH',1,3);
+ await assertRange(page,'ABCD\nEFGH',1,3);
  const current=await snapshotValue(page);
  expect(current.textRuns).toEqual([{start:1,end:3,style:{letterSpacing:2}}]);
  await page.keyboard.press('Control+Enter');
@@ -522,7 +522,7 @@ test('hard-LF mixed tracking stays in WYSIWYG with Canvas fragment x parity',asy
  const dom=await page.locator(surface).evaluate(el=>{
   const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
   return [...el.querySelectorAll('span')].map(span=>({
-   text:span.textContent.replaceAll('\\n',''),x:(span.getBoundingClientRect().x-host.x)/scale
+   text:span.textContent.replaceAll('\n',''),x:(span.getBoundingClientRect().x-host.x)/scale
   })).filter(part=>part.text);
  });
  expect(dom.map(p=>p.text)).toEqual(draws.map(p=>p.text));

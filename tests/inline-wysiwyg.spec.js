@@ -3,7 +3,7 @@ const fixture=require('./fixtures/canvas-graph.json');
 const surface='#inlineWysiwyg';
 const getLayer=doc=>doc.elements.find(e=>e.id==='title');
 async function seed(page,{flag=true,patch={},palette,fonts}={}){
- await openHome(page,flag?'/?experimentalTextWysiwyg=1':'/');
+ await openHome(page,flag==='default'?'/':flag?'/?experimentalTextWysiwyg=1':'/?experimentalTextWysiwyg=0');
  const payload=structuredClone(fixture);if(fonts)payload.fonts=fonts;payload.documents=[payload.documents[0]];
  const doc=payload.documents[0];if(palette)doc.palette=palette;doc.groups=[];doc.elements=doc.elements.filter(e=>e.id==='title');
  Object.assign(doc.elements[0],{text:'A',textRuns:[{start:0,end:1,style:{fontWeight:'700',textColor:'#ff0000'}}],autoFontSize:false,rotation:0,textAlign:'left',verticalAlign:'top',...patch});
@@ -61,7 +61,7 @@ test('UTF-16 emoji, full deletion, continued session and Escape restore exact la
  await page.keyboard.press('Control+a');await page.keyboard.press('Backspace');expect((await value(page)).text).toBe('');await page.keyboard.type('Q');expect((await value(page)).text).toBe('Q');
  await page.keyboard.press('Escape');expect(await value(page)).toEqual(getLayer(initial));
 });
-test('without flag the legacy textarea edits normally',async({page})=>{
+test('explicit opt-out keeps the textarea as a diagnostic fallback',async({page})=>{
  await seed(page,{flag:false});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await page.keyboard.type('X');await page.keyboard.press('Control+Enter');expect((await value(page)).text).toBe('AX');
 });
 for(const [name,patch] of Object.entries({autoFit:{autoFontSize:true},center:{textAlign:'center'},unavailableFont:{fontFamily:'DefinitelyMissingFont987'},mask:{layerMaskSrc:'data:image/png;base64,AA=='},CRLF:{text:'A\r\nБ',textRuns:[{start:0,end:4,style:{bold:true}}]}}))test('textarea eligibility and unchanged open/close: '+name,async({page})=>{
@@ -429,7 +429,7 @@ for(const text of ['ABCD','ABCD\nABCD'])test('Arial unified baseline or multilin
 for(const [name,patch] of Object.entries({autoFit:{autoFontSize:true},rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'},ArialSoftWrap:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
  const doc=await seedPlain(page,patch);await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(getLayer(doc));
 });
-test('plain without flag retains textarea',async({page})=>{await seedPlain(page,{}, {flag:false});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden()});
+test('plain with explicit opt-out retains textarea',async({page})=>{await seedPlain(page,{}, {flag:false});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden()});
 
 test('plain ordinary typing commit and reopen never fabricates runs',async({page})=>{
  const doc=await seedPlain(page);await edit(page);await page.keyboard.type('H');await page.keyboard.press('Control+Enter');const typed=await snapshotValue(page);expect(typed.text).toBe('ABCDH');expect(typed).not.toHaveProperty('textRuns');expect(typed).not.toHaveProperty('textRunsBaseFontSize');await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(typed);await page.reload();await openLibraryDocument(page,doc.id);await edit(page);await expect(page.locator(surface)).toBeFocused();expect(await snapshotValue(page)).toEqual(typed);
@@ -500,6 +500,35 @@ test('plain near-width fallback preserves Canvas/PNG geometry on first color',as
  await testInfo.attach('near-width-unified-color.json',{body:JSON.stringify({before,after,png},null,2),contentType:'application/json'});
 });
 
+
+
+test('normal desktop URL applies range color, font and size visibly while editing',async({page})=>{
+ const doc=await seedPlain(page,{text:'Тест текста',fontFamily:'Arial',fontSize:32,lineHeight:1.1,w:350,h:90,autoFontSize:false},{flag:'default'});
+ await edit(page);
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await selectRange(page,5,11);
+ await openColor(page);
+ await hexColor(page,'#bb66dd');
+ await page.locator('[data-fill-close]').click();
+ await assertRange(page,'Тест текста',5,11);
+ await expect(page.locator(surface+' span')).toHaveCount(2);
+ const colors=await page.locator(surface+' span').evaluateAll(nodes=>nodes.map(n=>[n.textContent,getComputedStyle(n).color]));
+ expect(colors).toEqual([['Тест ','rgb(16, 18, 26)'],['текста','rgb(187, 102, 221)']]);
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Georgia"]').click();
+ await assertRange(page,'Тест текста',5,11);
+ expect(await page.locator(surface+' span').last().evaluate(el=>getComputedStyle(el).fontFamily)).toBe('"Georgia"');
+ const size=page.locator('#inspector [data-key=fontSize]');
+ await size.fill('40');await size.press('Tab');
+ await assertRange(page,'Тест текста',5,11);
+ expect(await page.locator(surface+' span').last().evaluate(el=>getComputedStyle(el).fontSize)).toBe('40px');
+ const live=await snapshotValue(page);
+ expect(live.textRuns).toEqual([{start:5,end:11,style:{fontFamily:'Georgia',fontSize:40,textColor:'#bb66dd'}}]);
+ await page.keyboard.press('Control+Enter');
+ expect(await snapshotValue(page)).toEqual(live);
+ await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(live);
+});
 
 test('plain ordinary typing preserves native WYSIWYG caret, absent runs and Escape',async({page})=>{
  const initial=getLayer(await seedPlain(page));await edit(page);await page.keyboard.type('X');

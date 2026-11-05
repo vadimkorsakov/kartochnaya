@@ -19,7 +19,11 @@ function unifiedDOMOffset(base, projection, text) {
  finally {probe.remove();}
 }
 export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompatible=()=>false) {
- if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')!=='1'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
+ // Rich inline editing is the desktop default. The explicit =0 switch is
+ // retained only for diagnosis and for fallback-focused regression tests.
+ // A previous opt-in gate left normal users on plain textarea, making range
+ // color/font/size changes invisible until the editor was closed.
+ if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')==='0'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
  if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.autoFontSize||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||e.strokeWidth||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
  if(!usesRichTextLayout(e)&&!plainCompatible(e))return false;

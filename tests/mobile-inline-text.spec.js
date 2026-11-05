@@ -398,7 +398,7 @@ test.describe('mobile inline integration', () => {
   });
 });
 test('desktop Escape cancels without a history entry and Done never appears', async ({ page }) => {
-  const before = await open(page, { mobile: false, card: true }), h = await history(page);
+  const before = await open(page, { mobile: false, card: true, legacy: true }), h = await history(page);
   await edit(page, false); await expect(page.locator(done)).toBeHidden(); await page.locator(editor).fill('Отменяемый заголовок'); await page.keyboard.press('Escape');
   await expect(page.locator(editor)).toBeHidden(); expect(await history(page)).toBe(h);
   const after = await exportedDocument(page); expect(text(after)).toBe(text(before)); expect(after.title).toBe(before.title);

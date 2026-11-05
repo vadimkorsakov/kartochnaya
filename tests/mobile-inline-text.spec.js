@@ -16,7 +16,7 @@ async function edit(page, mobile = true, mouse = false) {
   await expect(page.locator(editor)).toBeFocused();
 }
 async function open(page, options = {}) {
-  if (page.url() === 'about:blank') await openHome(page);
+  if (page.url() === 'about:blank') await openHome(page,options.legacy?'/?experimentalTextWysiwyg=0':'/');
   const payload = structuredClone(fixture); payload.documents = [payload.documents[0]];
   const d = payload.documents[0];
   if (options.large) { d.width = Math.round((page.viewportSize().width - 16) / .29); d.height = 1350; Object.assign(d.elements.find(e => e.id === 'title'), { x: 50, y: 1100, w: 800, h: 100, fontSize: 64 }); }
@@ -398,7 +398,7 @@ test.describe('mobile inline integration', () => {
   });
 });
 test('desktop Escape cancels without a history entry and Done never appears', async ({ page }) => {
-  const before = await open(page, { mobile: false, card: true }), h = await history(page);
+  const before = await open(page, { mobile: false, card: true, legacy: true }), h = await history(page);
   await edit(page, false); await expect(page.locator(done)).toBeHidden(); await page.locator(editor).fill('Отменяемый заголовок'); await page.keyboard.press('Escape');
   await expect(page.locator(editor)).toBeHidden(); expect(await history(page)).toBe(h);
   const after = await exportedDocument(page); expect(text(after)).toBe(text(before)); expect(after.title).toBe(before.title);

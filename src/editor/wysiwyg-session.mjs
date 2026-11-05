@@ -1,4 +1,4 @@
-import {richTextSpans, resolveRichTextStyle, richTextFont, usesRichTextLayout, retainRichTextSizeBase, LEGACY_TOP_LAYOUT, legacyTopProjection} from '../render/rich-text-layout.mjs';
+import {richTextSpans, resolveRichTextStyle, richTextFont, usesRichTextLayout, retainRichTextSizeBase} from '../render/rich-text-layout.mjs';
 import {replaceText, applyTextStyle} from '../model/rich-text.mjs';
 import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-history.mjs';
 
@@ -10,7 +10,7 @@ function lineHeight(layer, style) {
 }
 // CSS inline baselines need not equal Canvas fontBoundingBox baselines.
 // Measure the actual inline baseline before positioning any editable glyphs.
-function legacyDOMOffset(base, projection, text) {
+function unifiedDOMOffset(base, projection, text) {
  const probe=document.createElement('div'),baseline=document.createElement('span');
  Object.assign(probe.style,{position:'fixed',left:'-100000px',top:'0',visibility:'hidden',padding:'0',margin:'0',border:'0',font:richTextFont(base),fontKerning:'normal',lineHeight:projection.height+'px',letterSpacing:base.letterSpacing+'px',whiteSpace:'break-spaces',width:'max-content'});
  baseline.style.cssText='display:inline-block;width:0;height:0;padding:0;margin:0;border:0;vertical-align:baseline;line-height:0';
@@ -19,16 +19,24 @@ function legacyDOMOffset(base, projection, text) {
  finally {probe.remove();}
 }
 export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompatible=()=>false) {
- if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')!=='1'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
- if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.autoFontSize||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
+ // Rich inline editing is the desktop default. The explicit =0 switch is
+ // retained only for diagnosis and for fallback-focused regression tests.
+ // A previous opt-in gate left normal users on plain textarea, making range
+ // color/font/size changes invisible until the editor was closed.
+ if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')==='0'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
+ if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||e.strokeWidth||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
- if((!usesRichTextLayout(e)||e.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(e))return false;
+ // Auto-fit participates only while Canvas projects a single unwrapped row.
+ if(e.autoFontSize&&!plainCompatible(e))return false;
+ // Mixed-font/mixed-size hard rows are not enabled until baseline parity holds.
+ if(e.text.includes('\n')&&!plainCompatible(e))return false;
+ if(!usesRichTextLayout(e)&&!plainCompatible(e))return false;
  try {return [resolveRichTextStyle(e),...richTextSpans(e).map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(e,s));}catch{return false;}
 }
 
 // Canonical layer + the editor's existing session history own all confirmed data.
 // Unknown DOM remains on screen until explicit recovery; it is never persisted.
-export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false}) {
+export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false, layout=()=>null, fit=()=>false}) {
  const startedPlain=!usesRichTextLayout(element);
  let layer=element, composing=false, pending=null, fallback=null, pasteText=null, confirmedHTML, inactive=false;
  const safe={phase:'confirmed', deferred:false};
@@ -37,16 +45,50 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
  function stop(reason){pending=null;pasteText=null;fallback=reason;safe.phase='recovery-required';if(!inactive)onRecovery(reason);}
  function project(value,selection){
+  // Probe measurements also attach temporary DOM nodes. Capture the owner
+  // before any measurement, not just before replaceChildren: the browser can
+  // reset its contenteditable Range while those probes are attached.
+  const hadFocus=document.activeElement===host;
   if(selection?.start!==undefined)selection={anchor:selection.direction==='backward'?selection.end:selection.start,focus:selection.direction==='backward'?selection.start:selection.end};
   // Prepare every metric and node before touching the canonical layer or DOM.
   const base=resolveRichTextStyle(value),spans=richTextSpans(value);
   const styles=[base,...spans.map(p=>p.style)];
   for(const style of styles)if(!available(style.fontFamily)||!document.fonts.check(richTextFont(style)))throw Error('Font unavailable');
-  const projection=(startedPlain||value.textLayoutMode===LEGACY_TOP_LAYOUT)?legacyTopProjection(ctx,value):null;
   const heights=styles.map(style=>lineHeight(value,style));
-  const offset=projection?legacyDOMOffset(base,projection,value.text):0;
-  const nodes=spans.map((p,i)=>{const span=document.createElement('span');span.textContent=p.text;Object.assign(span.style,{font:richTextFont(p.style),lineHeight:heights[i+1],letterSpacing:p.style.letterSpacing+'px',color:p.style.textColor});if(projection)Object.assign(span.style,{position:'relative',top:offset+'px'});return span;});
+  // A plain layer stays in the unified Canvas coordinate system even after
+  // its first sparse color/size override. Do not persist a compatibility mode.
+  // The same one-row Canvas baseline must apply both before and after the
+  // first style override, including a later reopen with saved textRuns. Using
+  // startedPlain here made the DOM jump by the font baseline offset on reopen.
+  const projection=layout(value);
+  const firstRow=projection?.rows?.length===1?projection.rows[0]:null;
+  const hardRows=projection?.rows?.length>1&&plainCompatible(value)?projection.rows:null;
+  const offset=firstRow?unifiedDOMOffset(base,{height:firstRow.height,baseline:firstRow.baseline},value.text):0;
+  const makeSpan=(text,style,height,top)=>{
+   const span=document.createElement('span');span.textContent=text;
+   Object.assign(span.style,{font:richTextFont(style),lineHeight:height+'px',letterSpacing:style.letterSpacing+'px',color:style.textColor});
+   if(top!==null)Object.assign(span.style,{position:'relative',top:top+'px'});
+   return span;
+  };
+  // The real newline remains part of a text node, not a generated <br>.
+  // Each Canvas hard row gets its own baseline correction. This preserves
+  // UTF-16 Selection across boundaries and avoids duplicate native breaks.
+  const nodes=hardRows?hardRows.flatMap(row=>{
+   const text=value.text.slice(row.start,row.end),top=unifiedDOMOffset(base,
+    {height:row.height,baseline:row.baseline-row.y},text||'Mg');
+   const output=[];
+   for(const part of spans){
+    const start=Math.max(row.start,part.start),end=Math.min(row.nextStart,part.end);
+    if(end>start)output.push(makeSpan(value.text.slice(start,end),part.style,row.height,top));
+   }
+   return output;
+  }):spans.map((part,i)=>makeSpan(part.text,part.style,
+   parseFloat(heights[i+1]),firstRow?offset:null));
   const next=structuredClone(value);
+  // The browser can blur contenteditable while replaceChildren invalidates
+  // its current Range, particularly when a trailing LF gains a caret sentinel.
+  // Capture ownership BEFORE the DOM change and restore it only for a session
+  // that already owned focus. Inspector/color fields must keep their focus.
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
   Object.assign(host.style,{font:richTextFont(base),lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
   host.replaceChildren(...nodes);
@@ -57,11 +99,21 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // numeric/HEX input (emitting change in the middle of its input callback).
   // Keep the range in UTF-16 while a panel owns focus; restore on host focus.
   savedSelection={...selection};
-  if(document.activeElement===host)setSelection(selection.anchor,selection.focus);
+  if(hadFocus){
+   if(document.activeElement!==host)host.focus({preventScroll:true});
+   setSelection(selection.anchor,selection.focus);
+  }
  }
  function clean(){try{return !composing&&!pending&&!fallback&&!safe.deferred&&host.innerHTML===confirmedHTML&&readText()===layer.text;}catch{return false;}}
  const caret=c=>({start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'});
- function commit(value,before,after){recordInlineHistory(history,layer,caret(before));recordInlineHistory(history,value,caret(after));project(value,after);onChange();}
+ function commit(value,before,after){
+  // Fit the next snapshot before history and DOM are committed: all renderers
+  // and Undo/Redo must use the same canonical fontSize.
+  if(value.autoFontSize)fit(value);
+  recordInlineHistory(history,layer,caret(before));
+  recordInlineHistory(history,value,caret(after));
+  project(value,after);onChange();
+ }
  function travel(direction){finishPreview();if(!clean()){stop('История недоступна до восстановления ввода');return;}const state=moveInlineHistory(history,direction);if(state){project(state.element,state.caret);onChange();}}
  function requestFallback(reason){
   if(!clean()){stop('Нужно восстановить подтверждённый ввод');return false;}
@@ -79,14 +131,11 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   if(selection.anchor===selection.focus)return false;
   if(preview&&(preview.key!==key||preview.selection.anchor!==selection.anchor||preview.selection.focus!==selection.focus))finishPreview();
   const origin=preview?.element||structuredClone(layer);
-  if(startedPlain&&!usesRichTextLayout(origin)&&!plainCompatible(origin))return false;
+  if(startedPlain&&!plainCompatible(origin))return false;
   const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
-  if(startedPlain&&!usesRichTextLayout(origin)&&next.textRuns?.length&&legacyTopProjection(ctx,origin)){
-   if(Math.min(selection.anchor,selection.focus)===0&&Math.max(selection.anchor,selection.focus)===origin.text.length)return false;
-   next.textLayoutMode=LEGACY_TOP_LAYOUT;
-  }
-  if(next.textLayoutMode===LEGACY_TOP_LAYOUT&&!legacyTopProjection(ctx,next))return false;
   retainRichTextSizeBase(next);
+  if(next.autoFontSize)fit(next);
+  if((startedPlain||next.autoFontSize||origin.text.includes('\n'))&&!plainCompatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}
   if(!preview){recordInlineHistory(history,origin,caret(selection));preview={key,element:origin,selection};}
@@ -121,12 +170,14 @@ function domPointToOffset(node,offset){
 }
 function offsetToDomPoint(offset){
  const map=index();if(!Number.isInteger(offset)||offset<0||offset>map.text.length)throw Error('Invalid UTF-16 offset');
- // Prefer the structural end position for the final empty row.
- const sentinel=host.querySelector(':scope > br[data-caret-sentinel]');
- if(sentinel&&offset===map.text.length)return {node:host,offset:[...host.childNodes].indexOf(sentinel)};
+ // Keep the selection anchored in a live text node whenever possible.
+ // The host-level point before a trailing <br> can be normalised by Chromium
+ // to the start of contenteditable after a controlled Enter, losing the caret.
  const leaves=[...map.leaves].reverse();
  const leaf=leaves.find(p=>offset>=p.start&&offset<=p.end);
  if(leaf)return {node:leaf.node,offset:offset-leaf.start};
+ const sentinel=host.querySelector(':scope > br[data-caret-sentinel]');
+ if(sentinel&&offset===map.text.length)return {node:host,offset:[...host.childNodes].indexOf(sentinel)};
  for(const [node,offsets] of map.points){const i=offsets.indexOf(offset);if(i>=0)return {node,offset:i};}
  throw Error('Unmapped offset');
 }
@@ -184,7 +235,7 @@ listen('beforeinput',e=>{
   commit(next,selection,{anchor:start+1,focus:start+1});
 
   safe.phase='confirmed';
-  if(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
+  if((startedPlain||layer.autoFontSize||layer.text.includes('\n'))&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
   // A canceled operation has no pending native edit, even if an input is sent.
   return;
  }
@@ -230,7 +281,7 @@ listen('input',e=>{
   commit(next,previous.selection,selection);
 
   safe.phase='confirmed';
-  if(((startedPlain&&!usesRichTextLayout(layer))||layer.textLayoutMode===LEGACY_TOP_LAYOUT)&&!plainCompatible(layer))requestFallback('Изменилась раскладка обычного текста');
+  if((startedPlain||layer.autoFontSize||layer.text.includes('\n'))&&!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
  }catch{stop('unsupported native DOM or selection');}
 });
 

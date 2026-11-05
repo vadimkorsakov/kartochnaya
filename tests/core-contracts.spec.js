@@ -29,7 +29,7 @@ async function reopen(page, document) {
 test('text edits keep the displayed Canvas and PNG export pixel-identical at 100% zoom', async ({ page }) => {
   // The fit limit is exactly 300% at this viewport; UI zoom buttons reach 100%.
   await page.setViewportSize({ width: 1920, height: 1440 });
-  await openHome(page);
+  await openHome(page,'/?experimentalTextWysiwyg=0');
   await createDocument(page, 'Core text rendering');
   await expect(page.locator('#zoomLabel')).toHaveText('300%');
   for (let i = 0; i < 20; i++) await page.locator('#zoomOutBtn').click();
@@ -40,9 +40,10 @@ test('text edits keep the displayed Canvas and PNG export pixel-identical at 100
   expect((await canvasPixels(page)).data).toEqual(before.image.data);
   const point = await canvasPoint(page, 70, 65);
   await page.mouse.dblclick(point.x, point.y);
-  await expect(page.locator('#inlineText')).toBeVisible();
-  await page.locator('#inlineText').fill('Новый текст\nLine two');
-  await page.locator('#inlineText').press('ControlOrMeta+Enter');
+  const editor=page.locator('#inlineWysiwyg:visible,#inlineText:visible');
+  await expect(editor).toBeVisible();
+  await editor.fill('Новый текст\nLine two');
+  await page.keyboard.press('ControlOrMeta+Enter');
   await deselect(page);
   const after = await exportPNG(page);
   expect(after.image.data).not.toEqual(before.image.data);

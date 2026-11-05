@@ -1,7 +1,12 @@
 import { normalizeRuns } from '../model/rich-text.mjs';
 
-export const usesRichTextLayout = e => Array.isArray(e.textRuns) && e.textRuns.length > 0 &&
+// Ordinary horizontal text always uses one renderer, whether or not styled
+// ranges exist. A formatting operation must not switch the rendering engine.
+export const supportsHorizontalTextLayout = e =>
   (!e.textMode || e.textMode === 'horizontal') && !e.mobileArcRadius && e.textAlign !== 'justify';
+// Keep the sparse-range predicate separate for session/model migrations.
+export const usesRichTextLayout = e => supportsHorizontalTextLayout(e) &&
+  Array.isArray(e.textRuns) && e.textRuns.length > 0;
 
 const positive = (n, fallback) => Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : fallback;
 const spacing = n => Number.isFinite(Number(n)) ? Number(n) : 0;
@@ -41,43 +46,6 @@ export function richTextSpans(e) {
   return spans;
 }
 
-// Opt-in only: documents without this value retain their original rich layout.
-export const LEGACY_TOP_LAYOUT = 'legacy-top';
-export function legacyAlphabeticBaseline(context, text, style) {
-  context.save();
-  try {
-    context.font = richTextFont(style); context.fontKerning = 'normal';
-    context.letterSpacing = style.letterSpacing + 'px';
-    context.textBaseline = 'top'; const top = context.measureText(text).actualBoundingBoxAscent;
-    context.textBaseline = 'alphabetic'; const alphabetic = context.measureText(text).actualBoundingBoxAscent;
-    if (!Number.isFinite(top) || !Number.isFinite(alphabetic)) throw Error('Legacy baseline unavailable');
-    return alphabetic - top;
-  } finally { context.restore(); }
-}
-// The new DOM projection is deliberately limited to uniform Arial 32 with LF.
-// Color may split spans, but fonts/sizes/spacing must still match the layer.
-// Returns session-only geometry; never writes a mode into the source layer.
-export function legacyTopProjection(context, e) {
-  if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && (usesRichTextLayout(e) || e.textLayoutMode !== undefined)) return null;
-  if (String(e.text ?? '').split('\n').some(text => !text)) return null;
-  const base = resolveRichTextStyle(e);
-  if (base.fontFamily !== 'Arial' || base.fontSize !== 32 || base.fontWeight !== '400' || base.fontStyle !== 'normal' || (e.lineHeight || 1.15) !== 1.15) return null;
-  if (richTextSpans(e).some(p => ['fontFamily','fontSize','fontWeight','fontStyle','letterSpacing'].some(k => p.style[k] !== base[k]))) return null;
-  context.save();
-  try {
-    context.font = richTextFont(base); context.textBaseline = 'alphabetic';
-    const m = context.measureText('Mg'), height = base.fontSize * (e.lineHeight || 1.15);
-    if (!Number.isFinite(m.fontBoundingBoxAscent) || !Number.isFinite(m.fontBoundingBoxDescent) || m.fontBoundingBoxAscent + m.fontBoundingBoxDescent > height) return null;
-    const natural = m.fontBoundingBoxAscent + (height - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) / 2;
-    const offsets = String(e.text ?? '').split('\n').map(text => legacyAlphabeticBaseline(context, text || 'Mg', base) - natural);
-    if (offsets.some(offset => Math.abs(offset - offsets[0]) > .000001)) return null;
-    if (e.textLayoutMode !== LEGACY_TOP_LAYOUT && Math.abs(offsets[0]) <= .5) return null;
-    return {offset: offsets[0], baseline: natural + offsets[0], height};
-  } finally { context.restore(); }
-}
-
-// One persisted reference size is needed to scale absolute run sizes without
-// rewriting them, including after save/reopen. Never called during painting.
 export function retainRichTextSizeBase(e) {
   if (usesRichTextLayout(e) && !positive(e.textRunsBaseFontSize, 0) &&
       e.textRuns.some(r => positive(r?.style?.fontSize, 0))) e.textRunsBaseFontSize = positive(e.fontSize, 24);
@@ -115,7 +83,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
     const spans = richTextSpans(e), base = resolveRichTextStyle(e);
     const width = Math.max(1, Number(e.w) || 1), height = Math.max(0, Number(e.h) || 0);
     const lineHeight = Math.max(.5, Number(e.lineHeight) || 1.15);
-    const key = JSON.stringify([spans, base, width, height, lineHeight, e.textAlign, e.verticalAlign, e.textLayoutMode, fontSet?.size]);
+    const key = JSON.stringify([spans, base, width, height, lineHeight, e.textAlign, e.verticalAlign, fontSet?.size]);
     if (layouts.has(key)) return layouts.get(key);
     // Segment the source as a whole: run boundaries cannot split emoji/combining
     // clusters. If a run starts inside a cluster, its first character owns it.
@@ -127,30 +95,41 @@ export function createRichTextLayoutEngine(context, fontSet) {
     }
     const rows = []; let fragments = [], rowWidth = 0, rowStart = 0;
     const styleKey = s => JSON.stringify(s);
+    // Paint colors must not alter shaping or move subsequent glyphs. A color
+    // split preserves the advance of the full contiguous font/spacing sequence,
+    // while keeping separate fragments for per-range drawing and ink bounds.
+    const geometryKey = ({ textColor, ...geometry }) => JSON.stringify(geometry);
     function append(parts, cluster) {
       const last = parts.at(-1), id = styleKey(cluster.style);
+      const geometry = geometryKey(cluster.style);
+      const sameGeometry = last?.geometry === geometry;
+      const previousShapeWidth = sameGeometry ? last.shapeWidth : 0;
+      const shapeText = sameGeometry ? last.shapeText + cluster.text : cluster.text;
+      const shapeWidth = measure(shapeText, cluster.style).width;
       if (last?.id === id) {
-        const next = { ...last, text: last.text + cluster.text, end: cluster.end };
-        next.metrics = measure(next.text, next.style); parts[parts.length - 1] = next;
-        return next.metrics.width - last.metrics.width;
+        const next = { ...last, text: last.text + cluster.text, end: cluster.end,
+          metrics: measure(last.text + cluster.text, last.style), shapeText, shapeWidth };
+        parts[parts.length - 1] = next;
+      } else {
+        parts.push({ ...cluster, id, geometry, shapeText, shapeWidth,
+          metrics: measure(cluster.text, cluster.style) });
       }
-      const part = { ...cluster, id, metrics: measure(cluster.text, cluster.style) };
-      parts.push(part); return part.metrics.width;
+      return shapeWidth - previousShapeWidth;
     }
     function finish(breakCluster, final = false) {
       const samples = fragments.length ? fragments : [{ style: base, metrics: measure('Mg', base) }];
       const ascent = Math.max(...samples.map(p => p.metrics.ascent));
       const descent = Math.max(...samples.map(p => p.metrics.descent));
       const maxSize = Math.max(...samples.map(p => p.style.fontSize));
-      const legacy = e.textLayoutMode === LEGACY_TOP_LAYOUT;
-      const rowHeight = legacy ? maxSize * lineHeight : Math.max(maxSize * lineHeight, ascent + descent);
+      const rowHeight = Math.max(maxSize * lineHeight, ascent + descent);
+      // Layout ignores obsolete textLayoutMode; no old-baseline branch remains.
       // Source intervals are UTF-16, independent of rendered geometry. Hard
       // breaks are excluded from end and owned by [end, nextStart). A trailing
       // empty row has start=end=text.length. Legacy ignored CRs retain offsets.
       const end = breakCluster?.start ?? (final ? text.length : fragments.at(-1)?.end ?? rowStart);
       const nextStart = breakCluster?.end ?? end;
       rows.push({ start: rowStart, end, nextStart, softWrap: !breakCluster && !final,
-        fragments, width: rowWidth, height: rowHeight, baseline: legacy ? Math.max(...samples.map(p => legacyAlphabeticBaseline(context, text.slice(rowStart, end) || 'Mg', p.style))) : ascent + (rowHeight - ascent - descent) / 2 });
+        fragments, width: rowWidth, height: rowHeight, baseline: ascent + (rowHeight - ascent - descent) / 2 });
       rowStart = nextStart;
       fragments = []; rowWidth = 0;
     }
@@ -188,8 +167,13 @@ export function createRichTextLayoutEngine(context, fontSet) {
     for (const row of rows) {
       let x = e.textAlign === 'center' ? (width - row.width) / 2 : e.textAlign === 'right' ? width - row.width : 0;
       row.y = y; row.baseline += y;
-      row.fragments = row.fragments.map(({ text, style, metrics, start, end }) => {
-        const part = { text, style, start, end, x, y: row.baseline, width: metrics.width }; x += metrics.width; return part;
+      let previousGeometry = null, previousShapeWidth = 0;
+      row.fragments = row.fragments.map(({ text, style, start, end, geometry, shapeWidth }) => {
+        const advance = geometry === previousGeometry ? shapeWidth - previousShapeWidth : shapeWidth;
+        const part = { text, style, start, end, x, y: row.baseline, width: advance };
+        x += advance;
+        previousGeometry = geometry; previousShapeWidth = shapeWidth;
+        return part;
       });
       y += row.height;
     }

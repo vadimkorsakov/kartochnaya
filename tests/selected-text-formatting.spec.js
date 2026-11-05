@@ -16,7 +16,9 @@ async function model(page){return page.evaluate(async()=>{
 const layer=async page=>(await model(page)).elements[0];
 async function seed(page,patch={},mobile=false){
  await page.addInitScript(()=>{window.textDraws=[];const proto=CanvasRenderingContext2D.prototype,fn=proto.fillText;proto.fillText=function(text,x,y,...rest){if(this.canvas.id==='canvas')window.textDraws.push({text,font:this.font,color:this.fillStyle,spacing:this.letterSpacing});return fn.call(this,text,x,y,...rest)}});
- await openHome(page);const payload=structuredClone(fixture);
+ // Test native textarea selection/history as an explicit fallback contract;
+ // the default desktop WYSIWYG has independent live-formatting coverage.
+ await openHome(page,mobile?'/':'/?experimentalTextWysiwyg=0');const payload=structuredClone(fixture);
  Object.assign(payload.document.elements[0],{id:'selected-text',name:'Selected text',x:16,y:16,w:288,h:208,fontFamily:'Arial',fontSize:20,lineHeight:1.25,text:'Привет мир 😀',textColor:'#000000',fill:'#000000',fillType:'solid',autoFontSize:false},patch);
  await importPayload(page,payload);const doc=(await records(page,'docs')).find(d=>d.title==='Visual fixed font (импорт)');await openLibraryDocument(page,doc.id);
  if(mobile){await page.locator('[data-mobile=layers]:visible').tap();await page.locator('#mobileLayerList .layer-name').filter({hasText:'Selected text'}).tap();await page.locator('#mobileLayersClose').tap();await page.locator('#mobileContext [data-mobile=edit]').tap()}

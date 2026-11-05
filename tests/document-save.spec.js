@@ -238,7 +238,7 @@ test("F05 a new unsaved document and two rapid text edits persist the latest ver
   page,
 }) => {
   await observe(page);
-  await openHome(page);
+  await openHome(page,'/?experimentalTextWysiwyg=0');
   await reset(page);
   await createDocument(page, "F05 new");
   await saved(page);
@@ -386,7 +386,7 @@ test("F05 inline text finalization and debounce belong to the outgoing tab", asy
   page,
 }) => {
   await observe(page);
-  await openHome(page);
+  await openHome(page,'/?experimentalTextWysiwyg=0');
   await createDocument(page, "F05 text X");
   await createText(page, "before");
   await saved(page);
@@ -419,7 +419,7 @@ test("F05 unchanged text finalization preserves timestamp and performs no write"
   page,
 }) => {
   await observe(page);
-  await openHome(page);
+  await openHome(page,'/?experimentalTextWysiwyg=0');
   await createDocument(page, "F05 unchanged text");
   await createText(page, "unchanged");
   await saved(page);
@@ -442,7 +442,7 @@ test("F05 live text changes cannot display saved and reverting restores confirme
   page,
 }) => {
   await observe(page);
-  await openHome(page);
+  await openHome(page,'/?experimentalTextWysiwyg=0');
   await createDocument(page, "F05 indicator");
   await createText(page, "confirmed");
   await saved(page);

@@ -90,10 +90,14 @@ async function createText(page, content = 'Тестовый текст') {
   await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps: 5 });
   await page.mouse.up();
-  await expect(page.locator('#inlineText')).toBeVisible();
-  await page.locator('#inlineText').fill(content);
-  await page.locator('#inlineText').press('ControlOrMeta+Enter');
+  // New auto-fit layers open the visible WYSIWYG; the shared helper handles
+  // whichever editor is actually active, including a mid-input fallback.
+  const editor=page.locator('#inlineWysiwyg:visible,#inlineText:visible');
+  await expect(editor).toBeVisible();
+  await editor.fill(content);
+  await page.keyboard.press('ControlOrMeta+Enter');
   await expect(page.locator('#inlineText')).toBeHidden();
+  await expect(page.locator('#inlineWysiwyg')).toBeHidden();
 }
 
 async function addShape(page) {

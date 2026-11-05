@@ -1,7 +1,7 @@
 import {eligibleWysiwyg, createWysiwygSession} from './editor/wysiwyg-session.mjs';
 import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
 import { applyTextStyle, updateText, transformText, replaceText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
-import { usesRichTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine, LEGACY_TOP_LAYOUT, legacyTopProjection } from './render/rich-text-layout.mjs';
+import { supportsHorizontalTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine } from './render/rich-text-layout.mjs';
 import { createReplacementSession } from './backup/replace.mjs';
 import { createInstanceGuard } from './backup/instances.mjs';
 import { installBackupUI } from './backup/ui.mjs';
@@ -998,50 +998,30 @@ function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
  return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
 }
-// Opening a plain layer must not opt it into the mixed Canvas painter. Compare
-// the real legacy rows and baseline with the virtual rich projection instead.
-// Incompatible fonts/wraps remain on textarea until the engines are reconciled.
+// The Canvas painter owns row geometry. Native line breaks are eligible only
+// when every row is hard-broken: CSS and Canvas automatic word wrapping can
+// disagree, so soft-wrapped paragraphs still use the textarea fallback.
 function plainWysiwygLayoutCompatible(e){
  if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
  try{
-  const c=textFitContext,projection=legacyTopProjection(c,e);
-  const rows=richTextEngine.layout(projection?{...e,textLayoutMode:LEGACY_TOP_LAYOUT}:e).rows,lines=wrapLines(c,e);
-  if(e.textLayoutMode===LEGACY_TOP_LAYOUT&&!projection)return false;
-  if(projection&&rows.some(row=>row.softWrap))return false;
-  if(rows.length!==lines.length)return false;
-  c.save();
-  try{
-   c.font=fontString(e);const legacyFont=c.font;
-   c.font=richTextFont(resolveRichTextStyle(e));if(c.font!==legacyFont)return false;
-   c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';
-   const step=(e.lineHeight||1.15)*(e.fontSize||24);
-   // Half a document pixel is at most one screen pixel at the checked 200%.
-   return rows.every((row,i)=>{
-    // Fallback glyphs (including emoji) may change the legacy top baseline.
-    // Measure the actual row, not a Latin sample such as Mg.
-    const source=lines[i],text=source||'Mg',chars=Array.from(source);
-    // A color boundary also separates Canvas shaping runs. Refuse a plain
-    // row whose glyph advances depend on cross-boundary shaping/kerning.
-    let previousWidth=0,largest=0,second=0;
-    for(let j=0;j<chars.length;j++){
-     const width=c.measureText(chars[j]).width;
-     if(j){
-      const delta=previousWidth+width-c.measureText(chars[j-1]+chars[j]).width;
-      if(Math.abs(delta)>.5)return false;
-      if(delta>largest){second=largest;largest=delta}else second=Math.max(second,delta);
-     }
-     previousWidth=width;
-    }
-    // A single first range introduces at most two shaping boundaries. Keep
-    // enough room for both; even small kerning loss must not add a soft wrap.
-    if(c.measureText(source).width+largest+second>Math.max(1,e.w))return false;
-    c.textBaseline='top';const top=c.measureText(text).actualBoundingBoxAscent;
-    c.textBaseline='alphabetic';const baseline=c.measureText(text).actualBoundingBoxAscent-top;
-    return row.fragments.map(p=>p.text).join('')===lines[i]&&
-     Math.abs(row.width-c.measureText(lines[i]).width)<=.5&&
-     Math.abs(row.baseline-(baseline+i*step))<=.5&&Math.abs(row.y-i*step)<=.5;
-   });
-  }finally{c.restore()}
+  const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
+  if(rows.length!==text.split('\n').length||rows.some(row=>row.softWrap||
+    !Number.isFinite(row.baseline)||row.height<=0||
+    row.width>Math.max(1,e.w)-1))return false;
+  if(rows.length>1){
+   // Same glyph geometry across colored spans means the native hard lines
+   // can use one font baseline/line-height per Canvas row.
+   // A sparse override may cover the whole text (e.g. all-bold title).
+   // What matters for hard-row baseline parity is uniform glyph geometry
+   // across *rendered* spans, not whether that geometry equals layer defaults.
+   const spans=richTextSpans(e),reference=spans[0]?.style||resolveRichTextStyle(e);
+   // Tracking changes horizontal advances but not font ascent/descent or
+   // hard-row baseline. Keep font geometry homogeneous; Canvas still owns
+   // widths and the no-soft-wrap eligibility check above.
+   const keys=['fontFamily','fontSize','fontWeight','fontStyle'];
+   if(spans.some(part=>keys.some(key=>part.style[key]!==reference[key])))return false;
+  }
+  return true;
  }catch{return false}
 }
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
@@ -1051,7 +1031,7 @@ function autoFitTextFont(e){
  const before=e.fontSize,lh=Math.max(.5,Number(e.lineHeight)||1.15),maxW=Math.max(10,e.w)-1,maxH=Math.max(1,e.h)-1;
  const fits=size=>{
   const sample={...e,fontSize:size};
-  if(usesRichTextLayout(sample)){const layout=richTextEngine.layout(sample);return layout.height<=maxH&&layout.width<=maxW}
+  if(supportsHorizontalTextLayout(sample)){const layout=richTextEngine.layout(sample);return layout.height<=maxH&&layout.width<=maxW}
   textFitContext.font=fontString(sample);
   const lines=wrapLines(textFitContext,sample);
   return lines.length*size*lh<=maxH&&lines.every(line=>measuredTextWidth(textFitContext,sample,line)<=maxW);
@@ -1067,7 +1047,7 @@ function fitTextBoxToContent(e){
  // Match Canvas wrapping; do not accidentally turn soft-wrapped paragraphs into
  // enormously wide single lines. Grow only if a single glyph cannot fit.
  textFitContext.font=fontString(e);
- const mixed=usesRichTextLayout(e)?richTextEngine.layout(e):null,lines=mixed?null:wrapLines(textFitContext,e);
+ const mixed=supportsHorizontalTextLayout(e)?richTextEngine.layout(e):null,lines=mixed?null:wrapLines(textFitContext,e);
  const naturalWidth=mixed?Math.max(12,Math.ceil(mixed.width+2)):Math.max(12,...lines.map(line=>Math.ceil(measuredTextWidth(textFitContext,e,line)+2)));
  const nextW=Math.max(12,naturalWidth+2),nextSample={...e,w:nextW};
  const nextH=mixed?Math.max(12,Math.ceil(richTextEngine.layout(nextSample).height+2)):Math.max(12,Math.ceil(wrapLines(textFitContext,nextSample).length*(e.fontSize||24)*(e.lineHeight||1.15)+2));
@@ -1164,7 +1144,7 @@ function drawTextPathDraft(c){const dr=app.textPathDraft;if(!dr?.nodes.length)re
 function drawTextGlyphs(c,e,method='fill'){
  if(e.textMode==='path'&&method==='fill'&&paintTextOnPath(c,e))return;
  if(e.textMode==='vertical'){c.save();c.font=fontString(e);c.textBaseline='top';c.textAlign='center';const sz=e.fontSize||24,step=sz*(e.lineHeight||1.15);let y=0;let x=sz/2;for(const ch of String(e.text||'')){if(ch==='\n'||y+step>e.h){x+=step;y=0;if(ch==='\n')continue}if(x>e.w)break;if(method==='stroke')c.strokeText(ch,x,y);else c.fillText(ch,x,y);y+=step}c.restore();return}
- if(usesRichTextLayout(e)){drawMixedTextGlyphs(c,e,method);return}
+ if(supportsHorizontalTextLayout(e)){drawMixedTextGlyphs(c,e,method);return}
  c.save();c.font=fontString(e);c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';c.textBaseline='top';c.textAlign=e.textAlign||'left';const lh=(e.lineHeight||1.15)*(e.fontSize||24),lines=wrapLines(c,e),blockH=lines.length*lh,offsetY=e.verticalAlign==='middle'?Math.max(0,(e.h-blockH)/2):e.verticalAlign==='bottom'?Math.max(0,e.h-blockH):0;
  c.beginPath();c.rect(-Math.max(0,e.strokeWidth||0),-Math.max(0,e.strokeWidth||0),e.w+2*Math.max(0,e.strokeWidth||0),e.h+2*Math.max(0,e.strokeWidth||0));c.clip();
  const paint=(s,x,y)=>method==='stroke'?c.strokeText(s,x,y):c.fillText(s,x,y);
@@ -1738,7 +1718,7 @@ function tf43Backdrop(e,f,d,raw){
  const pad=Math.max(0,Number(f.spread??9)),alpha=clamp(Number(f.opacity??100)/100,0,1);
  c.save();c.translate(e.x+e.w/2,e.y+e.h/2);c.rotate((e.rotation||0)*Math.PI/180);c.scale(e.flipX?-1:1,e.flipY?-1:1);c.translate(-e.w/2,-e.h/2);
  const rows=[];
- if(usesRichTextLayout(e)){
+ if(supportsHorizontalTextLayout(e)){
   c.textBaseline='alphabetic';c.fontKerning='normal';
   for(const row of mixedTextLayout(e).rows){
    if(row.y>=e.h)break;
@@ -2065,9 +2045,13 @@ function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=n
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
 function startInlineWysiwyg(e){
  const host=$('#inlineWysiwyg');app.inlineSession.wysiwyg=true;app.inlineSession.formatted=true;
- app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:plainWysiwygLayoutCompatible,
+ app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:plainWysiwygLayoutCompatible,layout:layer=>richTextEngine.layout(layer),fit:autoFitTextFont,
   available:family=>!v41FontUnavailable(family),
-  onChange(){syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();},
+  onChange(){
+   // Do not interrupt a focused numeric field or an active color/font picker.
+   if(e.autoFontSize){const size=$('#inspector [data-key=fontSize]');if(size&&document.activeElement!==size)size.value=String(e.fontSize)}
+   syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();
+  },
   onFallback(selection,reason){finishWysiwygFallback(selection,reason);},
   onRecovery(){ $('#wysiwygRecovery').classList.remove('hidden');$('#wysiwygRecoveryMessage').textContent='Ввод не подтверждён и не сохранён. При использовании IME завершите композицию. Скопируйте нужный текст перед восстановлением.';}
  });
@@ -2107,7 +2091,11 @@ $('#canvasHost').addEventListener('keydown',ev=>{if(ev.target.id!=='inlineWysiwy
  if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(true);canvas.focus();}
  if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText();}
 });
-function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),plainWysiwygLayoutCompatible)){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length);v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
+function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),plainWysiwygLayoutCompatible)){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;
+ // A user or Playwright may already have focused the editor and selected text
+ // for replacement. Never collapse that selection in this deferred open frame.
+ if(document.activeElement!==editor){editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length)}
+ v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
 function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');
  if(!e.textMode||e.textMode==='horizontal'){
   editor.style.width=Math.max(1,e.w)+'px';editor.style.height=Math.max(1,e.h)+'px';
@@ -2202,8 +2190,8 @@ function styleInlineSelection(key,value,final){
  // Store the pre-action caret even when focus has already moved to a panel.
  app.inlineSession.states[app.inlineSession.index].caret=clone(c);
  const next=applyTextStyle(e,c.start,c.end,patch);
- if(session.wysiwyg&&!usesRichTextLayout(session.states[0].element)&&!usesRichTextLayout(e)&&next.textRuns?.length&&(c.start>0||c.end<e.text.length)&&legacyTopProjection(textFitContext,e))next.textLayoutMode=LEGACY_TOP_LAYOUT;
- restoreTextRuns(e,next.textRuns);if(next.textLayoutMode===LEGACY_TOP_LAYOUT)e.textLayoutMode=LEGACY_TOP_LAYOUT;
+ // Formatting no longer switches rendering baselines or persists legacy mode.
+ restoreTextRuns(e,next.textRuns);
  // A manual size uses the fitted scale, then opts out of fitting just like
  // the layer size field. Other fragments keep both their units and scale.
  if(key==='fontSize'){e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}
@@ -4748,7 +4736,7 @@ for(const root of [$('#app'),$('#shade'),$('#mobilePropertyUI'),$('#documentTabs
 // Draw mobile-only text enhancements through the same Canvas path used for PNG export.
 const mobileV36BaseDrawText=drawTextGlyphs;
 drawTextGlyphs=function(c,e,method='fill'){
- if(usesRichTextLayout(e))return mobileV36BaseDrawText(c,e,method);
+ if(supportsHorizontalTextLayout(e))return mobileV36BaseDrawText(c,e,method);
  if(e.type==='text'&&e.mobileArcRadius&&e.textMode!=='path'){
   c.save();c.font=fontString(e);c.textBaseline='middle';c.textAlign='center';
   const source=String(e.text||'').split('\n')[0],r=Math.max(70,Math.abs(e.mobileArcRadius)*3),dir=Math.sign(e.mobileArcRadius)||1;

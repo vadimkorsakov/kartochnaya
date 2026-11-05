@@ -2,7 +2,8 @@ const { test, expect, openHome, createDocument, canvasPoint, exportedDocument, a
 const graph = require('./fixtures/canvas-graph.json');
 
 async function textDocument(page) {
-  await openHome(page);
+  // The numeric-input contract covers the native textarea fallback.
+  await openHome(page,'/?experimentalTextWysiwyg=0');
   await createDocument(page, 'Numeric input Enter');
   await page.keyboard.press('t');
   const a = await canvasPoint(page, 30, 40), b = await canvasPoint(page, 270, 130);

@@ -17,7 +17,9 @@ async function setup(page,mobile=false){
   },true);
   const proto=CanvasRenderingContext2D.prototype,fill=proto.fillText;proto.fillText=function(text,...args){if(this.canvas.id==='canvas')window.textDraws.push({text,font:this.font,color:this.fillStyle});return fill.call(this,text,...args)};
  });
- await openHome(page);const payload=structuredClone(fixture);
+ // This suite explicitly verifies native textarea fallback selection semantics.
+ // Live desktop editing is separately covered by unflagged WYSIWYG tests.
+ await openHome(page,mobile?'/':'/?experimentalTextWysiwyg=0');const payload=structuredClone(fixture);
  Object.assign(payload.document.elements[0],{id:'interaction-text',name:'Interaction text',x:16,y:16,w:288,h:208,fontFamily:'Arial',fontSize:20,lineHeight:1.25,text:'Привет мир',textColor:'#000000',fill:'#000000',fillType:'solid',autoFontSize:false});
  payload.document.palette=['#ff0000','#000000'];
  await importPayload(page,payload);const doc=(await records(page,'docs')).find(d=>d.title==='Visual fixed font (импорт)');await openLibraryDocument(page,doc.id);

@@ -3,7 +3,8 @@ const fixture=require('./fixtures/canvas-graph.json');
 const originalRuns=[{start:0,end:5,style:{fontWeight:'700'}},{start:6,end:11,style:{textColor:'#ff0000',fontSize:32}}];
 const element=doc=>doc.elements.find(e=>e.id==='title');
 async function seed(page,formatted=true,repeated=false){
-  await openHome(page);const payload=structuredClone(fixture);payload.documents=[payload.documents[0]];
+  // These tests exercise native textarea/IME fallback, not the live WYSIWYG path.
+  await openHome(page,'/?experimentalTextWysiwyg=0');const payload=structuredClone(fixture);payload.documents=[payload.documents[0]];
   const doc=payload.documents[0];doc.elements=doc.elements.filter(e=>e.id==='title');doc.groups=[];
   if(formatted)doc.elements[0].textRuns=structuredClone(originalRuns);if(repeated){doc.elements[0].text='aaaa';doc.elements[0].textRuns=[{start:1,end:3,style:{bold:true}}]}
   await importPayload(page,payload);await expect(page.locator('#toast')).toContainText('Импортировано проектов');

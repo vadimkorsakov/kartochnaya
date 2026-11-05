@@ -81,6 +81,11 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   }):spans.map((part,i)=>makeSpan(part.text,part.style,
    parseFloat(heights[i+1]),firstRow?offset:null));
   const next=structuredClone(value);
+  // The browser can blur contenteditable while replaceChildren invalidates
+  // its current Range, particularly when a trailing LF gains a caret sentinel.
+  // Capture ownership BEFORE the DOM change and restore it only for a session
+  // that already owned focus. Inspector/color fields must keep their focus.
+  const hadFocus=document.activeElement===host;
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
   Object.assign(host.style,{font:richTextFont(base),lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
   host.replaceChildren(...nodes);
@@ -91,7 +96,10 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // numeric/HEX input (emitting change in the middle of its input callback).
   // Keep the range in UTF-16 while a panel owns focus; restore on host focus.
   savedSelection={...selection};
-  if(document.activeElement===host)setSelection(selection.anchor,selection.focus);
+  if(hadFocus){
+   if(document.activeElement!==host)host.focus({preventScroll:true});
+   setSelection(selection.anchor,selection.focus);
+  }
  }
  function clean(){try{return !composing&&!pending&&!fallback&&!safe.deferred&&host.innerHTML===confirmedHTML&&readText()===layer.text;}catch{return false;}}
  const caret=c=>({start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'});

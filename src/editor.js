@@ -2071,6 +2071,7 @@ function startInlineWysiwyg(e){
   available:family=>!v41FontUnavailable(family),
   onChange(){
    // Do not interrupt a focused numeric field or an active color/font picker.
+   const autoBox=$('#inspector [data-text-auto-font]');if(autoBox)autoBox.checked=!!e.autoFontSize;
    if(e.autoFontSize){const size=$('#inspector [data-key=fontSize]');if(size&&document.activeElement!==size)size.value=String(e.fontSize)}
    syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();
   },

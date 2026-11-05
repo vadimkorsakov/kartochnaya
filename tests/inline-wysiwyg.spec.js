@@ -621,12 +621,15 @@ test('soft-wrap cross-row keyboard selection, replace and history keep exact UTF
 test('new auto-fitted long Cyrillic text stays WYSIWYG through font, color, undo and reopen',async({page})=>{
  await page.setViewportSize({width:2200,height:1600});
  const text='И восстали машины из пепла ядерного огня, и пошла война на уничтожение человечества. И шла она десятилетия, но последнее сражение состоится не в будущем, оно состоится здесь, в наше время, сегодня ночью.';
- const doc=await seedPlain(page,{text,fontFamily:'Arial',fontSize:61,lineHeight:1.1,
+ const doc=await seedPlain(page,{text:'A',fontFamily:'Arial',fontSize:61,lineHeight:1.1,
   w:814,h:634,y:80,autoFontSize:true},{flag:'default'});
- const original=getLayer(doc);
  await edit(page);
  await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+a');
+ await page.keyboard.insertText(text); // Fresh text box grows into auto-fitted soft wraps.
+ await expect(page.locator(surface)).toBeFocused();
  await expect(page.locator('#inlineText')).toBeHidden();
+ expect((await snapshotValue(page)).text).toBe(text);
  await page.keyboard.press('Control+a');
  expect(await page.locator(surface).evaluate(()=>getSelection().toString())).toBe(text);
  await page.locator('#inspector [data-font-open]').click();

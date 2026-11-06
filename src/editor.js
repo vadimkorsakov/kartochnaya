@@ -227,8 +227,38 @@ function v41FontsByCategory(category){
 }
 function v41FontUnavailable(name){return !fontFamilies().some(f=>f.toLowerCase()===name.toLowerCase());}
 function v41FontOptions(names,chosen){return names.map(f=>`<button type="button" class="font-family-item ${chosen===f?'current':''}" role="option" data-font-option="${html(f)}" ${v41FontUnavailable(f)?'disabled title="Семейство не установлено"':''} style="font-family:${html(JSON.stringify(f))}">${html(f)}<span>${v41FontUnavailable(f)?'Недоступен':app.fonts.some(x=>normaliseFont(x).family===f)?'Свой':'›'}</span></button>`).join('')||'<div class="v41-font-empty">В этой категории нет шрифтов</div>'}
-function fontSelectControl(e){const family=e?.fontFamily||'Arial';return `<div class="font-control"><span class="font-control-label">Семейство шрифта</span><button type="button" class="font-family-trigger" data-font-open="1" aria-haspopup="listbox" aria-expanded="false"><span style="font-family:${html(JSON.stringify(family))}">${html(family)}</span><span>⌄</span></button><div class="font-family-menu hidden" role="listbox"><div class="v41-font-filters"><label>Категория: <select data-font-filter="1" aria-label="Категория шрифтов">${v41FontCategories.map(([id,name])=>`<option value="${id}" ${v41DesktopFontCategory===id?'selected':''}>${name}</option>`).join('')}</select></label></div><input class="v41-font-search" data-font-search="1" type="search" placeholder="Поиск шрифта" aria-label="Поиск шрифта"><div class="v41-font-list">${v41FontOptions(v41FontsByCategory(v41DesktopFontCategory),family)}</div></div></div>`}
-function v41RefreshDesktopFonts(menu){if(!menu)return;const term=(menu.querySelector('[data-font-search]')?.value||'').toLowerCase().trim();const selected=active()?.fontFamily||'Arial';menu.querySelector('.v41-font-list').innerHTML=v41FontOptions(v41FontsByCategory(v41DesktopFontCategory).filter(n=>n.toLowerCase().includes(term)),selected);menu.querySelector('[data-font-filter]').value=v41DesktopFontCategory;}
+// Show the effective font of the selected characters, not the layer default.
+// Range overrides may cover the entire layer while e.fontFamily stays unchanged.
+function inspectorFontFamily(e){
+ if(!e||e.type!=='text')return e?.fontFamily||'Arial';
+ const selected=app.selectedIds.length>1&&picked().every(layer=>layer.type==='text')?picked():[e];
+ const families=[];
+ for(const layer of selected){
+  const spans=richTextSpans(layer);
+  const caret=app.editingId===layer.id?app.inlineCaret:null;
+  const start=caret?Math.min(caret.start,caret.end):0,end=caret?Math.max(caret.start,caret.end):0;
+  let relevant=spans;
+  if(caret&&Number.isFinite(start)&&Number.isFinite(end)){
+   if(end>start)relevant=spans.filter(span=>span.start<end&&span.end>start);
+   else if(spans.length)relevant=[spans.find(span=>span.start<=start&&start<span.end)||spans.at(-1)];
+  }
+  if(relevant.length)families.push(...relevant.map(span=>span.style.fontFamily));
+  else families.push(layer.fontFamily||'Arial');
+ }
+ const first=families[0]||'Arial';
+ return families.every(family=>family===first)?first:null;
+}
+function fontSelectControl(e){const family=inspectorFontFamily(e);return `<div class="font-control"><span class="font-control-label">Семейство шрифта</span><button type="button" class="font-family-trigger" data-font-open="1" aria-haspopup="listbox" aria-expanded="false"><span data-font-current="1" style="font-family:${family?html(JSON.stringify(family)):'inherit'}">${html(family??'Mixed')}</span><span>⌄</span></button><div class="font-family-menu hidden" role="listbox"><div class="v41-font-filters"><label>Категория: <select data-font-filter="1" aria-label="Категория шрифтов">${v41FontCategories.map(([id,name])=>`<option value="${id}" ${v41DesktopFontCategory===id?'selected':''}>${name}</option>`).join('')}</select></label></div><input class="v41-font-search" data-font-search="1" type="search" placeholder="Поиск шрифта" aria-label="Поиск шрифта"><div class="v41-font-list">${v41FontOptions(v41FontsByCategory(v41DesktopFontCategory),family)}</div></div></div>`}
+function syncInspectorFontFamily(){
+ const label=$('#inspector [data-font-current]'),e=active();
+ if(!label||e?.type!=='text')return;
+ const family=inspectorFontFamily(e);
+ label.textContent=family??'Mixed';
+ label.style.fontFamily=family?JSON.stringify(family):'inherit';
+ const menu=label.closest('.font-control')?.querySelector('.font-family-menu');
+ if(menu&&!menu.classList.contains('hidden'))for(const opt of menu.querySelectorAll('[data-font-option]'))opt.classList.toggle('current',opt.dataset.fontOption===family);
+}
+function v41RefreshDesktopFonts(menu){if(!menu)return;const term=(menu.querySelector('[data-font-search]')?.value||'').toLowerCase().trim();const selected=inspectorFontFamily(active());menu.querySelector('.v41-font-list').innerHTML=v41FontOptions(v41FontsByCategory(v41DesktopFontCategory).filter(n=>n.toLowerCase().includes(term)),selected);menu.querySelector('[data-font-filter]').value=v41DesktopFontCategory;}
 const fontResources=createFontResources({createFace:(...args)=>new FontFace(...args),fontSet:document.fonts});
 async function loadFontFace(f){normaliseFont(f);try{
  await prepareCanvasResources({images:[],fonts:[{family:f.family}]},{prepareFont:()=>fontResources.load(f)});
@@ -2223,7 +2253,7 @@ document.addEventListener('mousedown',ev=>{
 document.addEventListener('keydown',ev=>{if(app.wysiwyg&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&ev.target.closest(inlineFormattingRoots)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
 
 // Keep caret ownership when existing buttons operate on the selected text layer.
-function rememberInlineCaret(){if(app.wysiwyg){try{const c=app.wysiwyg.rememberSelection();app.inlineCaret={start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'};}catch{}return;}const e=$('#inlineText');if(app.editingId&&document.activeElement===e){app.inlineCaret={start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection}}}
+function rememberInlineCaret(){if(app.wysiwyg){try{const c=app.wysiwyg.rememberSelection();app.inlineCaret={start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'};}catch{}syncInspectorFontFamily();return;}const e=$('#inlineText');if(app.editingId&&document.activeElement===e){app.inlineCaret={start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection};syncInspectorFontFamily()}}
 function restoreInlineCaret(focus=true){if(app.wysiwyg){if(focus)app.wysiwyg.focus();return;}if(!app.editingId)return;const e=$('#inlineText'),c=app.inlineCaret;if(focus)e.focus({preventScroll:true});if(c)e.setSelectionRange(Math.min(c.start,e.value.length),Math.min(c.end,e.value.length),c.direction)}
 for(const type of ['select','keyup','input','pointerup'])$('#inlineText').addEventListener(type,rememberInlineCaret);
 // Android's system handles can report only document selectionchange. Ignore

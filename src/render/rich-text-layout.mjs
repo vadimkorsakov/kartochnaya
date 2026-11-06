@@ -11,9 +11,19 @@ export const usesRichTextLayout = e => supportsHorizontalTextLayout(e) &&
 const positive = (n, fallback) => Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : fallback;
 const spacing = n => Number.isFinite(Number(n)) ? Number(n) : 0;
 const genericFamilies = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace', 'ui-rounded', 'emoji', 'math', 'fangsong']);
+// Gecko Canvas quantizes font sizes to seven significant binary bits while
+// CSS retains finer sizes (28.3125 -> 28.25, 39.75 -> 40, 129 -> 128).
+// Use representable font declarations in every painter. Source/run sizes and
+// their scale remain exact; declaration rounding is bounded by size/128.
+export const fontDeclarationSize = size => {
+  const step=2**(Math.floor(Math.log2(size))-6),units=size/step,low=Math.floor(units);
+  // IEEE round-to-nearest, ties-to-even, as used by the Canvas font backend.
+  return (units-low===.5?(low%2?low+1:low):Math.round(units))*step;
+};
+let quantizedFonts = false;
 export const richTextFont = s => {
   const family = genericFamilies.has(s.fontFamily.toLowerCase()) ? s.fontFamily.toLowerCase() : `"${s.fontFamily.replaceAll('"', '')}"`;
-  return `${s.fontStyle} ${s.fontWeight} ${s.fontSize}px ${family}`;
+  return `${s.fontStyle} ${s.fontWeight} ${quantizedFonts?fontDeclarationSize(s.fontSize):s.fontSize}px ${family}`;
 };
 
 // Explicit weight/style wins over its boolean alias within the same scope.
@@ -56,6 +66,18 @@ export function retainRichTextSizeBase(e) {
  * Returned rows are immutable by convention; all coordinates are layer-local.
  */
 export function createRichTextLayoutEngine(context, fontSet) {
+  // Detect metric precision once on the real Canvas backend, without UA
+  // sniffing. Exact backends retain existing fractional document typography.
+  if(context.canvas&&typeof context.save==='function'){
+    context.save();
+    try{
+      context.fontKerning='normal';context.letterSpacing='0px';
+      const width=size=>{context.font=`${size}px sans-serif`;return context.measureText('MMMMMMMM').width;};
+      quantizedFonts=[[28.375,28.5,28.25],[39.75,40,39.5],[129,128,130]].every(([size,rounded,other])=>{
+        const actual=width(size);return Math.abs(actual-width(rounded))<.0001&&Math.abs(actual-width(other))>.01;
+      });
+    }finally{context.restore();}
+  }
   const layouts = new Map(), metrics = new Map();
   let fontCount = fontSet?.size;
   const invalidate = () => { layouts.clear(); metrics.clear(); };

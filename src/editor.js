@@ -761,7 +761,7 @@ function relocateMobileHistory(){
 
 function showInspector(mode='settings'){if(matchMedia('(max-width:760px)').matches&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(matchMedia('(max-width:760px)').matches){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
 function hideInspector(){cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
-function changeProperty(key,val,final=false){if(styleInlineSelection(key,val,final))return;if(app.wysiwyg&&!fallbackInlineWysiwyg('Форматирование'))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
+function changeProperty(key,val,final=false){if(styleInlineSelection(key,val,final)||styleInlineLayer(key,val,final))return;if(app.wysiwyg&&!fallbackInlineWysiwyg('Форматирование'))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
 function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;changeProperty(t.dataset.key,t.value,final);if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
 $('#inspector').addEventListener('change',e=>{if(e.target.dataset.clipCheckbox){const elem=app.doc.elements.find(x=>x.id===e.target.dataset.clipCheckbox);if(elem){elem.clipped=!e.target.checked;toggleClip(elem.id)}refreshInspector()}});
 $('#inspector').addEventListener('change',ev=>{if(ev.target.matches('[data-text-auto-font]'))setTextAutoFont(ev.target.checked)});
@@ -772,6 +772,7 @@ function clearFontPreview(){if(app.fontPreview){app.fontPreview=null;paint()}}
 function previewFont(family){const es=picked().filter(e=>e.type==='text');if(!es.length)return;const ids=es.map(e=>e.id);const [weight,style]=regularVariant(family).split(':');app.fontPreview={family,weight,style,ids};paint()}
 function applyFontFamily(family){const es=picked().filter(e=>e.type==='text');if(!es.length)return;clearFontPreview();const [weight,style]=regularVariant(family).split(':');
  if(styleInlineSelection('fontFamily',family,true)){refreshInspector();refreshMobileTools();if(!app.wysiwyg)restoreInlineCaret();return}
+ if(app.wysiwyg?.applyLayerStyle({fontFamily:family,fontWeight:weight,fontStyle:style},{key:'fontFamily',final:true})){refreshInspector();refreshMobileTools();return;}
  if(app.wysiwyg&&!fallbackInlineWysiwyg('Шрифт слоя'))return;
  for(const e of es){e.fontFamily=family;e.fontWeight=weight;e.fontStyle=style}
  commit();refreshInspector();refreshMobileTools();if(app.editingId)restoreInlineCaret();toast('Шрифт: '+family);
@@ -998,40 +999,14 @@ function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
  return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
 }
-// Canvas owns the geometry. Permit word-boundary soft-wraps for one font
-// geometry; range color alone does not change glyph advances. Size, font,
-// tracking and other run effects retain the safe textarea fallback.
-function plainWysiwygLayoutCompatible(e){
+// The editable surface projects the same positioned rows as Canvas/PNG.
+// Eligibility describes supported paint semantics, never a guessed CSS wrap.
+function supportsWysiwygProjection(e){
  if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
- try{
-  const text=String(e.text||''),rows=richTextEngine.layout(e).rows;
-  const softWrap=rows.some(row=>row.softWrap);
-  if(softWrap){
-   // Stage 2: color-only sparse runs are safe to project within native word
-   // wraps. Geometry-changing or unknown run keys remain unsupported.
-   if(e.autoFontSize||text.includes('\n'))return false;
-   if((e.textRuns||[]).some(run=>
-    Object.keys(run?.style||{}).some(key=>key!=='textColor')))return false;
-   if(rows.some(row=>row.softWrap&&!/\s/u.test(text.slice(row.end-1,row.end))))return false;
-   if(rows.reduce((height,row)=>height+row.height,0)>Math.max(1,e.h)-1)return false;
-  }else if(rows.length!==text.split('\n').length)return false;
-  if(rows.some(row=>!Number.isFinite(row.baseline)||row.height<=0||
-    row.width>Math.max(1,e.w)-1))return false;
-  if(rows.length>1&&!softWrap){
-   // Same glyph geometry across colored spans means the native hard lines
-   // can use one font baseline/line-height per Canvas row.
-   // A sparse override may cover the whole text (e.g. all-bold title).
-   // What matters for hard-row baseline parity is uniform glyph geometry
-   // across *rendered* spans, not whether that geometry equals layer defaults.
-   const spans=richTextSpans(e),reference=spans[0]?.style||resolveRichTextStyle(e);
-   // Tracking changes horizontal advances but not font ascent/descent or
-   // hard-row baseline. Keep font geometry homogeneous; Canvas still owns
-   // widths and the no-soft-wrap eligibility check above.
-   const keys=['fontFamily','fontSize','fontWeight','fontStyle'];
-   if(spans.some(part=>keys.some(key=>part.style[key]!==reference[key])))return false;
-  }
-  return true;
- }catch{return false}
+ const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','bold','italic']);
+ if((e.textRuns||[]).some(run=>Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
+ try{return richTextEngine.layout(e).rows.every(row=>Number.isFinite(row.baseline)&&row.height>0&&Number.isFinite(row.width));}
+ catch{return false;}
 }
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
 function autoFitTextFont(e){
@@ -1069,6 +1044,7 @@ function fitTextBoxToContent(e){
  return true;
 }
 function setTextAutoFont(enabled){
+ if(app.wysiwyg?.applyLayerStyle({autoFontSize:!!enabled},{key:'autoFontSize',final:true})){refreshInspector();refreshMobileTools();return;}
  if(app.wysiwyg&&!fallbackInlineWysiwyg('Автоподбор размера'))return;
  const e=active();if(e?.type!=='text'||isLayerLocked(e)||(e.textMode&&e.textMode!=='horizontal'))return;
  e.autoFontSize=!!enabled;if(e.autoFontSize)autoFitTextFont(e);
@@ -2054,12 +2030,13 @@ function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=n
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
 function startInlineWysiwyg(e){
  const host=$('#inlineWysiwyg');app.inlineSession.wysiwyg=true;app.inlineSession.formatted=true;
- app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,plainCompatible:plainWysiwygLayoutCompatible,layout:layer=>richTextEngine.layout(layer),fit:autoFitTextFont,
+ app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,compatible:supportsWysiwygProjection,layout:layer=>richTextEngine.layout(layer),fit:autoFitTextFont,
   available:family=>!v41FontUnavailable(family),
   onChange(){
    // Do not interrupt a focused numeric field or an active color/font picker.
+   const autoBox=$('#inspector [data-text-auto-font]');if(autoBox)autoBox.checked=!!e.autoFontSize;
    if(e.autoFontSize){const size=$('#inspector [data-key=fontSize]');if(size&&document.activeElement!==size)size.value=String(e.fontSize)}
-   syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();
+   positionInlineText();syncAutoCardTitle();rememberInlineCaret();refreshSaveStatus();updateHistoryButtons();paint();
   },
   onFallback(selection,reason){finishWysiwygFallback(selection,reason);},
   onRecovery(){ $('#wysiwygRecovery').classList.remove('hidden');$('#wysiwygRecoveryMessage').textContent='Ввод не подтверждён и не сохранён. При использовании IME завершите композицию. Скопируйте нужный текст перед восстановлением.';}
@@ -2074,7 +2051,7 @@ function finishWysiwygFallback(c,reason){
  // Do not steal focus from a live HEX/numeric field halfway through input.
  const keepPanelFocus=!!document.activeElement?.closest(inlineFormattingRoots);
  editor.classList.remove('hidden');positionInlineText();restoreInlineCaret(!keepPanelFocus);
- toast('Продолжение в обычном редакторе. Если действие не выполнено, повторите его.');
+ toast('Обычное текстовое поле: '+reason+'. Оформление диапазонов видно после завершения редактирования.');
 }
 function fallbackInlineWysiwyg(reason){return !app.wysiwyg||app.wysiwyg.requestFallback(reason);}
 function preserveWysiwygRecovery(session){
@@ -2093,7 +2070,7 @@ $('#wysiwygRecover').onclick=()=>{if(app.wysiwyg?.recover())$('#wysiwygRecovery'
 function routeWysiwygPanelAction(ev){
  if(!app.wysiwyg||!ev.target.closest(inlineFormattingRoots+',#fxPopover,#fxMenu,#fxChooser'))return;
  rememberInlineCaret();
- if(ev.target.closest('[data-key],[data-hex],[data-fill-open],[data-font-open],[data-font-option],.font-family-menu,#fontDialog,#fillPopover,#undoBtn,#redoBtn'))return;
+ if(ev.target.closest('[data-key],[data-hex],[data-fill-open],[data-text-auto-font],[data-font-open],[data-font-option],.font-family-menu,#fontDialog,#fillPopover,#undoBtn,#redoBtn'))return;
  if(ev.target.closest('button,input,select,[data-align]')&&!fallbackInlineWysiwyg('Форматирование')){ev.preventDefault();ev.stopImmediatePropagation();}
 }
 // Capture input/change as well: a keyboard-activated control need not have a
@@ -2104,7 +2081,7 @@ $('#canvasHost').addEventListener('keydown',ev=>{if(ev.target.id!=='inlineWysiwy
  if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(true);canvas.focus();}
  if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText();}
 });
-function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),plainWysiwygLayoutCompatible)){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;
+function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),supportsWysiwygProjection)){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;
  // A user or Playwright may already have focused the editor and selected text
  // for replacement. Never collapse that selection in this deferred open frame.
  if(document.activeElement!==editor){editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length)}
@@ -2192,6 +2169,16 @@ function inlineStyleRange(){
  const c=app.inlineCaret;return c&&c.end>c.start?c:null;
 }
 function inlineSelectionStyle(){const e=active(),c=inlineStyleRange();return richTextSpans(e).find(span=>span.start<=c.start&&span.end>c.start)?.style||resolveRichTextStyle(e)}
+function styleInlineLayer(key,value,final){
+ if(!app.wysiwyg||!['fontSize','fontWeight','fontStyle','fontVariant','textColor','letterSpacing','lineHeight','w','h'].includes(key))return false;
+ let patch={[key]:value};
+ if(['fontSize','letterSpacing','lineHeight','w','h'].includes(key)){
+  const n=Number(value);if(!Number.isFinite(n))return true;
+  patch[key]=['fontSize','w','h'].includes(key)?Math.max(1,n):n;
+ }
+ if(key==='fontVariant'){const [weight,style]=String(value).split(':');patch={fontWeight:weight||'400',fontStyle:style||'normal'}}
+ return app.wysiwyg.applyLayerStyle(patch,{key,final});
+}
 function styleInlineSelection(key,value,final){
  if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing'].includes(key))return false;
  const c=inlineStyleRange(),e=active();if(!c||e?.id!==app.editingId)return false;

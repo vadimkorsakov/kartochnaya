@@ -133,7 +133,7 @@ test('new auto-fit text box opens live WYSIWYG and fits initial typing',async({p
  await page.keyboard.type('Текст');
  const changed=(await exportedDocument(page)).elements[0];
  expect(changed.text).toBe('Текст');expect(changed.autoFontSize).toBe(true);expect(changed.fontSize).toBeGreaterThan(initial.fontSize);
- expect(await page.locator('#inlineWysiwyg span').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(changed.fontSize);
+ expect(await page.locator('#inlineWysiwyg [data-wysiwyg-fragment]').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(changed.fontSize);
  await page.keyboard.press('ControlOrMeta+Enter');await expect(page.locator('#inlineWysiwyg')).toBeHidden();
  expect((await exportedDocument(page)).elements[0]).toEqual(changed);
 });

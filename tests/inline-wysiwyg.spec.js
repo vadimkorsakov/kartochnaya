@@ -168,11 +168,11 @@ test('document Undo retains style steps across WYSIWYG to textarea fallback',asy
  await edit(page);await selectRange(page,1,3);
  await openColor(page);await hexColor(page,'#11aa33');await page.locator('[data-fill-close]').click();
  const colored=await snapshotValue(page);
- const height=page.locator('#inspector [data-key=lineHeight]');
- await height.fill('1.5');await height.press('Tab');
+ const height=page.locator('#inspector [data-key=rotation]');
+ await height.fill('15');await height.press('Tab');
  await expect(page.locator('#inlineText')).toBeVisible();
  const changed=await snapshotValue(page);
- expect(changed.lineHeight).toBe(1.5);
+ expect(changed.rotation).toBe(15);
  await page.locator('#inlineText').focus();await page.keyboard.press('Control+Enter');
  await expect(page.locator('#inlineText')).toBeHidden();
  await page.locator('#undoBtn').click();expect(await snapshotValue(page)).toEqual(colored);
@@ -182,11 +182,11 @@ test('document Undo retains style steps across WYSIWYG to textarea fallback',asy
 });
 
 test('range color, one live preview history action, Canvas, document undo and reload',async({page})=>{
- const doc=await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}});await edit(page);const outsideColor=await page.locator(surface+' span').first().evaluate(s=>getComputedStyle(s).color);await selectRange(page,1,3);await openColor(page);
+ const doc=await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}});await edit(page);const outsideColor=await page.locator(surface+' [data-wysiwyg-fragment]').first().evaluate(s=>getComputedStyle(s).color);await selectRange(page,1,3);await openColor(page);
  for(const hex of ['#990011','#2244aa','#11aa33'])await hexColor(page,hex,false);
  expect((await value(page)).textRuns).toEqual(rangeRuns('#11aa33'));await expect(page.locator(surface)).toBeVisible();
  await page.locator('#fillPopover [data-cp-part="0"]').press('Tab');
- expect(await page.locator(surface+' span').evaluateAll(spans=>spans.map(s=>[s.textContent,getComputedStyle(s).color]))).toEqual([['A',outsideColor],['BC','rgb(17, 170, 51)'],['D',outsideColor]]);
+ expect(await page.locator(surface+' [data-wysiwyg-fragment]').evaluateAll(spans=>spans.map(s=>[s.textContent,getComputedStyle(s).color]))).toEqual([['A',outsideColor],['BC','rgb(17, 170, 51)'],['D',outsideColor]]);
  await page.locator('[data-fill-close]').click();await assertRange(page,'ABCD',1,3);
  await page.keyboard.press('Control+z');expect((await value(page)).textRuns).toEqual(boldRuns);await assertRange(page,'ABCD',1,3);
  await page.keyboard.press('Control+Shift+z');expect((await value(page)).textRuns).toEqual(rangeRuns('#11aa33'));await assertRange(page,'ABCD',1,3);
@@ -203,7 +203,7 @@ test('backward range, font menu, variant, scaled size and numeric native undo ow
  await page.locator('#inspector [data-key=fontVariant]').selectOption('500:normal');await assertRange(page,'ABCD',3,1);
  const beforeSize=await value(page),size=page.locator('#inspector [data-key=fontSize]');await size.fill('28');await expect(size).toBeFocused();
  expect((await value(page)).textRuns).toEqual([{start:0,end:1,style:{bold:true,fontSize:44}},{start:1,end:3,style:{fontFamily:'Georgia',fontSize:56,fontStyle:'normal',fontWeight:'500'}},{start:3,end:4,style:{bold:true,fontSize:44}}]);
- expect(await page.locator(surface+' span').nth(1).evaluate(s=>getComputedStyle(s).fontSize)).toBe('28px');
+ expect(await page.locator(surface+' [data-wysiwyg-fragment]').nth(1).evaluate(s=>getComputedStyle(s).fontSize)).toBe('28px');
  const changed=await value(page);expect(changed.textRunsBaseFontSize).toBe(40);expect([changed.x,changed.y,changed.w,changed.h]).toEqual([getLayer(initial).x,getLayer(initial).y,getLayer(initial).w,getLayer(initial).h]);
  await size.press('Tab');await assertRange(page,'ABCD',3,1);await page.keyboard.press('Control+z');expect(await value(page)).toEqual(beforeSize);await assertRange(page,'ABCD',3,1);await page.keyboard.press('Control+Shift+z');expect(await value(page)).toEqual(changed);await assertRange(page,'ABCD',3,1);
  await size.focus();await size.evaluate(el=>el.addEventListener('keydown',e=>{if(e.code==='KeyZ')el.dataset.undoPrevented=String(e.defaultPrevented)}));await size.press('Control+z');expect(await size.getAttribute('data-undo-prevented')).toBe('false');
@@ -229,12 +229,12 @@ test('mixed typing Enter and formatting history, branch truncation and pending p
  await selectRange(page,0,1);await spacing.fill('3');await spacing.press('Control+Enter');await expect(page.locator(surface)).toBeHidden();expect((await snapshotValue(page)).textRuns[0].style.letterSpacing).toBe(3);
 });
 
-for(const property of ['lineHeight','autoFit'])test('unsupported inspector action safely hands off after panel focus: '+property,async({page})=>{
+for(const property of ['rotation','opacity'])test('unsupported inspector action safely hands off after panel focus: '+property,async({page})=>{
  await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}});await edit(page);await selectRange(page,3,1);
  // Focus transfer without pointerdown, then native Tab between panel inputs.
  const variant=page.locator('#inspector [data-key=fontVariant]');await variant.focus();await page.keyboard.press('Tab');
  const size=page.locator('#inspector [data-key=fontSize]');await expect(size).toBeFocused();await expect(page.locator(surface)).toBeVisible();await expect(page.locator('#wysiwygRecovery')).toBeHidden();
- if(property==='lineHeight'){const field=page.locator('#inspector [data-key=lineHeight]');await field.fill('1.5');await field.press('Tab');}else await page.locator('#inspector [data-text-auto-font]').check();
+ const field=page.locator(`#inspector [data-key=${property}]`);await field.fill(property==='rotation'?'15':'50');await field.press('Tab');
  await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#inlineText')).toBeVisible();await expect(page.locator('#wysiwygRecovery')).toBeHidden();expect((await value(page)).text).toBe('ABCD');expect((await value(page)).textRuns).toEqual(boldRuns);
  expect(await page.locator('#inlineText').evaluate(el=>[el.selectionStart,el.selectionEnd,el.selectionDirection])).toEqual([1,3,'backward']);
 });
@@ -268,10 +268,10 @@ test('unmeasurable style projection safely hands off with no partial preview his
  await page.locator('#inlineText').focus();await page.keyboard.press('Control+z');expect((await value(page)).textRuns).toEqual(boldRuns);
 });
 
-test('collapsed WYSIWYG caret hands off for a whole-layer size change',async({page})=>{
+test('collapsed WYSIWYG caret stays live for a whole-layer size change',async({page})=>{
  await seed(page,{patch:{text:'ABCD',fontSize:20,textRuns:boldRuns}});await edit(page);await assertRange(page,'ABCD',4,4);
- const size=page.locator('#inspector [data-key=fontSize]');await size.fill('28');await size.press('Tab');await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#inlineText')).toBeVisible();await expect(page.locator('#wysiwygRecovery')).toBeHidden();
- const changed=await value(page);expect(changed.fontSize).toBe(28);expect(changed.text).toBe('ABCD');expect(changed.textRuns).toEqual(boldRuns);
+ const size=page.locator('#inspector [data-key=fontSize]');await size.fill('28');await size.press('Tab');await expect(page.locator(surface)).toBeVisible();await expect(page.locator('#inlineText')).toBeHidden();await expect(page.locator('#wysiwygRecovery')).toBeHidden();
+ const changed=await value(page);expect(changed.fontSize).toBe(28);expect(changed.text).toBe('ABCD');expect(changed.textRuns).toEqual(boldRuns);await page.locator(surface).focus();await page.keyboard.press('Control+z');expect((await value(page)).fontSize).toBe(20);await page.keyboard.press('Control+Shift+z');expect(await value(page)).toEqual(changed);
 });
 
 // A real uploaded font with compatible top/alphabetic metrics. Arial 32 is an
@@ -286,7 +286,7 @@ for(const [label,patch] of [['Nimbus',{}],['Arial',{fontFamily:'Arial',fontSize:
  const doc=await seedPlain(page,patch),initial=getLayer(doc);expect(initial).not.toHaveProperty('textRuns');expect(initial).not.toHaveProperty('textRunsBaseFontSize');
  const undo=await page.locator('#undoBtn').isEnabled();await page.waitForTimeout(700);const writes=await page.evaluate(()=>window.docWrites);
  await edit(page);await expect(page.locator(surface)).toBeFocused();expect(await snapshotValue(page)).toEqual(initial);
- expect(await page.locator(surface+' span').allTextContents()).toEqual(['ABCD']);
+ expect(await page.locator(surface+' [data-wysiwyg-fragment]').allTextContents()).toEqual(['ABCD']);
  await selectRange(page,3,1);await page.keyboard.press('ArrowRight');await page.keyboard.press('Control+Enter');
  expect(await snapshotValue(page)).toEqual(initial);expect(await page.locator('#undoBtn').isEnabled()).toBe(undo);
  await page.waitForTimeout(700);expect(await page.evaluate(()=>window.docWrites)).toBe(writes);expect(getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(initial);
@@ -297,7 +297,7 @@ test('plain first range color stays sparse, previews undo to absence, redo and p
  for(const color of ['#bb1133','#11aa33'])await hexColor(page,color,false);
  expect((await snapshotValue(page)).textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
  await page.locator('#fillPopover [data-cp-part="0"]').press('Tab');await page.locator('[data-fill-close]').click();await assertRange(page,'ABCD',3,1);
- expect(await page.locator(surface+' span').evaluateAll(spans=>spans.map(s=>[s.textContent,getComputedStyle(s).fontFamily,getComputedStyle(s).fontSize,getComputedStyle(s).letterSpacing]))).toEqual(['A','BC','D'].map(t=>[t,'"Nimbus Sans"','26px','normal']));
+ expect(await page.locator(surface+' [data-wysiwyg-fragment]').evaluateAll(spans=>spans.map(s=>[s.textContent,getComputedStyle(s).fontFamily,getComputedStyle(s).fontSize,getComputedStyle(s).letterSpacing]))).toEqual(['A','BC','D'].map(t=>[t,'"Nimbus Sans"','26px','normal']));
  const changed=await snapshotValue(page);expect(changed).not.toHaveProperty('textRunsBaseFontSize');
  await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await assertRange(page,'ABCD',3,1);
  await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);await page.keyboard.press('Control+Enter');
@@ -320,7 +320,7 @@ for(const key of ['fontFamily','fontSize'])test('plain first '+key+' works witho
  if(key==='fontFamily'){await page.locator('#inspector [data-font-open]').click();await page.locator('#inspector [data-font-option="Georgia"]').click()}
  else {const field=page.locator('#inspector [data-key=fontSize]');await field.fill('40');await expect(field).toBeFocused();await field.press('Tab')}
  await assertRange(page,'ABCD',1,3);const changed=await snapshotValue(page);expect(changed.textRuns).toEqual([{start:1,end:3,style:{[key]:key==='fontSize'?40:'Georgia'}}]);
- const styles=await page.locator(surface+' span').evaluateAll(spans=>spans.map(s=>[getComputedStyle(s).fontFamily,getComputedStyle(s).fontSize]));expect(styles[0]).toEqual(['"Nimbus Sans"','26px']);expect(styles[2]).toEqual(styles[0]);
+ const styles=await page.locator(surface+' [data-wysiwyg-fragment]').evaluateAll(spans=>spans.map(s=>[getComputedStyle(s).fontFamily,getComputedStyle(s).fontSize]));expect(styles[0]).toEqual(['"Nimbus Sans"','26px']);expect(styles[2]).toEqual(styles[0]);
  await page.keyboard.press('Control+z');expect(await snapshotValue(page)).toEqual(initial);await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(changed);
  await page.keyboard.press('Escape');expect(await snapshotValue(page)).toEqual(initial);
 });
@@ -350,7 +350,7 @@ const plainCases=[
  ['single line',{text:'ABCD'},true],
  ['explicit LF',{text:'ABCD\nABCD'},true],
  ['automatic wrap',{text:'alpha beta gamma delta',w:170},true],
- ['long words',{text:'abcdefghijklmnop qrstuvwxyzabcdefghijklmnop',w:170},false],
+ ['long words',{text:'abcdefghijklmnop qrstuvwxyzabcdefghijklmnop',w:170,h:260},true],
  ['Cyrillic spaces emoji',{text:'Группа  А😀Б'},true],
 ];
 for(const [name,patch,compatible] of plainCases)test('plain real geometry at 50/100/200: '+name,async({page},testInfo)=>{
@@ -394,7 +394,7 @@ for(const [name,patch,compatible] of plainCases)test('plain real geometry at 50/
 async function arialRanges(page){
  return page.locator(surface).evaluate(el=>{
    const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width),walk=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),out=[];
-   const c=document.createElement('canvas').getContext('2d');c.font=getComputedStyle(el).font;c.textBaseline='alphabetic';const m=c.measureText('ABCD');
+   const c=document.createElement('canvas').getContext('2d');c.font=[getComputedStyle(el).fontStyle,getComputedStyle(el).fontWeight,getComputedStyle(el).fontSize,getComputedStyle(el).fontFamily].join(' ');c.textBaseline='alphabetic';const m=c.measureText('ABCD');
    for(let n;n=walk.nextNode();)for(let i=0;i<n.length;i++){if(n.data[i]==='\n')continue;const r=document.createRange();r.setStart(n,i);r.setEnd(n,i+1);const b=r.getBoundingClientRect();const prefix=el.textContent.split('\n')[Math.floor(out.length/4)].slice(0,out.length%4);out.push({text:n.data[i],x:(b.x-host.x)/scale,width:b.width/scale,canvasX:c.measureText(prefix).width,canvasWidth:c.measureText(n.data[i]).width,top:(b.y-host.y)/scale})}
    const baselines=[];let end=0;
    for(const row of el.textContent.split('\n')){
@@ -409,7 +409,7 @@ async function checkArialCaret(page,zoom,baseline){
  await selectRange(page,2,2);await page.bringToFront();await page.locator(surface).evaluate(el=>el.style.setProperty('caret-color','#ff00fe','important'));
  // Native arrows restart the caret blink; the screenshot keeps the real caret.
  await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowLeft');
- const caret=await page.locator(surface).evaluate(el=>{const r=getSelection().getRangeAt(0).getBoundingClientRect(),host=el.getBoundingClientRect();const c=document.createElement('canvas').getContext('2d');c.font=getComputedStyle(el).font;c.textBaseline='alphabetic';return {x:r.x,y:r.y,bottom:r.bottom,hostY:host.y,ascent:c.measureText('ABCD').fontBoundingBoxAscent}});
+ const caret=await page.locator(surface).evaluate(el=>{const r=getSelection().getRangeAt(0).getBoundingClientRect(),host=el.getBoundingClientRect();const c=document.createElement('canvas').getContext('2d');c.font=[getComputedStyle(el).fontStyle,getComputedStyle(el).fontWeight,getComputedStyle(el).fontSize,getComputedStyle(el).fontFamily].join(' ');c.textBaseline='alphabetic';return {x:r.x,y:r.y,bottom:r.bottom,hostY:host.y,ascent:c.measureText('ABCD').fontBoundingBoxAscent}});
  const box=await page.locator(surface).boundingBox(),clip={x:box.x-12,y:box.y-12,width:box.width+24,height:box.height+24};
  expect(caret.bottom-caret.y).toBeGreaterThan(0);
  if(page.context().browser().browserType().name()==='firefox'){
@@ -478,7 +478,7 @@ for(const text of ['ABCD','ABCD\nABCD'])test('Arial unified baseline or multilin
  evidence.push({mixed,png});const path=testInfo.outputPath('arial-legacy-top.json');await require('node:fs/promises').writeFile(path,JSON.stringify(evidence,null,2));await testInfo.attach('arial-legacy-top.json',{path,contentType:'application/json'});
 });
 
-for(const [name,patch] of Object.entries({rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'},ArialSoftWrap:{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
+for(const [name,patch] of Object.entries({rotation:{rotation:10},vertical:{textMode:'vertical'},effect:{effects:[{type:'blur',enabled:true}]},mask:{mask:true},CRLF:{text:'A\r\nB'},center:{textAlign:'center'}}))test('plain unsupported eligibility retains textarea: '+name,async({page})=>{
  const doc=await seedPlain(page,patch);await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden();await page.keyboard.press('Control+Enter');expect(await snapshotValue(page)).toEqual(getLayer(doc));
 });
 test('plain with explicit opt-out retains textarea',async({page})=>{await seedPlain(page,{}, {flag:false});await edit(page);await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator(surface)).toBeHidden()});
@@ -523,7 +523,7 @@ test('rich WYSIWYG that grows into word soft-wrap stays live and preserves spars
 for(const [label,width,height] of [
  ['near-width limit',135,205],
  ['insufficient height',135,60],
-])test('rich soft-wrap safe fallback: '+label,async({page})=>{
+])test('rich soft-wrap projects near-width and clipped content: '+label,async({page})=>{
  await seed(page,{patch:{
   text:'ABCD',fontFamily:'Arial',fontSize:24,w:width,h:height,autoFontSize:false,
   textRuns:[{start:0,end:2,style:{textColor:'#2255cc'}}]
@@ -531,12 +531,14 @@ for(const [label,width,height] of [
  await edit(page);
  await expect(page.locator(surface)).toBeFocused();
  await page.keyboard.insertText(' alpha beta gamma delta');
- await expect(page.locator('#inlineText')).toBeFocused();
- await expect(page.locator(surface)).toBeHidden();
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ expect(await page.locator(surface).textContent()).toBe('ABCD alpha beta gamma delta');
+ await expect(page.locator(surface)).toHaveCSS('overflow','hidden');
  const changed=await value(page);
  expect(changed.text).toBe('ABCD alpha beta gamma delta');
  expect(changed.textRuns).toEqual([{start:0,end:2,style:{textColor:'#2255cc'}}]);
- await page.locator('#inlineText').press('ControlOrMeta+Enter');
+ await page.locator(surface).press('ControlOrMeta+Enter');
  expect(await value(page)).toEqual(changed);
 });
 
@@ -622,7 +624,7 @@ test('soft-wrap range color stays live, preserves HEX focus, Canvas/PNG and Undo
  await assertRange(page,initial.text,1,3);
  const colored=await snapshotValue(page);
  expect(colored.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
- await expect(page.locator(surface+' span').nth(1)).toHaveCSS('color','rgb(17, 170, 51)');
+ await expect(page.locator(surface+' [data-wysiwyg-fragment]').nth(1)).toHaveCSS('color','rgb(17, 170, 51)');
  // A color-only span split must not move words or introduce a wrap.
  const domRows=await page.locator(surface).evaluate(el=>{
   const box=el.getBoundingClientRect(),scale=box.width/parseFloat(el.style.width);
@@ -664,7 +666,7 @@ test('soft-wrap range color stays live, preserves HEX focus, Canvas/PNG and Undo
  await edit(page);
  await expect(page.locator(surface)).toBeFocused();
  expect(await snapshotValue(page)).toEqual(colored);
- await expect(page.locator(surface+' span').nth(1)).toHaveCSS('color','rgb(17, 170, 51)');
+ await expect(page.locator(surface+' [data-wysiwyg-fragment]').nth(1)).toHaveCSS('color','rgb(17, 170, 51)');
  await page.keyboard.press('Control+Enter');
 });
 
@@ -743,19 +745,22 @@ for(const [label,patch] of [
  ['sparse font weight',{text:'alpha beta gamma delta',w:135,
   textRuns:[{start:0,end:5,style:{fontWeight:'700'}}]}],
  ['long word',{text:'abcdefghijklmnopqrstuvwxy',w:85}],
-])test('unsupported soft wrap retains textarea: '+label,async({page})=>{
+ ['Arial soft wrap',{fontFamily:'Arial',fontSize:32,lineHeight:1.15,text:'ABCD ABCD ABCD ABCD',w:120}],
+])test('projected mixed fonts and long words retain full text and PNG: '+label,async({page})=>{
  const doc=await seedPlain(page,{fontFamily:'Arial',fontSize:24,
   h:140,autoFontSize:false,...patch},{flag:'default'});
- const initial=getLayer(doc);
+ const initial=getLayer(doc),before=await exportPNG(page);
  await edit(page);
- await expect(page.locator('#inlineText')).toBeFocused();
- await expect(page.locator(surface)).toBeHidden();
+ await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ expect(await page.locator(surface).textContent()).toBe(initial.text);
  await page.keyboard.press('Control+Enter');
  expect(await snapshotValue(page)).toEqual(initial);
+ expect((await exportPNG(page)).image.data).toEqual(before.image.data);
 });
 
-test('plain typing an incompatible wrap hands off without fabricating runs',async({page})=>{
- await seedPlain(page);await edit(page);await page.keyboard.type(' HHHHHHHHHHHHHHHHHHHHHHHH');await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#inlineText')).toBeVisible();const layer=await snapshotValue(page);expect(layer.text).toBe('ABCD HHHHHHHHHHHHHHHHHHHHHHHH');expect(layer).not.toHaveProperty('textRuns');expect(layer).not.toHaveProperty('textRunsBaseFontSize');await page.keyboard.press('Escape');
+test('plain typing a long word stays projected without fabricating runs',async({page})=>{
+ await seedPlain(page);await edit(page);await page.keyboard.type(' HHHHHHHHHHHHHHHHHHHHHHHH');await expect(page.locator(surface)).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();const layer=await snapshotValue(page);expect(layer.text).toBe('ABCD HHHHHHHHHHHHHHHHHHHHHHHH');expect(layer).not.toHaveProperty('textRuns');expect(layer).not.toHaveProperty('textRunsBaseFontSize');await page.keyboard.press('Escape');
 });
 test('plain no-op formatting keeps absent runs and native numeric undo ownership',async({page})=>{
  const initial=getLayer(await seedPlain(page));await edit(page);await selectRange(page,1,3);const size=page.locator('#inspector [data-key=fontSize]');await size.fill('26');await size.press('Tab');expect(await snapshotValue(page)).toEqual(initial);
@@ -837,7 +842,7 @@ test('hard-LF mixed tracking stays in WYSIWYG with Canvas fragment x parity',asy
  await edit(page);await expect(page.locator(surface)).toBeFocused();
  const dom=await page.locator(surface).evaluate(el=>{
   const host=el.getBoundingClientRect(),scale=host.width/parseFloat(el.style.width);
-  return [...el.querySelectorAll('span')].map(span=>({
+  return [...el.querySelectorAll('[data-wysiwyg-fragment]')].map(span=>({
    text:span.textContent.replaceAll('\n',''),x:(span.getBoundingClientRect().x-host.x)/scale
   })).filter(part=>part.text);
  });
@@ -847,7 +852,7 @@ test('hard-LF mixed tracking stays in WYSIWYG with Canvas fragment x parity',asy
  await expect.poll(async()=>getLayer((await records(page,'docs')).find(x=>x.id===doc.id))).toEqual(current);
 });
 
-test('plain near-width fallback preserves Canvas/PNG geometry on first color',async({page},testInfo)=>{
+test('plain near-width projection preserves Canvas/PNG geometry on first color',async({page},testInfo)=>{
  const editNarrow=async()=>{const p=await canvasPoint(page,64,175);await page.mouse.dblclick(p.x,p.y)};
  await observePlainGeometry(page);
  const doc=await seedPlain(page,{fontSize:32,lineHeight:1,w:88,h:100});
@@ -856,10 +861,10 @@ test('plain near-width fallback preserves Canvas/PNG geometry on first color',as
  const before=await plainFrame(page);
  expect(before).toHaveLength(1);
  expect(before[0].mode).toBe('alphabetic');
- // Narrow text retains a fully usable textarea; editing it must not switch
- // the painter or create runs on a no-op open/close.
- await editNarrow();await expect(page.locator('#inlineText')).toBeFocused();
- await expect(page.locator(surface)).toBeHidden();
+ // Near-width text uses the shared rows, including its first color split.
+ // A no-op open/close preserves the model and the painter.
+ await editNarrow();await expect(page.locator(surface)).toBeFocused();
+ await expect(page.locator('#inlineText')).toBeHidden();
  await page.keyboard.press('Control+Enter');
  expect(await snapshotValue(page)).toEqual(original);
  await editNarrow();
@@ -867,12 +872,12 @@ test('plain near-width fallback preserves Canvas/PNG geometry on first color',as
  await page.keyboard.press('ArrowRight');
  await page.keyboard.press('Shift+ArrowRight');
  await page.keyboard.press('Shift+ArrowRight');
- expect(await page.locator('#inlineText').evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([1,3]);
+ expect(await state(page)).toEqual({text:original.text,anchor:1,focus:3});
  await openColor(page);await hexColor(page,'#11aa33');
  const changed=await snapshotValue(page);
  expect(changed.textRuns).toEqual([{start:1,end:3,style:{textColor:'#11aa33'}}]);
  await page.locator('[data-fill-close]').click();
- await page.locator('#inlineText').focus();
+ await page.locator(surface).focus();
  await page.keyboard.press('Control+Enter');
  const after=await plainFrame(page);
  expect(after.map(d=>d.text).join('')).toBe(before[0].text);
@@ -912,17 +917,17 @@ test('normal desktop URL applies range color, font and size visibly while editin
  await hexColor(page,'#bb66dd');
  await page.locator('[data-fill-close]').click();
  await assertRange(page,'Тест текста',5,11);
- await expect(page.locator(surface+' span')).toHaveCount(2);
- const colors=await page.locator(surface+' span').evaluateAll(nodes=>nodes.map(n=>[n.textContent,getComputedStyle(n).color]));
+ await expect(page.locator(surface+' [data-wysiwyg-fragment]')).toHaveCount(2);
+ const colors=await page.locator(surface+' [data-wysiwyg-fragment]').evaluateAll(nodes=>nodes.map(n=>[n.textContent,getComputedStyle(n).color]));
  expect(colors).toEqual([['Тест ','rgb(17, 17, 17)'],['текста','rgb(187, 102, 221)']]);
  await page.locator('#inspector [data-font-open]').click();
  await page.locator('#inspector [data-font-option="Georgia"]').click();
  await assertRange(page,'Тест текста',5,11);
- expect((await page.locator(surface+' span').last().evaluate(el=>getComputedStyle(el).fontFamily)).replaceAll('"','')).toBe('Georgia');
+ expect((await page.locator(surface+' [data-wysiwyg-fragment]').last().evaluate(el=>getComputedStyle(el).fontFamily)).replaceAll('"','')).toBe('Georgia');
  const size=page.locator('#inspector [data-key=fontSize]');
  await size.fill('40');await size.press('Tab');
  await assertRange(page,'Тест текста',5,11);
- expect(await page.locator(surface+' span').last().evaluate(el=>getComputedStyle(el).fontSize)).toBe('40px');
+ expect(await page.locator(surface+' [data-wysiwyg-fragment]').last().evaluate(el=>getComputedStyle(el).fontSize)).toBe('40px');
  const live=await snapshotValue(page);
  expect(live.textRuns).toEqual([{start:5,end:11,style:{fontFamily:'Georgia',fontSize:40,textColor:'#bb66dd'}}]);
  await page.keyboard.press('Control+Enter');
@@ -939,7 +944,7 @@ test('default auto-fit WYSIWYG shrinks with typing and styles selection live',as
  expect(await snapshotValue(page)).toEqual(initial);
  await page.keyboard.type('BBBBBBBBB');
  const typed=await snapshotValue(page);expect(typed.text).toBe('ABBBBBBBBBB');expect(typed.autoFontSize).toBe(true);expect(typed.fontSize).toBeLessThan(initial.fontSize);
- expect(await page.locator(surface+' span').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(typed.fontSize);
+ expect(await page.locator(surface+' [data-wysiwyg-fragment]').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(typed.fontSize);
  await page.keyboard.press('Control+z');expect((await snapshotValue(page)).text).toBe(typed.text.slice(0,-1));
  await page.keyboard.press('Control+Shift+z');expect(await snapshotValue(page)).toEqual(typed);
  await selectRange(page,1,3);await openColor(page);await hexColor(page,'#bb2255');await page.locator('[data-fill-close]').click();
@@ -947,7 +952,7 @@ test('default auto-fit WYSIWYG shrinks with typing and styles selection live',as
  await assertRange(page,typed.text,1,3);
  const formatted=await snapshotValue(page);expect(formatted.autoFontSize).toBe(true);
  expect(formatted.textRuns).toEqual([{start:1,end:3,style:{fontFamily:'Georgia',textColor:'#bb2255'}}]);
- const spans=await page.locator(surface+' span').evaluateAll(all=>all.map(el=>({text:el.textContent,font:getComputedStyle(el).fontFamily.replaceAll('"',''),color:getComputedStyle(el).color})));
+ const spans=await page.locator(surface+' [data-wysiwyg-fragment]').evaluateAll(all=>all.map(el=>({text:el.textContent,font:getComputedStyle(el).fontFamily.replaceAll('"',''),color:getComputedStyle(el).color})));
  expect(spans[1]).toEqual({text:'BB',font:'Georgia',color:'rgb(187, 34, 85)'});
  await page.keyboard.press('Control+Enter');
  const screen=await plainFrame(page);expect(screen.every(x=>x.mode==='alphabetic')).toBe(true);
@@ -956,12 +961,14 @@ test('default auto-fit WYSIWYG shrinks with typing and styles selection live',as
  await expect.poll(async()=>getLayer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(formatted);
  await page.reload();await openLibraryDocument(page,doc.id);expect(await snapshotValue(page)).toEqual(formatted);
 });
-test('auto-fit switches to textarea only when text becomes multirow',async({page})=>{
+test('auto-fit retains projected rows as text becomes multirow',async({page})=>{
  await seedPlain(page,{text:'A',fontFamily:'Arial',fontSize:20,lineHeight:1,w:96,h:100,autoFontSize:true},{flag:'default'});
  await edit(page);await expect(page.locator(surface)).toBeFocused();
  await page.keyboard.insertText(' AAA BBB CCC DDD EEE FFF GGG HHH');
  expect((await snapshotValue(page)).text).toBe('A AAA BBB CCC DDD EEE FFF GGG HHH');
- await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#inlineText')).toBeVisible();
+ await expect(page.locator(surface)).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();
+ expect(await page.locator(surface).textContent()).toBe('A AAA BBB CCC DDD EEE FFF GGG HHH');
+ expect(await page.locator(surface+' [data-wysiwyg-row]').count()).toBeGreaterThan(1);
  await page.keyboard.press('Control+Enter');expect((await snapshotValue(page)).autoFontSize).toBe(true);
 });
 

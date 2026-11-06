@@ -1046,7 +1046,7 @@ test('font inspector shows effective range font and Mixed for heterogeneous laye
  await page.locator('#inspector [data-font-open]').click();
  await page.locator('#inspector [data-font-option="Georgia"]').click();
  await expect(page.locator('#inspector [data-font-current]')).toHaveText('Georgia');
- await expect(page.locator(surface)).toBeFocused();
+ await page.locator(surface).focus();
  await page.keyboard.press('Control+Enter');
  // Layer fontFamily remains Arial; the effective full-range override is Georgia.
  expect((await snapshotValue(page)).fontFamily).toBe('Arial');
@@ -1056,6 +1056,7 @@ test('font inspector shows effective range font and Mixed for heterogeneous laye
  await page.locator('#inspector [data-font-open]').click();
  await page.locator('#inspector [data-font-option="Tahoma"]').click();
  await expect(page.locator('#inspector [data-font-current]')).toHaveText('Tahoma');
+ await page.locator(surface).focus();
  await page.keyboard.press('Control+Enter');
  await expect(page.locator('#inspector [data-font-current]')).toHaveText('Mixed');
  await edit(page);

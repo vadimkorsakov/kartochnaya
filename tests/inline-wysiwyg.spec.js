@@ -1035,3 +1035,35 @@ test('unified first edit of ordinary Arial title uses WYSIWYG without legacy lay
  await edit(page);await expect(page.locator(surface)).toBeFocused();
  await expect(page.locator('#inlineText')).toBeHidden();
 });
+
+test('font inspector shows effective range font and Mixed for heterogeneous layer',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='alpha beta gamma delta';
+ await seedPlain(page,{text,fontFamily:'Arial',fontSize:24,w:330,h:160,
+  autoFontSize:false},{flag:'default'});
+ await edit(page);
+ await page.keyboard.press('Control+a');
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Georgia"]').click();
+ await expect(page.locator('#inspector [data-font-current]')).toHaveText('Georgia');
+ await expect(page.locator(surface)).toBeFocused();
+ await page.keyboard.press('Control+Enter');
+ // Layer fontFamily remains Arial; the effective full-range override is Georgia.
+ expect((await snapshotValue(page)).fontFamily).toBe('Arial');
+ await expect(page.locator('#inspector [data-font-current]')).toHaveText('Georgia');
+ await edit(page);
+ await selectRange(page,0,5);
+ await page.locator('#inspector [data-font-open]').click();
+ await page.locator('#inspector [data-font-option="Tahoma"]').click();
+ await expect(page.locator('#inspector [data-font-current]')).toHaveText('Tahoma');
+ await page.keyboard.press('Control+Enter');
+ await expect(page.locator('#inspector [data-font-current]')).toHaveText('Mixed');
+ await edit(page);
+ await selectRange(page,6,10);
+ await expect(page.locator('#inspector [data-font-current]')).toHaveText('Georgia');
+ await selectRange(page,0,5);
+ await expect(page.locator('#inspector [data-font-current]')).toHaveText('Tahoma');
+ await page.keyboard.press('Control+a');
+ await expect(page.locator('#inspector [data-font-current]')).toHaveText('Mixed');
+ await page.keyboard.press('Control+Enter');
+});

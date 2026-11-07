@@ -248,6 +248,30 @@ function inspectorFontFamily(e){
  const first=families[0]||'Arial';
  return families.every(family=>family===first)?first:null;
 }
+// The numeric size field must reflect effective character sizes, just like
+// the font-family field. A run may override the entire layer's base fontSize.
+function inspectorFontSize(e){
+ if(!e||e.type!=='text')return e?.fontSize||24;
+ const layers=app.selectedIds.length>1&&picked().every(layer=>layer.type==='text')?picked():[e];
+ const sizes=[];
+ for(const layer of layers){
+  const spans=richTextSpans(layer),caret=app.editingId===layer.id?app.inlineCaret:null;
+  let relevant=spans;
+  if(caret&&Number.isFinite(caret.start)&&Number.isFinite(caret.end)){
+   const start=Math.min(caret.start,caret.end),end=Math.max(caret.start,caret.end);
+   if(end>start)relevant=spans.filter(span=>span.start<end&&span.end>start);
+   else if(spans.length)relevant=[spans.find(span=>span.start<=start&&start<span.end)||spans.at(-1)];
+  }
+  if(relevant.length)sizes.push(...relevant.map(span=>span.style.fontSize));
+  else sizes.push(layer.fontSize||24);
+ }
+ const first=sizes[0]??24;
+ return sizes.every(size=>Math.abs(size-first)<1e-6)?first:null;
+}
+function fontSizeField(e,label='Размер, px'){
+ const size=inspectorFontSize(e);
+ return `<label>${label}<input data-key="fontSize" type="number" value="${size===null?'':fmt(size)}" min="1" max="100000" step="1"${size===null?' placeholder="Mixed"':''}></label>`;
+}
 function fontSelectControl(e){const family=inspectorFontFamily(e);return `<div class="font-control"><span class="font-control-label">Семейство шрифта</span><button type="button" class="font-family-trigger" data-font-open="1" aria-haspopup="listbox" aria-expanded="false"><span data-font-current="1" style="font-family:${family?html(JSON.stringify(family)):'inherit'}">${html(family??'Mixed')}</span><span>⌄</span></button><div class="font-family-menu hidden" role="listbox"><div class="v41-font-filters"><label>Категория: <select data-font-filter="1" aria-label="Категория шрифтов">${v41FontCategories.map(([id,name])=>`<option value="${id}" ${v41DesktopFontCategory===id?'selected':''}>${name}</option>`).join('')}</select></label></div><input class="v41-font-search" data-font-search="1" type="search" placeholder="Поиск шрифта" aria-label="Поиск шрифта"><div class="v41-font-list">${v41FontOptions(v41FontsByCategory(v41DesktopFontCategory),family)}</div></div></div>`}
 function syncInspectorFontFamily(){
  const label=$('#inspector [data-font-current]'),e=active();
@@ -255,6 +279,12 @@ function syncInspectorFontFamily(){
  const family=inspectorFontFamily(e);
  label.textContent=family??'Mixed';
  label.style.fontFamily=family?JSON.stringify(family):'inherit';
+ const sizeInput=$('#inspector [data-key="fontSize"]');
+ if(sizeInput&&document.activeElement!==sizeInput){
+  const size=inspectorFontSize(e);
+  sizeInput.value=size===null?'':fmt(size);
+  sizeInput.placeholder=size===null?'Mixed':'';
+ }
  const menu=label.closest('.font-control')?.querySelector('.font-family-menu');
  if(menu&&!menu.classList.contains('hidden'))for(const opt of menu.querySelectorAll('[data-font-option]'))opt.classList.toggle('current',opt.dataset.fontOption===family);
 }
@@ -737,7 +767,7 @@ function refreshInspector(){
  const root=$('#inspector'),es=picked(),e=active(),d=app.doc;
  if(es.length>1){
   const allText=es.every(x=>x.type==='text'),common=es[0],opts=fontFamilies().map(f=>[f,f]);
-  root.innerHTML=`<div class="ins-object-title">${uiIcon('layers')} ${isOneGroup()?'Группа':`Выбрано ${es.length} слоя`}</div>${propertySection('Выравнивание',alignBar(),'align')}${allText?propertySection('Типографика',`${fontSelectControl(common)}<div class="cols2">${selectField('Начертание','fontVariant',chosenVariant(common),fontVariants(common.fontFamily))}${numField('Размер','fontSize',common.fontSize,{min:1})}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',common.lineHeight,{min:.5,step:.05})}${numField('Трекинг','letterSpacing',common.letterSpacing||0,{step:.5})}</div>${alignBar('text')}`,'font')+propertySection('Заливка',fillRow('Заливка текста','fill',common.fill,common.fillType||'solid'),'fill'):''}${propertySection('Эффекты',fxInspectorContent(common),'settings')}${propertySection('Действия',`<div class="action-row"><button class="linebtn" data-action="duplicate">${uiIcon('duplicate')} Копия</button><button class="linebtn" data-action="group">${uiIcon('layers')} ${isOneGroup()?'Разгруппировать':'Сгруппировать'}</button><button class="linebtn" data-action="delete">${uiIcon('delete')} Удалить</button></div>`,'more')}`;return;
+  root.innerHTML=`<div class="ins-object-title">${uiIcon('layers')} ${isOneGroup()?'Группа':`Выбрано ${es.length} слоя`}</div>${propertySection('Выравнивание',alignBar(),'align')}${allText?propertySection('Типографика',`${fontSelectControl(common)}<div class="cols2">${selectField('Начертание','fontVariant',chosenVariant(common),fontVariants(common.fontFamily))}${fontSizeField(common,'Размер')}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',common.lineHeight,{min:.5,step:.05})}${numField('Трекинг','letterSpacing',common.letterSpacing||0,{step:.5})}</div>${alignBar('text')}`,'font')+propertySection('Заливка',fillRow('Заливка текста','fill',common.fill,common.fillType||'solid'),'fill'):''}${propertySection('Эффекты',fxInspectorContent(common),'settings')}${propertySection('Действия',`<div class="action-row"><button class="linebtn" data-action="duplicate">${uiIcon('duplicate')} Копия</button><button class="linebtn" data-action="group">${uiIcon('layers')} ${isOneGroup()?'Разгруппировать':'Сгруппировать'}</button><button class="linebtn" data-action="delete">${uiIcon('delete')} Удалить</button></div>`,'more')}`;return;
  }
  if(!e){root.innerHTML=`<div class="ins-object-title">${uiIcon('settings')} Холст</div>${propertySection('Документ',`<label>Название<input data-doc="title" value="${html(d.title)}"></label><div class="cols2">${numField('Ширина','_docWidth',d.width,{min:100,max:5000})}${numField('Высота','_docHeight',d.height,{min:100,max:5000})}</div>`,'position')}${propertySection('Фон',fillRow('Фон холста','_docBackground',d.background),'fill')}${app.pixelSelection?propertySection('Эффекты',fxInspectorContent(null),'settings'):''}${d.type==='template'?propertySection('Выпуск карточки','<button class="btn btn-primary full" data-action="makeCard">Создать карточку из шаблона</button>','duplicate'):''}`;return}
  const fontOpts=fontFamilies().map(n=>[n,n]);
@@ -748,7 +778,7 @@ function refreshInspector(){
  if(e.type==='raster')s+=propertySection('Растровый слой',`<label>Цвет заливки<input type="color" id="rasterFillColor" value="${html(e.rasterFillColor||'#7457ed')}"></label><button class="linebtn wide" type="button" id="rasterFillAction">Залить ${app.pixelSelection?'выделение':'растровый слой'} цветом</button><div class="ins-caption">Растровая заливка сохраняется в этом же слое. Последующие мазки кисти не создают новые слои.</div>`,'fill');
  if(e.type==='vector')s+=propertySection('Библиотека фигур','<button class="linebtn wide" data-action="saveShape">＋ Сохранить в Фигуры</button>','more');
  if(e.type==='text'){
-  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${selectField('Начертание','fontVariant',chosenVariant(e),fontVariants(e.fontFamily))}${numField('Размер, px','fontSize',e.fontSize,{min:1})}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',e.lineHeight,{min:.5,step:.05})}${numField('Трекинг','letterSpacing',e.letterSpacing||0,{step:.5})}</div>${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
+  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${selectField('Начертание','fontVariant',chosenVariant(e),fontVariants(e.fontFamily))}${fontSizeField(e)}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',e.lineHeight,{min:.5,step:.05})}${numField('Трекинг','letterSpacing',e.letterSpacing||0,{step:.5})}</div>${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
   s+=propertySection('Заливка',fillRow('Заливка текста','fill',e.fillType==='solid'?e.textColor:e.fill,e.fillType||'solid'),'fill');
  }else{
   s+=propertySection('Заливка',fillRow('Заливка','fill',e.fill,e.fillType||'solid')+`${e.fillType==='image'?imageModeControls(e):''}`,'fill');

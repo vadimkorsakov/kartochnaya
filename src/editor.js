@@ -2130,7 +2130,10 @@ $('#wysiwygRecover').onclick=()=>{if(app.wysiwyg?.recover())$('#wysiwygRecovery'
 function routeWysiwygPanelAction(ev){
  if(!app.wysiwyg||!ev.target.closest(inlineFormattingRoots+',#fxPopover,#fxMenu,#fxChooser'))return;
  rememberInlineCaret();
- if(ev.target.closest('[data-key],[data-hex],[data-fill-open],[data-text-auto-font],[data-font-open],[data-font-option],.font-family-menu,#fontDialog,#fillPopover,#undoBtn,#redoBtn'))return;
+ // Custom numeric steppers are proxy controls for their data-key inputs.
+ // Preserve the WYSIWYG range; their click handler emits input/change on
+ // the underlying number field. They must not enter the generic fallback.
+ if(ev.target.closest('[data-key],[data-hex],[data-fill-open],[data-text-auto-font],[data-font-open],[data-font-option],.font-family-menu,.k-num-step,#fontDialog,#fillPopover,#undoBtn,#redoBtn'))return;
  if(ev.target.closest('button,input,select,[data-align]')&&!fallbackInlineWysiwyg('Форматирование')){ev.preventDefault();ev.stopImmediatePropagation();}
 }
 // Capture input/change as well: a keyboard-activated control need not have a

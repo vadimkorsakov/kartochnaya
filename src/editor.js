@@ -2175,6 +2175,11 @@ $('#wysiwygRecover').onclick=()=>{if(app.wysiwyg?.recover())$('#wysiwygRecovery'
 // Controls outside changeProperty still hand off before mutating the layer.
 function routeWysiwygPanelAction(ev){
  if(!app.wysiwyg||!ev.target.closest(inlineFormattingRoots+',#fxPopover,#fxMenu,#fxChooser'))return;
+ // Capture-phase synchronization must not rewrite a newly edited input/select
+ // before its own bubble-phase changeProperty handler reads the new value.
+ // The selection was already preserved at pointerdown/focusout; the formatting
+ // callback reads the canonical session selection itself.
+ if(['input','change'].includes(ev.type)&&ev.target.closest('[data-key],[data-hex]'))return;
  rememberInlineCaret();
  // Custom numeric steppers are proxy controls for their data-key inputs.
  // Preserve the WYSIWYG range; their click handler emits input/change on

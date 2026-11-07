@@ -1,6 +1,6 @@
-// Sparse UTF-16 overrides. The only text is element.text; lineHeight/textAlign
-// belong to the layer (a future paragraph model), never to character runs.
-const blocked = new Set(['__proto__', 'constructor', 'prototype', 'lineHeight', 'textAlign']);
+// Sparse UTF-16 overrides. The only text is element.text; textAlign remains
+// a layer property. lineHeight is a positive, dimensionless character override.
+const blocked = new Set(['__proto__', 'constructor', 'prototype', 'textAlign']);
 const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 function jsonValue(v, depth = 0) {
   if (depth > 16) return undefined;
@@ -29,7 +29,7 @@ function styleData(value, base = {}) {
     const v = jsonValue(value[k]);
     if (v === undefined || v === null) continue;
     if (['fontFamily', 'fontStyle', 'textColor', 'fontWeight'].includes(k) && typeof v !== 'string') continue;
-    if (k === 'fontSize' && !(typeof v === 'number' && v > 0)) continue;
+    if (['fontSize', 'lineHeight'].includes(k) && !(typeof v === 'number' && v > 0)) continue;
     if (['bold', 'italic', 'underline', 'strikethrough'].includes(k) && typeof v !== 'boolean') continue;
     // Run sizes stay in the original reference units after mixed-text fitting.
     let inherited = base[k];
@@ -116,7 +116,7 @@ export function effectiveTextStyles(element, start = 0, end = element.text.lengt
   const runs = normalizeRuns(element.text, element.textRuns, element);
   const points = [...new Set([start, end, ...runs.flatMap(r => [r.start, r.end]).filter(i => i > start && i < end)])].sort((a, b) => a - b);
   const base = styleData(Object.fromEntries(Object.entries(element).filter(([k]) =>
-    ['fontFamily','fontWeight','fontStyle','fontVariant','fontSize','textColor','bold','italic','underline','underlineDetails','strikethrough','strikethroughDetails','mobileUnderline','mobileStrike','letterSpacing','baselineShift','fontFeatures','fontVariationSettings'].includes(k) || runs.some(r => Object.hasOwn(r.style,k)))));
+    ['fontFamily','fontWeight','fontStyle','fontVariant','fontSize','lineHeight','textColor','bold','italic','underline','underlineDetails','strikethrough','strikethroughDetails','mobileUnderline','mobileStrike','letterSpacing','baselineShift','fontFeatures','fontVariationSettings'].includes(k) || runs.some(r => Object.hasOwn(r.style,k)))));
   return points.slice(0, -1).map((a, i) => ({ start: a, end: points[i + 1], style: { ...base, ...runs.find(r => r.start <= a && r.end > a)?.style } }));
 }
 export function effectiveTextStyleAt(element, index) {

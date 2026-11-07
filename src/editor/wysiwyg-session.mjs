@@ -3,10 +3,10 @@ import {replaceText, applyTextStyle} from '../model/rich-text.mjs';
 import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-history.mjs';
 
 const ctx = document.createElement('canvas').getContext('2d');
-function lineHeight(layer, style) {
+function lineHeight(style) {
  ctx.font=richTextFont(style);const m=ctx.measureText('Mg');
  if(!Number.isFinite(m.fontBoundingBoxAscent)||!Number.isFinite(m.fontBoundingBoxDescent)||!(m.width>0))throw Error('Font metrics unavailable');
- return Math.max(style.fontSize*(layer.lineHeight||1.15),m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)+'px';
+ return Math.max(style.fontSize*style.lineHeight,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)+'px';
 }
 // CSS inline baselines need not equal Canvas fontBoundingBox baselines.
 // Measure the actual inline baseline before positioning any editable glyphs.
@@ -29,7 +29,7 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=
  // Supported paint semantics apply equally to plain and sparse-rich text.
  // Geometry is supplied by the shared row layout, never a CSS parity guess.
  if(!compatible(e))return false;
- try {return [resolveRichTextStyle(e),...richTextSpans(e).map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(e,s));}catch{return false;}
+ try {return [resolveRichTextStyle(e),...richTextSpans(e).map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(s));}catch{return false;}
 }
 
 // Canonical layer + the editor's existing session history own all confirmed data.
@@ -52,7 +52,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const base=resolveRichTextStyle(value),spans=richTextSpans(value);
   const styles=[base,...spans.map(p=>p.style)];
   for(const style of styles)if(!available(style.fontFamily)||!document.fonts.check(richTextFont(style)))throw Error('Font unavailable');
-  const heights=styles.map(style=>lineHeight(value,style));
+  const heights=styles.map(style=>lineHeight(style));
   // Canvas owns wrapping, per-row ascent/descent and fragment advances.
   // Position source spans at those coordinates; CSS must never reflow them.
   // Soft wraps add no characters. Only source LF occupies a UTF-16 offset.
@@ -69,7 +69,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
     backgroundPosition:row.decorations.map(r=>`${r.x}px ${r.y-row.y}px`).join(','),
     backgroundSize:row.decorations.map(r=>`${r.width}px ${r.height}px`).join(','),backgroundRepeat:'no-repeat'});
    nodes.push(rowNode);let advance=0;
-   const parts=row.fragments.length?row.fragments:[{text:'',style:base,x:0}];
+   const parts=row.fragments.length?row.fragments:[{text:'',style:row.emptyStyle||base,x:0}];
    for(let i=0;i<parts.length;i++){
     const part=parts[i],span=document.createElement('span');span.dataset.wysiwygFragment='';
     const offset=unifiedDOMOffset(part.style,{height:row.height,baseline:row.baseline-row.y},part.text);

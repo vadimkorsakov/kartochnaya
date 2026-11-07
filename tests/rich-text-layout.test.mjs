@@ -11,7 +11,7 @@ test('explicit keys win within a scope, run aliases override the base, missing k
  assert.equal(resolveRichTextStyle(base,{italic:false,fontStyle:'italic'}).fontStyle,'italic');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontWeight,'500');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontStyle,'oblique');
- assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,textColor:'red',letterSpacing:2,underline:false,strikethrough:false});
+ assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,textColor:'red',letterSpacing:2,lineHeight:1.15,underline:false,strikethrough:false});
 });
 test('render projection repairs UTF-16 ranges without mutating source or unknown properties',()=>{
  const e={...base,textRuns:[{start:2,end:3,style:{fontSize:40,underline:true,baselineShift:'super',fontFeatures:{liga:0}}}]};
@@ -127,4 +127,35 @@ test('shared font precision remains representable across size exponents',()=>{
  for(const [source,painted] of [[28.3125,28.25],[39.75,40],[65.5,66],[129,128],[450,448]]){
   const style=resolveRichTextStyle({fontSize:source});assert.equal(fontDeclarationSize(style.fontSize),painted);assert.match(richTextFont(style),new RegExp(' '+source+'px '));assert.equal(style.fontSize,source);
  }
+});
+
+test('range leading survives glyph/token coalescing without changing kerning, wraps or x',()=>{
+ const context={measureText(text){return {width:text.length*12-(text.match(/AV/g)||[]).length*3,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
+ const engine=createRichTextLayoutEngine(context),base={text:'AVATAR AVATAR AVATAR',fontSize:20,lineHeight:1.2,w:100,h:400};
+ const a=engine.layout(base),b=engine.layout({...base,textRuns:[{start:1,end:3,style:{lineHeight:3}}]});
+ assert.deepEqual(b.rows.map(r=>[r.start,r.end,r.width,r.fragments.map(p=>[p.text,p.x,p.width])]),a.rows.map(r=>[r.start,r.end,r.width,r.fragments.map(p=>[p.text,p.x,p.width])]));
+ assert.equal(b.rows[0].height,60);assert.equal(b.rows[0].baseline,36);
+ assert.equal(b.rows[1].height,24);assert.equal(b.rows[1].y-a.rows[1].y,36);
+ assert.equal(b.rows[0].fragments.length,1,'lineHeight cannot split glyph painting');
+ // Oversized tokens use per-grapheme heights rather than the whole token max.
+ const c=engine.layout({...base,w:30,text:'AVATAR',textRuns:[{start:0,end:1,style:{lineHeight:3}}]});
+ assert.deepEqual(c.rows.map(r=>r.height),[60,24,24]);
+});
+
+test('mixed size/leading uses each source requirement plus max ascent/descent, one centered baseline',()=>{
+ const context={measureText(text){const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);return {width:text.length*size/2,fontBoundingBoxAscent:size*.8,fontBoundingBoxDescent:size*.2}}};
+ const engine=createRichTextLayoutEngine(context);
+ const e={text:'ABCD',fontSize:20,lineHeight:1,w:400,h:400,textRuns:[{start:1,end:2,style:{fontSize:40,lineHeight:1}},{start:2,end:3,style:{lineHeight:4}}]};
+ const row=engine.layout(e).rows[0];assert.equal(row.height,80);assert.equal(row.baseline,52);
+ assert.ok(row.fragments.every(p=>p.y===52));
+ const scaled=engine.layout({...e,fontSize:10,textRunsBaseFontSize:20}).rows[0];assert.equal(scaled.height,40);assert.equal(scaled.baseline,26);
+});
+
+test('empty rows use their LF style and trailing row inherits the final LF, plain documents retain geometry',()=>{
+ const context={measureText(text){return {width:text.length*10,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
+ const engine=createRichTextLayoutEngine(context),base={text:'A\n\n',fontSize:20,lineHeight:1.2,w:100,h:400};
+ assert.deepEqual(engine.layout(base).rows.map(r=>r.height),[24,24,24]);
+ const rows=engine.layout({...base,textRuns:[{start:2,end:3,style:{lineHeight:3}}]}).rows;
+ assert.deepEqual(rows.map(r=>r.height),[24,60,60]);assert.deepEqual(rows.map(r=>r.baseline),[18,60,120]);
+ for(const value of [0,-1,NaN,Infinity,'bad'])assert.ok(Number.isFinite(engine.layout({...base,lineHeight:value,textRuns:[{start:0,end:1,style:{lineHeight:value}}]}).height));
 });

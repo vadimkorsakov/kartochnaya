@@ -61,7 +61,7 @@ test('UTF-16: surrogate boundaries expand selections, snap insertions, preserve 
 test('invalid saved data repairs predictably, last overlapping key wins; no mutation',()=>{
   const runs=[null,{},run(-3,2,{bold:true}),run(1,99,{italic:true}),run(3,2,{bold:true}),run(.5,2,{bold:true}),run(0,NaN,{bold:true}),run(0,1,{lineHeight:2,fontSize:-1,bold:'yes'}),run(1,3,{bold:false})];
   const before=structuredClone(runs), fixed=normalizeRuns('abc',runs);
-  assert.deepEqual(fixed,[run(0,1,{bold:true}),run(1,3,{bold:false,italic:true})]);
+  assert.deepEqual(fixed,[run(0,1,{bold:true,lineHeight:2}),run(1,3,{bold:false,italic:true})]);
   assert.equal(validateRuns('abc',runs),false);assert.equal(validateRuns('abc',fixed),true);assert.deepEqual(runs,before);
   assert.deepEqual(normalizeRuns('abc','broken'),[]);assert.deepEqual(normalizeRuns('',runs),[]);
 });
@@ -69,7 +69,7 @@ test('extensions survive and merge structurally, paragraph properties cannot bec
   const style={underline:true,underlineDetails:{color:'red',thickness:2},baselineShift:'super',fontFeatures:{liga:false},future:[1,'a']};
   const e=applyTextStyle({text:'ab'},0,2,style);assert.deepEqual(e.textRuns[0].style,style);
   assert.deepEqual(normalizeRuns('ab',[run(0,1,{fontFeatures:{a:1,b:2}}),run(1,2,{fontFeatures:{b:2,a:1}})]),[run(0,2,{fontFeatures:{a:1,b:2}})]);
-  const bad=JSON.parse('{"__proto__":{"polluted":true},"constructor":1,"lineHeight":2}');
+  const bad=JSON.parse('{"__proto__":{"polluted":true},"constructor":1,"textAlign":"center"}');
   assert.equal(applyTextStyle({text:'ab'},0,2,bad).textRuns,undefined);assert.equal({}.polluted,undefined);
   // Decoration detail uses an extension object; built-in underline is boolean.
   assert.equal(e.textRuns[0].style.baselineShift,'super');
@@ -161,4 +161,15 @@ test('base-equal explicit styles and aliases keep their render priority through 
   const aliases={text:'AB',fontWeight:'400',bold:true,fontStyle:'normal',italic:true,textRuns:[run(0,2,{bold:true,italic:true})]};
   assert.deepEqual(normalizeRuns(aliases.text,aliases.textRuns,aliases),aliases.textRuns);
   assert.deepEqual(updateText(aliases,'AB!').textRuns,[run(0,3,{bold:true,italic:true})]);
+});
+
+test('lineHeight is a sparse positive numeric multiplier, independent of fitted size units and other keys',()=>{
+ const base={text:'Привет мир',fontSize:10,textRunsBaseFontSize:20,lineHeight:1.2};
+ let e=applyTextStyle(base,1,5,{lineHeight:2,fontSize:40,underline:true,letterSpacing:1.5,fontFeatures:{liga:0}});
+ assert.equal(effectiveTextStyleAt(e,0).lineHeight,1.2);assert.equal(effectiveTextStyleAt(e,2).lineHeight,2);
+ e=applyTextStyle(e,2,4,{lineHeight:3});assert.equal(effectiveTextStyleAt(e,2).fontSize,40);assert.equal(effectiveTextStyleAt(e,2).underline,true);
+ e=applyTextStyle(e,2,4,{lineHeight:1.2});assert.equal(e.textRuns.find(r=>r.start===2).style.lineHeight,undefined);
+ assert.equal(effectiveTextStyleAt(replaceText(e,1,1,'!'),1).lineHeight,1.2);
+ for(const lineHeight of [0,-1,NaN,Infinity,'2',null,{},[]])assert.deepEqual(normalizeRuns(base.text,[run(0,2,{lineHeight,underline:true})],base),[run(0,2,{underline:true})]);
+ canonical(e);assert.equal(base.textRuns,undefined);
 });

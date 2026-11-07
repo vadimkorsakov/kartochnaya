@@ -95,6 +95,10 @@ async function verifyClosed(page,evidence,label){
 }
 
 for(const auto of [false,true])test(`real Cyrillic UI repeated styling auto=${auto}`,async({page},info)=>{
+ // This end-to-end scenario includes repeated character-by-character selection,
+ // DOM/Canvas measurements, JSON persistence, PNG export and a reload.
+ // GitHub runners exceed the global 30s limit even when every assertion passes.
+ test.setTimeout(90_000);
  const evidence=[];await observe(page);
  try{
   await createLayer(page,auto);expect((await domGeometry(page)).length).toBeGreaterThanOrEqual(5);

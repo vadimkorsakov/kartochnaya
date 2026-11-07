@@ -252,12 +252,13 @@ function inspectorFontFamily(e){
 // A run may override the entire layer default; null represents Mixed.
 function inspectorFontSize(e){return inspectorNumericTextStyle(e,'fontSize',24)}
 function inspectorLetterSpacing(e){return inspectorNumericTextStyle(e,'letterSpacing',0)}
+function inspectorLineHeight(e){return inspectorNumericTextStyle(e,'lineHeight',1.15)}
 function inspectorNumericTextStyle(e,key,fallback){
  if(!e||e.type!=='text')return e?.[key]??fallback;
  const layers=app.selectedIds.length>1&&picked().every(layer=>layer.type==='text')?picked():[e];
  const values=[];
  for(const layer of layers){
-  const spans=richTextSpans(layer),caret=app.editingId===layer.id?app.inlineCaret:null;
+  const spans=key==='lineHeight'&&!supportsHorizontalTextLayout(layer)?[]:richTextSpans(layer),caret=app.editingId===layer.id?app.inlineCaret:null;
   let relevant=spans;
   if(caret&&Number.isFinite(caret.start)&&Number.isFinite(caret.end)){
    const start=Math.min(caret.start,caret.end),end=Math.max(caret.start,caret.end);
@@ -277,6 +278,10 @@ function fontSizeField(e,label='Размер, px'){
 function letterSpacingField(e){
  const spacing=inspectorLetterSpacing(e);
  return `<label>Трекинг<input data-key="letterSpacing" type="number" value="${spacing===null?'':fmt(spacing)}" step=".5"${spacing===null?' placeholder="Mixed"':''}></label>`;
+}
+function lineHeightField(e){
+ const value=inspectorLineHeight(e);
+ return `<label>Интерлиньяж<input data-key="lineHeight" type="number" value="${value===null?'':fmt(value)}" min=".05" step=".05"${value===null?' placeholder="Mixed"':''}></label>`;
 }
 // Effective font weight/style may differ from the base layer after a range edit.
 function inspectorFontVariant(e){
@@ -330,6 +335,11 @@ function syncInspectorFontFamily(){
   const spacing=inspectorLetterSpacing(e);
   spacingInput.value=spacing===null?'':fmt(spacing);
   spacingInput.placeholder=spacing===null?'Mixed':'';
+ }
+ const heightInput=$('#inspector [data-key="lineHeight"]');
+ if(heightInput&&document.activeElement!==heightInput&&heightInput!==inspectorEditingControl){
+  const value=inspectorLineHeight(e);
+  heightInput.value=value===null?'':fmt(value);heightInput.placeholder=value===null?'Mixed':'';
  }
  const variantSelect=$('#inspector select[data-key="fontVariant"]');
  if(variantSelect&&document.activeElement!==variantSelect&&variantSelect!==inspectorEditingControl){
@@ -829,7 +839,7 @@ function refreshInspector(){
  const root=$('#inspector'),es=picked(),e=active(),d=app.doc;
  if(es.length>1){
   const allText=es.every(x=>x.type==='text'),common=es[0],opts=fontFamilies().map(f=>[f,f]);
-  root.innerHTML=`<div class="ins-object-title">${uiIcon('layers')} ${isOneGroup()?'Группа':`Выбрано ${es.length} слоя`}</div>${propertySection('Выравнивание',alignBar(),'align')}${allText?propertySection('Типографика',`${fontSelectControl(common)}<div class="cols2">${fontVariantField(common)}${fontSizeField(common,'Размер')}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',common.lineHeight,{min:.5,step:.05})}${letterSpacingField(common)}</div>${textDecorationControls()}${alignBar('text')}`,'font')+propertySection('Заливка',fillRow('Заливка текста','fill',common.fill,common.fillType||'solid'),'fill'):''}${propertySection('Эффекты',fxInspectorContent(common),'settings')}${propertySection('Действия',`<div class="action-row"><button class="linebtn" data-action="duplicate">${uiIcon('duplicate')} Копия</button><button class="linebtn" data-action="group">${uiIcon('layers')} ${isOneGroup()?'Разгруппировать':'Сгруппировать'}</button><button class="linebtn" data-action="delete">${uiIcon('delete')} Удалить</button></div>`,'more')}`;return;
+  root.innerHTML=`<div class="ins-object-title">${uiIcon('layers')} ${isOneGroup()?'Группа':`Выбрано ${es.length} слоя`}</div>${propertySection('Выравнивание',alignBar(),'align')}${allText?propertySection('Типографика',`${fontSelectControl(common)}<div class="cols2">${fontVariantField(common)}${fontSizeField(common,'Размер')}</div><div class="cols2">${lineHeightField(common)}${letterSpacingField(common)}</div>${textDecorationControls()}${alignBar('text')}`,'font')+propertySection('Заливка',fillRow('Заливка текста','fill',common.fill,common.fillType||'solid'),'fill'):''}${propertySection('Эффекты',fxInspectorContent(common),'settings')}${propertySection('Действия',`<div class="action-row"><button class="linebtn" data-action="duplicate">${uiIcon('duplicate')} Копия</button><button class="linebtn" data-action="group">${uiIcon('layers')} ${isOneGroup()?'Разгруппировать':'Сгруппировать'}</button><button class="linebtn" data-action="delete">${uiIcon('delete')} Удалить</button></div>`,'more')}`;return;
  }
  if(!e){root.innerHTML=`<div class="ins-object-title">${uiIcon('settings')} Холст</div>${propertySection('Документ',`<label>Название<input data-doc="title" value="${html(d.title)}"></label><div class="cols2">${numField('Ширина','_docWidth',d.width,{min:100,max:5000})}${numField('Высота','_docHeight',d.height,{min:100,max:5000})}</div>`,'position')}${propertySection('Фон',fillRow('Фон холста','_docBackground',d.background),'fill')}${app.pixelSelection?propertySection('Эффекты',fxInspectorContent(null),'settings'):''}${d.type==='template'?propertySection('Выпуск карточки','<button class="btn btn-primary full" data-action="makeCard">Создать карточку из шаблона</button>','duplicate'):''}`;return}
  const fontOpts=fontFamilies().map(n=>[n,n]);
@@ -840,7 +850,7 @@ function refreshInspector(){
  if(e.type==='raster')s+=propertySection('Растровый слой',`<label>Цвет заливки<input type="color" id="rasterFillColor" value="${html(e.rasterFillColor||'#7457ed')}"></label><button class="linebtn wide" type="button" id="rasterFillAction">Залить ${app.pixelSelection?'выделение':'растровый слой'} цветом</button><div class="ins-caption">Растровая заливка сохраняется в этом же слое. Последующие мазки кисти не создают новые слои.</div>`,'fill');
  if(e.type==='vector')s+=propertySection('Библиотека фигур','<button class="linebtn wide" data-action="saveShape">＋ Сохранить в Фигуры</button>','more');
  if(e.type==='text'){
-  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${fontVariantField(e)}${fontSizeField(e)}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',e.lineHeight,{min:.5,step:.05})}${letterSpacingField(e)}</div>${textDecorationControls()}${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
+  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${fontVariantField(e)}${fontSizeField(e)}</div><div class="cols2">${lineHeightField(e)}${letterSpacingField(e)}</div>${textDecorationControls()}${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
   s+=propertySection('Заливка',fillRow('Заливка текста','fill',e.fillType==='solid'?e.textColor:e.fill,e.fillType||'solid'),'fill');
  }else{
   s+=propertySection('Заливка',fillRow('Заливка','fill',e.fill,e.fillType||'solid')+`${e.fillType==='image'?imageModeControls(e):''}`,'fill');
@@ -884,7 +894,7 @@ function relocateMobileHistory(){
 function showInspector(mode='settings'){if(matchMedia('(max-width:760px)').matches&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(matchMedia('(max-width:760px)').matches){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
 function hideInspector(){cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
 function changeProperty(key,val,final=false){if(styleInlineSelection(key,val,final)||styleInlineLayer(key,val,final))return;if(app.wysiwyg&&!fallbackInlineWysiwyg('Форматирование'))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
-function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;if(['fontSize','letterSpacing'].includes(t.dataset.key)&&String(t.value).trim()==='')return;const editedValue=t.value;inspectorEditingControl=t;try{changeProperty(t.dataset.key,editedValue,final)}finally{inspectorEditingControl=null}if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
+function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;if(['fontSize','letterSpacing','lineHeight'].includes(t.dataset.key)&&String(t.value).trim()==='')return;const editedValue=t.value;inspectorEditingControl=t;try{changeProperty(t.dataset.key,editedValue,final)}finally{inspectorEditingControl=null}if(final&&t.dataset.key==='lineHeight')syncInspectorFontFamily();if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
 $('#inspector').addEventListener('change',e=>{if(e.target.dataset.clipCheckbox){const elem=app.doc.elements.find(x=>x.id===e.target.dataset.clipCheckbox);if(elem){elem.clipped=!e.target.checked;toggleClip(elem.id)}refreshInspector()}});
 $('#inspector').addEventListener('change',ev=>{if(ev.target.matches('[data-text-auto-font]'))setTextAutoFont(ev.target.checked)});
 $('#inspector').addEventListener('input',e=>handleInspectorChange(e,false));$('#inspector').addEventListener('change',e=>handleInspectorChange(e,true));$('#inspector').addEventListener('click',e=>{const b=e.target.closest('[data-align]');if(b){alignPicked(b.dataset.align);return}const sw=e.target.closest('[data-fill-open]');if(sw){openFillPopover(sw.dataset.fillOpen,sw);return}});
@@ -1125,7 +1135,7 @@ function mixedTextLayout(e){
 // Eligibility describes supported paint semantics, never a guessed CSS wrap.
 function supportsWysiwygProjection(e){
  if(e.mobileGlow||e.mobileBackground)return false;
- const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','bold','italic','underline','strikethrough']);
+ const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','lineHeight','bold','italic','underline','strikethrough']);
  if((e.textRuns||[]).some(run=>Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
  try{return richTextEngine.layout(e).rows.every(row=>Number.isFinite(row.baseline)&&row.height>0&&Number.isFinite(row.width));}
  catch{return false;}
@@ -2335,20 +2345,21 @@ function styleInlineLayer(key,value,final){
  if(!app.wysiwyg||!['fontSize','fontWeight','fontStyle','fontVariant','textColor','letterSpacing','lineHeight','w','h','underline','strikethrough'].includes(key))return false;
  let patch={[key]:value};
  if(['fontSize','letterSpacing','lineHeight','w','h'].includes(key)){
-  const n=Number(value);if(!Number.isFinite(n))return true;
+  const n=Number(value);if(!Number.isFinite(n)||key==='lineHeight'&&n<=0)return true;
   patch[key]=['fontSize','w','h'].includes(key)?Math.max(1,n):n;
  }
  if(key==='fontVariant'){const [weight,style]=String(value).split(':');patch={fontWeight:weight||'400',fontStyle:style||'normal'}}
  return app.wysiwyg.applyLayerStyle(patch,{key,final});
 }
 function styleInlineSelection(key,value,final){
- if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','underline','strikethrough'].includes(key))return false;
+ if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough'].includes(key))return false;
  const c=inlineStyleRange(),e=active();if(!c||e?.id!==app.editingId)return false;
+ if(key==='lineHeight'&&!supportsHorizontalTextLayout(e))return false;
  let patch={[key]:value};
  const session=app.inlineSession;
  if(!session.pendingStyle||session.pendingStyle.key!==key)session.pendingStyle={key,fontSize:e.fontSize,baseFontSize:e.textRunsBaseFontSize||e.fontSize};
- if(['fontSize','letterSpacing'].includes(key)){
-  const n=Number(value);if(!Number.isFinite(n))return true;
+ if(['fontSize','letterSpacing','lineHeight'].includes(key)){
+  const n=Number(value);if(!Number.isFinite(n)||key==='lineHeight'&&n<=0)return true;
   patch[key]=key==='fontSize'?Math.max(1,n)*session.pendingStyle.baseFontSize/session.pendingStyle.fontSize:n;
  }
  if(key==='fontVariant'){const [weight,style]=String(value).split(':');patch={fontWeight:weight||'400',fontStyle:style||'normal',bold:null,italic:null}}
@@ -4803,14 +4814,26 @@ for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),
  },true);
  root.addEventListener('change',ev=>{
   const field=ev.target;if(!field.matches?.('input[type="number"]'))return;
-  if(!numericEditValid(field))field.value=numericEditLastValue.get(field)??'';
-  else numericEditLastValue.set(field,field.value);
+  if(!numericEditValid(field)){
+   field.value=numericEditLastValue.get(field)??'';
+   // An effective run value is not necessarily the layer default. Rejecting
+   // invalid leading input must not write that displayed value to the layer.
+   if(field.dataset.key==='lineHeight'){ev.stopImmediatePropagation();return}
+  }else numericEditLastValue.set(field,field.value);
  },true);
  root.addEventListener('keydown',ev=>{
   const field=ev.target;
-  if(ev.key!=='Enter'||ev.isComposing||!field.matches?.('input[type="number"]'))return;
+  if(ev.isComposing||!field.matches?.('input[type="number"]'))return;
+  if(field.dataset.key==='lineHeight'&&['ArrowUp','ArrowDown'].includes(ev.key)&&field.value===''&&active()?.type==='text'){
+   ev.preventDefault();ev.stopPropagation();
+   const base=inlineStyleRange()?inlineSelectionStyle().lineHeight:resolveRichTextStyle(active()).lineHeight;
+   field.value=String(Number(Math.max(Number(field.min)||.05,base+(ev.key==='ArrowUp'?1:-1)*(Number(field.step)||.05)).toFixed(8)));
+   field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));return;
+  }
+  if(ev.key!=='Enter')return;
   ev.preventDefault();ev.stopPropagation();
-  if(!numericEditValid(field))field.value=numericEditLastValue.get(field)??'';
+  if(!numericEditValid(field)&&field.dataset.key!=='lineHeight')field.value=numericEditLastValue.get(field)??'';
+  // Invalid leading must reach the rejecting change guard before restoration.
   // blur produces the same one change event as leaving the field by mouse.
   field.blur();
   if(app.editingId)restoreInlineCaret();else if(!mobileV36Small()&&app.doc&&documentTabSession.activeId!=='home')canvas.focus({preventScroll:true});
@@ -4853,11 +4876,14 @@ document.addEventListener('click',ev=>{
  if(!field||field.disabled||field.readOnly)return;
  const previous=field.value;
  try{
-  // Mixed tracking starts at the effective first character, not empty -> 0.
+  // Mixed range typography starts at the effective first character, not empty -> 0.
   // Add the step directly so a fractional origin is not snapped to a grid.
-  if(field.dataset.key==='letterSpacing'&&inlineStyleRange()){
-   const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:inlineSelectionStyle().letterSpacing,step=Number(field.step)||.5;
-   field.value=String(Number((base+(button.dataset.numDirection==='up'?step:-step)).toFixed(8)));
+  if((field.dataset.key==='letterSpacing'&&inlineStyleRange())||(field.dataset.key==='lineHeight'&&active()?.type==='text')){
+   const style=inlineStyleRange()?inlineSelectionStyle():resolveRichTextStyle(active());
+   const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:style[field.dataset.key],step=Number(field.step)||.5;
+   let next=base+(button.dataset.numDirection==='up'?step:-step);
+   if(field.min!=='')next=Math.max(next,Number(field.min));
+   field.value=String(Number(next.toFixed(8)));
   }else if(button.dataset.numDirection==='up')field.stepUp();
   else field.stepDown();
  }catch{

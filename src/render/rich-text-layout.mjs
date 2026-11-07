@@ -41,6 +41,7 @@ export function resolveRichTextStyle(base, override = {}) {
     fontSize: override.fontSize === undefined ? size : positive(override.fontSize, size / scale) * scale,
     textColor: override.textColor || base.textColor || base.fill || '#000000',
     letterSpacing: spacing(override.letterSpacing ?? base.letterSpacing),
+    lineHeight: positive(override.lineHeight, positive(base.lineHeight, 1.15)),
     underline: override.underline ?? base.underline ?? base.mobileUnderline ?? false,
     strikethrough: override.strikethrough ?? base.strikethrough ?? base.mobileStrike ?? false,
   };
@@ -107,8 +108,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
     if (fontCount !== fontSet?.size) { invalidate(); fontCount = fontSet?.size; }
     const spans = richTextSpans(e), base = resolveRichTextStyle(e);
     const width = Math.max(1, Number(e.w) || 1), height = Math.max(0, Number(e.h) || 0);
-    const lineHeight = Math.max(.5, Number(e.lineHeight) || 1.15);
-    const key = JSON.stringify([spans, base, width, height, lineHeight, e.textAlign, e.verticalAlign, fontSet?.size]);
+    const key = JSON.stringify([spans, base, width, height, e.textAlign, e.verticalAlign, fontSet?.size]);
     if (layouts.has(key)) return layouts.get(key);
     // Segment the source as a whole: run boundaries cannot split emoji/combining
     // clusters. If a run starts inside a cluster, its first character owns it.
@@ -123,17 +123,21 @@ export function createRichTextLayoutEngine(context, fontSet) {
     const decorationSpans = [];
     for (const cluster of clusters) {
       if (cluster.text === '\n') continue;
-      const last = decorationSpans.at(-1), id = JSON.stringify(cluster.style);
+      // Leading moves the shared baseline, but cannot split an otherwise
+      // continuous decoration (fractional rect edges could leave a seam).
+      const { lineHeight, ...decorationStyle } = cluster.style;
+      const last = decorationSpans.at(-1), id = JSON.stringify(decorationStyle);
       if (last?.id === id && last.end === cluster.start) last.end = cluster.end;
       else decorationSpans.push({...cluster, id});
     }
-    const rows = []; let fragments = [], rowWidth = 0, rowStart = 0;
-    // Decoration boundaries never split glyph painting (including ligatures).
-    const styleKey = ({ underline, strikethrough, ...paint }) => JSON.stringify(paint);
+    const rows = []; let fragments = [], rowWidth = 0, rowStart = 0, emptyStyle = base;
+    // Decoration and leading boundaries never split glyph painting (including ligatures).
+    const styleKey = ({ underline, strikethrough, lineHeight, ...paint }) => JSON.stringify(paint);
     // Paint colors must not alter shaping or move subsequent glyphs. A color
     // split preserves the advance of the full contiguous font/spacing sequence,
     // while keeping separate fragments for per-range drawing and ink bounds.
-    const geometryKey = ({ textColor, underline, strikethrough, ...geometry }) => JSON.stringify(geometry);
+    const geometryKey = ({ textColor, underline, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
+    const requiredHeight = part => part.requiredHeight ?? part.style.fontSize * part.style.lineHeight;
     function append(parts, cluster) {
       const last = parts.at(-1), id = styleKey(cluster.style);
       const geometry = geometryKey(cluster.style);
@@ -143,20 +147,25 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const shapeWidth = measure(shapeText, cluster.style).width;
       if (last?.id === id) {
         const next = { ...last, text: last.text + cluster.text, end: cluster.end,
-          metrics: measure(last.text + cluster.text, last.style), shapeText, shapeWidth };
+          metrics: measure(last.text + cluster.text, last.style),
+          requiredHeight: Math.max(requiredHeight(last), requiredHeight(cluster)), shapeText, shapeWidth };
         parts[parts.length - 1] = next;
       } else {
-        parts.push({ ...cluster, id, geometry, shapeText, shapeWidth,
+        parts.push({ ...cluster, id, geometry, shapeText, shapeWidth, requiredHeight: requiredHeight(cluster),
           metrics: measure(cluster.text, cluster.style) });
       }
       return shapeWidth - previousShapeWidth;
     }
     function finish(breakCluster, final = false) {
-      const samples = fragments.length ? fragments : [{ style: base, metrics: measure('Mg', base) }];
+      // Empty rows historically use layer font metrics, including in mixed
+      // fontSize documents. Only their LF's leading is a new range property.
+      const blankStyle = {...base, lineHeight:(breakCluster?.style || emptyStyle).lineHeight};
+      const samples = fragments.length ? fragments : [{ style: blankStyle, metrics: measure('Mg', blankStyle) }];
       const ascent = Math.max(...samples.map(p => p.metrics.ascent));
       const descent = Math.max(...samples.map(p => p.metrics.descent));
-      const maxSize = Math.max(...samples.map(p => p.style.fontSize));
-      const rowHeight = Math.max(maxSize * lineHeight, ascent + descent);
+      // Leading belongs to source fragments, independently of glyph coalescing.
+      // Max font metrics keep one baseline safe for mixed families and sizes.
+      const rowHeight = Math.max(...samples.map(requiredHeight), ascent + descent);
       // Layout ignores obsolete textLayoutMode; no old-baseline branch remains.
       // Source intervals are UTF-16, independent of rendered geometry. Hard
       // breaks are excluded from end and owned by [end, nextStart). A trailing
@@ -164,7 +173,8 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const end = breakCluster?.start ?? (final ? text.length : fragments.at(-1)?.end ?? rowStart);
       const nextStart = breakCluster?.end ?? end;
       rows.push({ start: rowStart, end, nextStart, softWrap: !breakCluster && !final,
-        fragments, width: rowWidth, height: rowHeight, baseline: ascent + (rowHeight - ascent - descent) / 2 });
+        fragments, emptyStyle: fragments.length ? undefined : {...blankStyle, underline:false, strikethrough:false}, width: rowWidth, height: rowHeight, baseline: ascent + (rowHeight - ascent - descent) / 2 });
+      if (breakCluster) emptyStyle = breakCluster.style;
       rowStart = nextStart;
       fragments = []; rowWidth = 0;
     }
@@ -178,7 +188,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       // Group first so measuring a long word is linear on the common path.
       for (let j = i; j < end; j++) {
         const ch = clusters[j], last = token.at(-1), id = styleKey(ch.style);
-        if (last?.id === id) { last.text += ch.text; last.end = ch.end; } else token.push({ ...ch, id });
+        if (last?.id === id) { last.text += ch.text; last.end = ch.end; last.requiredHeight = Math.max(requiredHeight(last), requiredHeight(ch)); } else token.push({ ...ch, id, requiredHeight: requiredHeight(ch) });
       }
       const trial = fragments.slice(); let trialWidth = rowWidth;
       for (const part of token) trialWidth += append(trial, part);

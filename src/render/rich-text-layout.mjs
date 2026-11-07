@@ -123,7 +123,10 @@ export function createRichTextLayoutEngine(context, fontSet) {
     const decorationSpans = [];
     for (const cluster of clusters) {
       if (cluster.text === '\n') continue;
-      const last = decorationSpans.at(-1), id = JSON.stringify(cluster.style);
+      // Leading moves the shared baseline, but cannot split an otherwise
+      // continuous decoration (fractional rect edges could leave a seam).
+      const { lineHeight, ...decorationStyle } = cluster.style;
+      const last = decorationSpans.at(-1), id = JSON.stringify(decorationStyle);
       if (last?.id === id && last.end === cluster.start) last.end = cluster.end;
       else decorationSpans.push({...cluster, id});
     }
@@ -154,7 +157,9 @@ export function createRichTextLayoutEngine(context, fontSet) {
       return shapeWidth - previousShapeWidth;
     }
     function finish(breakCluster, final = false) {
-      const blankStyle = breakCluster?.style || emptyStyle;
+      // Empty rows historically use layer font metrics, including in mixed
+      // fontSize documents. Only their LF's leading is a new range property.
+      const blankStyle = {...base, lineHeight:(breakCluster?.style || emptyStyle).lineHeight};
       const samples = fragments.length ? fragments : [{ style: blankStyle, metrics: measure('Mg', blankStyle) }];
       const ascent = Math.max(...samples.map(p => p.metrics.ascent));
       const descent = Math.max(...samples.map(p => p.metrics.descent));

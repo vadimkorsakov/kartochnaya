@@ -258,7 +258,7 @@ function inspectorNumericTextStyle(e,key,fallback){
  const layers=app.selectedIds.length>1&&picked().every(layer=>layer.type==='text')?picked():[e];
  const values=[];
  for(const layer of layers){
-  const spans=richTextSpans(layer),caret=app.editingId===layer.id?app.inlineCaret:null;
+  const spans=key==='lineHeight'&&!supportsHorizontalTextLayout(layer)?[]:richTextSpans(layer),caret=app.editingId===layer.id?app.inlineCaret:null;
   let relevant=spans;
   if(caret&&Number.isFinite(caret.start)&&Number.isFinite(caret.end)){
    const start=Math.min(caret.start,caret.end),end=Math.max(caret.start,caret.end);

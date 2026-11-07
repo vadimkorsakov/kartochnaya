@@ -151,11 +151,23 @@ test('mixed size/leading uses each source requirement plus max ascent/descent, o
  const scaled=engine.layout({...e,fontSize:10,textRunsBaseFontSize:20}).rows[0];assert.equal(scaled.height,40);assert.equal(scaled.baseline,26);
 });
 
-test('empty rows use their LF style and trailing row inherits the final LF, plain documents retain geometry',()=>{
+test('empty rows use LF leading with legacy font metrics, including terminal LF',()=>{
  const context={measureText(text){return {width:text.length*10,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
  const engine=createRichTextLayoutEngine(context),base={text:'A\n\n',fontSize:20,lineHeight:1.2,w:100,h:400};
  assert.deepEqual(engine.layout(base).rows.map(r=>r.height),[24,24,24]);
+ const legacyMixed={...base,textRuns:[{start:2,end:3,style:{fontSize:40,fontFamily:'serif'}}]};
+ assert.deepEqual(engine.layout(legacyMixed).rows.map(r=>r.height),[24,24,24],'existing empty-row font metrics stay unchanged');
+ assert.deepEqual(engine.layout({...legacyMixed,textRuns:[{start:2,end:3,style:{fontSize:40,lineHeight:3}}]}).rows.map(r=>r.height),[24,60,60]);
  const rows=engine.layout({...base,textRuns:[{start:2,end:3,style:{lineHeight:3}}]}).rows;
  assert.deepEqual(rows.map(r=>r.height),[24,60,60]);assert.deepEqual(rows.map(r=>r.baseline),[18,60,120]);
  for(const value of [0,-1,NaN,Infinity,'bad'])assert.ok(Number.isFinite(engine.layout({...base,lineHeight:value,textRuns:[{start:0,end:1,style:{lineHeight:value}}]}).height));
+});
+
+test('leading boundaries do not split continuous U/S rectangles or introduce fractional seams',()=>{
+ const context={measureText(text){return {width:text.length*11.3,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
+ const engine=createRichTextLayoutEngine(context),e={text:'Привет мир',fontSize:20,lineHeight:1.2,w:200,h:200,underline:true,strikethrough:true};
+ const a=engine.layout(e).rows[0],b=engine.layout({...e,textRuns:[{start:1,end:4,style:{lineHeight:3}}]}).rows[0];
+ assert.equal(a.decorations.length,2);assert.equal(b.decorations.length,2);
+ const relative=row=>row.decorations.map(({y,...r})=>({...r,y:y-row.baseline}));
+ assert.deepEqual(relative(b),relative(a));
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {resolveRichTextStyle,richTextSpans,retainRichTextSizeBase,usesRichTextLayout,supportsHorizontalTextLayout,createRichTextLayoutEngine} from '../src/render/rich-text-layout.mjs';
+import {fontDeclarationSize,richTextFont,resolveRichTextStyle,richTextSpans,retainRichTextSizeBase,usesRichTextLayout,supportsHorizontalTextLayout,createRichTextLayoutEngine} from '../src/render/rich-text-layout.mjs';
 
 const base={text:'А😀 Б',fontSize:20,fontWeight:'500',fontStyle:'oblique',textColor:'#123456',letterSpacing:2};
 test('explicit keys win within a scope, run aliases override the base, missing keys inherit',()=>{
@@ -111,4 +111,19 @@ test('color-only range boundaries retain contextual kerning and wrapping',()=>{
  assert.deepEqual(styled.rows[0].fragments.map(f=>f.width),[12,21,36]);
  assert.equal(styled.rows[0].fragments[1].style.textColor,'#ff2211');
  assert.equal(source.textRuns,undefined,'rendering must not mutate the plain source');
+});
+
+test('font declaration shares CSS/Canvas precision without rewriting source or run sizes',()=>{
+ const element={text:'АБ',fontSize:28.3125,textRunsBaseFontSize:42,textRuns:[{start:1,end:2,style:{fontSize:59}}]};
+ const before=structuredClone(element),spans=richTextSpans(element);
+ assert.match(richTextFont(spans[0].style),/28\.3125px/);
+ assert.equal(spans[1].style.fontSize,59*28.3125/42);
+ for(const part of spans){const painted=fontDeclarationSize(part.style.fontSize);assert.ok(Math.abs(painted-part.style.fontSize)<=part.style.fontSize/128);}
+ assert.deepEqual(element,before);
+});
+
+test('shared font precision remains representable across size exponents',()=>{
+ for(const [source,painted] of [[28.3125,28.25],[39.75,40],[65.5,66],[129,128],[450,448]]){
+  const style=resolveRichTextStyle({fontSize:source});assert.equal(fontDeclarationSize(style.fontSize),painted);assert.match(richTextFont(style),new RegExp(' '+source+'px '));assert.equal(style.fontSize,source);
+ }
 });

@@ -18,7 +18,7 @@ function unifiedDOMOffset(base, projection, text) {
  try {return projection.baseline-(baseline.getBoundingClientRect().bottom-probe.getBoundingClientRect().top);}
  finally {probe.remove();}
 }
-export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompatible=()=>false) {
+export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=()=>false) {
  // Rich inline editing is the desktop default. The explicit =0 switch is
  // retained only for diagnosis and for fallback-focused regression tests.
  // A previous opt-in gate left normal users on plain textarea, making range
@@ -26,22 +26,23 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, plainCompat
  if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')==='0'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
  if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||e.strokeWidth||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
- // One Canvas geometry gate for plain and sparse-rich text alike.
- // Rich textRuns must never bypass the soft-wrap/hard-row parity guard.
- if(!plainCompatible(e))return false;
+ // Supported paint semantics apply equally to plain and sparse-rich text.
+ // Geometry is supplied by the shared row layout, never a CSS parity guess.
+ if(!compatible(e))return false;
  try {return [resolveRichTextStyle(e),...richTextSpans(e).map(p=>p.style)].every(s=>available(s.fontFamily)&&document.fonts.check(richTextFont(s))&&!!lineHeight(e,s));}catch{return false;}
 }
 
 // Canonical layer + the editor's existing session history own all confirmed data.
 // Unknown DOM remains on screen until explicit recovery; it is never persisted.
-export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, plainCompatible=()=>false, layout=()=>null, fit=()=>false}) {
- let layer=element, composing=false, pending=null, fallback=null, pasteText=null, confirmedHTML, inactive=false;
+export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, compatible=()=>false, layout=()=>null, fit=()=>false}) {
+ let layer=element, composing=false, fallback=null, pasteText=null, confirmedHTML, inactive=false;
  const safe={phase:'confirmed', deferred:false};
- let savedSelection=null, preview=null;
+ let savedSelection=null, preview=null, verticalX=null;
  const abort=new AbortController(), listen=(name,fn)=>host.addEventListener(name,fn,{signal:abort.signal});
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
- function stop(reason){pending=null;pasteText=null;fallback=reason;safe.phase='recovery-required';if(!inactive)onRecovery(reason);}
+ function stop(reason){pasteText=null;fallback=reason;safe.phase='recovery-required';if(!inactive)onRecovery(reason);}
  function project(value,selection){
+  verticalX=null;
   // Probe measurements also attach temporary DOM nodes. Capture the owner
   // before any measurement, not just before replaceChildren: the browser can
   // reset its contenteditable Range while those probes are attached.
@@ -52,51 +53,39 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const styles=[base,...spans.map(p=>p.style)];
   for(const style of styles)if(!available(style.fontFamily)||!document.fonts.check(richTextFont(style)))throw Error('Font unavailable');
   const heights=styles.map(style=>lineHeight(value,style));
-  // A plain layer stays in the unified Canvas coordinate system even after
-  // its first sparse color/size override. Do not persist a compatibility mode.
-  // The same one-row Canvas baseline must apply both before and after the
-  // first style override, including a later reopen with saved textRuns. Using
-  // startedPlain here made the DOM jump by the font baseline offset on reopen.
+  // Canvas owns wrapping, per-row ascent/descent and fragment advances.
+  // Position source spans at those coordinates; CSS must never reflow them.
+  // Soft wraps add no characters. Only source LF occupies a UTF-16 offset.
   const projection=layout(value);
-  // CSS wraps ordinary words natively; splitting each Canvas soft row into a
-  // separate span would change browser word-wrap opportunities. For that
-  // restricted case, one shared baseline correction applies to every row.
-  const hasSoftWrap=projection?.rows?.some(row=>row.softWrap);
-  const firstRow=projection?.rows?.length===1||(hasSoftWrap&&plainCompatible(value))?
-   projection.rows[0]:null;
-  const hardRows=projection?.rows?.length>1&&!hasSoftWrap&&plainCompatible(value)?
-   projection.rows:null;
-  const offset=firstRow?unifiedDOMOffset(base,{height:firstRow.height,baseline:firstRow.baseline},value.text):0;
-  const makeSpan=(text,style,height,top)=>{
-   const span=document.createElement('span');span.textContent=text;
-   Object.assign(span.style,{font:richTextFont(style),lineHeight:height+'px',letterSpacing:style.letterSpacing+'px',color:style.textColor});
-   if(top!==null)Object.assign(span.style,{position:'relative',top:top+'px'});
-   return span;
-  };
-  // The real newline remains part of a text node, not a generated <br>.
-  // Each Canvas hard row gets its own baseline correction. This preserves
-  // UTF-16 Selection across boundaries and avoids duplicate native breaks.
-  const nodes=hardRows?hardRows.flatMap(row=>{
-   const text=value.text.slice(row.start,row.end),top=unifiedDOMOffset(base,
-    {height:row.height,baseline:row.baseline-row.y},text||'Mg');
-   const output=[];
-   for(const part of spans){
-    const start=Math.max(row.start,part.start),end=Math.min(row.nextStart,part.end);
-    if(end>start)output.push(makeSpan(value.text.slice(start,end),part.style,row.height,top));
+  if(!projection?.rows?.length)throw Error('Text layout unavailable');
+  const nodes=[];
+  for(const row of projection.rows){
+   const rowNode=document.createElement('span');rowNode.dataset.wysiwygRow='';
+   Object.assign(rowNode.style,{position:'absolute',display:'inline-block',left:'0px',top:row.y+'px',height:row.height+'px',whiteSpace:'pre',fontSize:'0px',lineHeight:'0px'});
+   nodes.push(rowNode);let advance=0;
+   const parts=row.fragments.length?row.fragments:[{text:'',style:base,x:0}];
+   for(let i=0;i<parts.length;i++){
+    const part=parts[i],span=document.createElement('span');span.dataset.wysiwygFragment='';
+    const offset=unifiedDOMOffset(part.style,{height:row.height,baseline:row.baseline-row.y},part.text);
+    span.append(document.createTextNode(part.text));
+    // Source newlines live with their preceding row, including empty rows.
+    if(i===parts.length-1&&row.nextStart>row.end)span.firstChild.data+=value.text.slice(row.end,row.nextStart);
+    Object.assign(span.style,{position:'relative',display:'inline-block',verticalAlign:'top',marginLeft:part.x-advance+'px',top:offset+'px',height:row.height+'px',
+     font:richTextFont(part.style),fontKerning:'normal',lineHeight:row.height+'px',letterSpacing:part.style.letterSpacing+'px',
+     color:part.style.textColor,whiteSpace:'pre',overflowWrap:'normal'});
+    rowNode.append(span);ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';ctx.fontKerning='normal';advance=part.x+ctx.measureText(part.text).width;
    }
-   return output;
-  }):spans.map((part,i)=>makeSpan(part.text,part.style,
-   parseFloat(heights[i+1]),firstRow?offset:null));
+  }
   const next=structuredClone(value);
   // The browser can blur contenteditable while replaceChildren invalidates
   // its current Range, particularly when a trailing LF gains a caret sentinel.
   // Capture ownership BEFORE the DOM change and restore it only for a session
   // that already owned focus. Inspector/color fields must keep their focus.
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
-  Object.assign(host.style,{font:richTextFont(base),lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
+  Object.assign(host.style,{font:richTextFont(base),fontKerning:'normal',lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
   host.replaceChildren(...nodes);
   if(!host.childNodes.length)host.append(document.createTextNode(''));
-  if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';host.append(br);}
+  if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';nodes.at(-1).lastChild.append(br);}
   confirmedHTML=host.innerHTML;
   // setBaseAndExtent focuses contenteditable in Chromium and would blur a
   // numeric/HEX input (emitting change in the middle of its input callback).
@@ -107,21 +96,23 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    setSelection(selection.anchor,selection.focus);
   }
  }
- function clean(){try{return !composing&&!pending&&!fallback&&!safe.deferred&&host.innerHTML===confirmedHTML&&readText()===layer.text;}catch{return false;}}
+ function clean(){try{return !composing&&!fallback&&!safe.deferred&&host.innerHTML===confirmedHTML&&readText()===layer.text;}catch{return false;}}
  const caret=c=>({start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'});
  function commit(value,before,after){
   // Fit the next snapshot before history and DOM are committed: all renderers
   // and Undo/Redo must use the same canonical fontSize.
   if(value.autoFontSize)fit(value);
-  recordInlineHistory(history,layer,caret(before));
+  const origin=structuredClone(layer);
+  project(value,after);
+  recordInlineHistory(history,origin,caret(before));
   const previousIndex=history.index;
   recordInlineHistory(history,value,caret(after));
   // A confirmed input is distinct while editing, but adjacent inputs can be
   // grouped into one document-history step when the session closes.
   if(history.index!==previousIndex)history.states[history.index].action='input';
-  project(value,after);onChange();
+  onChange();
  }
- function travel(direction){finishPreview();if(!clean()){stop('История недоступна до восстановления ввода');return;}const state=moveInlineHistory(history,direction);if(state){project(state.element,state.caret);onChange();}}
+ function travel(direction){finishPreview();if(!clean()){stop('История недоступна до восстановления ввода');return;}const previousIndex=history.index,state=moveInlineHistory(history,direction);if(state){try{project(state.element,state.caret);onChange();}catch{history.index=previousIndex;stop('Шрифт или проекция недоступны для истории');}}}
  function requestFallback(reason){
   if(!clean()){stop('Нужно восстановить подтверждённый ввод');return false;}
   finishPreview();
@@ -136,24 +127,78 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   if(history.index!==previousIndex)history.states[history.index].action='style';
   preview=null;onChange();
  }
- function applyRangeStyle(patch,{key,final=false}={}){
+ function applyStyle(patch,{key,final=false,range=true}={}){
   if(!clean()||safe.phase!=='confirmed'||inactive){stop('Нужно восстановить подтверждённый ввод');return true;}
   let selection;try{selection=rememberSelection();}catch{return false;}
-  if(selection.anchor===selection.focus)return false;
+  if(range&&selection.anchor===selection.focus)return false;
   if(preview&&(preview.key!==key||preview.selection.anchor!==selection.anchor||preview.selection.focus!==selection.focus))finishPreview();
   const origin=preview?.element||structuredClone(layer);
-  if(!plainCompatible(origin))return false;
-  const next=applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch);
+  if(!compatible(origin))return false;
+  const next=range?applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch):structuredClone(origin);
+  if(!range){retainRichTextSizeBase(next);Object.assign(next,patch);}
+  if(key==='fontSize')next.autoFontSize=false;
   retainRichTextSizeBase(next);
   if(next.autoFontSize)fit(next);
-  if(!plainCompatible(next))return false;
+  if(!compatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}
   if(!preview){recordInlineHistory(history,origin,caret(selection));preview={key,element:origin,selection};}
   if(final)finishPreview();else onChange();
   return true;
  }
- listen('paste',e=>{pasteText=e.clipboardData?.getData('text/plain')??null;});
+ // Positioned row/fragment boxes introduce duplicate native caret stops and
+// browser-dependent vertical affinity. Navigate canonical grapheme offsets
+// and shared visual rows; native Selection still paints and owns the caret.
+const applyRangeStyle=(patch,options)=>applyStyle(patch,options);
+const applyLayerStyle=(patch,options)=>applyStyle(patch,{...options,range:false});
+const graphemes=new Intl.Segmenter(undefined,{granularity:'grapheme'});
+listen('pointerdown',()=>{verticalX=null;});
+listen('keydown',event=>{
+ if(composing||event.isComposing||event.altKey||!clean())return;
+ const key=event.key,modified=event.ctrlKey||event.metaKey,vertical=['ArrowUp','ArrowDown'].includes(key);
+ if(!['ArrowLeft','ArrowRight','Home','End','ArrowUp','ArrowDown'].includes(key)||(modified&&key.startsWith('Arrow')))return;
+ finishPreview();let c;try{c=readSelection();}catch{return;}
+ const rows=layout(layer).rows,rowNodes=[...host.querySelectorAll('[data-wysiwyg-row]')];
+ const focusNode=getSelection().focusNode;
+ let rowIndex=rowNodes.indexOf((focusNode.nodeType===3?focusNode.parentElement:focusNode).closest('[data-wysiwyg-row]'));
+ if(rowIndex<0)rowIndex=Math.max(0,rows.findLastIndex(r=>r.start<=c.focus));
+ const row=rows[rowIndex],boundaries=[...graphemes.segment(layer.text)].map(p=>p.index).concat(layer.text.length);
+ let next=c.focus,targetRow=null;
+ if(vertical){
+  const xAt=(row,offset)=>{
+   const part=row.fragments.findLast(p=>p.start<=offset)||row.fragments[0];if(!part)return 0;
+   ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';ctx.fontKerning='normal';
+   return part.x+ctx.measureText(layer.text.slice(part.start,Math.min(offset,part.end))).width;
+  };
+  if(verticalX===null)verticalX=xAt(row,c.focus);
+  targetRow=Math.max(0,Math.min(rows.length-1,rowIndex+(key==='ArrowUp'?-1:1)));
+  const target=rows[targetRow],points=boundaries.filter(i=>i>=target.start&&i<=target.end);
+  next=points.reduce((best,i)=>Math.abs(xAt(target,i)-verticalX)<Math.abs(xAt(target,best)-verticalX)?i:best,points[0]??target.start);
+ }else{
+  verticalX=null;
+  if(key==='Home'||key==='End'){
+   next=modified?(key==='Home'?0:layer.text.length):(key==='Home'?row.start:row.end);
+   targetRow=modified?(key==='Home'?0:rows.length-1):rowIndex;
+  }else if(!event.shiftKey&&c.anchor!==c.focus)next=key==='ArrowLeft'?Math.min(c.anchor,c.focus):Math.max(c.anchor,c.focus);
+  else next=key==='ArrowLeft'?(boundaries.findLast(i=>i<c.focus)??0):(boundaries.find(i=>i>c.focus)??layer.text.length);
+ }
+ event.preventDefault();setSelection(event.shiftKey?c.anchor:next,next,targetRow);
+});
+listen('paste',e=>{pasteText=e.clipboardData?.getData('text/plain')??null;});
+// Serialize canonical source intervals, independent of visual row boxes.
+// Cancel native cut before it can merge rows or send deleteByCut to fallback.
+for(const type of ['copy','cut'])listen(type,event=>{
+ if(!clean()||!selectionInside()||!event.clipboardData)return;
+ let selection;try{selection=readSelection();}catch{return;}
+ const start=Math.min(selection.anchor,selection.focus),end=Math.max(selection.anchor,selection.focus);
+ if(start===end)return;
+ event.clipboardData.setData('text/plain',layer.text.slice(start,end));event.preventDefault();
+ if(type==='cut'){
+  finishPreview();
+  try{commit(replaceText(layer,start,end,''),selection,{anchor:start,focus:start});}
+  catch{stop('Text projection unavailable');}
+ }
+});
  listen('compositionstart',()=>{composing=true;safe.deferred=true;safe.phase='composing';onRecovery('IME: завершите композицию, затем восстановите подтверждённый текст');});
  listen('compositionend',()=>{composing=false;if(inactive)host.contentEditable='false';stop('Результат IME требует явного восстановления');});
 function index(){
@@ -179,16 +224,17 @@ function domPointToOffset(node,offset){
  else {const offsets=map.points.get(node);if(offsets&&offset>=0&&offset<offsets.length)return offsets[offset];}
  throw Error('Point outside candidate surface');
 }
-function offsetToDomPoint(offset){
+function offsetToDomPoint(offset,rowIndex=null){
  const map=index();if(!Number.isInteger(offset)||offset<0||offset>map.text.length)throw Error('Invalid UTF-16 offset');
  // Keep the selection anchored in a live text node whenever possible.
  // The host-level point before a trailing <br> can be normalised by Chromium
  // to the start of contenteditable after a controlled Enter, losing the caret.
- const leaves=[...map.leaves].reverse();
+ const preferred=rowIndex===null?null:host.querySelectorAll('[data-wysiwyg-row]')[rowIndex];
+ const leaves=[...map.leaves].reverse().filter(p=>!preferred||preferred.contains(p.node));
  const leaf=leaves.find(p=>offset>=p.start&&offset<=p.end);
  if(leaf)return {node:leaf.node,offset:offset-leaf.start};
- const sentinel=host.querySelector(':scope > br[data-caret-sentinel]');
- if(sentinel&&offset===map.text.length)return {node:host,offset:[...host.childNodes].indexOf(sentinel)};
+ const sentinel=host.querySelector('br[data-caret-sentinel]');
+ if(sentinel&&offset===map.text.length)return {node:sentinel.parentNode,offset:[...sentinel.parentNode.childNodes].indexOf(sentinel)};
  for(const [node,offsets] of map.points){const i=offsets.indexOf(offset);if(i>=0)return {node,offset:i};}
  throw Error('Unmapped offset');
 }
@@ -204,7 +250,7 @@ function rememberSelection(){
  if(!validSelection(savedSelection))throw Error('No confirmed selection');
  return {...savedSelection};
 }
-function setSelection(anchor,focus=anchor){const c={anchor,focus};if(!validSelection(c))throw Error('Invalid selection');const a=offsetToDomPoint(anchor),f=offsetToDomPoint(focus);getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);savedSelection=c;}
+function setSelection(anchor,focus=anchor,rowIndex=null){const c={anchor,focus};if(!validSelection(c))throw Error('Invalid selection');const a=offsetToDomPoint(anchor,anchor===focus?rowIndex:null),f=offsetToDomPoint(focus,rowIndex);getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);savedSelection=c;}
 listen('focusout',()=>{if(selectionInside()&&clean()){try{savedSelection=readSelection();}catch{}}});
 listen('focus',()=>{if(validSelection(savedSelection)&&clean())setSelection(savedSelection.anchor,savedSelection.focus);});
 listen('beforeinput',e=>{
@@ -213,7 +259,6 @@ listen('beforeinput',e=>{
  {
   if(safe.phase==='recovery-required'){if(e.cancelable&&!composing&&!e.isComposing)e.preventDefault();return;}
   if(composing||e.isComposing){safe.deferred=true;safe.phase='composing';return;}
-  if(pending){if(e.cancelable)e.preventDefault();stop('overlapping beforeinput');return;}
   if(!['insertLineBreak','insertText','insertFromPaste','deleteContentBackward','deleteContentForward','historyUndo','historyRedo'].includes(e.inputType)){
    if(e.cancelable){e.preventDefault();requestFallback('canceled unsupported intent');}
    else stop('noncancelable unsupported intent');
@@ -227,7 +272,7 @@ listen('beforeinput',e=>{
   return;
  }
  if(fallback)return;
- pending=null;
+
  if(composing||e.isComposing){stop('composition requires fallback');return;}
  if(!e.cancelable){stop('noncancelable beforeinput requires fallback');return;}
  if(!selectionInside()){stop('selection outside host');return;}
@@ -235,7 +280,7 @@ listen('beforeinput',e=>{
  let selection;
  try{if(readText()!==layer.text||host.innerHTML!==confirmedHTML){stop('DOM differs from canonical state');return;}selection=readSelection();}
  catch{stop('unsupported DOM');return;}
- const start=Math.min(selection.anchor,selection.focus),end=Math.max(selection.anchor,selection.focus);
+ let start=Math.min(selection.anchor,selection.focus),end=Math.max(selection.anchor,selection.focus);
  // replaceText expands surrogate boundaries; refuse a split-pair caret rather
  // than restoring an offset inconsistent with the required min(anchor,focus)+1.
  const split=i=>i>0&&i<layer.text.length&&/[\uD800-\uDBFF]/.test(layer.text[i-1])&&/[\uDC00-\uDFFF]/.test(layer.text[i]);
@@ -246,8 +291,8 @@ listen('beforeinput',e=>{
   commit(next,selection,{anchor:start+1,focus:start+1});
 
   safe.phase='confirmed';
-  if(!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
-  // A canceled operation has no pending native edit, even if an input is sent.
+  if(!compatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
+  // A canceled controlled operation needs no native reconciliation.
   return;
  }
  if(!['insertText','insertFromPaste','deleteContentBackward','deleteContentForward'].includes(e.inputType)){
@@ -256,52 +301,39 @@ listen('beforeinput',e=>{
  const data=e.inputType==='insertFromPaste'?(e.dataTransfer?.getData('text/plain')??pasteText):e.data;
  pasteText=null;
  if(e.inputType==='insertFromPaste'&&data===null){stop('paste without plaintext context');return;}
- pending={value:layer,selection,start,end,inputType:e.inputType,data};
- safe.phase='pending';
-});
-listen('input',e=>{
- if(inactive||composing||e.isComposing||safe.deferred)return;
- if(fallback)return;
- const previous=pending;pending=null;
- if(composing||e.isComposing){stop('composition requires fallback');return;}
- // Never reapply a controlled Enter from input. No pending transaction means
- // no native reconciliation (including a stray duplicate input event).
- if(!previous){
-  try{if(readText()!==layer.text)stop('input without beforeinput context');}catch{stop('unsupported native DOM');}
-  return;
+ // Geometry and source intervals belong to the model. Letting the native
+ // editor merge positioned row boxes makes visual boundaries into deletion
+ // stops and can generate unsupported DIV/BR markup (especially Firefox).
+ // Confirm supported intents before replacing DOM; never infer canonical rich
+ // text from browser-generated markup or persist an unconfirmed composition.
+ e.preventDefault();
+ if(e.inputType.startsWith('delete')&&start===end){
+  const points=[...graphemes.segment(layer.text)].map(p=>p.index).concat(layer.text.length);
+  if(e.inputType==='deleteContentBackward')start=points.findLast(i=>i<start)??0;
+  else end=points.find(i=>i>end)??layer.text.length;
  }
- if(previous.inputType!==e.inputType){stop('input context mismatch');return;}
+ // Match native textarea/plaintext newline semantics for Windows clipboard.
+ const inserted=e.inputType.startsWith('delete')?'':typeof data==='string'?data.replace(/\r\n?/g,'\n'):data;
+ if(typeof inserted!=='string'){stop('input without plaintext context');return;}
  try{
-  const text=readText(),selection=readSelection(),old=previous.value.text;
-  let {start,end}=previous;
-  if(e.inputType.startsWith('delete')&&start===end){
-   const removed=old.length-text.length;
-   if(removed<0){stop('unsupported native deletion');return;}
-   if(e.inputType==='deleteContentBackward')start-=removed;else end+=removed;
-  }
-  const insertedEnd=text.length-(old.length-end);
-  if(start<0||end>old.length||insertedEnd<start||old.slice(0,start)!==text.slice(0,start)||old.slice(end)!==text.slice(insertedEnd)){
-   stop('native edit outside previous selection');return;
-  }
-  const inserted=text.slice(start,insertedEnd);
-  if((['insertText','insertFromPaste'].includes(e.inputType)&&inserted!==previous.data)||(e.inputType.startsWith('delete')&&inserted!=='')){
-   stop('native edit differs from input context');return;
-  }
-  const next=replaceText(previous.value,start,end,inserted);
-  if(next.text!==text){stop('native UTF-16 edit mismatch');return;}
-  commit(next,previous.selection,selection);
-
+  commit(replaceText(layer,start,end,inserted),selection,{anchor:start+inserted.length,focus:start+inserted.length});
   safe.phase='confirmed';
-  if(!plainCompatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
- }catch{stop('unsupported native DOM or selection');}
+ }catch{stop('Text projection unavailable');}
+});
+listen('input',()=>{
+ if(inactive||composing||safe.deferred)return;
+ // Canceled controlled intents may still be followed by a redundant input.
+ // Any actual DOM mutation without a confirmed intent remains recoverable.
+ try{if(readText()!==layer.text||host.innerHTML!==confirmedHTML)stop('input without beforeinput context');}
+ catch{stop('unsupported native DOM');}
 });
 
  host.contentEditable='plaintext-only';host.classList.remove('hidden');
  const initial={anchor:layer.text.length,focus:layer.text.length};project(structuredClone(layer),initial);recordInlineHistory(history,layer,caret(initial));
- return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection,requestFallback,clean,applyRangeStyle,finishPreview,
-  preserve(){inactive=true;pending=null;if(!composing)host.contentEditable='false';},
+ return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection,requestFallback,clean,applyRangeStyle,applyLayerStyle,finishPreview,
+  preserve(){inactive=true;if(!composing)host.contentEditable='false';},
   focus(){host.focus({preventScroll:true});},
-  recover(){if(composing)return false;pending=null;fallback=null;safe.deferred=false;safe.phase='confirmed';project(structuredClone(layer),{anchor:layer.text.length,focus:layer.text.length});onChange();return true;},
+  recover(){if(composing)return false;fallback=null;safe.deferred=false;safe.phase='confirmed';project(structuredClone(layer),{anchor:layer.text.length,focus:layer.text.length});onChange();return true;},
   dispose(){abort.abort();host.classList.add('hidden');}
  };
 }

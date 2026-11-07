@@ -131,6 +131,18 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - run: npm run test:selection:firefox
+      - name: Multiline WYSIWYG in Chromium and Firefox
+        run: npx playwright test --config=playwright.multiline.config.js
+      - name: Preserve multiline WYSIWYG measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: multiline-wysiwyg-measurements
+          path: |
+            test-results/multiline
+            test-results/multiline-results.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Preserve Firefox browser failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

@@ -17,3 +17,10 @@
  #mobileNudge button:disabled{opacity:.4;}
  #mobilePropertyUI [data-mp-nudge]{height:41px;font-size:20px;}
 }
+
+/* Range typography toggles share the existing compact inspector buttons. */
+.text-decoration-btn { min-width:36px; }
+[data-text-decoration][aria-pressed="true"] { background:var(--accent); color:#fff; }
+[data-text-decoration][aria-pressed="mixed"] { border-style:dashed; }
+.decoration-mixed { font-size:10px; margin-left:4px; }
+[data-text-decoration]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }

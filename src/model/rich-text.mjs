@@ -33,6 +33,8 @@ function styleData(value, base = {}) {
     if (['bold', 'italic', 'underline', 'strikethrough'].includes(k) && typeof v !== 'boolean') continue;
     // Run sizes stay in the original reference units after mixed-text fitting.
     let inherited = base[k];
+    if (k === 'underline') inherited = base.underline ?? base.mobileUnderline;
+    if (k === 'strikethrough') inherited = base.strikethrough ?? base.mobileStrike;
     if (k === 'fontSize' && Number.isFinite(base.textRunsBaseFontSize) && base.textRunsBaseFontSize > 0) inherited = base.textRunsBaseFontSize;
     if ((k === 'bold' && base.fontWeight) || (k === 'italic' && base.fontStyle)) inherited = undefined;
     // A base-equal explicit key still wins over a conflicting run alias.

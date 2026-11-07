@@ -13,7 +13,7 @@ module.exports=defineConfig({
   url:'http://127.0.0.1:4174',reuseExistingServer:false,
  }],
  projects:[
-  {name:'firefox-selection',testMatch:['**/selected-text-interaction.spec.js','**/selected-text-tracking.spec.js'],use:{browserName:'firefox',launchOptions:{}}},
-  {name:'firefox-netlify-selection',testMatch:['**/selected-text-interaction.spec.js','**/selected-text-tracking.spec.js'],use:{browserName:'firefox',baseURL:'http://127.0.0.1:4174',launchOptions:{}}},
+  {name:'firefox-selection',testMatch:['**/selected-text-interaction.spec.js','**/selected-text-tracking.spec.js','**/text-decorations.spec.js'],use:{browserName:'firefox',launchOptions:{}}},
+  {name:'firefox-netlify-selection',testMatch:['**/selected-text-interaction.spec.js','**/selected-text-tracking.spec.js','**/text-decorations.spec.js'],use:{browserName:'firefox',baseURL:'http://127.0.0.1:4174',launchOptions:{}}},
  ],
 });

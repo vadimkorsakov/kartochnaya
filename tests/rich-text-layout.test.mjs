@@ -11,14 +11,15 @@ test('explicit keys win within a scope, run aliases override the base, missing k
  assert.equal(resolveRichTextStyle(base,{italic:false,fontStyle:'italic'}).fontStyle,'italic');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontWeight,'500');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontStyle,'oblique');
- assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,textColor:'red',letterSpacing:2});
+ assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,textColor:'red',letterSpacing:2,underline:false,strikethrough:false});
 });
 test('render projection repairs UTF-16 ranges without mutating source or unknown properties',()=>{
  const e={...base,textRuns:[{start:2,end:3,style:{fontSize:40,underline:true,baselineShift:'super',fontFeatures:{liga:0}}}]};
  const before=structuredClone(e),spans=richTextSpans(e);
  assert.equal(spans.map(s=>s.text).join(''),e.text);
  assert.equal(spans[1].text,'😀');assert.equal(spans[1].style.fontSize,40);
- assert.equal(spans[1].style.underline,undefined);assert.deepEqual(e,before);
+ // U/S now project as paint styles; unknown extensions remain source-only.
+ assert.equal(spans[1].style.underline,true);assert.equal(spans[1].style.baselineShift,undefined);assert.deepEqual(e,before);
  retainRichTextSizeBase(e);assert.equal(e.textRunsBaseFontSize,20);
  e.fontSize=10;assert.equal(richTextSpans(e)[1].style.fontSize,20);
  assert.deepEqual(e.textRuns,before.textRuns);

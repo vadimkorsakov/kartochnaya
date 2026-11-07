@@ -313,6 +313,7 @@ function fontSelectControl(e){const family=inspectorFontFamily(e);return `<div c
 // callback is applying that exact value to selected text.
 let inspectorEditingControl=null;
 function syncInspectorFontFamily(){
+ syncTextDecorationButtons();
  const label=$('#inspector [data-font-current]'),e=active();
  if(!label||e?.type!=='text')return;
  const family=inspectorFontFamily(e);
@@ -828,7 +829,7 @@ function refreshInspector(){
  const root=$('#inspector'),es=picked(),e=active(),d=app.doc;
  if(es.length>1){
   const allText=es.every(x=>x.type==='text'),common=es[0],opts=fontFamilies().map(f=>[f,f]);
-  root.innerHTML=`<div class="ins-object-title">${uiIcon('layers')} ${isOneGroup()?'Группа':`Выбрано ${es.length} слоя`}</div>${propertySection('Выравнивание',alignBar(),'align')}${allText?propertySection('Типографика',`${fontSelectControl(common)}<div class="cols2">${fontVariantField(common)}${fontSizeField(common,'Размер')}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',common.lineHeight,{min:.5,step:.05})}${letterSpacingField(common)}</div>${alignBar('text')}`,'font')+propertySection('Заливка',fillRow('Заливка текста','fill',common.fill,common.fillType||'solid'),'fill'):''}${propertySection('Эффекты',fxInspectorContent(common),'settings')}${propertySection('Действия',`<div class="action-row"><button class="linebtn" data-action="duplicate">${uiIcon('duplicate')} Копия</button><button class="linebtn" data-action="group">${uiIcon('layers')} ${isOneGroup()?'Разгруппировать':'Сгруппировать'}</button><button class="linebtn" data-action="delete">${uiIcon('delete')} Удалить</button></div>`,'more')}`;return;
+  root.innerHTML=`<div class="ins-object-title">${uiIcon('layers')} ${isOneGroup()?'Группа':`Выбрано ${es.length} слоя`}</div>${propertySection('Выравнивание',alignBar(),'align')}${allText?propertySection('Типографика',`${fontSelectControl(common)}<div class="cols2">${fontVariantField(common)}${fontSizeField(common,'Размер')}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',common.lineHeight,{min:.5,step:.05})}${letterSpacingField(common)}</div>${textDecorationControls()}${alignBar('text')}`,'font')+propertySection('Заливка',fillRow('Заливка текста','fill',common.fill,common.fillType||'solid'),'fill'):''}${propertySection('Эффекты',fxInspectorContent(common),'settings')}${propertySection('Действия',`<div class="action-row"><button class="linebtn" data-action="duplicate">${uiIcon('duplicate')} Копия</button><button class="linebtn" data-action="group">${uiIcon('layers')} ${isOneGroup()?'Разгруппировать':'Сгруппировать'}</button><button class="linebtn" data-action="delete">${uiIcon('delete')} Удалить</button></div>`,'more')}`;return;
  }
  if(!e){root.innerHTML=`<div class="ins-object-title">${uiIcon('settings')} Холст</div>${propertySection('Документ',`<label>Название<input data-doc="title" value="${html(d.title)}"></label><div class="cols2">${numField('Ширина','_docWidth',d.width,{min:100,max:5000})}${numField('Высота','_docHeight',d.height,{min:100,max:5000})}</div>`,'position')}${propertySection('Фон',fillRow('Фон холста','_docBackground',d.background),'fill')}${app.pixelSelection?propertySection('Эффекты',fxInspectorContent(null),'settings'):''}${d.type==='template'?propertySection('Выпуск карточки','<button class="btn btn-primary full" data-action="makeCard">Создать карточку из шаблона</button>','duplicate'):''}`;return}
  const fontOpts=fontFamilies().map(n=>[n,n]);
@@ -839,7 +840,7 @@ function refreshInspector(){
  if(e.type==='raster')s+=propertySection('Растровый слой',`<label>Цвет заливки<input type="color" id="rasterFillColor" value="${html(e.rasterFillColor||'#7457ed')}"></label><button class="linebtn wide" type="button" id="rasterFillAction">Залить ${app.pixelSelection?'выделение':'растровый слой'} цветом</button><div class="ins-caption">Растровая заливка сохраняется в этом же слое. Последующие мазки кисти не создают новые слои.</div>`,'fill');
  if(e.type==='vector')s+=propertySection('Библиотека фигур','<button class="linebtn wide" data-action="saveShape">＋ Сохранить в Фигуры</button>','more');
  if(e.type==='text'){
-  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${fontVariantField(e)}${fontSizeField(e)}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',e.lineHeight,{min:.5,step:.05})}${letterSpacingField(e)}</div>${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
+  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${fontVariantField(e)}${fontSizeField(e)}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',e.lineHeight,{min:.5,step:.05})}${letterSpacingField(e)}</div>${textDecorationControls()}${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
   s+=propertySection('Заливка',fillRow('Заливка текста','fill',e.fillType==='solid'?e.textColor:e.fill,e.fillType||'solid'),'fill');
  }else{
   s+=propertySection('Заливка',fillRow('Заливка','fill',e.fill,e.fillType||'solid')+`${e.fillType==='image'?imageModeControls(e):''}`,'fill');
@@ -906,7 +907,7 @@ $('#inspector').addEventListener('change',ev=>{if(ev.target.matches('[data-font-
 $('#inspector').addEventListener('input',ev=>{if(ev.target.matches('[data-font-search]'))v41RefreshDesktopFonts(ev.target.closest('.font-family-menu'));});
 $('#inspector').addEventListener('mouseover',ev=>{const opt=ev.target.closest('[data-font-option]');if(opt&&(!ev.relatedTarget||!opt.contains(ev.relatedTarget)))previewFont(opt.dataset.fontOption)});
 $('#inspector').addEventListener('mouseout',ev=>{const menu=ev.target.closest('.font-family-menu');if(menu&&!menu.contains(ev.relatedTarget))clearFontPreview()});
-$('#inspector').addEventListener('click',e=>{const mf=e.target.closest('[data-mask-fill]');if(mf){maskFill(mf.dataset.maskFill==='white'?'#ffffff':'#000000');return}if(e.target.closest('[data-mask-exit]')){app.maskEditId=null;inkRefreshColor();refreshLayers();refreshInspector();return}const a=e.target.closest('[data-action]');if(!a)return;const action=a.dataset.action,e1=active();if(action==='duplicate')duplicateElement();if(action==='group')toggleGroup();if(action==='delete')deleteElement();if(action==='up')moveLayer(1);if(action==='down')moveLayer(-1);if(action==='image'){app.pendingImage={kind:'fill',id:e1.id};$('#imageInput').click()}if(action==='fonts')showDialog('fontDialog');if(action==='resetCrop'){e1.cropX=0;e1.cropY=0;e1.cropZoom=1;app.cropMode=false;commit();refreshInspector()}if(action==='toggleCrop'){if(app.cropMode)exitCrop(true);else enterCrop();refreshInspector()}if(action==='lock'||action==='visibility'){e1[action==='lock'?'locked':'visible']=!e1[action==='lock'?'locked':'visible'];commit();refreshLayers();refreshInspector()}if(action==='makeCard')makeCardFrom(app.doc);if(action==='editPath'&&e1?.type==='path'){setPenMode(true,e1.id)}if(action==='togglePath'&&e1?.type==='path'){e1.pathClosed=!e1.pathClosed;commit();refreshInspector()}if(action==='saveShape')openSaveSelectedShape();if(action==='resetAutoName')resetAutoCardName();if(action==='clearGuides'){app.doc.rulers=[];commit();refreshInspector();toast('Направляющие удалены')}})
+$('#inspector').addEventListener('click',e=>{const mf=e.target.closest('[data-mask-fill]');if(mf){maskFill(mf.dataset.maskFill==='white'?'#ffffff':'#000000');return}if(e.target.closest('[data-mask-exit]')){app.maskEditId=null;inkRefreshColor();refreshLayers();refreshInspector();return}const decoration=e.target.closest('[data-text-decoration]');if(decoration){toggleTextDecoration(decoration.dataset.textDecoration);return}const a=e.target.closest('[data-action]');if(!a)return;const action=a.dataset.action,e1=active();if(action==='duplicate')duplicateElement();if(action==='group')toggleGroup();if(action==='delete')deleteElement();if(action==='up')moveLayer(1);if(action==='down')moveLayer(-1);if(action==='image'){app.pendingImage={kind:'fill',id:e1.id};$('#imageInput').click()}if(action==='fonts')showDialog('fontDialog');if(action==='resetCrop'){e1.cropX=0;e1.cropY=0;e1.cropZoom=1;app.cropMode=false;commit();refreshInspector()}if(action==='toggleCrop'){if(app.cropMode)exitCrop(true);else enterCrop();refreshInspector()}if(action==='lock'||action==='visibility'){e1[action==='lock'?'locked':'visible']=!e1[action==='lock'?'locked':'visible'];commit();refreshLayers();refreshInspector()}if(action==='makeCard')makeCardFrom(app.doc);if(action==='editPath'&&e1?.type==='path'){setPenMode(true,e1.id)}if(action==='togglePath'&&e1?.type==='path'){e1.pathClosed=!e1.pathClosed;commit();refreshInspector()}if(action==='saveShape')openSaveSelectedShape();if(action==='resetAutoName')resetAutoCardName();if(action==='clearGuides'){app.doc.rulers=[];commit();refreshInspector();toast('Направляющие удалены')}})
 function renameLayerFromName(el){
  const id=el.dataset.rename,g=groupInfo(id),e=app.doc.elements.find(e=>e.id===id),obj=g||e;if(!obj)return;
  const input=document.createElement('input');input.className='layer-rename-input';input.value=g?g.name:e.name;
@@ -1123,8 +1124,8 @@ function mixedTextLayout(e){
 // The editable surface projects the same positioned rows as Canvas/PNG.
 // Eligibility describes supported paint semantics, never a guessed CSS wrap.
 function supportsWysiwygProjection(e){
- if(e.mobileGlow||e.mobileBackground||e.mobileUnderline||e.mobileStrike)return false;
- const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','bold','italic']);
+ if(e.mobileGlow||e.mobileBackground)return false;
+ const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','bold','italic','underline','strikethrough']);
  if((e.textRuns||[]).some(run=>Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
  try{return richTextEngine.layout(e).rows.every(row=>Number.isFinite(row.baseline)&&row.height>0&&Number.isFinite(row.width));}
  catch{return false;}
@@ -1268,11 +1269,9 @@ function drawMixedTextGlyphs(c,e,method){
    if(method==='stroke')c.strokeText(part.text,part.x,part.y);
    else{if(solid)c.fillStyle=part.style.textColor;c.fillText(part.text,part.x,part.y)}
   }
-  // Existing layer decorations still cover the line; run decorations are data only.
-  if(method==='fill'&&(e.mobileUnderline||e.mobileStrike)){
-   c.strokeStyle=c.fillStyle;c.lineWidth=Math.max(1,(e.fontSize||24)/19);
-   const x=row.fragments[0]?.x||0;
-   for(const offset of [e.mobileUnderline?(e.fontSize||24)*.1:null,e.mobileStrike?-(e.fontSize||24)*.31:null])if(offset!==null){c.beginPath();c.moveTo(x,row.baseline+offset);c.lineTo(x+row.width,row.baseline+offset);c.stroke()}
+  if(method==='fill')for(const rect of row.decorations){
+   if(solid)c.fillStyle=rect.color;
+   c.fillRect(rect.x,rect.y,rect.width,rect.height);
   }
  }
  c.restore();
@@ -2199,7 +2198,7 @@ function routeWysiwygPanelAction(ev){
  // Custom numeric steppers are proxy controls for their data-key inputs.
  // Preserve the WYSIWYG range; their click handler emits input/change on
  // the underlying number field. They must not enter the generic fallback.
- if(ev.target.closest('[data-key],[data-hex],[data-fill-open],[data-text-auto-font],[data-font-open],[data-font-option],.font-family-menu,.k-num-step,#fontDialog,#fillPopover,#undoBtn,#redoBtn'))return;
+ if(ev.target.closest('[data-key],[data-hex],[data-fill-open],[data-text-decoration],[data-text-auto-font],[data-font-open],[data-font-option],.font-family-menu,.k-num-step,#fontDialog,#fillPopover,#undoBtn,#redoBtn'))return;
  if(ev.target.closest('button,input,select,[data-align]')&&!fallbackInlineWysiwyg('Форматирование')){ev.preventDefault();ev.stopImmediatePropagation();}
 }
 // Capture input/change as well: a keyboard-activated control need not have a
@@ -2297,9 +2296,43 @@ function inlineStyleRange(){
  if(app.wysiwyg||document.activeElement===$('#inlineText'))rememberInlineCaret();
  const c=app.inlineCaret;return c&&c.end>c.start?c:null;
 }
+function textDecorationState(key){
+ const es=picked().filter(e=>e.type==='text'),c=es.length===1&&es[0].id===app.editingId?app.inlineCaret:null;
+ const values=es.flatMap(e=>richTextSpans(e).filter(p=>!c||c.start===c.end||p.start<c.end&&p.end>c.start).map(p=>p.style[key]));
+ if(!values.length)return es.length?!!resolveRichTextStyle(es[0])[key]:false;
+ return values.every(v=>v===values[0])?values[0]:'mixed';
+}
+function decorationButton(key,mobile=false){
+ const state=textDecorationState(key),label=key==='underline'?'Подчёркивание':'Зачёркивание',letter=key==='underline'?'<u>U</u>':'<s>S</s>';
+ return `<button type="button" class="${mobile?'mp-choice mp-format-btn':'linebtn text-decoration-btn'} ${state===true?'active':''} ${state==='mixed'?'mixed':''}" data-text-decoration="${key}" ${mobile?`data-mp-format="${key==='underline'?'underline':'strike'}"`:''} aria-label="${label}" aria-pressed="${state}" title="${label}${state==='mixed'?' · Mixed':''}">${letter}<span class="decoration-mixed" aria-hidden="true">${state==='mixed'?'Mixed':''}</span></button>`;
+}
+function textDecorationControls(){return `<div class="action-row text-decoration-controls">${decorationButton('underline')}${decorationButton('strikethrough')}</div>`}
+function syncTextDecorationButtons(){
+ for(const button of $$('[data-text-decoration]')){
+  const state=textDecorationState(button.dataset.textDecoration);
+  button.setAttribute('aria-pressed',String(state));button.classList.toggle('active',state===true);button.classList.toggle('mixed',state==='mixed');
+  const mixed=button.querySelector('.decoration-mixed');if(mixed)mixed.textContent=state==='mixed'?'Mixed':'';
+ }
+}
+function toggleTextDecoration(key){
+ const value=textDecorationState(key)!==true;
+ if(styleInlineSelection(key,value,true)){syncTextDecorationButtons();return}
+ const layers=picked().filter(e=>e.type==='text'&&!isLayerLocked(e));if(!layers.length)return;
+ if(app.wysiwyg){app.wysiwyg.applyLayerStyle({[key]:value},{key,final:true});syncTextDecorationButtons();return}
+ if(app.inlineSession)recordInlineSession();
+ for(const layer of layers){
+  restoreTextRuns(layer,applyTextStyle(layer,0,layer.text.length,{[key]:null}).textRuns);
+  layer[key]=value;
+  // Preserve the historical painter for specialized modes without a migration.
+  layer[key==='underline'?'mobileUnderline':'mobileStrike']=value;
+ }
+ if(app.inlineSession){app.inlineSession.formatted=true;recordInlineSession();positionInlineText();paint()}
+ else commit();
+ syncTextDecorationButtons();
+}
 function inlineSelectionStyle(){const e=active(),c=inlineStyleRange();return richTextSpans(e).find(span=>span.start<=c.start&&span.end>c.start)?.style||resolveRichTextStyle(e)}
 function styleInlineLayer(key,value,final){
- if(!app.wysiwyg||!['fontSize','fontWeight','fontStyle','fontVariant','textColor','letterSpacing','lineHeight','w','h'].includes(key))return false;
+ if(!app.wysiwyg||!['fontSize','fontWeight','fontStyle','fontVariant','textColor','letterSpacing','lineHeight','w','h','underline','strikethrough'].includes(key))return false;
  let patch={[key]:value};
  if(['fontSize','letterSpacing','lineHeight','w','h'].includes(key)){
   const n=Number(value);if(!Number.isFinite(n))return true;
@@ -2309,7 +2342,7 @@ function styleInlineLayer(key,value,final){
  return app.wysiwyg.applyLayerStyle(patch,{key,final});
 }
 function styleInlineSelection(key,value,final){
- if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing'].includes(key))return false;
+ if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','underline','strikethrough'].includes(key))return false;
  const c=inlineStyleRange(),e=active();if(!c||e?.id!==app.editingId)return false;
  let patch={[key]:value};
  const session=app.inlineSession;
@@ -2336,7 +2369,7 @@ function styleInlineSelection(key,value,final){
  // A manual size uses the fitted scale, then opts out of fitting just like
  // the layer size field. Other fragments keep both their units and scale.
  if(key==='fontSize'){e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}
- retainRichTextSizeBase(e);autoFitTextFont(e);positionInlineText();restoreInlineCaret(false);
+ retainRichTextSizeBase(e);if(!['underline','strikethrough'].includes(key))autoFitTextFont(e);positionInlineText();restoreInlineCaret(false);
  if(final){recordInlineSession();session.pendingStyle=null}updateHistoryButtons();paint();return true;
 }
 // Ownership lasts through the native mouse/focus/click sequence, including
@@ -2347,7 +2380,7 @@ document.addEventListener('mousedown',ev=>{
  app.inlineToolPointer=true;rememberInlineCaret();
  // Buttons can operate on the focused selection. Inputs/selects must retain
  // native focus, keyboard and text-selection behavior on desktop and Android.
- if(document.activeElement===$('#inlineText')&&ev.target.closest('button'))ev.preventDefault();
+ if((document.activeElement===$('#inlineText')||app.wysiwyg&&ev.target.closest('[data-text-decoration]'))&&ev.target.closest('button'))ev.preventDefault();
 },true);
 document.addEventListener('keydown',ev=>{if(app.wysiwyg&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&ev.target.closest(inlineFormattingRoots)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
 
@@ -3415,6 +3448,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&regionEffectsRequest()){e.preventDefault();cancelRegionEffects();if(matchMedia('(max-width:760px)').matches)mobileV36Close();refreshInspector();return}
  if(input)return;
  if(e.key==='Escape'&&app.inkDraft){e.preventDefault();inkCancel();return}
+ if(e.target.closest?.('[data-text-decoration]'))return;
  if(e.code==='Space'){e.preventDefault();closeToolPopovers();app.spaceDown=true;$('#stageScroller').classList.add('hand-mode');toolDockState();return}
  if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.repeat){
   if(e.code==='KeyV'){e.preventDefault();activateMove();return}
@@ -3442,7 +3476,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&app.pixelSelection){e.preventDefault();clearPixelSelection();return}if(e.key==='Escape'&&app.penDraft){e.preventDefault();app.penDraft=null;app.drag=null;updateHistoryButtons();paint();return}if(e.key==='Escape'&&app.penTool){e.preventDefault();setPenMode(false);return}if(e.key==='Escape'){hideContextMenu();if(app.cropMode)exitCrop(false);else if(app.groupIsolation){const el=app.doc.elements.find(x=>x.id===app.groupIsolation);setSelected(el?.groupId?groupMembers(el.groupId).map(x=>x.id):[])}else {closeDialogs();hideInspector();setSelected([])}return}
  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)&&picked().length){e.preventDefault();const st=e.shiftKey?10:1;for(const el of picked().filter(v=>!isLayerLocked(v))){if(e.key==='ArrowLeft')el.x-=st;if(e.key==='ArrowRight')el.x+=st;if(e.key==='ArrowUp')el.y-=st;if(e.key==='ArrowDown')el.y+=st}commit();refreshInspector()}
 });
-window.addEventListener('keyup',e=>{if(e.key==='Alt'){app.altDown=false;document.body.classList.remove('alt-held');paint()}if(e.code==='Space'){e.preventDefault();app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()}});
+window.addEventListener('keyup',e=>{if(e.key==='Alt'){app.altDown=false;document.body.classList.remove('alt-held');paint()}if(e.code==='Space'&&!e.target.closest?.('[data-text-decoration]')){e.preventDefault();app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()}});
 window.addEventListener('blur',()=>{document.body.classList.remove('alt-held');app.altDown=false;app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()});
 window.addEventListener('resize',()=>{if(!matchMedia('(max-width:760px)').matches&&!app.editingId&&!app.drag&&!homeVisible())fitCanvas()});
 window.addEventListener('beforeunload',()=>{if(app.wysiwyg)closeInlineText();if(app.doc)flushSave()});
@@ -4533,8 +4567,8 @@ function mobileV36FormatPanel(){const e=active();
  return mobileV36Sheet('Формат',`<div class="mp-format-layout"><div class="mp-grid five mp-format-styles">
  ${btn('bold','<b>B</b>',Number(e.fontWeight)>=600,'Жирный')}
  ${btn('italic','<i>I</i>',e.fontStyle==='italic','Курсив')}
- ${btn('underline','<u>U</u>',e.mobileUnderline,'Подчёркнутый')}
- ${btn('strike','<s>S</s>',e.mobileStrike,'Зачёркнутый')}
+ ${decorationButton('underline',true)}
+ ${decorationButton('strikethrough',true)}
  ${btn('case','aA',!!e.mobileCase,'Регистр')}
  </div><div class="mp-format-align">
  ${align('left','По левому краю',e.textAlign==='left')}
@@ -4605,8 +4639,7 @@ function mobileV36Format(key){const e=active();if(!e)return;
  if(['bold','italic'].includes(key)&&inlineStyleRange()){const style=inlineSelectionStyle(),value=key==='bold'?!(Number(style.fontWeight)>=600):style.fontStyle!=='italic';styleInlineSelection(key,value,true);mobileV36Render();resumeInlineTextFromButton();return}
  if(key==='bold')e.fontWeight=Number(e.fontWeight)>=600?'400':'700';
  if(key==='italic')e.fontStyle=e.fontStyle==='italic'?'normal':'italic';
- if(key==='underline')e.mobileUnderline=!e.mobileUnderline;
- if(key==='strike')e.mobileStrike=!e.mobileStrike;
+ if(key==='underline'||key==='strike'){toggleTextDecoration(key==='underline'?'underline':'strikethrough');mobileV36Render();resumeInlineTextFromButton();return}
  if(key==='case'){
   const state=(e.mobileCase||0)+1;e.mobileCase=state%3;const src=e.mobileRawText??e.text;
   if(e.mobileRawText===undefined&&e.textRuns)e.mobileRawTextRuns=clone(e.textRuns);e.mobileRawText=src;
@@ -4894,10 +4927,11 @@ drawTextGlyphs=function(c,e,method='fill'){
   const lines=wrapLines(c,e),lh=(e.lineHeight||1.15)*(e.fontSize||24),spacing=Number(e.letterSpacing||0),blockH=lines.length*lh,offsetY=e.verticalAlign==='middle'?Math.max(0,(e.h-blockH)/2):e.verticalAlign==='bottom'?Math.max(0,e.h-blockH):0;
   lines.forEach((line,i)=>{const words=String(line).split(/\s+/).filter(Boolean);if(!words.length)return;const widths=words.map(w=>c.measureText(w).width+Math.max(0,w.length-1)*spacing),base=widths.reduce((a,b)=>a+b,0),gap=(i===lines.length-1||words.length===1)?c.measureText(' ').width:Math.max(c.measureText(' ').width,(e.w-base)/(words.length-1));let x=0;for(let j=0;j<words.length;j++){if(method==='stroke')c.strokeText(words[j],x,offsetY+i*lh);else c.fillText(words[j],x,offsetY+i*lh);x+=widths[j]+gap}});c.restore();
  }else mobileV36BaseDrawText(c,e,method);
- if(method!=='fill'||(!e.mobileUnderline&&!e.mobileStrike)||e.textMode==='vertical'||e.textMode==='path')return;
+ const decorations=resolveRichTextStyle(e);
+ if(method!=='fill'||(!decorations.underline&&!decorations.strikethrough)||e.textMode==='vertical'||e.textMode==='path')return;
  c.save();c.font=fontString(e);const lines=wrapLines(c,e),lh=(e.lineHeight||1.15)*(e.fontSize||24),linew=Math.max(1,e.fontSize/19);
  c.strokeStyle=c.fillStyle;c.lineWidth=linew;
- lines.forEach((line,i)=>{const w=Math.min(e.w,c.measureText(line).width+Math.max(0,line.length-1)*(e.letterSpacing||0));const x=e.textAlign==='center'?(e.w-w)/2:e.textAlign==='right'?e.w-w:0;const y=i*lh+e.fontSize*.8;for(const offset of [e.mobileUnderline?e.fontSize*.1:null,e.mobileStrike?-e.fontSize*.31:null])if(offset!==null){c.beginPath();c.moveTo(x,y+offset);c.lineTo(x+w,y+offset);c.stroke()}});c.restore();
+ lines.forEach((line,i)=>{const w=Math.min(e.w,c.measureText(line).width+Math.max(0,line.length-1)*(e.letterSpacing||0));const x=e.textAlign==='center'?(e.w-w)/2:e.textAlign==='right'?e.w-w:0;const y=i*lh+e.fontSize*.8;for(const offset of [decorations.underline?e.fontSize*.1:null,decorations.strikethrough?-e.fontSize*.31:null])if(offset!==null){c.beginPath();c.moveTo(x,y+offset);c.lineTo(x+w,y+offset);c.stroke()}});c.restore();
 };
 const mobileV36BasePaintText=paintText;
 paintText=function(c,e){

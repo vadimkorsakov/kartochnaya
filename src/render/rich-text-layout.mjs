@@ -1,3 +1,4 @@
+import { textDecorationRects } from './text-decorations.mjs';
 import { normalizeRuns } from '../model/rich-text.mjs';
 
 // Ordinary horizontal text always uses one renderer, whether or not styled
@@ -40,6 +41,8 @@ export function resolveRichTextStyle(base, override = {}) {
     fontSize: override.fontSize === undefined ? size : positive(override.fontSize, size / scale) * scale,
     textColor: override.textColor || base.textColor || base.fill || '#000000',
     letterSpacing: spacing(override.letterSpacing ?? base.letterSpacing),
+    underline: override.underline ?? base.underline ?? base.mobileUnderline ?? false,
+    strikethrough: override.strikethrough ?? base.strikethrough ?? base.mobileStrike ?? false,
   };
 }
 
@@ -115,12 +118,22 @@ export function createRichTextLayoutEngine(context, fontSet) {
       if (segment === '\r') continue; // Same CR compatibility as legacy horizontal text.
       clusters.push({ text: segment === '\r\n' ? '\n' : segment, start: index, end: index + segment.length, style: spans[spanIndex]?.style || base });
     }
+    // Use the same whole-grapheme ownership as glyph painting. A saved run
+    // boundary inside a combining/ZWJ cluster cannot paint a partial glyph line.
+    const decorationSpans = [];
+    for (const cluster of clusters) {
+      if (cluster.text === '\n') continue;
+      const last = decorationSpans.at(-1), id = JSON.stringify(cluster.style);
+      if (last?.id === id && last.end === cluster.start) last.end = cluster.end;
+      else decorationSpans.push({...cluster, id});
+    }
     const rows = []; let fragments = [], rowWidth = 0, rowStart = 0;
-    const styleKey = s => JSON.stringify(s);
+    // Decoration boundaries never split glyph painting (including ligatures).
+    const styleKey = ({ underline, strikethrough, ...paint }) => JSON.stringify(paint);
     // Paint colors must not alter shaping or move subsequent glyphs. A color
     // split preserves the advance of the full contiguous font/spacing sequence,
     // while keeping separate fragments for per-range drawing and ink bounds.
-    const geometryKey = ({ textColor, ...geometry }) => JSON.stringify(geometry);
+    const geometryKey = ({ textColor, underline, strikethrough, ...geometry }) => JSON.stringify(geometry);
     function append(parts, cluster) {
       const last = parts.at(-1), id = styleKey(cluster.style);
       const geometry = geometryKey(cluster.style);
@@ -197,6 +210,17 @@ export function createRichTextLayoutEngine(context, fontSet) {
         previousGeometry = geometry; previousShapeWidth = shapeWidth;
         return part;
       });
+      // Decorations use source intervals and the same contextual advances as
+      // glyphs. They never contribute to metrics, shaping, wrapping or auto-fit.
+      row.decorations = [];
+      for (const part of row.fragments) for (const span of decorationSpans) {
+        const start = Math.max(part.start, span.start), end = Math.min(part.end, span.end);
+        if (start >= end || (!span.style.underline && !span.style.strikethrough)) continue;
+        const prefix = offset => offset === part.end ? part.width : measure(text.slice(part.start, offset).replaceAll('\r', ''), part.style).width;
+        const left = prefix(start), right = prefix(end);
+        row.decorations.push(...textDecorationRects({x:part.x + left, y:part.y, width:right-left}, span.style)
+          .map(rect => ({...rect, start, end})));
+      }
       y += row.height;
     }
     return boundedSet(layouts, key, { rows, width: Math.max(...rows.map(r => r.width)), height: blockHeight }, 128);

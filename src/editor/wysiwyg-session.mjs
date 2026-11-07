@@ -62,6 +62,12 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   for(const row of projection.rows){
    const rowNode=document.createElement('span');rowNode.dataset.wysiwygRow='';
    Object.assign(rowNode.style,{position:'absolute',display:'inline-block',left:'0px',top:row.y+'px',height:row.height+'px',whiteSpace:'pre',fontSize:'0px',lineHeight:'0px'});
+   // CSS backgrounds contain no DOM nodes or characters, so native Selection,
+   // UTF-16 indexing and confirmedHTML validation keep their existing contract.
+   Object.assign(rowNode.style, {width:value.w+'px',
+    backgroundImage:row.decorations.map(r=>`linear-gradient(${r.color}, ${r.color})`).join(','),
+    backgroundPosition:row.decorations.map(r=>`${r.x}px ${r.y-row.y}px`).join(','),
+    backgroundSize:row.decorations.map(r=>`${r.width}px ${r.height}px`).join(','),backgroundRepeat:'no-repeat'});
    nodes.push(rowNode);let advance=0;
    const parts=row.fragments.length?row.fragments:[{text:'',style:base,x:0}];
    for(let i=0;i<parts.length;i++){
@@ -134,11 +140,14 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   if(preview&&(preview.key!==key||preview.selection.anchor!==selection.anchor||preview.selection.focus!==selection.focus))finishPreview();
   const origin=preview?.element||structuredClone(layer);
   if(!compatible(origin))return false;
-  const next=range?applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch):structuredClone(origin);
-  if(!range){retainRichTextSizeBase(next);Object.assign(next,patch);}
+  let next=range?applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch):structuredClone(origin);
+  if(!range){
+   if(['underline','strikethrough'].includes(key))next=applyTextStyle(next,0,next.text.length,{[key]:null});
+   retainRichTextSizeBase(next);Object.assign(next,patch);
+  }
   if(key==='fontSize')next.autoFontSize=false;
   retainRichTextSizeBase(next);
-  if(next.autoFontSize)fit(next);
+  if(next.autoFontSize&&!['underline','strikethrough'].includes(key))fit(next);
   if(!compatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}

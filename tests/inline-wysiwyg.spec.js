@@ -1068,3 +1068,83 @@ test('font inspector shows effective range font and Mixed for heterogeneous laye
  await expect(page.locator('#inspector [data-font-current]')).toHaveText('Mixed');
  await page.keyboard.press('Control+Enter');
 });
+
+
+test('font-size inspector reflects range size and Mixed across styles and sessions',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='alpha beta gamma delta';
+ await seedPlain(page,{text,fontFamily:'Arial',fontSize:24,w:520,h:220,autoFontSize:false},{flag:'default'});
+ const size=page.locator('#inspector [data-key="fontSize"]');
+ await edit(page);await page.keyboard.press('Control+a');
+ await size.fill('36');await size.press('Tab');
+ await expect(size).toHaveValue('36');
+ const all=await snapshotValue(page);
+ expect(all.fontSize).toBe(24);
+ expect(all.textRuns).toEqual([{start:0,end:text.length,style:{fontSize:36}}]);
+ // Clearing an inspector numeric field is an incomplete edit, not a request
+ // to shrink the selected text to 1px before the next number is typed.
+ await size.fill('');
+ expect((await snapshotValue(page)).textRuns).toEqual(all.textRuns);
+ await size.fill('36');await size.press('Tab');
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+ await expect(size).toHaveValue('36');
+ await edit(page);await selectRange(page,0,5);
+ await size.fill('48');await size.press('Tab');
+ await expect(size).toHaveValue('48');
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+ await expect(size).toHaveValue('');
+ await expect(size).toHaveAttribute('placeholder','Mixed');
+ await edit(page);await selectRange(page,6,10);
+ await expect(size).toHaveValue('36');
+ await selectRange(page,0,5);
+ await expect(size).toHaveValue('48');
+ await page.keyboard.press('Control+a');
+ await expect(size).toHaveValue('');
+ await expect(size).toHaveAttribute('placeholder','Mixed');
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+});
+
+
+test('numeric steppers and font variant edit only the WYSIWYG selection without textarea fallback',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='alpha beta gamma delta';
+ await seedPlain(page,{text,fontFamily:'Arial',fontSize:31,w:550,h:220,
+  autoFontSize:false},{flag:'default'});
+ await edit(page);await selectRange(page,0,5);
+ const size=page.locator('#inspector [data-key="fontSize"]');
+ const plus=size.locator('xpath=..').locator('[data-num-direction="up"]');
+ await expect(plus).toBeVisible();
+ await plus.click(); // Real compact numeric arrow, not fill() or keyboard input
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await expect(size).toHaveValue('32');
+ let changed=await snapshotValue(page);
+ expect(changed.textRuns).toHaveLength(1);
+ expect(changed.textRuns[0]).toMatchObject({start:0,end:5,style:{fontSize:32}});
+ await plus.click();
+ await expect(size).toHaveValue('33');
+ changed=await snapshotValue(page);
+ expect(changed.textRuns[0].style.fontSize).toBe(33);
+ const tracking=page.locator('#inspector [data-key="letterSpacing"]');
+ await tracking.locator('xpath=..').locator('[data-num-direction="up"]').click();
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ changed=await snapshotValue(page);
+ expect(changed.textRuns[0].style).toMatchObject({fontSize:33,letterSpacing:0.5});
+ const variant=page.locator('#inspector [data-key="fontVariant"]');
+ await variant.selectOption('700:normal');
+ await expect(page.locator(surface)).toBeVisible();
+ await expect(page.locator('#inlineText')).toBeHidden();
+ await expect(variant).toHaveValue('700:normal');
+ changed=await snapshotValue(page);
+ expect(changed.textRuns).toHaveLength(1);
+ expect(changed.textRuns[0]).toMatchObject({start:0,end:5,style:{fontSize:33,letterSpacing:0.5,fontWeight:'700'}});
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+ await expect(page.locator('#inspector [data-key="fontVariant"]')).toHaveValue('');
+ await expect(page.locator('#inspector [data-key="fontVariant"] option:checked')).toHaveText('Mixed');
+ await edit(page);await selectRange(page,0,5);
+ await expect(page.locator('#inspector [data-key="fontVariant"]')).toHaveValue('700:normal');
+ await selectRange(page,6,10);
+ await expect(page.locator('#inspector [data-key="fontVariant"]')).toHaveValue('400:normal');
+ await page.keyboard.press('Control+Enter');
+});

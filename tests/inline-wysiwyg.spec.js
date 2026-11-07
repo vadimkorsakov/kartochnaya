@@ -1081,6 +1081,11 @@ test('font-size inspector reflects range size and Mixed across styles and sessio
  const all=await snapshotValue(page);
  expect(all.fontSize).toBe(24);
  expect(all.textRuns).toEqual([{start:0,end:text.length,style:{fontSize:36}}]);
+ // Clearing an inspector numeric field is an incomplete edit, not a request
+ // to shrink the selected text to 1px before the next number is typed.
+ await size.fill('');
+ expect((await snapshotValue(page)).textRuns).toEqual(all.textRuns);
+ await size.fill('36');await size.press('Tab');
  await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
  await expect(size).toHaveValue('36');
  await edit(page);await selectRange(page,0,5);

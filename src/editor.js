@@ -248,12 +248,14 @@ function inspectorFontFamily(e){
  const first=families[0]||'Arial';
  return families.every(family=>family===first)?first:null;
 }
-// The numeric size field must reflect effective character sizes, just like
-// the font-family field. A run may override the entire layer's base fontSize.
-function inspectorFontSize(e){
- if(!e||e.type!=='text')return e?.fontSize||24;
+// Numeric typography fields share the same effective range/caret lookup.
+// A run may override the entire layer default; null represents Mixed.
+function inspectorFontSize(e){return inspectorNumericTextStyle(e,'fontSize',24)}
+function inspectorLetterSpacing(e){return inspectorNumericTextStyle(e,'letterSpacing',0)}
+function inspectorNumericTextStyle(e,key,fallback){
+ if(!e||e.type!=='text')return e?.[key]??fallback;
  const layers=app.selectedIds.length>1&&picked().every(layer=>layer.type==='text')?picked():[e];
- const sizes=[];
+ const values=[];
  for(const layer of layers){
   const spans=richTextSpans(layer),caret=app.editingId===layer.id?app.inlineCaret:null;
   let relevant=spans;
@@ -262,15 +264,19 @@ function inspectorFontSize(e){
    if(end>start)relevant=spans.filter(span=>span.start<end&&span.end>start);
    else if(spans.length)relevant=[spans.find(span=>span.start<=start&&start<span.end)||spans.at(-1)];
   }
-  if(relevant.length)sizes.push(...relevant.map(span=>span.style.fontSize));
-  else sizes.push(layer.fontSize||24);
+  if(relevant.length)values.push(...relevant.map(span=>span.style[key]));
+  else values.push(resolveRichTextStyle(layer)[key]);
  }
- const first=sizes[0]??24;
- return sizes.every(size=>Math.abs(size-first)<1e-6)?first:null;
+ const first=values[0]??fallback;
+ return values.every(value=>Math.abs(value-first)<1e-6)?first:null;
 }
 function fontSizeField(e,label='Размер, px'){
  const size=inspectorFontSize(e);
  return `<label>${label}<input data-key="fontSize" type="number" value="${size===null?'':fmt(size)}" min="1" max="100000" step="1"${size===null?' placeholder="Mixed"':''}></label>`;
+}
+function letterSpacingField(e){
+ const spacing=inspectorLetterSpacing(e);
+ return `<label>Трекинг<input data-key="letterSpacing" type="number" value="${spacing===null?'':fmt(spacing)}" step=".5"${spacing===null?' placeholder="Mixed"':''}></label>`;
 }
 // Effective font weight/style may differ from the base layer after a range edit.
 function inspectorFontVariant(e){
@@ -317,6 +323,12 @@ function syncInspectorFontFamily(){
   const size=inspectorFontSize(e);
   sizeInput.value=size===null?'':fmt(size);
   sizeInput.placeholder=size===null?'Mixed':'';
+ }
+ const spacingInput=$('#inspector [data-key="letterSpacing"]');
+ if(spacingInput&&document.activeElement!==spacingInput&&spacingInput!==inspectorEditingControl){
+  const spacing=inspectorLetterSpacing(e);
+  spacingInput.value=spacing===null?'':fmt(spacing);
+  spacingInput.placeholder=spacing===null?'Mixed':'';
  }
  const variantSelect=$('#inspector select[data-key="fontVariant"]');
  if(variantSelect&&document.activeElement!==variantSelect&&variantSelect!==inspectorEditingControl){
@@ -816,7 +828,7 @@ function refreshInspector(){
  const root=$('#inspector'),es=picked(),e=active(),d=app.doc;
  if(es.length>1){
   const allText=es.every(x=>x.type==='text'),common=es[0],opts=fontFamilies().map(f=>[f,f]);
-  root.innerHTML=`<div class="ins-object-title">${uiIcon('layers')} ${isOneGroup()?'Группа':`Выбрано ${es.length} слоя`}</div>${propertySection('Выравнивание',alignBar(),'align')}${allText?propertySection('Типографика',`${fontSelectControl(common)}<div class="cols2">${fontVariantField(common)}${fontSizeField(common,'Размер')}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',common.lineHeight,{min:.5,step:.05})}${numField('Трекинг','letterSpacing',common.letterSpacing||0,{step:.5})}</div>${alignBar('text')}`,'font')+propertySection('Заливка',fillRow('Заливка текста','fill',common.fill,common.fillType||'solid'),'fill'):''}${propertySection('Эффекты',fxInspectorContent(common),'settings')}${propertySection('Действия',`<div class="action-row"><button class="linebtn" data-action="duplicate">${uiIcon('duplicate')} Копия</button><button class="linebtn" data-action="group">${uiIcon('layers')} ${isOneGroup()?'Разгруппировать':'Сгруппировать'}</button><button class="linebtn" data-action="delete">${uiIcon('delete')} Удалить</button></div>`,'more')}`;return;
+  root.innerHTML=`<div class="ins-object-title">${uiIcon('layers')} ${isOneGroup()?'Группа':`Выбрано ${es.length} слоя`}</div>${propertySection('Выравнивание',alignBar(),'align')}${allText?propertySection('Типографика',`${fontSelectControl(common)}<div class="cols2">${fontVariantField(common)}${fontSizeField(common,'Размер')}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',common.lineHeight,{min:.5,step:.05})}${letterSpacingField(common)}</div>${alignBar('text')}`,'font')+propertySection('Заливка',fillRow('Заливка текста','fill',common.fill,common.fillType||'solid'),'fill'):''}${propertySection('Эффекты',fxInspectorContent(common),'settings')}${propertySection('Действия',`<div class="action-row"><button class="linebtn" data-action="duplicate">${uiIcon('duplicate')} Копия</button><button class="linebtn" data-action="group">${uiIcon('layers')} ${isOneGroup()?'Разгруппировать':'Сгруппировать'}</button><button class="linebtn" data-action="delete">${uiIcon('delete')} Удалить</button></div>`,'more')}`;return;
  }
  if(!e){root.innerHTML=`<div class="ins-object-title">${uiIcon('settings')} Холст</div>${propertySection('Документ',`<label>Название<input data-doc="title" value="${html(d.title)}"></label><div class="cols2">${numField('Ширина','_docWidth',d.width,{min:100,max:5000})}${numField('Высота','_docHeight',d.height,{min:100,max:5000})}</div>`,'position')}${propertySection('Фон',fillRow('Фон холста','_docBackground',d.background),'fill')}${app.pixelSelection?propertySection('Эффекты',fxInspectorContent(null),'settings'):''}${d.type==='template'?propertySection('Выпуск карточки','<button class="btn btn-primary full" data-action="makeCard">Создать карточку из шаблона</button>','duplicate'):''}`;return}
  const fontOpts=fontFamilies().map(n=>[n,n]);
@@ -827,7 +839,7 @@ function refreshInspector(){
  if(e.type==='raster')s+=propertySection('Растровый слой',`<label>Цвет заливки<input type="color" id="rasterFillColor" value="${html(e.rasterFillColor||'#7457ed')}"></label><button class="linebtn wide" type="button" id="rasterFillAction">Залить ${app.pixelSelection?'выделение':'растровый слой'} цветом</button><div class="ins-caption">Растровая заливка сохраняется в этом же слое. Последующие мазки кисти не создают новые слои.</div>`,'fill');
  if(e.type==='vector')s+=propertySection('Библиотека фигур','<button class="linebtn wide" data-action="saveShape">＋ Сохранить в Фигуры</button>','more');
  if(e.type==='text'){
-  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${fontVariantField(e)}${fontSizeField(e)}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',e.lineHeight,{min:.5,step:.05})}${numField('Трекинг','letterSpacing',e.letterSpacing||0,{step:.5})}</div>${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
+  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${fontVariantField(e)}${fontSizeField(e)}</div><div class="cols2">${numField('Интерлиньяж','lineHeight',e.lineHeight,{min:.5,step:.05})}${letterSpacingField(e)}</div>${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
   s+=propertySection('Заливка',fillRow('Заливка текста','fill',e.fillType==='solid'?e.textColor:e.fill,e.fillType||'solid'),'fill');
  }else{
   s+=propertySection('Заливка',fillRow('Заливка','fill',e.fill,e.fillType||'solid')+`${e.fillType==='image'?imageModeControls(e):''}`,'fill');
@@ -871,7 +883,7 @@ function relocateMobileHistory(){
 function showInspector(mode='settings'){if(matchMedia('(max-width:760px)').matches&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(matchMedia('(max-width:760px)').matches){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
 function hideInspector(){cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
 function changeProperty(key,val,final=false){if(styleInlineSelection(key,val,final)||styleInlineLayer(key,val,final))return;if(app.wysiwyg&&!fallbackInlineWysiwyg('Форматирование'))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
-function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;if(t.dataset.key==='fontSize'&&String(t.value).trim()==='')return;const editedValue=t.value;inspectorEditingControl=t;try{changeProperty(t.dataset.key,editedValue,final)}finally{inspectorEditingControl=null}if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
+function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;if(['fontSize','letterSpacing'].includes(t.dataset.key)&&String(t.value).trim()==='')return;const editedValue=t.value;inspectorEditingControl=t;try{changeProperty(t.dataset.key,editedValue,final)}finally{inspectorEditingControl=null}if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
 $('#inspector').addEventListener('change',e=>{if(e.target.dataset.clipCheckbox){const elem=app.doc.elements.find(x=>x.id===e.target.dataset.clipCheckbox);if(elem){elem.clipped=!e.target.checked;toggleClip(elem.id)}refreshInspector()}});
 $('#inspector').addEventListener('change',ev=>{if(ev.target.matches('[data-text-auto-font]'))setTextAutoFont(ev.target.checked)});
 $('#inspector').addEventListener('input',e=>handleInspectorChange(e,false));$('#inspector').addEventListener('change',e=>handleInspectorChange(e,true));$('#inspector').addEventListener('click',e=>{const b=e.target.closest('[data-align]');if(b){alignPicked(b.dataset.align);return}const sw=e.target.closest('[data-fill-open]');if(sw){openFillPopover(sw.dataset.fillOpen,sw);return}});
@@ -4808,7 +4820,12 @@ document.addEventListener('click',ev=>{
  if(!field||field.disabled||field.readOnly)return;
  const previous=field.value;
  try{
-  if(button.dataset.numDirection==='up')field.stepUp();
+  // Mixed tracking starts at the effective first character, not empty -> 0.
+  // Add the step directly so a fractional origin is not snapped to a grid.
+  if(field.dataset.key==='letterSpacing'&&inlineStyleRange()){
+   const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:inlineSelectionStyle().letterSpacing,step=Number(field.step)||.5;
+   field.value=String(Number((base+(button.dataset.numDirection==='up'?step:-step)).toFixed(8)));
+  }else if(button.dataset.numDirection==='up')field.stepUp();
   else field.stepDown();
  }catch{
   // step="any" does not support the native stepping methods.

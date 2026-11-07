@@ -1068,3 +1068,33 @@ test('font inspector shows effective range font and Mixed for heterogeneous laye
  await expect(page.locator('#inspector [data-font-current]')).toHaveText('Mixed');
  await page.keyboard.press('Control+Enter');
 });
+
+
+test('font-size inspector reflects range size and Mixed across styles and sessions',async({page})=>{
+ await page.setViewportSize({width:2200,height:1600});
+ const text='alpha beta gamma delta';
+ await seedPlain(page,{text,fontFamily:'Arial',fontSize:24,w:520,h:220,autoFontSize:false},{flag:'default'});
+ const size=page.locator('#inspector [data-key="fontSize"]');
+ await edit(page);await page.keyboard.press('Control+a');
+ await size.fill('36');await size.press('Tab');
+ await expect(size).toHaveValue('36');
+ const all=await snapshotValue(page);
+ expect(all.fontSize).toBe(24);
+ expect(all.textRuns).toEqual([{start:0,end:text.length,style:{fontSize:36}}]);
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+ await expect(size).toHaveValue('36');
+ await edit(page);await selectRange(page,0,5);
+ await size.fill('48');await size.press('Tab');
+ await expect(size).toHaveValue('48');
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+ await expect(size).toHaveValue('');
+ await expect(size).toHaveAttribute('placeholder','Mixed');
+ await edit(page);await selectRange(page,6,10);
+ await expect(size).toHaveValue('36');
+ await selectRange(page,0,5);
+ await expect(size).toHaveValue('48');
+ await page.keyboard.press('Control+a');
+ await expect(size).toHaveValue('');
+ await expect(size).toHaveAttribute('placeholder','Mixed');
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+});

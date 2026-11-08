@@ -1,0 +1,522 @@
+{
+  "date": "2026-11-08",
+  "base": "366223aee2c76dde64f55df39199bbdcedbf1228",
+  "font": "tests/fixtures/fonts/DejaVuSerif.ttf",
+  "fontSize": 64,
+  "viewportScale": 1,
+  "threshold": {
+    "above16": "maximum absolute RGB channel difference > 16; no image translation or resampling"
+  },
+  "reports": {
+    "chromium-spike": {
+      "css": {
+        "browserName": "chromium",
+        "version": "154.0.8037.57",
+        "results": [
+          {
+            "text": "AV",
+            "strokeWidth": 0,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 1428,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "AV",
+            "strokeWidth": 1,
+            "changed": 453,
+            "above16": 15,
+            "max": 75,
+            "ink": 1682,
+            "meanMaxChannelOnInk": 1.1010701545778834
+          },
+          {
+            "text": "AV",
+            "strokeWidth": 4,
+            "changed": 344,
+            "above16": 101,
+            "max": 207,
+            "ink": 2437,
+            "meanMaxChannelOnInk": 2.8096019696347967
+          },
+          {
+            "text": "AV",
+            "strokeWidth": 12,
+            "changed": 484,
+            "above16": 296,
+            "max": 223,
+            "ink": 4468,
+            "meanMaxChannelOnInk": 7.271709937332139
+          },
+          {
+            "text": "fi",
+            "strokeWidth": 0,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 787,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "fi",
+            "strokeWidth": 1,
+            "changed": 37,
+            "above16": 6,
+            "max": 21,
+            "ink": 979,
+            "meanMaxChannelOnInk": 0.28907048008171604
+          },
+          {
+            "text": "fi",
+            "strokeWidth": 4,
+            "changed": 92,
+            "above16": 66,
+            "max": 147,
+            "ink": 1413,
+            "meanMaxChannelOnInk": 2.668082094833687
+          },
+          {
+            "text": "fi",
+            "strokeWidth": 12,
+            "changed": 148,
+            "above16": 130,
+            "max": 223,
+            "ink": 2552,
+            "meanMaxChannelOnInk": 5.6230407523510975
+          },
+          {
+            "text": "Обводка",
+            "strokeWidth": 0,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 4699,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "Обводка",
+            "strokeWidth": 1,
+            "changed": 212,
+            "above16": 44,
+            "max": 94,
+            "ink": 5557,
+            "meanMaxChannelOnInk": 0.3609861436026633
+          },
+          {
+            "text": "Обводка",
+            "strokeWidth": 4,
+            "changed": 312,
+            "above16": 190,
+            "max": 207,
+            "ink": 7969,
+            "meanMaxChannelOnInk": 1.5916677123854939
+          },
+          {
+            "text": "Обводка",
+            "strokeWidth": 12,
+            "changed": 366,
+            "above16": 225,
+            "max": 223,
+            "ink": 13167,
+            "meanMaxChannelOnInk": 1.8983063719905826
+          },
+          {
+            "text": "AV fi 😀",
+            "strokeWidth": 0,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 5879,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "AV fi 😀",
+            "strokeWidth": 1,
+            "changed": 486,
+            "above16": 24,
+            "max": 75,
+            "ink": 6271,
+            "meanMaxChannelOnInk": 0.3431669590177005
+          },
+          {
+            "text": "AV fi 😀",
+            "strokeWidth": 4,
+            "changed": 434,
+            "above16": 166,
+            "max": 207,
+            "ink": 7510,
+            "meanMaxChannelOnInk": 1.411051930758988
+          },
+          {
+            "text": "AV fi 😀",
+            "strokeWidth": 12,
+            "changed": 643,
+            "above16": 436,
+            "max": 223,
+            "ink": 10681,
+            "meanMaxChannelOnInk": 4.382361202134631
+          }
+        ]
+      },
+      "shaping": {
+        "browserName": "chromium",
+        "version": "154.0.8037.57",
+        "results": [
+          {
+            "text": "AV",
+            "advance": 89.25,
+            "separateAdvance": 92.4375,
+            "split": {
+              "changed": 733,
+              "above16": 691,
+              "max": 238,
+              "ink": 1695,
+              "meanMaxChannelOnInk": 75.11032448377581
+            },
+            "corrected": {
+              "changed": 0,
+              "above16": 0,
+              "max": 0,
+              "ink": 1428,
+              "meanMaxChannelOnInk": 0
+            }
+          },
+          {
+            "text": "fi",
+            "advance": 42.6875,
+            "separateAdvance": 44.15625,
+            "split": {
+              "changed": 331,
+              "above16": 314,
+              "max": 238,
+              "ink": 903,
+              "meanMaxChannelOnInk": 48.792912513842744
+            },
+            "corrected": {
+              "changed": 214,
+              "above16": 133,
+              "max": 238,
+              "ink": 837,
+              "meanMaxChannelOnInk": 19.768219832735962
+            }
+          }
+        ]
+      },
+      "clip": {
+        "browserName": "chromium",
+        "version": "154.0.8037.57",
+        "text": "AV",
+        "selected": "A",
+        "strokeWidth": 12,
+        "results": [
+          {
+            "padding": 0,
+            "edge": 78.21875,
+            "changed": 286,
+            "above16": 278,
+            "max": 223,
+            "ink": 3031,
+            "meanMaxChannelOnInk": 16.803035301880566
+          },
+          {
+            "padding": 6,
+            "edge": 78.21875,
+            "changed": 413,
+            "above16": 405,
+            "max": 223,
+            "ink": 3167,
+            "meanMaxChannelOnInk": 23.296810862014524
+          },
+          {
+            "padding": 12,
+            "edge": 78.21875,
+            "changed": 713,
+            "above16": 704,
+            "max": 223,
+            "ink": 3325,
+            "meanMaxChannelOnInk": 39.73142857142857
+          }
+        ]
+      },
+      "overlay": {
+        "browserName": "chromium",
+        "version": "154.0.8037.57",
+        "text": "AV fi Жук 😀",
+        "selection": {
+          "anchor": 5,
+          "focus": 3
+        },
+        "parity": {
+          "changed": 0,
+          "above16": 0,
+          "max": 0,
+          "ink": 9688,
+          "meanMaxChannelOnInk": 0
+        },
+        "png": {
+          "changed": 0,
+          "above16": 0,
+          "max": 0,
+          "ink": 9688,
+          "meanMaxChannelOnInk": 0
+        }
+      }
+    },
+    "firefox-spike": {
+      "css": {
+        "browserName": "firefox",
+        "version": "157.0",
+        "results": [
+          {
+            "text": "AV",
+            "strokeWidth": 0,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 1429,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "AV",
+            "strokeWidth": 1,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 1681,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "AV",
+            "strokeWidth": 4,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 2409,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "AV",
+            "strokeWidth": 12,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 4313,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "fi",
+            "strokeWidth": 0,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 791,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "fi",
+            "strokeWidth": 1,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 979,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "fi",
+            "strokeWidth": 4,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 1397,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "fi",
+            "strokeWidth": 12,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 2487,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "Обводка",
+            "strokeWidth": 0,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 4795,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "Обводка",
+            "strokeWidth": 1,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 5554,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "Обводка",
+            "strokeWidth": 4,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 7929,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "Обводка",
+            "strokeWidth": 12,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 13073,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "AV fi 😀",
+            "strokeWidth": 0,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 5882,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "AV fi 😀",
+            "strokeWidth": 1,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 6269,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "AV fi 😀",
+            "strokeWidth": 4,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 7465,
+            "meanMaxChannelOnInk": 0
+          },
+          {
+            "text": "AV fi 😀",
+            "strokeWidth": 12,
+            "changed": 0,
+            "above16": 0,
+            "max": 0,
+            "ink": 10450,
+            "meanMaxChannelOnInk": 0
+          }
+        ]
+      },
+      "shaping": {
+        "browserName": "firefox",
+        "version": "157.0",
+        "results": [
+          {
+            "text": "AV",
+            "advance": 89.25,
+            "separateAdvance": 92.43333435058594,
+            "split": {
+              "changed": 733,
+              "above16": 690,
+              "max": 238,
+              "ink": 1696,
+              "meanMaxChannelOnInk": 75.2747641509434
+            },
+            "corrected": {
+              "changed": 0,
+              "above16": 0,
+              "max": 0,
+              "ink": 1429,
+              "meanMaxChannelOnInk": 0
+            }
+          },
+          {
+            "text": "fi",
+            "advance": 42.68333435058594,
+            "separateAdvance": 44.14999961853027,
+            "split": {
+              "changed": 342,
+              "above16": 306,
+              "max": 238,
+              "ink": 911,
+              "meanMaxChannelOnInk": 48.065861690450056
+            },
+            "corrected": {
+              "changed": 227,
+              "above16": 129,
+              "max": 238,
+              "ink": 845,
+              "meanMaxChannelOnInk": 19.6698224852071
+            }
+          }
+        ]
+      },
+      "clip": {
+        "browserName": "firefox",
+        "version": "157.0",
+        "text": "AV",
+        "selected": "A",
+        "strokeWidth": 12,
+        "results": [
+          {
+            "padding": 0,
+            "edge": 78.21666717529297,
+            "changed": 286,
+            "above16": 278,
+            "max": 223,
+            "ink": 3032,
+            "meanMaxChannelOnInk": 16.735158311345646
+          },
+          {
+            "padding": 6,
+            "edge": 78.21666717529297,
+            "changed": 413,
+            "above16": 405,
+            "max": 223,
+            "ink": 3168,
+            "meanMaxChannelOnInk": 23.1802398989899
+          },
+          {
+            "padding": 12,
+            "edge": 78.21666717529297,
+            "changed": 713,
+            "above16": 704,
+            "max": 223,
+            "ink": 3326,
+            "meanMaxChannelOnInk": 39.56734816596512
+          }
+        ]
+      },
+      "overlay": {
+        "browserName": "firefox",
+        "version": "157.0",
+        "text": "AV fi Жук 😀",
+        "selection": {
+          "anchor": 5,
+          "focus": 3
+        },
+        "parity": {
+          "changed": 0,
+          "above16": 0,
+          "max": 0,
+          "ink": 9710,
+          "meanMaxChannelOnInk": 0
+        },
+        "png": {
+          "changed": 0,
+          "above16": 0,
+          "max": 0,
+          "ink": 9710,
+          "meanMaxChannelOnInk": 0
+        }
+      }
+    }
+  }
+}

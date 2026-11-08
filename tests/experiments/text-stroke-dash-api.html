@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>strokeText / stroke dash reproducer</title>
+<style>body{font:16px system-ui;background:#eee}canvas{display:block;background:white;border:1px solid #aaa;margin:8px 0}label{margin-right:16px}pre{white-space:pre-wrap}</style>
+<p>Independent Canvas API probe. Each canvas uses identical coordinates, text, font, width and color. No editor code or network requests.</p>
+<label>Font family <input id="family" value="Arial"></label>
+<label>Text <input id="text" value="AV fi TEST"></label>
+<button id="draw">Draw / compare</button>
+<div id="canvases"></div><pre id="metrics"></pre>
+<script>
+function draw(){
+ const styles=['solid','dashed','dotted'],buffers={},output=document.querySelector('#canvases');output.replaceChildren();
+ for(const kind of ['text','path'])for(const style of styles){
+  const label=document.createElement('div');label.textContent=kind+' — '+style;output.append(label);
+  const canvas=document.createElement('canvas');canvas.width=560;canvas.height=120;output.append(canvas);
+  const c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,560,120);c.font='72px "'+document.querySelector('#family').value+'"';c.lineWidth=5;c.strokeStyle='#2266dd';c.lineJoin='round';c.miterLimit=2;
+  c.setLineDash(style==='dashed'?[16,8]:style==='dotted'?[1,8]:[]);c.lineCap=style==='dotted'?'round':'butt';
+  if(kind==='text')c.strokeText(document.querySelector('#text').value,20,85);else{c.beginPath();c.rect(25,25,480,65);c.stroke();}
+  buffers[kind+'-'+style]=c.getImageData(0,0,560,120).data;
+ }
+ const comparisons={};
+ for(const kind of ['text','path'])for(const [a,b]of[['solid','dashed'],['solid','dotted'],['dashed','dotted']]){
+  const aa=buffers[kind+'-'+a],bb=buffers[kind+'-'+b];let changed=0,above2=0,max=0;
+  for(let i=0;i<aa.length;i+=4){const d=Math.max(...[0,1,2,3].map(k=>Math.abs(aa[i+k]-bb[i+k])));if(d)changed++;if(d>2)above2++;max=Math.max(max,d);}
+  comparisons[kind+':'+a+'/'+b]={changed,above2,max};
+ }
+ document.querySelector('#metrics').textContent=JSON.stringify({userAgent:navigator.userAgent,comparisons},null,2);
+}
+document.querySelector('#draw').onclick=draw;draw();
+</script>

@@ -578,3 +578,59 @@ test('range stroke style native solid dashed dotted neighbors preserve contextua
  });
  const oracle=diff(await livePixels(page),expected);await testInfo.attach('style-neighbors-oracle.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);await parity(page,testInfo,'style-neighbors');
 });
+
+// Require large, high-contrast changes and actual white holes, rather than
+// accepting a few antialiasing pixels or equality with the same Canvas backend.
+function strokeSemanticMetrics(images,roi){
+ const inside=(x,y)=>x>=roi.left&&x<roi.right&&y>=roi.top&&y<roi.bottom;
+ const ink=(data,i)=>data[i]<128&&data[i+1]<180&&data[i+2]>150&&data[i+2]-data[i]>60;
+ const white=(data,i)=>data[i]>245&&data[i+1]>245&&data[i+2]>245;
+ const result={pairs:{},solidInk:0,gaps:{dashed:0,dotted:0},components:{}};
+ for(let y=0;y<240;y++)for(let x=0;x<320;x++)if(inside(x,y)){
+  const i=(y*320+x)*4;if(ink(images.solid,i)){result.solidInk++;for(const style of ['dashed','dotted'])if(white(images[style],i))result.gaps[style]++;}
+ }
+ for(const [a,b]of[['solid','dashed'],['solid','dotted'],['dashed','dotted']]){
+  let selectedAbove32=0,neighborAbove2=0;
+  for(let y=0;y<240;y++)for(let x=0;x<320;x++){
+   const i=(y*320+x)*4,d=Math.max(...[0,1,2,3].map(k=>Math.abs(images[a][i+k]-images[b][i+k])));
+   if(inside(x,y)){if(d>32)selectedAbove32++;}else if(d>2)neighborAbove2++;
+  }
+  result.pairs[a+'/'+b]={selectedAbove32,neighborAbove2};
+ }
+ for(const style of ['solid','dashed','dotted']){
+  const visited=new Uint8Array(320*240);let components=0;
+  for(let y=0;y<240;y++)for(let x=0;x<320;x++){
+   const start=y*320+x;if(!inside(x,y)||visited[start]||!ink(images[style],start*4))continue;
+   const queue=[start];visited[start]=1;let area=0;
+   while(queue.length){const n=queue.pop(),nx=n%320,ny=Math.floor(n/320);area++;for(const [dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const xx=nx+dx,yy=ny+dy,j=yy*320+xx;if(inside(xx,yy)&&!visited[j]&&ink(images[style],j*4)){visited[j]=1;queue.push(j);}}}
+   if(area>=3)components++;
+  }
+  result.components[style]=components;
+ }
+ return result;
+}
+for(const family of ['Stroke Serif','Arial'])test('stroke style semantic gaps and isolated neighbors via native select '+family,async({page},testInfo)=>{
+ await page.addInitScript(()=>{window.__strokeCalls=[];const native=CanvasRenderingContext2D.prototype.strokeText;CanvasRenderingContext2D.prototype.strokeText=function(text,...args){window.__strokeCalls.push({text,args,dash:this.getLineDash(),lineCap:this.lineCap,lineJoin:this.lineJoin,alpha:this.globalAlpha,width:this.lineWidth,color:this.strokeStyle,font:this.font});return native.call(this,text,...args)};});
+ await seed(page,{text:'AV fi TEST',fontFamily:family,fontSize:72,strokeWidth:5,stroke:'#2266dd',strokeOpacity:100,fillOpacity:0,strokeStyle:'solid',w:280,h:190});await edit(page);await select(page,0,2);
+ const roi=await page.evaluate(family=>{const c=document.createElement('canvas').getContext('2d');c.font='72px "'+family+'"';const m=c.measureText('AV');return{left:13,right:Math.ceil(20+m.width+7),top:33,bottom:134};},family);
+ const captures={},images={live:{},canvas:{},png:{}};
+ for(const style of ['solid','dashed','dotted']){
+  // Native pointer/focus/keyboard events exercise the actual select lifecycle.
+  await strokeStyleSelect(page).click();await strokeStyleSelect(page).press('Home');for(let i=0;i<['solid','dashed','dotted'].indexOf(style);i++)await strokeStyleSelect(page).press('ArrowDown');await strokeStyleSelect(page).press('Enter');
+  images.live[style]=await livePixels(page);captures[style]={model:await model(page),calls:await page.evaluate(()=>window.__strokeCalls.slice(-35))};
+  await testInfo.attach('semantic-'+style+'-interface.png',{body:await page.screenshot(),contentType:'image/png'});
+  images.png[style]=(await parity(page,testInfo,'semantic-'+style)).data;
+  images.canvas[style]=await page.locator('#canvas').evaluate(c=>[...c.getContext('2d').getImageData(0,0,c.width,c.height).data]);
+  if(style!=='dotted'){await edit(page);await select(page,0,2);}
+ }
+ const metrics=Object.fromEntries(Object.entries(images).map(([view,styles])=>[view,strokeSemanticMetrics(styles,roi)]));
+ await testInfo.attach('semantic-diagnosis.json',{body:JSON.stringify({roi,metrics,captures}),contentType:'application/json'});console.log('SEMANTIC',testInfo.project.name,family,JSON.stringify(metrics));
+ for(const view of Object.values(metrics)){
+  // 64 pixels and 5% of solid core ink are deliberately far above a handful
+  // of rasterizer edge differences. Gaps must turn opaque blue core into white.
+  const threshold=Math.max(64,Math.ceil(view.solidInk*.05));
+  for(const pair of Object.values(view.pairs)){expect(pair.selectedAbove32).toBeGreaterThan(threshold);expect(pair.neighborAbove2).toBe(0);}
+  expect(view.gaps.dashed).toBeGreaterThan(threshold);expect(view.gaps.dotted).toBeGreaterThan(threshold);
+  expect(view.components.dotted).toBeGreaterThan(view.components.solid+4);
+ }
+});

@@ -40,10 +40,88 @@ async function geometry(page){return page.locator(host).evaluate(el=>{
   const marker=document.createElement('span');marker.style.cssText='display:inline-block;width:0;height:0;vertical-align:baseline';p.prepend(marker);
   const b=p.getBoundingClientRect(),baseline=(marker.getBoundingClientRect().bottom-box.top)/scale;marker.remove();
   const range=document.createRange();range.setStart(p.firstChild,0);range.setEnd(p.firstChild,p.firstChild.length-(p.firstChild.data.endsWith('\n')?1:0));
-  return {text:p.textContent.replace(/\n$/,''),x:(b.left-box.left)/scale,y:baseline,width:range.getBoundingClientRect().width/scale,font:[getComputedStyle(p).fontStyle,getComputedStyle(p).fontWeight,getComputedStyle(p).fontSize,getComputedStyle(p).fontFamily].join(' '),color:getComputedStyle(p).color,spacing:getComputedStyle(p).letterSpacing};
+  const font=[getComputedStyle(p).fontStyle,getComputedStyle(p).fontWeight,getComputedStyle(p).fontSize,getComputedStyle(p).fontFamily].join(' '),ctx=document.createElement('canvas').getContext('2d');ctx.font=font;
+  const m=ctx.measureText(p.textContent.replace(/\n$/,'')||'Mg');
+  return {text:p.textContent.replace(/\n$/,''),x:(b.left-box.left)/scale,y:baseline,width:range.getBoundingClientRect().width/scale,font,color:getComputedStyle(p).color,spacing:getComputedStyle(p).letterSpacing,ascent:m.fontBoundingBoxAscent,descent:m.fontBoundingBoxDescent};
  })}));
  })}
 const horizontal=rows=>rows.map(r=>r.parts.map(p=>({text:p.text,x:p.x,width:p.width})));
+const baselines=rows=>rows.map(r=>r.parts[0].y);
+const gaps=rows=>baselines(rows).slice(1).map((b,i)=>b-baselines(rows)[i]);
+const ascent=row=>Math.max(...row.parts.map(p=>p.ascent));
+const descent=row=>Math.max(...row.parts.map(p=>p.descent));
+function safeBounds(rows){
+ for(let i=0;i<rows.length;i++){
+  const row=rows[i],b=row.parts[0].y;
+  for(const part of row.parts)expect(Math.abs(part.y-b),'one baseline per row').toBeLessThan(.12);
+  expect(b-ascent(row)).toBeGreaterThanOrEqual(row.y-.12);
+  expect(b+descent(row)).toBeLessThanOrEqual(row.y+row.height+.12);
+  if(i)expect(b-ascent(row),'adjacent glyph bounds').toBeGreaterThanOrEqual(rows[i-1].parts[0].y+descent(rows[i-1])-.12);
+ }
+}
+
+for(const [name,content,width,index] of [
+ ['A/B/C middle','A\nB\nC',740,1],
+ ['A/B/C end','A\nB\nC',740,2],
+ ['first row','A\nB\nC',740,0],
+ ['empty LF','A\n\nC\nD',740,1],
+ ['soft-wrap middle','АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ',85,1],
+ ['soft-wrap end','АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ',85,-1],
+])test(`one-sided baseline interval: ${name}`,async({page},info)=>{
+ await setup(page,{text:content,w:width});
+ const before=await geometry(page),rowIndex=index<0?before.length-1:index;
+ if(name.startsWith('soft'))expect(before.length).toBeGreaterThanOrEqual(4);
+ const start=before.slice(0,rowIndex).reduce((n,r)=>n+r.parts.reduce((v,p)=>v+p.text.length,0)+(content.includes('\n')?1:0),0);
+ // A single character (or the blank row's LF) determines the whole row's gap.
+ await select(page,start,start+1);await set(page,2.2);await checkRange(page,start,start+1);
+ const after=await geometry(page),delta=28;
+ expect(horizontal(after)).toEqual(horizontal(before));safeBounds(after);
+ for(let i=0;i<before.length;i++){
+  const shift=rowIndex===0?delta/2:i>=rowIndex?delta:0;
+  expect(Math.abs(baselines(after)[i]-baselines(before)[i]-shift),`baseline ${i}`).toBeLessThan(.12);
+ }
+ for(let i=0;i<before.length-1;i++)expect(Math.abs(gaps(after)[i]-gaps(before)[i]-(rowIndex>0&&i===rowIndex-1?delta:0)),`gap ${i} → ${i+1}`).toBeLessThan(.12);
+ const report={name,before:baselines(before),after:baselines(after),gapsBefore:gaps(before),gapsAfter:gaps(after)};
+ await info.attach('baseline-intervals.json',{body:JSON.stringify(report,null,2),contentType:'application/json'});
+ await info.attach('baseline-preview.png',{body:await page.locator(host).screenshot(),contentType:'image/png'});
+ await close(page);const canvas=await page.evaluate(()=>window.leadingGlyphs),parts=after.flatMap(r=>r.parts).filter(p=>p.text);
+ expect(canvas.map(p=>p.text)).toEqual(parts.map(p=>p.text));
+ for(let i=0;i<parts.length;i++)expect(Math.abs(canvas[i].y-parts[i].y)).toBeLessThan(.12);
+ if(name==='A/B/C middle'){
+  await page.evaluate(()=>{window.captureLeading=true;window.leadingExport=[]});
+  const png=await exportPNG(page,800,1000);
+  expect((await page.evaluate(()=>window.leadingExport)).slice(-canvas.length)).toEqual(canvas);
+  await info.attach('one-sided-export.png',{body:png.bytes,contentType:'image/png'});
+ }
+});
+
+test('auto-fit scales the font while middle-row leading still owns only the preceding interval',async({page})=>{
+ // Imported auto-fit layers retain their saved size until the next edit.
+ // Start with a size that fits the uniform block and must shrink for B's gap.
+ await setup(page,{text:'A\nB\nC',fontSize:260,autoFontSize:true});
+ const before=await model(page);await select(page,2,3);await set(page,2.2);await checkRange(page,2,3);
+ const fitted=await model(page),rows=await geometry(page);safeBounds(rows);
+ expect(fitted.fontSize).toBeLessThan(before.fontSize);
+ expect(fitted.textRuns).toEqual([{start:2,end:3,style:{lineHeight:2.2}}]);
+ expect(Math.abs(gaps(rows)[0]-fitted.fontSize*2.2)).toBeLessThan(.12);
+ expect(Math.abs(gaps(rows)[1]-fitted.fontSize*1.2)).toBeLessThan(.12);
+ expect(rows.reduce((sum,r)=>sum+r.height,0)).toBeLessThanOrEqual(fitted.h-1);
+});
+
+test('mixed real font metrics keep glyphs safe and middle leading out of the following gap',async({page})=>{
+ await setup(page,{text:'Ag\nBg\nCg\nDg',fontSize:28,lineHeight:1.2,textRuns:[
+  {start:0,end:2,style:{fontSize:56,fontFamily:'Georgia',lineHeight:.5}},
+  {start:3,end:4,style:{fontSize:42,fontFamily:'Arial',lineHeight:.5}},
+  {start:4,end:5,style:{fontFamily:'Georgia',underline:true,strikethrough:true}},
+ ]});
+ const before=await geometry(page);safeBounds(before);
+ await select(page,4,5);await set(page,4);await checkRange(page,4,5);
+ const after=await geometry(page);safeBounds(after);expect(horizontal(after)).toEqual(horizontal(before));
+ const shift=112-gaps(before)[0];expect(shift).toBeGreaterThan(0);
+ expect(Math.abs(baselines(after)[0]-baselines(before)[0])).toBeLessThan(.12);
+ for(let i=1;i<before.length;i++)expect(Math.abs(baselines(after)[i]-baselines(before)[i]-shift)).toBeLessThan(.12);
+ for(let i=1;i<before.length-1;i++)expect(Math.abs(gaps(after)[i]-gaps(before)[i])).toBeLessThan(.12);
+});
 
 for(const autoFontSize of [false,true])test(`range lineHeight input, Mixed arrows, backward Selection, history and persistence; auto-fit ${autoFontSize}`,async({page})=>{
  test.setTimeout(60000);
@@ -59,7 +137,9 @@ for(const autoFontSize of [false,true])test(`range lineHeight input, Mixed arrow
   const fitted=await model(page),widths=await page.evaluate(({e,rows})=>{const ctx=document.createElement('canvas').getContext('2d');ctx.font=`${e.fontSize}px Arial`;ctx.fontKerning='normal';ctx.letterSpacing='0px';return rows.map(r=>ctx.measureText(r.parts.map(p=>p.text).join('')).width)},{e:fitted,rows:after});
   for(let i=0;i<after.length;i++)expect(Math.abs(after[i].parts.reduce((sum,p)=>sum+p.width,0)-widths[i])).toBeLessThan(.12);
   expect(after.reduce((sum,r)=>sum+r.height,0)).toBeLessThanOrEqual(fitted.h-1);
-  expect(after[0].height).toBeCloseTo(fitted.fontSize*2.2,5);
+  // First-row half-leading at the top; its other half belongs to the block end.
+  const h=Math.max(fitted.fontSize*2.2,ascent(after[0])+descent(after[0]));
+  expect(after[0].height).toBeCloseTo((h+ascent(after[0])+descent(after[0]))/2,5);
  }
  await select(page,7,10);await expect(field(page)).toHaveValue('2.2');await select(page,11,17);await expect(field(page)).toHaveValue('1.2');await select(page,17,7);await mixed(page);
  const step=direction=>field(page).locator('xpath=..').locator(`[data-num-direction=${direction}]`);
@@ -89,14 +169,16 @@ test('mixed sizes, leading, LF/empty rows: measured DOM baseline and x agree wit
  ]});
  const initial=await model(page),before=await geometry(page);
  await select(page,7,10);await set(page,3);await checkRange(page,7,10);
- const one=await geometry(page);expect(horizontal(one)).toEqual(horizontal(before));expect(one[0].height).toBe(84);expect(one[1].y-before[1].y).toBeGreaterThan(30);
+ const one=await geometry(page);expect(horizontal(one)).toEqual(horizontal(before));
+ expect(one[0].height).toBeCloseTo((84+ascent(one[0])+descent(one[0]))/2,5);
+ for(let i=0;i<before.length-1;i++)expect(Math.abs(gaps(one)[i]-gaps(before)[i]),'first-row leading adds no inter-row gap').toBeLessThan(.12);
  const lf=text.indexOf('\n');await select(page,lf+2,lf-15);await set(page,1.9);await checkRange(page,lf+2,lf-15);
  await select(page,text.length-1,text.length);await set(page,2.5);await checkRange(page,text.length-1,text.length);
  const current=await model(page);expect(current.textRuns.find(r=>r.start===0).style).toEqual(initial.textRuns[0].style);
  // Caret keyboard navigation must follow the new row layout through hard/soft wraps.
  await select(page,7);await page.keyboard.press('ArrowDown');expect((await selection(page))[0]).toBeGreaterThan(7);
  await select(page,text.length);await page.keyboard.press('ArrowUp');expect((await selection(page))[0]).toBeLessThan(text.length);
- await select(page,text.length);const dom=await geometry(page);expect(dom.at(-1).height).toBe(70);expect(dom.at(-2).height).toBeCloseTo(28*1.2,6);
+ await select(page,text.length);const dom=await geometry(page);expect(gaps(dom).at(-1)).toBeCloseTo(70,1);safeBounds(dom);
  const decorations=await page.locator(host).evaluate(el=>[...el.querySelectorAll('[data-wysiwyg-row]')].flatMap(row=>{
   const split=s=>s.split(/,(?![^()]*\))/).map(s=>s.trim());if(!row.style.backgroundImage)return [];
   const positions=split(row.style.backgroundPosition),sizes=split(row.style.backgroundSize);

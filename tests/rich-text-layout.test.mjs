@@ -134,15 +134,16 @@ test('range leading survives glyph/token coalescing without changing kerning, wr
  const engine=createRichTextLayoutEngine(context),base={text:'AVATAR AVATAR AVATAR',fontSize:20,lineHeight:1.2,w:100,h:400};
  const a=engine.layout(base),b=engine.layout({...base,textRuns:[{start:1,end:3,style:{lineHeight:3}}]});
  assert.deepEqual(b.rows.map(r=>[r.start,r.end,r.width,r.fragments.map(p=>[p.text,p.x,p.width])]),a.rows.map(r=>[r.start,r.end,r.width,r.fragments.map(p=>[p.text,p.x,p.width])]));
- assert.equal(b.rows[0].height,60);assert.equal(b.rows[0].baseline,36);
- assert.equal(b.rows[1].height,24);assert.equal(b.rows[1].y-a.rows[1].y,36);
+ assert.equal(b.rows[0].height,40);assert.equal(b.rows[0].baseline,36);
+ assert.equal(b.rows[1].height,24);assert.equal(b.rows[1].y-a.rows[1].y,18);
+ assert.equal(b.rows[1].baseline-b.rows[0].baseline,24,'first-row leading adds no inter-row gap');
  assert.equal(b.rows[0].fragments.length,1,'lineHeight cannot split glyph painting');
  // Oversized tokens use per-grapheme heights rather than the whole token max.
  const c=engine.layout({...base,w:30,text:'AVATAR',textRuns:[{start:0,end:1,style:{lineHeight:3}}]});
- assert.deepEqual(c.rows.map(r=>r.height),[60,24,24]);
+ assert.deepEqual(c.rows.map(r=>r.height),[40,24,44]);
 });
 
-test('mixed size/leading uses each source requirement plus max ascent/descent, one centered baseline',()=>{
+test('mixed size/leading uses each source requirement plus max ascent/descent, first baseline centered',()=>{
  const context={measureText(text){const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);return {width:text.length*size/2,fontBoundingBoxAscent:size*.8,fontBoundingBoxDescent:size*.2}}};
  const engine=createRichTextLayoutEngine(context);
  const e={text:'ABCD',fontSize:20,lineHeight:1,w:400,h:400,textRuns:[{start:1,end:2,style:{fontSize:40,lineHeight:1}},{start:2,end:3,style:{lineHeight:4}}]};
@@ -154,12 +155,12 @@ test('mixed size/leading uses each source requirement plus max ascent/descent, o
 test('empty rows use LF leading with legacy font metrics, including terminal LF',()=>{
  const context={measureText(text){return {width:text.length*10,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
  const engine=createRichTextLayoutEngine(context),base={text:'A\n\n',fontSize:20,lineHeight:1.2,w:100,h:400};
- assert.deepEqual(engine.layout(base).rows.map(r=>r.height),[24,24,24]);
+ assert.deepEqual(engine.layout(base).rows.map(r=>r.height),[22,24,26]);
  const legacyMixed={...base,textRuns:[{start:2,end:3,style:{fontSize:40,fontFamily:'serif'}}]};
- assert.deepEqual(engine.layout(legacyMixed).rows.map(r=>r.height),[24,24,24],'existing empty-row font metrics stay unchanged');
- assert.deepEqual(engine.layout({...legacyMixed,textRuns:[{start:2,end:3,style:{fontSize:40,lineHeight:3}}]}).rows.map(r=>r.height),[24,60,60]);
+ assert.deepEqual(engine.layout(legacyMixed).rows.map(r=>r.height),[22,24,26],'existing empty-row font metrics stay unchanged');
+ assert.deepEqual(engine.layout({...legacyMixed,textRuns:[{start:2,end:3,style:{fontSize:40,lineHeight:3}}]}).rows.map(r=>r.height),[22,60,62]);
  const rows=engine.layout({...base,textRuns:[{start:2,end:3,style:{lineHeight:3}}]}).rows;
- assert.deepEqual(rows.map(r=>r.height),[24,60,60]);assert.deepEqual(rows.map(r=>r.baseline),[18,60,120]);
+ assert.deepEqual(rows.map(r=>r.height),[22,60,62]);assert.deepEqual(rows.map(r=>r.baseline),[18,78,138]);
  for(const value of [0,-1,NaN,Infinity,'bad'])assert.ok(Number.isFinite(engine.layout({...base,lineHeight:value,textRuns:[{start:0,end:1,style:{lineHeight:value}}]}).height));
 });
 
@@ -170,4 +171,75 @@ test('leading boundaries do not split continuous U/S rectangles or introduce fra
  assert.equal(a.decorations.length,2);assert.equal(b.decorations.length,2);
  const relative=row=>row.decorations.map(({y,...r})=>({...r,y:y-row.baseline}));
  assert.deepEqual(relative(b),relative(a));
+});
+
+const leadingContext={measureText(text){return {width:text.length*10,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
+test('A/B/C: middle leading shifts B and C equally, end leading shifts only C',()=>{
+ const engine=createRichTextLayoutEngine(leadingContext),e={text:'A\nB\nC',fontSize:20,lineHeight:1.2,w:100,h:200};
+ const a=engine.layout(e),b=engine.layout({...e,textRuns:[{start:2,end:3,style:{lineHeight:2.2}}]});
+ assert.deepEqual(a.rows.map(r=>r.baseline),[18,42,66]);
+ assert.deepEqual(b.rows.map(r=>r.baseline),[18,62,86]);
+ assert.equal(b.rows[2].baseline-b.rows[1].baseline,24);
+ assert.equal(b.height-a.height,20);
+ assert.deepEqual(engine.layout({...e,textRuns:[{start:4,end:5,style:{lineHeight:2.2}}]}).rows.map(r=>r.baseline),[18,42,86]);
+});
+
+test('first-row half-leading is block padding: no extra gap after it; uniform rhythm stays unchanged',()=>{
+ const engine=createRichTextLayoutEngine(leadingContext),e={text:'A\nB\nC',fontSize:20,lineHeight:1.2,w:100,h:200};
+ const first=engine.layout({...e,textRuns:[{start:0,end:1,style:{lineHeight:2.2}}]});
+ assert.deepEqual(first.rows.map(r=>r.baseline),[28,52,76]);assert.equal(first.height,92);
+ for(const lineHeight of [1,1.2,2.2,3]){
+  const h=20*lineHeight,padding=(h-20)/2,layout=engine.layout({...e,lineHeight});
+  assert.deepEqual(layout.rows.map(r=>r.baseline),[16+padding,16+padding+h,16+padding+2*h]);
+  assert.equal(layout.height,3*h);
+  assert.equal(engine.layout({...e,text:'A',lineHeight}).height,h);
+ }
+});
+
+test('soft-wrap middle/end fragment and empty LF own the preceding interval, retaining source offsets',()=>{
+ const engine=createRichTextLayoutEngine(leadingContext);
+ for(const e of [{text:'ABCDEFGH',w:20},{text:'A\n\nC\nD',w:100},{text:'A\r\n\r\nC\r\nD',w:100}]){
+  const source={...e,fontSize:20,lineHeight:1.2,h:300},before=engine.layout(source);
+  assert.equal(before.rows.length,4);
+  for(const index of [1,2,3]){
+   const row=before.rows[index],start=row.start,end=start+1;
+   const after=engine.layout({...source,textRuns:[{start,end,style:{lineHeight:2.2}}]});
+   assert.deepEqual(after.rows.map(r=>r.baseline),before.rows.map((r,i)=>r.baseline+(i>=index?20:0)));
+   assert.deepEqual(after.rows.map(r=>[r.start,r.end,r.nextStart,r.softWrap,r.width]),before.rows.map(r=>[r.start,r.end,r.nextStart,r.softWrap,r.width]));
+  }
+ }
+ // LF on a nonempty row cannot change its leading; the blank terminal row inherits it.
+ const e={text:'A\n',w:100,h:200,fontSize:20,lineHeight:1.2};
+ assert.deepEqual(engine.layout({...e,textRuns:[{start:1,end:2,style:{lineHeight:3}}]}).rows.map(r=>r.baseline),[18,78]);
+});
+
+test('mixed families/sizes reserve previous descent plus current ascent, never previous leading',()=>{
+ const context={measureText(text){
+  const size=parseFloat(this.font.match(/([\d.]+)px/)[1]),deep=this.font.includes('Deep'),tall=this.font.includes('Tall');
+  return {width:text.length*size/2,fontBoundingBoxAscent:size*(deep ? .7 : tall ? .95 : .8),fontBoundingBoxDescent:size*(deep ? .5 : tall ? .1 : .2)};
+ }};
+ const engine=createRichTextLayoutEngine(context),e={text:'A\nBC\nD\nE',fontSize:20,lineHeight:1.2,w:200,h:400,textRuns:[
+  {start:0,end:1,style:{fontSize:40,fontFamily:'Deep',lineHeight:.5}},
+  {start:2,end:3,style:{fontSize:30,fontFamily:'Tall',lineHeight:.5}},
+ ]};
+ const layout=engine.layout(e);assert.deepEqual(layout.rows.map(r=>r.baseline),[28,76.5,100.5,124.5]);
+ for(let i=0;i<layout.rows.length;i++){
+  const row=layout.rows[i],parts=row.fragments.map(p=>{context.font=richTextFont(p.style);return context.measureText(p.text)});
+  const top=row.baseline-Math.max(...parts.map(m=>m.fontBoundingBoxAscent)),bottom=row.baseline+Math.max(...parts.map(m=>m.fontBoundingBoxDescent));
+  assert.ok(top>=row.y);assert.ok(bottom<=row.y+row.height);
+  if(i)assert.ok(top>=layout.rows[i-1].y+layout.rows[i-1].height,'adjacent font bounds do not intersect');
+  assert.ok(row.fragments.every(p=>p.y===row.baseline));
+ }
+ const changed=engine.layout({...e,textRuns:[...e.textRuns,{start:3,end:4,style:{lineHeight:4}}]});
+ assert.deepEqual(changed.rows.map(r=>r.baseline),[28,108,132,156]);
+});
+
+test('vertical alignment uses the same block height without changing baseline intervals',()=>{
+ const engine=createRichTextLayoutEngine(leadingContext),e={text:'A\nB\nC',fontSize:20,lineHeight:1.2,w:100,h:200,textRuns:[{start:2,end:3,style:{lineHeight:2.2}}]};
+ const top=engine.layout(e);assert.equal(top.height,92);
+ for(const [verticalAlign,offset] of [['middle',54],['bottom',108]]){
+  const aligned=engine.layout({...e,verticalAlign});assert.equal(aligned.height,92);
+  assert.deepEqual(aligned.rows.map(r=>r.baseline),top.rows.map(r=>r.baseline+offset));
+  assert.deepEqual(aligned.rows.map(r=>r.y),top.rows.map(r=>r.y+offset));
+ }
 });

@@ -131,6 +131,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       else decorationSpans.push({...cluster, id});
     }
     const rows = []; let fragments = [], rowWidth = 0, rowStart = 0, emptyStyle = base;
+    let previousDescent = 0, edgeLeading = 0;
     // Decoration and leading boundaries never split glyph painting (including ligatures).
     const styleKey = ({ underline, strikethrough, lineHeight, ...paint }) => JSON.stringify(paint);
     // Paint colors must not alter shaping or move subsequent glyphs. A color
@@ -166,6 +167,14 @@ export function createRichTextLayoutEngine(context, fontSet) {
       // Leading belongs to source fragments, independently of glyph coalescing.
       // Max font metrics keep one baseline safe for mixed families and sizes.
       const rowHeight = Math.max(...samples.map(requiredHeight), ascent + descent);
+      const previous = rows.at(-1);
+      // The first row keeps half-leading at the top and at the BLOCK's end.
+      // Every later row owns the entire baseline interval BEFORE itself.
+      // A large preceding descent must also clear the current ascent; leading
+      // from the preceding row must never increase this interval.
+      if (!previous) edgeLeading = (rowHeight - ascent - descent) / 2;
+      const y = previous ? previous.y + previous.height : 0;
+      const baseline = previous ? previous.baseline + Math.max(rowHeight, previousDescent + ascent) : ascent + edgeLeading;
       // Layout ignores obsolete textLayoutMode; no old-baseline branch remains.
       // Source intervals are UTF-16, independent of rendered geometry. Hard
       // breaks are excluded from end and owned by [end, nextStart). A trailing
@@ -173,7 +182,9 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const end = breakCluster?.start ?? (final ? text.length : fragments.at(-1)?.end ?? rowStart);
       const nextStart = breakCluster?.end ?? end;
       rows.push({ start: rowStart, end, nextStart, softWrap: !breakCluster && !final,
-        fragments, emptyStyle: fragments.length ? undefined : {...blankStyle, underline:false, strikethrough:false}, width: rowWidth, height: rowHeight, baseline: ascent + (rowHeight - ascent - descent) / 2 });
+        fragments, emptyStyle: fragments.length ? undefined : {...blankStyle, underline:false, strikethrough:false}, width: rowWidth,
+        y, height: baseline + descent - y, baseline });
+      previousDescent = descent;
       if (breakCluster) emptyStyle = breakCluster.style;
       rowStart = nextStart;
       fragments = []; rowWidth = 0;
@@ -206,12 +217,15 @@ export function createRichTextLayoutEngine(context, fontSet) {
       i = end;
     }
     finish(undefined, true);
+    // Contiguous row boxes end at their glyph bounds, except for the terminal
+    // block padding. Uniform typography retains its old baselines/block height.
+    rows.at(-1).height += edgeLeading;
     const blockHeight = rows.reduce((sum, row) => sum + row.height, 0);
-    let y = e.verticalAlign === 'middle' ? Math.max(0, (height - blockHeight) / 2) :
+    const y = e.verticalAlign === 'middle' ? Math.max(0, (height - blockHeight) / 2) :
       e.verticalAlign === 'bottom' ? Math.max(0, height - blockHeight) : 0;
     for (const row of rows) {
       let x = e.textAlign === 'center' ? (width - row.width) / 2 : e.textAlign === 'right' ? width - row.width : 0;
-      row.y = y; row.baseline += y;
+      row.y += y; row.baseline += y;
       let previousGeometry = null, previousShapeWidth = 0;
       row.fragments = row.fragments.map(({ text, style, start, end, geometry, shapeWidth }) => {
         const advance = geometry === previousGeometry ? shapeWidth - previousShapeWidth : shapeWidth;
@@ -231,7 +245,6 @@ export function createRichTextLayoutEngine(context, fontSet) {
         row.decorations.push(...textDecorationRects({x:part.x + left, y:part.y, width:right-left}, span.style)
           .map(rect => ({...rect, start, end})));
       }
-      y += row.height;
     }
     return boundedSet(layouts, key, { rows, width: Math.max(...rows.map(r => r.width)), height: blockHeight }, 128);
   }

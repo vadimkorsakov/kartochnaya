@@ -510,3 +510,71 @@ for(const textMode of ['vertical','path'])test(`stroke opacity keeps legacy ${te
  await input.press('Control+Home');await input.press('Shift+ArrowRight');await strokeAlpha(page,40);
  const e=await model(page);expect(e.strokeOpacity).toBe(40);expect(e.textRuns).toEqual(textRuns);
 });
+
+const strokeStyleSelect=page=>page.locator('#inspector [data-key="strokeStyle"]');
+test('range stroke style three words, Mixed, backward selection, history, caret and reload',async({page},testInfo)=>{
+ const doc=await seed(page,{text:'SOLID DASH DOT',strokeWidth:4,stroke:'#2266dd',strokeOpacity:75,fillOpacity:50,strokeStyle:'solid'});await edit(page);
+ await select(page,10,6);await expect(strokeStyleSelect(page)).toHaveValue('solid');
+ const initial=await model(page);await strokeStyleSelect(page).focus();expect(await model(page)).toEqual(initial);
+ await strokeStyleSelect(page).selectOption('dashed');await page.locator(surface).focus();expect(await selection(page)).toEqual({anchor:10,focus:6});
+ await select(page,11,14);await strokeStyleSelect(page).selectOption('dotted');
+ const three=await model(page);expect(three.textRuns).toEqual([{start:6,end:10,style:{strokeStyle:'dashed'}},{start:11,end:14,style:{strokeStyle:'dotted'}}]);
+ expect(three.strokeWidth).toBe(4);expect(three.strokeOpacity).toBe(75);expect(three.fillOpacity).toBe(50);expect(three.stroke).toBe('#2266dd');
+ await select(page,14,0);await expect(strokeStyleSelect(page)).toHaveValue('');await expect(strokeStyleSelect(page).locator('option:checked')).toHaveText('Mixed');await expect(strokeStyleSelect(page).locator('option:checked')).toHaveAttribute('disabled','');
+ await strokeStyleSelect(page).selectOption('solid');await page.locator(surface).focus();expect(await selection(page)).toEqual({anchor:14,focus:0});
+ expect((await model(page)).textRuns).toEqual([{start:0,end:14,style:{strokeStyle:'solid'}}]);
+ await page.keyboard.press('Control+z');expect(await model(page)).toEqual(three);await page.keyboard.press('Control+Shift+z');expect((await model(page)).textRuns).toEqual([{start:0,end:14,style:{strokeStyle:'solid'}}]);await page.keyboard.press('Control+z');
+ await select(page,2,2);const before=await model(page);await strokeStyleSelect(page).selectOption('dashed');await expect(page.locator('#toast')).toContainText('Выделите фрагмент текста для изменения вида обводки');expect(await model(page)).toEqual(before);await expect(strokeStyleSelect(page)).toHaveValue('solid');
+ await parity(page,testInfo,'style-three');
+ await expect.poll(async()=>layer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(three);
+ expect(layer((await exportedPayload(page)).document)).toEqual(three);await page.reload();await openLibraryDocument(page,doc.id);await actualSize(page);await edit(page);expect(await model(page)).toEqual(three);await parity(page,testInfo,'style-reloaded');
+});
+
+for(const [pair,partial,strokeWidth,strokeOpacity,fillOpacity] of [['fi',true,3,75,50],['fi',false,3,75,50],['AV',true,3,75,50],['fi',true,0,75,50],['AV',true,1,100,0],['fi',true,7,0,50]])test(`range stroke style native ${pair} partial ${partial} width ${strokeWidth} alpha ${strokeOpacity} fill ${fillOpacity}`,async({page},testInfo)=>{
+ await seed(page,{text:pair+' AV',fontSize:48,fillOpacity,strokeWidth,stroke:'#2266dd',strokeOpacity,strokeStyle:'solid'});await edit(page);await select(page,0,partial?1:2);await strokeStyleSelect(page).selectOption('dotted');
+ const expected=await page.evaluate(({pair,partial,strokeWidth,strokeOpacity,fillOpacity})=>{
+  const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;const c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,320,240);c.font='normal 400 48px "Stroke Serif"';c.fontKerning='normal';c.letterSpacing='0px';
+  const m=c.measureText('Mg'),baseline=40+m.fontBoundingBoxAscent+(Math.max(48*1.2,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;
+  const text=pair+' AV',first=partial?pair[0]:pair,rest=partial?pair[1]+' AV':' AV',x=20+c.measureText(text).width-c.measureText(rest).width;
+  c.fillStyle='#111111';c.globalAlpha=fillOpacity/100;if(strokeWidth){c.fillText(first,20,baseline);c.fillText(rest,x,baseline);}else c.fillText(text,20,baseline);
+  if(strokeWidth){c.lineWidth=strokeWidth;c.strokeStyle='#2266dd';c.lineJoin='round';c.miterLimit=2;c.globalAlpha=strokeOpacity/100;c.setLineDash([Math.max(1,strokeWidth*.12),Math.max(2,strokeWidth*2)]);c.lineCap='round';c.strokeText(first,20,baseline);c.setLineDash([]);c.lineCap='butt';c.strokeText(rest,x,baseline);}
+  return [...c.getImageData(0,0,320,240).data];
+ },{pair,partial,strokeWidth,strokeOpacity,fillOpacity});
+ const oracle=diff(await livePixels(page),expected);await testInfo.attach('style-native-oracle.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);await parity(page,testInfo,'style-native');
+});
+
+for(const autoFontSize of [false,true])test(`range stroke style LF, wrap, mixed sizes, decorations, tracking and auto-fit ${autoFontSize}`,async({page},testInfo)=>{
+ const text='AV fi Жук 😀 мягкий перенос\nСледующая строка';
+ await seed(page,{text,strokeWidth:3,fontSize:28,w:180,h:160,autoFontSize,textRuns:[{start:0,end:2,style:{fontWeight:'700',underline:true,strokeWidth:1,strokeOpacity:40}},{start:3,end:5,style:{fontFamily:'Stroke Sans',fontSize:36,lineHeight:1.5,fillOpacity:0}},{start:6,end:9,style:{fontSize:22,letterSpacing:1.5,strikethrough:true,stroke:'#dd2244'}}]});
+ await edit(page);const before=await model(page),rows=await page.locator(surface+' [data-wysiwyg-row]').count();
+ await select(page,0,14);await strokeStyleSelect(page).selectOption('dashed');const after=await model(page);expect(after.fontSize).toBe(before.fontSize);expect(after.autoFontSize).toBe(autoFontSize);expect(await page.locator(surface+' [data-wysiwyg-row]').count()).toBe(rows);
+ const visible=await visibleInk(page,140);await parity(page,testInfo,'style-mixed-auto-'+autoFontSize);
+ const display=diff(visible.data,(await visibleInk(page,140)).data);await testInfo.attach('style-US-screen.json',{body:JSON.stringify(display),contentType:'application/json'});expect(display.max).toBeLessThanOrEqual(2);
+});
+test('range stroke style layer and multiple-layer edits preserve explicit solid override',async({page})=>{
+ const textRuns=[{start:0,end:1,style:{strokeStyle:'solid'}}];await seed(page,{text:'fi AV',strokeWidth:3,strokeStyle:'solid',textRuns},true);
+ await page.locator('#layers [data-layer="title"] .layer-name').click();await strokeStyleSelect(page).selectOption('dashed');expect((await model(page)).strokeStyle).toBe('dashed');expect((await model(page)).textRuns).toEqual(textRuns);
+ await page.locator('#layers [data-layer="second"] .layer-name').click({modifiers:['Control']});await strokeStyleSelect(page).selectOption('dotted');
+ for(const e of (await exportedDocument(page)).elements){expect(e.strokeStyle).toBe('dotted');expect(e.textRuns).toEqual(textRuns);}
+});
+for(const textMode of ['vertical','path'])test(`range stroke style legacy ${textMode} textarea changes layer-wide`,async({page})=>{
+ const textRuns=[{start:0,end:1,style:{strokeStyle:'solid'}}];await seed(page,{text:'fi AV',strokeWidth:3,strokeStyle:'solid',textMode,textRuns});
+ await page.locator('#layers [data-layer="title"] .layer-name').click();const point=await canvasPoint(page,55,57);await page.mouse.dblclick(point.x,point.y);const input=page.locator('#inlineText');await expect(input).toBeFocused();await expect(page.locator(surface)).toBeHidden();
+ await input.press('Control+Home');await input.press('Shift+ArrowRight');await strokeStyleSelect(page).selectOption('dotted');
+ const e=await model(page);expect(e.strokeStyle).toBe('dotted');expect(e.textRuns).toEqual(textRuns);
+});
+
+test('range stroke style native solid dashed dotted neighbors preserve contextual advances',async({page},testInfo)=>{
+ await seed(page,{text:'AV fi AV',fontSize:48,fillOpacity:40,strokeWidth:4,stroke:'#2266dd',strokeOpacity:75,strokeStyle:'solid'});await edit(page);
+ await select(page,3,5);await strokeStyleSelect(page).selectOption('dashed');await select(page,6,8);await strokeStyleSelect(page).selectOption('dotted');
+ const expected=await page.evaluate(()=>{
+  const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;const c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,320,240);c.font='normal 400 48px "Stroke Serif"';c.fontKerning='normal';c.letterSpacing='0px';
+  const m=c.measureText('Mg'),baseline=40+m.fontBoundingBoxAscent+(Math.max(48*1.2,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;
+  const text='AV fi AV',parts=['AV ','fi',' ','AV'],positions=parts.map((_,i)=>20+c.measureText(text).width-c.measureText(parts.slice(i).join('')).width);
+  c.fillStyle='#111111';c.globalAlpha=.4;parts.forEach((p,i)=>c.fillText(p,positions[i],baseline));
+  c.lineWidth=4;c.strokeStyle='#2266dd';c.lineJoin='round';c.miterLimit=2;c.globalAlpha=.75;
+  parts.forEach((p,i)=>{c.setLineDash(i===1?[16,8]:i===3?[1,8]:[]);c.lineCap=i===3?'round':'butt';c.strokeText(p,positions[i],baseline);});
+  return [...c.getImageData(0,0,320,240).data];
+ });
+ const oracle=diff(await livePixels(page),expected);await testInfo.attach('style-neighbors-oracle.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);await parity(page,testInfo,'style-neighbors');
+});

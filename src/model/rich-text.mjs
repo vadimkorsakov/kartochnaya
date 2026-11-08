@@ -31,6 +31,7 @@ function styleData(value, base = {}) {
     if (['fontFamily', 'fontStyle', 'textColor', 'fontWeight'].includes(k) && typeof v !== 'string') continue;
     if (['fontSize', 'lineHeight'].includes(k) && !(typeof v === 'number' && v > 0)) continue;
     if (['fillOpacity', 'strokeOpacity'].includes(k) && !(typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100)) continue;
+    if (k === 'strokeStyle' && !['solid', 'dashed', 'dotted'].includes(v)) continue;
     if (k === 'strokeWidth' && !(typeof v === 'number' && Number.isFinite(v) && v >= 0)) continue;
     if (k === 'stroke' && !(typeof v === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v))) continue;
     if (['bold', 'italic', 'underline', 'strikethrough'].includes(k) && typeof v !== 'boolean') continue;
@@ -44,7 +45,7 @@ function styleData(value, base = {}) {
     const alias = k === 'fontWeight' ? 'bold' : k === 'fontStyle' ? 'italic' : null;
     // Explicit paint overrides survive later layer edits, even when they
     // currently equal the inherited value (including opacity 0 and 100).
-    if (k === 'strokeWidth' || k === 'stroke' || k === 'fillOpacity' || k === 'strokeOpacity') out[k] = k === 'stroke' ?
+    if (k === 'strokeWidth' || k === 'stroke' || k === 'fillOpacity' || k === 'strokeOpacity' || k === 'strokeStyle') out[k] = k === 'stroke' ?
       (v.length === 4 ? '#'+v.slice(1).split('').map(c=>c+c).join('') : v).toLowerCase() : v;
     else if (!equal(v, inherited) || alias && typeof value[alias] === 'boolean') out[k] = v;
   }
@@ -123,7 +124,8 @@ export function effectiveTextStyles(element, start = 0, end = element.text.lengt
   const runs = normalizeRuns(element.text, element.textRuns, element);
   const points = [...new Set([start, end, ...runs.flatMap(r => [r.start, r.end]).filter(i => i > start && i < end)])].sort((a, b) => a - b);
   const base = styleData(Object.fromEntries(Object.entries(element).filter(([k]) =>
-    ['fontFamily','fontWeight','fontStyle','fontVariant','fontSize','lineHeight','textColor','fillOpacity','strokeOpacity','strokeWidth','stroke','bold','italic','underline','underlineDetails','strikethrough','strikethroughDetails','mobileUnderline','mobileStrike','letterSpacing','baselineShift','fontFeatures','fontVariationSettings'].includes(k) || runs.some(r => Object.hasOwn(r.style,k)))));
+    ['fontFamily','fontWeight','fontStyle','fontVariant','fontSize','lineHeight','textColor','fillOpacity','strokeOpacity','strokeStyle','strokeWidth','stroke','bold','italic','underline','underlineDetails','strikethrough','strikethroughDetails','mobileUnderline','mobileStrike','letterSpacing','baselineShift','fontFeatures','fontVariationSettings'].includes(k) || runs.some(r => Object.hasOwn(r.style,k)))));
+  base.strokeStyle ??= 'solid';
   return points.slice(0, -1).map((a, i) => ({ start: a, end: points[i + 1], style: { ...base, ...runs.find(r => r.start <= a && r.end > a)?.style } }));
 }
 export function effectiveTextStyleAt(element, index) {

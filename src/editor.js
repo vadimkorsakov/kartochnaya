@@ -264,10 +264,19 @@ function inspectorStrokeColor(e){
  }
  return values.every(v=>v===values[0])?values[0]:null;
 }
+function inspectorStrokeStyleValue(e){
+ const caret=app.wysiwyg&&app.inlineCaret;
+ const values=caret?richTextSpans(e).filter(s=>caret.end>caret.start?s.start<caret.end&&s.end>caret.start:s.start<=caret.start&&s.end>caret.start).map(s=>s.style.strokeStyle):[e.strokeStyle??'solid'];
+ return values.length&&values.every(v=>v===values[0])?values[0]:values.length?null:e.strokeStyle??'solid';
+}
+function inspectorStrokeStyleOptions(e){
+ const value=inspectorStrokeStyleValue(e);
+ return (value===null?'<option value="" disabled selected>Mixed</option>':'')+[['solid','Сплошная'],['dashed','Пунктирная'],['dotted','Точечная']].map(([key,label])=>`<option value="${key}" ${key===value?'selected':''}>${label}</option>`).join('');
+}
 function textStrokeControls(e){
  const width=inspectorNumericTextStyle(e,'strokeWidth',0),color=inspectorStrokeColor(e);
  const row=fillRow('Цвет обводки','stroke',color||'#000000');
- return `${color===null?row.replace('>#000000<','>Mixed<'):row}<div class="cols2"><label>Толщина, px<input data-key="strokeWidth" type="number" min="0" max="500" step="1" value="${width===null?'':fmt(width)}"${width===null?' placeholder="Mixed"':''}></label>${selectField('Вид слоя','strokeStyle',e.strokeStyle||'solid',[['solid','Сплошная'],['dashed','Пунктирная'],['dotted','Точечная']])}</div>`;
+ return `${color===null?row.replace('>#000000<','>Mixed<'):row}<div class="cols2"><label>Толщина, px<input data-key="strokeWidth" type="number" min="0" max="500" step="1" value="${width===null?'':fmt(width)}"${width===null?' placeholder="Mixed"':''}></label><label>Вид обводки<select data-key="strokeStyle">${inspectorStrokeStyleOptions(e)}</select></label></div>`;
 }
 function inspectorNumericTextStyle(e,key,fallback){
  if(!e||e.type!=='text')return e?.[key]??fallback;
@@ -343,7 +352,7 @@ function syncInspectorFontFamily(){
  }
  const strokeRow=$('#inspector [data-fill-open="stroke"]');
  if(strokeRow){const color=inspectorStrokeColor(e);strokeRow.querySelector('.fill-value').textContent=color?color.toUpperCase():'Mixed';strokeRow.querySelector('.fill-preview').style.background=color||'repeating-linear-gradient(45deg,#888 0 4px,#ddd 4px 8px)';}
- const strokeStyle=$('#inspector [data-key="strokeStyle"]');if(strokeStyle){strokeStyle.disabled=!!app.wysiwyg;strokeStyle.title=app.wysiwyg?'Вид обводки слоя меняется вне редактирования текста':'';}
+ const strokeStyle=$('#inspector [data-key="strokeStyle"]');if(strokeStyle&&strokeStyle!==inspectorEditingControl){const value=inspectorStrokeStyleValue(e);if(strokeStyle.value!==(value??'')||!!strokeStyle.querySelector('option[value=""]')!==(value===null))strokeStyle.innerHTML=inspectorStrokeStyleOptions(e);}
  const family=inspectorFontFamily(e);
  label.textContent=family??'Mixed';
  label.style.fontFamily=family?JSON.stringify(family):'inherit';
@@ -917,7 +926,7 @@ function relocateMobileHistory(){
 function showInspector(mode='settings'){if(matchMedia('(max-width:760px)').matches&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(matchMedia('(max-width:760px)').matches){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
 function hideInspector(){cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
 function changeProperty(key,val,final=false){if(styleInlineSelection(key,val,final)||styleInlineLayer(key,val,final))return;if(app.wysiwyg&&!fallbackInlineWysiwyg('Форматирование'))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity','strokeWidth','stroke','strokeStyle','strokeOpacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='strokeWidth')n=Math.max(0,n);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(e.type==='text'&&['strokeWidth','stroke'].includes(key))restoreTextRuns(e,applyTextStyle(e,0,e.text.length,{[key]:null}).textRuns);if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(['strokeWidth','stroke'].includes(key))restoreTextRuns(other,applyTextStyle(other,0,other.text.length,{[key]:null}).textRuns);if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
-function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;if(['fontSize','letterSpacing','lineHeight','strokeWidth'].includes(t.dataset.key)&&String(t.value).trim()==='')return;const editedValue=t.value;inspectorEditingControl=t;try{changeProperty(t.dataset.key,editedValue,final)}finally{inspectorEditingControl=null}if(final&&['lineHeight','strokeWidth'].includes(t.dataset.key))syncInspectorFontFamily();if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
+function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;if(['fontSize','letterSpacing','lineHeight','strokeWidth'].includes(t.dataset.key)&&String(t.value).trim()==='')return;const editedValue=t.value;inspectorEditingControl=t;try{changeProperty(t.dataset.key,editedValue,final)}finally{inspectorEditingControl=null}if(final&&['lineHeight','strokeWidth','strokeStyle'].includes(t.dataset.key))syncInspectorFontFamily();if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
 $('#inspector').addEventListener('change',e=>{if(e.target.dataset.clipCheckbox){const elem=app.doc.elements.find(x=>x.id===e.target.dataset.clipCheckbox);if(elem){elem.clipped=!e.target.checked;toggleClip(elem.id)}refreshInspector()}});
 $('#inspector').addEventListener('change',ev=>{if(ev.target.matches('[data-text-auto-font]'))setTextAutoFont(ev.target.checked)});
 $('#inspector').addEventListener('input',e=>handleInspectorChange(e,false));$('#inspector').addEventListener('change',e=>handleInspectorChange(e,true));$('#inspector').addEventListener('click',e=>{const b=e.target.closest('[data-align]');if(b){alignPicked(b.dataset.align);return}const sw=e.target.closest('[data-fill-open]');if(sw){openFillPopover(sw.dataset.fillOpen,sw);return}});
@@ -1158,7 +1167,7 @@ function mixedTextLayout(e){
 // Eligibility describes supported paint semantics, never a guessed CSS wrap.
 function supportsWysiwygProjection(e){
  if(e.mobileGlow||e.mobileBackground)return false;
- const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','lineHeight','bold','italic','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity']);
+ const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','lineHeight','bold','italic','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle']);
  if((e.textRuns||[]).some(run=>Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
  try{return richTextEngine.layout(e).rows.every(row=>Number.isFinite(row.baseline)&&row.height>0&&Number.isFinite(row.width));}
  catch{return false;}
@@ -2362,12 +2371,13 @@ function styleInlineLayer(key,value,final){
  return app.wysiwyg.applyLayerStyle(patch,{key,final});
 }
 function styleInlineSelection(key,value,final){
- // Legacy textarea and specialized modes keep their layer-wide stroke alpha.
- if(key==='strokeOpacity'&&!app.wysiwyg)return false;
- if(app.wysiwyg&&['strokeWidth','stroke','fillOpacity','strokeOpacity'].includes(key)&&!inlineStyleRange()){toast(key==='fillOpacity'?'Выделите фрагмент текста для непрозрачности заливки':'Выделите фрагмент текста для обводки');return true;}
- if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity'].includes(key))return false;
+ // Legacy textarea and specialized modes keep layer-wide stroke alpha/style.
+ if(['strokeOpacity','strokeStyle'].includes(key)&&!app.wysiwyg)return false;
+ if(app.wysiwyg&&['strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key)&&!inlineStyleRange()){toast(key==='strokeStyle'?'Выделите фрагмент текста для изменения вида обводки':key==='fillOpacity'?'Выделите фрагмент текста для непрозрачности заливки':'Выделите фрагмент текста для обводки');return true;}
+ if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key))return false;
  const c=inlineStyleRange(),e=active();if(!c||e?.id!==app.editingId)return false;
  if(key==='lineHeight'&&!supportsHorizontalTextLayout(e))return false;
+ if(key==='strokeStyle'&&!['solid','dashed','dotted'].includes(value))return true;
  let patch={[key]:value};
  const session=app.inlineSession;
  if(!session.pendingStyle||session.pendingStyle.key!==key)session.pendingStyle={key,fontSize:e.fontSize,baseFontSize:e.textRunsBaseFontSize||e.fontSize};
@@ -2394,7 +2404,7 @@ function styleInlineSelection(key,value,final){
  // A manual size uses the fitted scale, then opts out of fitting just like
  // the layer size field. Other fragments keep both their units and scale.
  if(key==='fontSize'){e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}
- retainRichTextSizeBase(e);if(!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity'].includes(key))autoFitTextFont(e);positionInlineText();restoreInlineCaret(false);
+ retainRichTextSizeBase(e);if(!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key))autoFitTextFont(e);positionInlineText();restoreInlineCaret(false);
  if(final){recordInlineSession();session.pendingStyle=null}updateHistoryButtons();paint();return true;
 }
 // Ownership lasts through the native mouse/focus/click sequence, including

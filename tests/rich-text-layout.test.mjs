@@ -11,7 +11,7 @@ test('explicit keys win within a scope, run aliases override the base, missing k
  assert.equal(resolveRichTextStyle(base,{italic:false,fontStyle:'italic'}).fontStyle,'italic');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontWeight,'500');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontStyle,'oblique');
- assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,fillOpacity:100,strokeOpacity:100,textColor:'red',letterSpacing:2,lineHeight:1.15,underline:false,strikethrough:false,strokeWidth:0,stroke:'#000000'});
+ assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,fillOpacity:100,strokeOpacity:100,strokeStyle:'solid',textColor:'red',letterSpacing:2,lineHeight:1.15,underline:false,strikethrough:false,strokeWidth:0,stroke:'#000000'});
 });
 test('render projection repairs UTF-16 ranges without mutating source or unknown properties',()=>{
  const e={...base,textRuns:[{start:2,end:3,style:{fontSize:40,underline:true,baselineShift:'super',fontFeatures:{liga:0}}}]};
@@ -257,5 +257,21 @@ test('stroke opacity is paint-only, preserves contextual shaping and does not sp
  }
  const av=engine.layout({...base,textRuns:[{start:0,end:1,style:{strokeOpacity:0}}]});assert.equal(av.rows[0].fragments[1].x,8);
  const plain=engine.layout({...base,strokeWidth:0}),invisible=engine.layout({...base,strokeWidth:0,textRuns:[{start:3,end:4,style:{strokeOpacity:0}}]});
+ assert.deepEqual(invisible.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])),plain.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])));
+});
+
+test('stroke style is paint-only, preserves contextual shaping and does not split un-stroked ligatures',()=>{
+ const context={measureText(text){return {width:[...text].length*10-(text.includes('AV')?2:0)-(text.includes('fi')?1:0),fontBoundingBoxAscent:16,fontBoundingBoxDescent:4};}};
+ const engine=createRichTextLayoutEngine(context);
+ const base={text:'AV fi 😀\nAV fi wrapped',w:72,h:200,fontSize:20,lineHeight:1.2,strokeWidth:3,underline:true,strikethrough:true};
+ const geometry=x=>x.rows.map(({start,end,nextStart,width,y,height,baseline})=>({start,end,nextStart,width,y,height,baseline}));
+ for(const [start,end] of [[0,1],[3,4],[3,5],[1,6]]){
+  const before=engine.layout(base),after=engine.layout({...base,textRuns:[{start,end,style:{strokeStyle:'dashed'}}]});
+  assert.deepEqual(geometry(after),geometry(before));
+  assert.ok(after.rows.flatMap(r=>r.fragments).some(p=>p.style.strokeStyle==='dashed'));
+  assert.ok(after.rows.flatMap(r=>r.decorations).every(r=>r.fillOpacity===100));
+ }
+ const av=engine.layout({...base,textRuns:[{start:0,end:1,style:{strokeStyle:'dotted'}}]});assert.equal(av.rows[0].fragments[1].x,8);
+ const plain=engine.layout({...base,strokeWidth:0}),invisible=engine.layout({...base,strokeWidth:0,textRuns:[{start:3,end:4,style:{strokeStyle:'dotted'}}]});
  assert.deepEqual(invisible.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])),plain.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])));
 });

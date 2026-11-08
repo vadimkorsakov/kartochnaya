@@ -41,7 +41,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  let savedSelection=null, preview=null, verticalX=null;
  const abort=new AbortController(), listen=(name,fn)=>host.addEventListener(name,fn,{signal:abort.signal});
  const overlay=document.createElement('canvas');overlay.dataset.textStrokeOverlay='';overlay.setAttribute('aria-hidden','true');
- Object.assign(overlay.style,{position:'absolute',pointerEvents:'none',transformOrigin:'0 0',zIndex:'8',display:'none'});
+ Object.assign(overlay.style,{position:'absolute',pointerEvents:'none',transformOrigin:'0 0',zIndex:'7',display:'none'});
  host.after(overlay);
  let density=1,overlayKey=null;
  function releaseOverlay(){overlay.remove();overlay.width=overlay.height=1;host.classList.remove('wysiwyg-canvas-ink');}

@@ -1,6 +1,6 @@
 {
   "base": "366223aee2c76dde64f55df39199bbdcedbf1228",
-  "architecture": "shared fill/stroke painter; overlay matches main Canvas raster and CSS box",
+  "architecture": "shared fill/stroke painter; overlay matches main Canvas raster and CSS box; native editable/caret above the overlay",
   "deviceScaleFactor": 2,
   "layer": {
     "x": 20.25,
@@ -59,7 +59,7 @@
               "width": 640,
               "height": 480
             },
-            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 320px; height: 240px;"
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 320px; height: 240px;"
           }
         },
         {
@@ -99,7 +99,7 @@
               "width": 960,
               "height": 720
             },
-            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 480px; height: 360px;"
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 480px; height: 360px;"
           }
         },
         {
@@ -139,7 +139,7 @@
               "width": 320,
               "height": 240
             },
-            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 160px; height: 120px;"
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 160px; height: 120px;"
           }
         }
       ]
@@ -185,7 +185,7 @@
               "width": 640,
               "height": 480
             },
-            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 320px; height: 240px;"
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 320px; height: 240px;"
           }
         },
         {
@@ -225,7 +225,7 @@
               "width": 960,
               "height": 720
             },
-            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 480px; height: 360px;"
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 480px; height: 360px;"
           }
         },
         {
@@ -265,10 +265,46 @@
               "width": 320,
               "height": 240
             },
-            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 160px; height: 120px;"
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 160px; height: 120px;"
           }
         }
       ]
+    }
+  ],
+  "nativeCaret": [
+    {
+      "project": "stroke-chromium",
+      "status": "passed",
+      "browserName": "chromium",
+      "caret": {
+        "x": 932,
+        "y": 661.296875,
+        "width": 0,
+        "height": 56,
+        "top": 661.296875,
+        "right": 932,
+        "bottom": 717.296875,
+        "left": 932
+      },
+      "greenRows": 56,
+      "rasterVerified": true
+    },
+    {
+      "project": "stroke-firefox",
+      "status": "passed",
+      "browserName": "firefox",
+      "caret": {
+        "x": 932,
+        "y": 661.7999877929688,
+        "width": 0,
+        "height": 57,
+        "top": 661.7999877929688,
+        "right": 932,
+        "bottom": 718.7999877929688,
+        "left": 932
+      },
+      "greenRows": null,
+      "rasterVerified": false
     }
   ]
 }

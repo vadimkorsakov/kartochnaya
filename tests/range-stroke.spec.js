@@ -203,6 +203,34 @@ test('stroke overlay preserves the existing unconfirmed-DOM recovery guard',asyn
  await page.locator(surface).focus();await page.keyboard.press('Control+Enter');await expect(page.locator(overlay)).toHaveCount(0);
 });
 
+test('outlined text keeps native caret and remains editable through a thick contour',async({page,browserName},testInfo)=>{
+ await seed(page,{text:'MMMM',fontSize:48,fontWeight:'700',strokeWidth:16,stroke:'#2266dd'});await edit(page);await select(page,0,0);
+ const caret=await page.locator(surface).evaluate(el=>{
+  el.style.setProperty('caret-color','#00ff00','important');const r=document.createRange(),node=el.querySelector('[data-wysiwyg-fragment]').firstChild;
+  r.setStart(node,0);r.collapse(true);return r.getBoundingClientRect().toJSON();
+ });
+ let greenRows=null,lastShot=null;
+ if(browserName==='chromium'){
+  greenRows=0;
+  for(let attempt=0;attempt<10;attempt++){
+   lastShot=await page.screenshot({caret:'initial',clip:{x:Math.floor(caret.x)-3,y:Math.floor(caret.y)-2,width:8,height:Math.ceil(caret.height)+4}});
+   const image=PNG.sync.read(lastShot),rows=new Set();
+   for(let y=0;y<image.height;y++)for(let x=0;x<image.width;x++){const i=(y*image.width+x)*4;if(image.data[i+1]>image.data[i]+80&&image.data[i+1]>image.data[i+2]+50)rows.add(y);}
+   greenRows=Math.max(greenRows,rows.size);if(greenRows>=Math.floor(caret.height)-2)break;await page.waitForTimeout(120);
+  }
+  expect(greenRows).toBeGreaterThanOrEqual(Math.floor(caret.height)-2);
+  await testInfo.attach('native-caret.png',{body:lastShot,contentType:'image/png'});
+ }
+ // The existing Arial caret diagnostics establish that Playwright Firefox
+ // screenshots omit the native caret even on unmodified contenteditable.
+ // Verify its real Selection and editing contract without fabricating pixels.
+ expect(caret.height).toBeGreaterThan(40);expect(await selection(page)).toEqual({anchor:0,focus:0});
+ await page.keyboard.press('ArrowRight');await page.keyboard.type('X');expect((await model(page)).text).toBe('MXMMM');
+ await page.keyboard.press('Control+z');expect((await model(page)).text).toBe('MMMM');
+ await testInfo.attach('native-caret.json',{body:JSON.stringify({browserName,caret,greenRows,rasterVerified:browserName==='chromium'}),contentType:'application/json'});
+ await page.keyboard.press('Control+Enter');
+});
+
 test.describe('retina projection',()=>{
  test.use({deviceScaleFactor:2});
  test('overlay follows zoom, fractional origin, DPR, scroll and viewport resizing',async({page},testInfo)=>{

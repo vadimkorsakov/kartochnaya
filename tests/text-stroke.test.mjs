@@ -59,3 +59,11 @@ test('stroke padding includes measured italic overhang without affecting layout 
  assert.equal(layout.inkOverflow,18);assert.ok(textStrokePadding(layout)>=22);
  assert.deepEqual(layout.rows.map(r=>[r.width,r.baseline]),engine.layout({...e,strokeWidth:0}).rows.map(r=>[r.width,r.baseline]));
 });
+test('a new stroke must not reposition an existing color fragment elsewhere in the shaping group',()=>{
+ const context={measureText(text){return {width:[...text].length*10-(text.includes('AV')?2:0),fontBoundingBoxAscent:16,fontBoundingBoxDescent:4};}};
+ const engine=createRichTextLayoutEngine(context),e=applyTextStyle({text:'AV fi',w:200,h:100,fontSize:20},1,2,{textColor:'#2266dd'});
+ const before=engine.layout(e),after=engine.layout(applyTextStyle(e,3,4,{strokeWidth:2,stroke:'#dd2244'}));
+ assert.equal(before.rows[0].fragments.find(p=>p.text==='V').x,10);
+ assert.equal(after.rows[0].fragments.find(p=>p.text==='V').x,10);
+ assert.equal(after.width,before.width);assert.equal(after.rows[0].baseline,before.rows[0].baseline);
+});

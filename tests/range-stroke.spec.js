@@ -185,6 +185,14 @@ test('multiple text layers retain Mixed controls and whole-layer stroke updates'
  const doc=await exportedDocument(page);for(const e of doc.elements){expect(e.strokeWidth).toBe(3);expect(e.stroke).toBe('#2266dd');expect(e.textRuns).toBeUndefined();}
 });
 
+test('formatting fi preserves the existing colored AV fragment pixel for pixel',async({page},testInfo)=>{
+ await seed(page,{text:'AV fi',fontSize:48,textRuns:[{start:1,end:2,style:{textColor:'#2266dd'}}]});
+ const original=(await exportPNG(page)).image;await edit(page);await select(page,3,4);await field(page,'strokeWidth',2);await color(page,'#dd2244');
+ const painted=await parity(page,testInfo,'unaffected-colored-V');
+ let changed=0;for(let y=35;y<110;y++)for(let x=35;x<96;x++)for(let k=0;k<4;k++){const i=(y*320+x)*4+k;if(original.data[i]!==painted.data[i])changed++;}
+ expect(changed).toBe(0);
+});
+
 test('stroke overlay preserves the existing unconfirmed-DOM recovery guard',async({page})=>{
  await seed(page,{text:'fi AV',strokeWidth:3});await edit(page);const before=await model(page);
  await page.locator(surface).evaluate(el=>{el.querySelector('[data-wysiwyg-fragment]').firstChild.appendData('Q');el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'Q'}));});

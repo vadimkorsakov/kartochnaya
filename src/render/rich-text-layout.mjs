@@ -246,7 +246,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       // decoration intervals retain the original full-string measurements.
       for(let i=0;i<row.fragments.length;){
         let end=i+1;
-        while(end<row.fragments.length&&geometryKey(row.fragments[end].style)===geometryKey(row.fragments[i].style))end++;
+        while(end<row.fragments.length&&geometryKey(row.fragments[end].style)===geometryKey(row.fragments[i].style)&&row.fragments[end].style.textColor===row.fragments[i].style.textColor)end++;
         const group=row.fragments.slice(i,end);
         if(new Set(group.map(p=>JSON.stringify([p.style.strokeWidth,p.style.stroke]))).size>1){
           const text=group.map(p=>p.text).join(''),origin=group[0].x,total=measure(text,group[0].style).width;

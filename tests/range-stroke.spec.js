@@ -6,12 +6,19 @@ test.describe.configure({timeout:90000});
 const font=(family,file)=>({name:family,family,weight:400,style:'normal',data:'data:font/ttf;base64,'+fs.readFileSync(path.join(__dirname,'fixtures/fonts',file)).toString('base64')});
 const fonts=[font('Stroke Serif','DejaVuSerif.ttf'),font('Stroke Sans','DejaVuSans.ttf')];
 const layer=d=>d.elements.find(e=>e.id==='title');
-async function seed(page,patch={},multiple=false){
+async function seed(page,patch={},multiple=false,backdrop=false){
  await page.setViewportSize({width:2200,height:1400});
  await openHome(page);const payload=structuredClone(fixture);payload.fonts=fonts;payload.documents=[payload.documents[0]];
  const doc=payload.documents[0];doc.groups=[];doc.background='#ffffff';doc.elements=doc.elements.filter(e=>e.id==='title');
  Object.assign(doc.elements[0],{text:'Первое второе слово',x:20,y:40,w:280,h:160,fontFamily:'Stroke Serif',fontSize:24,lineHeight:1.2,textColor:'#111111',autoFontSize:false,rotation:0,textAlign:'left',verticalAlign:'top',...patch});
  if(multiple)doc.elements.push({...structuredClone(doc.elements[0]),id:'second',text:'Другой текст',y:130,h:60});
+ if(backdrop){
+  const image=new PNG({width:320,height:240});
+  for(let y=0;y<240;y++)for(let x=0;x<320;x++){const i=(y*320+x)*4,color=(Math.floor(x/8)+Math.floor(y/8))%2?[40,220,240,255]:[245,220,70,255];image.data.set(color,i);}
+  const rasterSrc='data:image/png;base64,'+PNG.sync.write(image).toString('base64');
+  doc.elements.unshift({id:'backdrop',type:'raster',name:'Контрастное изображение',x:0,y:0,w:320,h:240,visible:true,opacity:100,rasterSrc});
+  await page.evaluate(src=>window.__rangeBackdrop=src,rasterSrc);
+ }
  await importPayload(page,payload);await expect(page.locator('#toast')).toContainText('Импортировано проектов');
  const stored=(await records(page,'docs')).find(d=>layer(d));await openLibraryDocument(page,stored.id);
  for(let i=0;i<60;i++){const zoom=parseInt(await page.locator('#zoomLabel').textContent());if(zoom===100)break;await page.locator(zoom>100?'#zoomOutBtn':'#zoomInBtn').click();}
@@ -50,11 +57,12 @@ async function exportedPayload(page){
  return JSON.parse(fs.readFileSync(await download.path(),'utf8'));
 }
 async function livePixels(page){
- return page.evaluate(()=>{
+ return page.evaluate(async()=>{
   const canvas=document.querySelector('#canvas'),ink=document.querySelector('[data-text-stroke-overlay]');
   if(!ink||getComputedStyle(ink).display==='none')throw Error('No live ink overlay');
   const a=canvas.getBoundingClientRect(),b=ink.getBoundingClientRect(),scale=a.width/320;
   const image=document.createElement('canvas');image.width=320;image.height=240;const c=image.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,320,240);
+  if(window.__rangeBackdrop){const img=new Image();img.src=window.__rangeBackdrop;await img.decode();c.drawImage(img,0,0);}
   c.drawImage(ink,(b.left-a.left)/scale,(b.top-a.top)/scale,b.width/scale,b.height/scale);
   return [...c.getImageData(0,0,320,240).data];
  });
@@ -64,6 +72,7 @@ async function parity(page,testInfo,label='parity'){
  const live=await livePixels(page);await testInfo.attach(label+'-live.png',{body:PNG.sync.write({width:320,height:240,data:Buffer.from(live)}),contentType:'image/png'});
  await page.locator(surface).focus();await page.keyboard.press('Control+Enter');await expect(page.locator(overlay)).toHaveCount(0);
  const p=await canvasPoint(page,310,230);await page.mouse.click(p.x,p.y);
+ if(await page.evaluate(()=>!!window.__rangeBackdrop))await page.keyboard.press('Escape');
  const screen=await page.locator('#canvas').evaluate(c=>[...c.getContext('2d').getImageData(0,0,c.width,c.height).data]);
  const exported=await exportPNG(page),canvas=diff(screen,exported.image.data),projection=diff(live,exported.image.data);
  await testInfo.attach(label+'-export.png',{body:exported.bytes,contentType:'image/png'});
@@ -233,8 +242,8 @@ test('outlined text keeps native caret and remains editable through a thick cont
 
 test.describe('retina projection',()=>{
  test.use({deviceScaleFactor:2});
- test('overlay follows zoom, fractional origin, DPR, scroll and viewport resizing',async({page},testInfo)=>{
-  await seed(page,{text:'AV fi Жук',fontSize:28.375,x:20.25,y:40.5});await edit(page);await select(page,2,0);await field(page,'strokeWidth',4);await color(page,'#2266dd');
+ for(const ink of ['stroke','fillOpacity'])test(`${ink} overlay follows zoom, fractional origin, DPR, scroll and viewport resizing`,async({page},testInfo)=>{
+  await seed(page,{text:'AV fi Жук',fontSize:28.375,x:20.25,y:40.5});await edit(page);await select(page,2,0);if(ink==='stroke'){await field(page,'strokeWidth',4);await color(page,'#2266dd');}else await fillAlpha(page,50);
   const results=[];
   for(const zoom of [100,150,50]){
    await page.locator(surface).focus();
@@ -283,4 +292,122 @@ test.describe('retina projection',()=>{
   }
   await testInfo.attach('retina-zoom.json',{body:JSON.stringify(results),contentType:'application/json'});
  });
+});
+
+async function fillPicker(page){if(!await page.locator('#fillPopover').isVisible())await page.locator('#inspector [data-fill-open="textColor"],#inspector [data-fill-open="fill"]').first().click();}
+async function fillAlpha(page,value,slider=false){
+ await fillPicker(page);
+ const input=page.locator(slider?'#cpAlpha':'#cpAlphaInput');
+ if(slider){await input.focus();await input.press('Home');for(let i=0;i<value;i++)await input.press('ArrowRight');await input.press('Tab');}
+ else{await input.fill(String(value));await expect(input).toBeFocused();await input.press('Tab');}
+ await expect(page.locator('#cpAlphaInput')).toHaveValue(String(value));
+ await page.locator('[data-fill-close]').click();
+}
+async function visibleInk(page,width=220){
+ const a=await page.locator('#canvas').boundingBox();
+ // Fixed document ROI inside the text frame excludes only selection handles.
+ return PNG.sync.read(await page.screenshot({clip:{x:Math.ceil(a.x+35),y:Math.ceil(a.y+56),width,height:32}}));
+}
+
+test('fill opacity zero reveals the lower image only inside the selected word and preserves opaque contours',async({page,browser},testInfo)=>{
+ const doc=await seed(page,{text:'HH NN',fontSize:64,fontWeight:'700',strokeWidth:1,stroke:'#dd2244'},false,true);
+ const opaque=(await exportPNG(page)).image;
+ await edit(page);await select(page,2,0);await fillAlpha(page,0);
+ await page.locator(surface).focus();expect(await selection(page)).toEqual({anchor:2,focus:0});
+ const e=await model(page);expect(e.fillOpacity??100).toBe(100);expect(e.textRuns).toEqual([{start:0,end:2,style:{fillOpacity:0}}]);
+ await expect(page.locator(overlay)).toBeVisible();const visible=await visibleInk(page);
+ const image=await parity(page,testInfo,'fill-zero-lower-image');
+ const closed=await visibleInk(page),display=diff(visible.data,closed.data);
+ await testInfo.attach('fill-zero-closed.png',{body:PNG.sync.write(closed),contentType:'image/png'});
+ await testInfo.attach('fill-zero-screen.json',{body:JSON.stringify(display),contentType:'application/json'});
+ await testInfo.attach('fill-zero-visible.png',{body:PNG.sync.write(visible),contentType:'image/png'});expect(display.max).toBeLessThanOrEqual(2);
+ // Interior pixels formerly covered by opaque glyphs now show the exact lower
+ // checker image. Stroke pixels and the neighboring word are unchanged.
+ const background=PNG.sync.read(Buffer.from((await page.evaluate(()=>window.__rangeBackdrop)).split(',')[1],'base64'));
+ const native=await page.evaluate(async()=>{
+  const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;const c=canvas.getContext('2d'),img=new Image();img.src=window.__rangeBackdrop;await img.decode();c.drawImage(img,0,0);
+  c.font='normal 700 64px "Stroke Serif"';c.fontKerning='normal';c.letterSpacing='0px';
+  const m=c.measureText('Mg'),baseline=40+m.fontBoundingBoxAscent+(Math.max(64*1.2,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;
+  const x=20+c.measureText('HH NN').width-c.measureText(' NN').width;
+  c.fillStyle='#111111';c.fillText(' NN',x,baseline);
+  c.lineWidth=1;c.strokeStyle='#dd2244';c.lineJoin='round';c.miterLimit=2;c.strokeText('HH',20,baseline);c.strokeText(' NN',x,baseline);
+  return [...c.getImageData(0,0,320,240).data];
+ });
+ const oracle=diff(image.data,native);await testInfo.attach('fill-zero-native-oracle.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);
+
+ let revealed=0,strokePixels=0,neighborChanges=0;
+ for(let y=40;y<130;y++)for(let x=20;x<295;x++){
+  const i=(y*320+x)*4,pixel=(a,b)=>[0,1,2,3].every(k=>a[i+k]===b[i+k]);
+  if(x<150){if(opaque.data[i]<25&&opaque.data[i+1]<25&&opaque.data[i+2]<25&&pixel(image.data,background.data))revealed++;
+   if(image.data[i]>150&&image.data[i+1]<100&&image.data[i+2]<130)strokePixels++;
+  }else if(!pixel(image.data,opaque.data))neighborChanges++;
+ }
+ await testInfo.attach('fill-zero-revealed.json',{body:JSON.stringify({revealed,strokePixels,neighborChanges}),contentType:'application/json'});
+ expect(revealed).toBeGreaterThan(100);expect(strokePixels).toBeGreaterThan(100);expect(neighborChanges).toBe(0);
+ await expect.poll(async()=>layer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(e);
+ const payload=await exportedPayload(page);expect(layer(payload.document)).toEqual(e);
+ await page.reload();await openLibraryDocument(page,doc.id);await edit(page);expect(await model(page)).toEqual(e);await page.keyboard.press('Control+Enter');
+ const fresh=await browser.newContext({baseURL:'http://127.0.0.1:4173',viewport:{width:2200,height:1400},acceptDownloads:true});
+ try{const imported=await fresh.newPage();await openHome(imported);await importPayload(imported,payload);await expect(imported.locator('#toast')).toContainText('Документ импортирован');
+  const saved=(await records(imported,'docs')).find(d=>d.elements.some(t=>t.type==='text'&&t.text===e.text)),restored=saved.elements.find(t=>t.type==='text');
+  expect({...restored,id:e.id}).toEqual(e);
+ }finally{await fresh.close();}
+});
+
+test('fill opacity Mixed preserves empty input, first-character stepping, backward selection and one preview Undo',async({page},testInfo)=>{
+ await seed(page,{text:'fi AV',fontSize:36,fillOpacity:75,textRuns:[{start:0,end:1,style:{fillOpacity:50}}]});await edit(page);await select(page,2,0);
+ await fillPicker(page);const input=page.locator('#cpAlphaInput');await expect(input).toHaveValue('');await expect(input).toHaveAttribute('placeholder','Mixed');await expect(page.locator('#cpAlpha')).toHaveAttribute('aria-valuetext','Mixed');
+ const mixed=await model(page);await input.fill('');await input.press('Tab');expect(await model(page)).toEqual(mixed);
+ await input.focus();await input.press('ArrowUp');await expect(input).toHaveValue('51');
+ await page.locator('[data-fill-close]').click();await page.locator(surface).focus();expect(await selection(page)).toEqual({anchor:2,focus:0});
+ await page.keyboard.press('Control+z');expect(await model(page)).toEqual(mixed);
+ await fillPicker(page);await input.fill('');await input.locator('..').locator('[data-num-direction="up"]').click();await expect(input).toHaveValue('51');
+ await page.locator('[data-fill-close]').click();await page.locator(surface).focus();await page.keyboard.press('Control+z');expect(await model(page)).toEqual(mixed);
+ await fillPicker(page);await input.fill('');await input.pressSequentially('100');await expect(input).toHaveValue('100');
+ // Keep one preview open while applying multiple intermediate input events.
+ await input.fill('50');await input.fill('0');await input.press('Tab');await page.locator('[data-fill-close]').click();await page.locator(surface).focus();
+ const changed=await model(page);expect(changed.textRuns).toEqual([{start:0,end:2,style:{fillOpacity:0}}]);expect(await selection(page)).toEqual({anchor:2,focus:0});
+ await page.keyboard.press('Control+z');expect(await model(page)).toEqual(mixed);await page.keyboard.press('Control+Shift+z');expect(await model(page)).toEqual(changed);
+ await page.keyboard.press('ArrowRight');await page.keyboard.type('X');const typed=await model(page);expect(typed.text).toBe('fiX AV');expect(typed.textRuns).toEqual([{start:0,end:3,style:{fillOpacity:0}}]);
+ await page.keyboard.press('Control+z');expect(await model(page)).toEqual(changed);await page.keyboard.press('Control+Shift+z');expect(await model(page)).toEqual(typed);
+ await parity(page,testInfo,'fill-mixed-history');
+});
+
+for(const value of [50,100])test(`fill opacity ${value} via native slider and number preserves inherited layer alpha without a stroke`,async({page},testInfo)=>{
+ await seed(page,{text:'AV fi Жук',fontSize:36,fillOpacity:25});await edit(page);await select(page,1,0);
+ await fillAlpha(page,value,true);expect((await model(page)).textRuns).toEqual([{start:0,end:1,style:{fillOpacity:value}}]);
+ await select(page,3,4);await fillAlpha(page,value);const e=await model(page);expect(e.fillOpacity).toBe(25);expect(e.textRuns).toEqual([{start:0,end:1,style:{fillOpacity:value}},{start:3,end:4,style:{fillOpacity:value}}]);
+ await expect(page.locator(overlay)).toBeVisible();await parity(page,testInfo,'fill-'+value);
+});
+
+for(const autoFontSize of [false,true])test(`fill opacity preserves LF, wrap, mixed fonts, AV/fi and auto-fit ${autoFontSize}`,async({page},testInfo)=>{
+ const text='AV fi Жук 😀 мягкий перенос\nСледующая строка';
+ await seed(page,{text,fontSize:28,w:180,h:160,autoFontSize,textRuns:[{start:0,end:2,style:{fontWeight:'700',underline:true}},{start:3,end:5,style:{fontFamily:'Stroke Sans',fontSize:36,lineHeight:1.5}},{start:6,end:9,style:{fontSize:22,letterSpacing:1.5,strikethrough:true}}]});
+ await edit(page);const before=await model(page),rows=await page.locator(surface+' [data-wysiwyg-row]').count();
+ await select(page,0,14);await fillAlpha(page,50);const after=await model(page);expect(after.fontSize).toBe(before.fontSize);expect(after.autoFontSize).toBe(autoFontSize);expect(await page.locator(surface+' [data-wysiwyg-row]').count()).toBe(rows);
+ const visible=await visibleInk(page,140);await parity(page,testInfo,'fill-mixed-auto-'+autoFontSize);
+ const display=diff(visible.data,(await visibleInk(page,140)).data);await testInfo.attach('fill-US-screen.json',{body:JSON.stringify(display),contentType:'application/json'});expect(display.max).toBeLessThanOrEqual(2);
+});
+
+test('fill opacity caret requires selection and multiple layers still use layer opacity outside editing',async({page})=>{
+ await seed(page,{text:'fi AV'},true);await edit(page);await select(page,1,1);const before=await model(page);
+ await fillPicker(page);await page.locator('#cpAlphaInput').fill('50');await page.locator('#cpAlphaInput').press('Tab');await page.locator('[data-fill-close]').click();expect(await model(page)).toEqual(before);await expect(page.locator('#toast')).toContainText('Выделите фрагмент текста');await expect(page.locator(surface)).toBeVisible();
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+ await page.locator('#layers [data-layer="second"] .layer-name').click({modifiers:['Control']});await fillAlpha(page,50);
+ const doc=await exportedDocument(page);for(const e of doc.elements){expect(e.fillOpacity).toBe(50);expect(e.textRuns).toBeUndefined();}
+});
+
+for(const partial of [true,false])test(`fill opacity native fi ${partial?'partial':'whole'} oracle keeps layer alpha and opaque stroke independent`,async({page},testInfo)=>{
+ await seed(page,{text:'fi AV',fontSize:48,fillOpacity:50,strokeWidth:3,stroke:'#2266dd'});await edit(page);await select(page,0,partial?1:2);await fillAlpha(page,0);
+ const expected=await page.evaluate(partial=>{
+  const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;const c=canvas.getContext('2d');
+  c.fillStyle='#fff';c.fillRect(0,0,320,240);c.font='normal 400 48px "Stroke Serif"';c.fontKerning='normal';c.letterSpacing='0px';
+  const m=c.measureText('Mg'),baseline=40+m.fontBoundingBoxAscent+(Math.max(48*1.2,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;
+  const first=partial?'f':'fi',rest=partial?'i AV':' AV',x=20+c.measureText('fi AV').width-c.measureText(rest).width;
+  c.fillStyle='#111111';c.globalAlpha=.5;c.fillText(rest,x,baseline);
+  c.globalAlpha=1;c.lineWidth=3;c.strokeStyle='#2266dd';c.lineJoin='round';c.miterLimit=2;c.strokeText(first,20,baseline);c.strokeText(rest,x,baseline);
+  return [...c.getImageData(0,0,320,240).data];
+ },partial);
+ const oracle=diff(await livePixels(page),expected);await testInfo.attach('fill-native-fi-oracle.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);
+ await parity(page,testInfo,'fill-native-fi');
 });

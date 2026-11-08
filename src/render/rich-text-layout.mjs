@@ -39,6 +39,7 @@ export function resolveRichTextStyle(base, override = {}) {
     fontWeight: String(weight(override) || weight(base) || '400'),
     fontStyle: italic(override) || italic(base) || 'normal',
     fontSize: override.fontSize === undefined ? size : positive(override.fontSize, size / scale) * scale,
+    fillOpacity: override.fillOpacity ?? base.fillOpacity ?? 100,
     textColor: override.textColor || base.textColor || base.fill || '#000000',
     letterSpacing: spacing(override.letterSpacing ?? base.letterSpacing),
     lineHeight: positive(override.lineHeight, positive(base.lineHeight, 1.15)),
@@ -113,8 +114,9 @@ export function createRichTextLayoutEngine(context, fontSet) {
   function layout(e) {
     if (fontCount !== fontSet?.size) { invalidate(); fontCount = fontSet?.size; }
     const spans = richTextSpans(e), base = resolveRichTextStyle(e);
+    const solid = (e.fillType || 'solid') === 'solid';
     const width = Math.max(1, Number(e.w) || 1), height = Math.max(0, Number(e.h) || 0);
-    const key = JSON.stringify([spans, base, width, height, e.textAlign, e.verticalAlign, fontSet?.size]);
+    const key = JSON.stringify([spans, base, solid, width, height, e.textAlign, e.verticalAlign, fontSet?.size]);
     if (layouts.has(key)) return layouts.get(key);
     // Segment the source as a whole: run boundaries cannot split emoji/combining
     // clusters. If a run starts inside a cluster, its first character owns it.
@@ -132,6 +134,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       // Leading moves the shared baseline, but cannot split an otherwise
       // continuous decoration (fractional rect edges could leave a seam).
       const { lineHeight, strokeWidth, stroke, ...decorationStyle } = cluster.style;
+      if (!solid) delete decorationStyle.fillOpacity;
       const last = decorationSpans.at(-1), id = JSON.stringify(decorationStyle);
       if (last?.id === id && last.end === cluster.start) last.end = cluster.end;
       else decorationSpans.push({...cluster, id});
@@ -139,11 +142,14 @@ export function createRichTextLayoutEngine(context, fontSet) {
     const rows = []; let fragments = [], rowWidth = 0, rowStart = 0, emptyStyle = base;
     let previousDescent = 0, edgeLeading = 0;
     // Decoration and leading boundaries never split glyph painting (including ligatures).
-    const styleKey = ({ underline, strikethrough, lineHeight, ...paint }) => JSON.stringify(paint);
+    const styleKey = ({ underline, strikethrough, lineHeight, ...paint }) => {
+      if (!solid) delete paint.fillOpacity;
+      return JSON.stringify(paint);
+    };
     // Paint colors must not alter shaping or move subsequent glyphs. A color
     // split preserves the advance of the full contiguous font/spacing sequence,
     // while keeping separate fragments for per-range drawing and ink bounds.
-    const geometryKey = ({ textColor, strokeWidth, stroke, underline, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
+    const geometryKey = ({ textColor, fillOpacity, strokeWidth, stroke, underline, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
     const requiredHeight = part => part.requiredHeight ?? part.style.fontSize * part.style.lineHeight;
     function append(parts, cluster) {
       const last = parts.at(-1), id = styleKey(cluster.style);
@@ -240,7 +246,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
         previousGeometry = geometry; previousShapeWidth = shapeWidth;
         return part;
       });
-      // A stroke boundary may decompose a ligature, but must not move the
+      // A stroke/opacity boundary may decompose a ligature, but must not move the
       // following geometry group or lose AV's contextual kerning placement.
       // Keep legacy color-only positioning untouched. Logical advances and
       // decoration intervals retain the original full-string measurements.
@@ -248,7 +254,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
         let end=i+1;
         while(end<row.fragments.length&&geometryKey(row.fragments[end].style)===geometryKey(row.fragments[i].style)&&row.fragments[end].style.textColor===row.fragments[i].style.textColor)end++;
         const group=row.fragments.slice(i,end);
-        if(new Set(group.map(p=>JSON.stringify([p.style.strokeWidth,p.style.stroke]))).size>1){
+        if(new Set(group.map(p=>JSON.stringify([p.style.strokeWidth,p.style.stroke,solid?p.style.fillOpacity:100]))).size>1){
           const text=group.map(p=>p.text).join(''),origin=group[0].x,total=measure(text,group[0].style).width;
           let offset=0;
           for(const part of group){part.logicalX=part.x;part.x=origin+total-measure(text.slice(offset),part.style).width;offset+=part.text.length;}
@@ -264,7 +270,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
         const prefix = offset => offset === part.end ? part.width : measure(text.slice(part.start, offset).replaceAll('\r', ''), part.style).width;
         const left = prefix(start), right = prefix(end);
         row.decorations.push(...textDecorationRects({x:(part.logicalX??part.x) + left, y:part.y, width:right-left}, span.style)
-          .map(rect => ({...rect, start, end})));
+          .map(rect => ({...rect, start, end, fillOpacity:span.style.fillOpacity})));
       }
     }
     let inkOverflow=0;

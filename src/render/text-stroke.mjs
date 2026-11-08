@@ -11,7 +11,6 @@ export function paintHorizontalTextPass(c,e,layout,method='fill') {
  c.save();
  c.textAlign='left';c.textBaseline='alphabetic';c.fontKerning='normal';
  const solid=(e.fillType||'solid')==='solid';
- if(method==='fill'&&solid)c.globalAlpha*=Math.max(0,Math.min(1,(e.fillOpacity??100)/100));
  c.beginPath();c.rect(-pad,-pad,e.w+pad*2,e.h+pad*2);c.clip();
  for(const row of layout.rows){
   if(row.y>e.h)break;
@@ -26,9 +25,17 @@ export function paintHorizontalTextPass(c,e,layout,method='fill') {
      e.strokeStyle==='dotted'?[Math.max(1,s.strokeWidth*.12),Math.max(2,s.strokeWidth*2)]:[]);
     if(e.strokeStyle==='dotted')c.lineCap='round';
     c.strokeText(part.text,part.x,part.y);c.restore();
-   }else{if(solid)c.fillStyle=s.textColor;c.fillText(part.text,part.x,part.y);}
+   }else{
+    c.save();
+    if(solid){c.fillStyle=s.textColor;c.globalAlpha*=Math.max(0,Math.min(1,(s.fillOpacity??e.fillOpacity??100)/100));}
+    c.fillText(part.text,part.x,part.y);c.restore();
+   }
   }
-  if(method==='fill')for(const rect of row.decorations){if(solid)c.fillStyle=rect.color;c.fillRect(rect.x,rect.y,rect.width,rect.height);}
+  if(method==='fill')for(const rect of row.decorations){
+   c.save();
+   if(solid){c.fillStyle=rect.color;c.globalAlpha*=Math.max(0,Math.min(1,(rect.fillOpacity??e.fillOpacity??100)/100));}
+   c.fillRect(rect.x,rect.y,rect.width,rect.height);c.restore();
+  }
  }
  c.restore();
 }

@@ -67,3 +67,80 @@ test('a new stroke must not reposition an existing color fragment elsewhere in t
  assert.equal(after.rows[0].fragments.find(p=>p.text==='V').x,10);
  assert.equal(after.width,before.width);assert.equal(after.rows[0].baseline,before.rows[0].baseline);
 });
+
+test('fill opacity validates strictly, preserves explicit endpoints and resets to inheritance',()=>{
+ const base={text:'abcd',fillOpacity:100};
+ for(const value of [NaN,Infinity,-Infinity,'50',-1,101,{},true]){
+  assert.deepEqual(normalizeRuns(base.text,[{start:0,end:2,style:{fillOpacity:value}}],base),[]);
+  const styled=applyTextStyle(base,0,2,{fillOpacity:50});
+  assert.deepEqual(applyTextStyle(styled,0,2,{fillOpacity:value}),styled);
+ }
+ for(const value of [0,50,100]){
+  const e=applyTextStyle(base,0,2,{fillOpacity:value});
+  assert.deepEqual(e.textRuns,[{start:0,end:2,style:{fillOpacity:value}}]);
+  assert.equal(effectiveTextStyleAt({...e,fillOpacity:25},0).fillOpacity,value);
+  assert.equal(effectiveTextStyleAt({...e,fillOpacity:25},3).fillOpacity,25);
+  assert.equal(applyTextStyle(e,0,2,{fillOpacity:null}).textRuns,undefined);
+ }
+ assert.equal(resolveRichTextStyle({}).fillOpacity,100);
+ assert.equal(resolveRichTextStyle({fillOpacity:50},{fillOpacity:0}).fillOpacity,0);
+});
+test('opacity overlapping runs, UTF-16 typing/deletion, JSON and Undo/Redo retain sparse inheritance',()=>{
+ const base={text:'f😀i AV',fillOpacity:75},history=createInlineHistory(base);
+ let e=applyTextStyle(base,0,3,{fillOpacity:0});
+ e=applyTextStyle(e,1,4,{fillOpacity:100});
+ assert.deepEqual(e.textRuns,[{start:0,end:1,style:{fillOpacity:0}},{start:1,end:4,style:{fillOpacity:100}}]);
+ recordInlineHistory(history,e,{start:0,end:4,direction:'backward'});
+ const inserted=replaceText(e,3,3,'X');assert.equal(effectiveTextStyleAt(inserted,3).fillOpacity,100);
+ const left=replaceText(e,1,1,'Q');assert.equal(effectiveTextStyleAt(left,1).fillOpacity,0);
+ const right=replaceText(e,0,0,'Q');assert.equal(effectiveTextStyleAt(right,0).fillOpacity,0);
+ const deleted=replaceText(inserted,2,3,'');assert.equal(deleted.text,'fXi AV');
+ assert.equal(effectiveTextStyleAt(deleted,1).fillOpacity,100);
+ recordInlineHistory(history,deleted,{start:1,end:1,direction:'forward'});
+ assert.deepEqual(moveInlineHistory(history,-1),{element:e,caret:{start:0,end:4,direction:'backward'}});
+ assert.deepEqual(moveInlineHistory(history,-1).element,base);
+ assert.deepEqual(moveInlineHistory(history,1).element,e);
+ assert.deepEqual(moveInlineHistory(history,1).element,deleted);
+ const json=JSON.parse(JSON.stringify(deleted));assert.deepEqual(normalizeRuns(json.text,json.textRuns,json),deleted.textRuns);
+ const reset=applyTextStyle(e,1,3,{fillOpacity:null});assert.equal(effectiveTextStyleAt(reset,1).fillOpacity,75);
+});
+test('opacity boundaries preserve contextual AV/fi advances, wraps, baselines and neighboring color positions',()=>{
+ const context={measureText(text){return {width:[...text].length*10-(text.includes('AV')?2:0)-(text.includes('fi')?1:0),fontBoundingBoxAscent:16,fontBoundingBoxDescent:4};}};
+ const engine=createRichTextLayoutEngine(context);
+ const base={text:'AV fi 😀\nAV fi wrapped',w:72,h:200,fontSize:20,lineHeight:1.2,underline:true,strikethrough:true};
+ const geometry=x=>x.rows.map(({start,end,nextStart,width,y,height,baseline})=>({start,end,nextStart,width,y,height,baseline}));
+ for(const [start,end] of [[0,1],[3,4],[3,5],[1,6]]){
+  const before=engine.layout(base),after=engine.layout(applyTextStyle(base,start,end,{fillOpacity:0}));
+  assert.deepEqual(geometry(after),geometry(before));assert.equal(after.width,before.width);
+  assert.ok(after.rows.flatMap(r=>r.decorations).some(r=>r.fillOpacity===0));
+ }
+ const colored=applyTextStyle(base,1,2,{textColor:'#2266dd'}),before=engine.layout(colored),after=engine.layout(applyTextStyle(colored,3,4,{fillOpacity:50}));
+ assert.equal(after.rows[0].fragments.find(p=>p.text==='V').x,before.rows[0].fragments.find(p=>p.text==='V').x);
+ for(const fillType of ['gradient','image','none']){
+  const plain=engine.layout({...base,fillType}),styled=engine.layout({...applyTextStyle(base,3,4,{fillOpacity:0}),fillType});
+  assert.deepEqual(styled.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])),plain.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])));
+ }
+});
+test('shared painter multiplies incoming alpha once per fill/decor fragment and restores independent stroke alpha',async()=>{
+ const {paintHorizontalTextPass}=await import('../src/render/text-stroke.mjs');
+ const calls=[],stack=[],c={globalAlpha:.8,fillStyle:'#fff',save(){stack.push({globalAlpha:this.globalAlpha,fillStyle:this.fillStyle});},restore(){Object.assign(this,stack.pop());},beginPath(){},rect(){},clip(){},setLineDash(){},fillText(text){calls.push(['fill',text,this.globalAlpha]);},strokeText(text){calls.push(['stroke',text,this.globalAlpha]);},fillRect(x){calls.push(['line',x,this.globalAlpha]);}};
+ const style=resolveRichTextStyle({fontSize:20,strokeWidth:3}),layout={rows:[{y:0,fragments:[0,50,100].map((fillOpacity,i)=>({text:String(i),x:i*20,y:20,style:{...style,fillOpacity}})),decorations:[0,50,100].map((fillOpacity,i)=>({x:i*20,y:22,width:10,height:1,color:'#111',fillOpacity}))}]};
+ const e={w:100,h:60,fillOpacity:50,strokeOpacity:75};
+ paintHorizontalTextPass(c,e,layout);assert.deepEqual(calls,[['fill','0',0],['fill','1',.4],['fill','2',.8],['line',0,0],['line',20,.4],['line',40,.8]]);
+ assert.equal(c.globalAlpha,.8);calls.length=0;
+ paintHorizontalTextPass(c,e,layout,'stroke');assert.deepEqual(calls.map(x=>x[2]),[.8*.75,.8*.75,.8*.75]);assert.equal(c.globalAlpha,.8);
+ calls.length=0;paintHorizontalTextPass(c,{...e,fillType:'gradient'},layout);assert.ok(calls.every(x=>x[2]===.8));assert.equal(stack.length,0);
+});
+test('IndexedDB v3 and backup roundtrip retain opacity endpoints, partial alpha and layer inheritance',async()=>{
+ const {IDBFactory}=await import('fake-indexeddb');
+ const {openDatabase,runStoreRequest}=await import('../src/storage/indexeddb.mjs');
+ const {createBackup,readBackup}=await import('../src/backup/archive.mjs');
+ const base={id:'text',text:'A😀V fi',fillOpacity:75};
+ const element=[0,50,100].reduce((e,fillOpacity,i)=>applyTextStyle(e,i===0?0:i===1?1:3,i===0?1:i===1?3:4,{fillOpacity}),base);
+ const doc={id:'d',projectId:'p',width:320,height:240,elements:[element]},data={projects:[{id:'p',name:'Opacity'}],docs:[doc],fonts:[],settings:[]};
+ assert.deepEqual((await readBackup((await createBackup(data)).bytes)).data.docs[0],doc);
+ const indexedDB=new IDBFactory(),db=await openDatabase({indexedDB});assert.equal(db.version,3);
+ await runStoreRequest(db,'docs','readwrite',s=>s.put(doc));db.close();
+ const reopened=await openDatabase({indexedDB});
+ try{const saved=await runStoreRequest(reopened,'docs','readonly',s=>s.get('d'));assert.deepEqual(saved,doc);assert.deepEqual(normalizeRuns(element.text,saved.elements[0].textRuns,element),element.textRuns);}finally{reopened.close();}
+});

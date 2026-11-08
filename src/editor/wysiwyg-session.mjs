@@ -4,6 +4,7 @@ import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-histo
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from '../render/text-stroke.mjs';
 
 const ctx = document.createElement('canvas').getContext('2d');
+const needsCanvasInk = projection => hasHorizontalTextStroke(projection)||projection.rows.some(row=>row.fragments.some(p=>p.style.fillOpacity!==100));
 function lineHeight(style) {
  ctx.font=richTextFont(style);const m=ctx.measureText('Mg');
  if(!Number.isFinite(m.fontBoundingBoxAscent)||!Number.isFinite(m.fontBoundingBoxDescent)||!(m.width>0))throw Error('Font metrics unavailable');
@@ -26,7 +27,7 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=
  // color/font/size changes invisible until the editor was closed.
  if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')==='0'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
  if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
- if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
+ if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100)return false;
  // Supported paint semantics apply equally to plain and sparse-rich text.
  // Geometry is supplied by the shared row layout, never a CSS parity guess.
  if(!compatible(e))return false;
@@ -48,7 +49,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  function syncOverlay(nextDensity=density){
   density=nextDensity;
   if(inactive||fallback||composing){overlay.style.display='none';host.classList.remove('wysiwyg-canvas-ink');return;}
-  const projection=layout(layer),active=hasHorizontalTextStroke(projection);
+  const projection=layout(layer),active=needsCanvasInk(projection);
   host.classList.toggle('wysiwyg-canvas-ink',active);overlay.style.display=active?'block':'none';
   if(!active)return;
   const frame=viewport();
@@ -85,7 +86,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // Soft wraps add no characters. Only source LF occupies a UTF-16 offset.
   const projection=layout(value);
   if(!projection?.rows?.length)throw Error('Text layout unavailable');
-  const canvasInk=hasHorizontalTextStroke(projection);
+  const canvasInk=needsCanvasInk(projection);
   const nodes=[];
   for(const row of projection.rows){
    const rowNode=document.createElement('span');rowNode.dataset.wysiwygRow='';
@@ -176,7 +177,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   }
   if(key==='fontSize')next.autoFontSize=false;
   retainRichTextSizeBase(next);
-  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke'].includes(key))fit(next);
+  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity'].includes(key))fit(next);
   if(!compatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}

@@ -1,0 +1,940 @@
+{
+  "ciRun": "https://github.com/vadimkorsakov/kartochnaya/actions/runs/42498187927",
+  "originalPRHead": "d5b52ca65d0dd4b37a3c105eedf776aa223fe686",
+  "baseMain": "df2a5ef409fdfce725ddd3d22b7b4f1f05ebb2b9",
+  "chromium": "154.0.8037.57",
+  "firefox": "157.0 / Playwright 1555",
+  "nativeCanvas": {
+    "browser": "154.0.8037.57",
+    "before": {
+      "stage": "assigned before save",
+      "font": "italic 300 20px serif",
+      "letterSpacing": "3px",
+      "width": 78.640625
+    },
+    "after": {
+      "stage": "after save",
+      "font": "italic 300 20px serif",
+      "letterSpacing": "",
+      "width": 78.640625
+    },
+    "fixed": {
+      "stage": "assigned within saved scope",
+      "font": "italic 300 20px serif",
+      "letterSpacing": "3px",
+      "width": 78.640625
+    }
+  },
+  "originalFour": {
+    "chromium156": {
+      "passed": 1,
+      "failed": 3
+    },
+    "chromium154": {
+      "passed": 1,
+      "failed": 3
+    }
+  },
+  "nearWidth": {
+    "unmodifiedPR": {
+      "passed": 5,
+      "failed": 0
+    },
+    "unmodifiedMain": {
+      "passed": 5,
+      "failed": 0
+    },
+    "delayedFocusPR": {
+      "anchor": 4,
+      "focus": 4
+    },
+    "delayedFocusMain": {
+      "anchor": 4,
+      "focus": 4
+    },
+    "focusWaitWithDelay": {
+      "passed": 1,
+      "failed": 0
+    },
+    "ciTrace": {
+      "artifact": 13623979949,
+      "secondDoubleClickEndMs": 271344.78,
+      "controlHomeStartMs": 271347.886,
+      "focusTimestampCaptured": false
+    }
+  },
+  "fixedFour": {
+    "passed": 4,
+    "failed": 0
+  },
+  "unit": {
+    "passed": 592,
+    "failed": 0
+  },
+  "source": {
+    "passed": 17,
+    "failed": 0
+  },
+  "build": "pass",
+  "buildVerify": "pass",
+  "range": {
+    "tests": 50,
+    "passed": 50,
+    "cases": [
+      {
+        "browser": "stroke-chromium",
+        "title": "word stroke is live, isolated, backward-selection safe, persisted and identical in Canvas/PNG",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "adjacent stroke widths, Mixed empty input and arrows, zero override and grouped picker undo",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fi partial stroke uses the same split fill and stroke geometry on all surfaces",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fi whole stroke uses the same split fill and stroke geometry on all surfaces",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "legacy solid layer stroke and opacity survive a live zero-width range",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "legacy dashed layer stroke and opacity survive a live zero-width range",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "legacy dotted layer stroke and opacity survive a live zero-width range",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "mixed typography, LF/soft wrap, emoji, U/S, text edits and auto fit false",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "mixed typography, LF/soft wrap, emoji, U/S, text edits and auto fit true",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "a caret requires a range; layer editing outside WYSIWYG still changes the whole layer",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "multiple text layers retain Mixed controls and whole-layer stroke updates",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "formatting fi preserves the existing colored AV fragment pixel for pixel",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "stroke overlay preserves the existing unconfirmed-DOM recovery guard",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "outlined text keeps native caret and remains editable through a thick contour",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fill opacity zero reveals the lower image only inside the selected word and preserves opaque contours",
+        "status": "passed",
+        "metrics": {
+          "fill-zero-lower-image.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 227,
+              "above2": 0,
+              "max": 2
+            }
+          },
+          "fill-zero-screen.json": {
+            "changed": 101,
+            "above2": 0,
+            "max": 2
+          },
+          "fill-zero-native-oracle.json": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "fill-zero-revealed.json": {
+            "revealed": 422,
+            "strokePixels": 1882,
+            "neighborChanges": 0
+          }
+        }
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fill opacity Mixed preserves empty input, first-character stepping, backward selection and one preview Undo",
+        "status": "passed",
+        "metrics": {
+          "fill-mixed-history.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fill opacity 50 via native slider and number preserves inherited layer alpha without a stroke",
+        "status": "passed",
+        "metrics": {
+          "fill-50.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fill opacity 100 via native slider and number preserves inherited layer alpha without a stroke",
+        "status": "passed",
+        "metrics": {
+          "fill-100.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fill opacity preserves LF, wrap, mixed fonts, AV/fi and auto-fit false",
+        "status": "passed",
+        "metrics": {
+          "fill-mixed-auto-false.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 651,
+              "above2": 0,
+              "max": 1
+            }
+          },
+          "fill-US-screen.json": {
+            "changed": 164,
+            "above2": 0,
+            "max": 1
+          }
+        }
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fill opacity preserves LF, wrap, mixed fonts, AV/fi and auto-fit true",
+        "status": "passed",
+        "metrics": {
+          "fill-mixed-auto-true.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 651,
+              "above2": 0,
+              "max": 1
+            }
+          },
+          "fill-US-screen.json": {
+            "changed": 164,
+            "above2": 0,
+            "max": 1
+          }
+        }
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fill opacity caret requires selection and multiple layers still use layer opacity outside editing",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fill opacity native fi partial oracle keeps layer alpha and opaque stroke independent",
+        "status": "passed",
+        "metrics": {
+          "fill-native-fi-oracle.json": {
+            "changed": 91,
+            "above2": 0,
+            "max": 1
+          },
+          "fill-native-fi.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 91,
+              "above2": 0,
+              "max": 1
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fill opacity native fi whole oracle keeps layer alpha and opaque stroke independent",
+        "status": "passed",
+        "metrics": {
+          "fill-native-fi-oracle.json": {
+            "changed": 63,
+            "above2": 0,
+            "max": 1
+          },
+          "fill-native-fi.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 63,
+              "above2": 0,
+              "max": 1
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "word stroke is live, isolated, backward-selection safe, persisted and identical in Canvas/PNG",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "adjacent stroke widths, Mixed empty input and arrows, zero override and grouped picker undo",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fi partial stroke uses the same split fill and stroke geometry on all surfaces",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fi whole stroke uses the same split fill and stroke geometry on all surfaces",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "legacy solid layer stroke and opacity survive a live zero-width range",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "legacy dashed layer stroke and opacity survive a live zero-width range",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "legacy dotted layer stroke and opacity survive a live zero-width range",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "mixed typography, LF/soft wrap, emoji, U/S, text edits and auto fit false",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "mixed typography, LF/soft wrap, emoji, U/S, text edits and auto fit true",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "a caret requires a range; layer editing outside WYSIWYG still changes the whole layer",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "multiple text layers retain Mixed controls and whole-layer stroke updates",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "formatting fi preserves the existing colored AV fragment pixel for pixel",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "stroke overlay preserves the existing unconfirmed-DOM recovery guard",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "outlined text keeps native caret and remains editable through a thick contour",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fill opacity zero reveals the lower image only inside the selected word and preserves opaque contours",
+        "status": "passed",
+        "metrics": {
+          "fill-zero-lower-image.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 418,
+              "above2": 0,
+              "max": 1
+            }
+          },
+          "fill-zero-screen.json": {
+            "changed": 228,
+            "above2": 0,
+            "max": 1
+          },
+          "fill-zero-native-oracle.json": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "fill-zero-revealed.json": {
+            "revealed": 1492,
+            "strokePixels": 460,
+            "neighborChanges": 0
+          }
+        }
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fill opacity Mixed preserves empty input, first-character stepping, backward selection and one preview Undo",
+        "status": "passed",
+        "metrics": {
+          "fill-mixed-history.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fill opacity 50 via native slider and number preserves inherited layer alpha without a stroke",
+        "status": "passed",
+        "metrics": {
+          "fill-50.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fill opacity 100 via native slider and number preserves inherited layer alpha without a stroke",
+        "status": "passed",
+        "metrics": {
+          "fill-100.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fill opacity preserves LF, wrap, mixed fonts, AV/fi and auto-fit false",
+        "status": "passed",
+        "metrics": {
+          "fill-mixed-auto-false.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 644,
+              "above2": 0,
+              "max": 1
+            }
+          },
+          "fill-US-screen.json": {
+            "changed": 18,
+            "above2": 0,
+            "max": 1
+          }
+        }
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fill opacity preserves LF, wrap, mixed fonts, AV/fi and auto-fit true",
+        "status": "passed",
+        "metrics": {
+          "fill-mixed-auto-true.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 644,
+              "above2": 0,
+              "max": 1
+            }
+          },
+          "fill-US-screen.json": {
+            "changed": 18,
+            "above2": 0,
+            "max": 1
+          }
+        }
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fill opacity caret requires selection and multiple layers still use layer opacity outside editing",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fill opacity native fi partial oracle keeps layer alpha and opaque stroke independent",
+        "status": "passed",
+        "metrics": {
+          "fill-native-fi-oracle.json": {
+            "changed": 108,
+            "above2": 0,
+            "max": 1
+          },
+          "fill-native-fi.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 108,
+              "above2": 0,
+              "max": 1
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fill opacity native fi whole oracle keeps layer alpha and opaque stroke independent",
+        "status": "passed",
+        "metrics": {
+          "fill-native-fi-oracle.json": {
+            "changed": 74,
+            "above2": 0,
+            "max": 1
+          },
+          "fill-native-fi.json": {
+            "canvas": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "projection": {
+              "changed": 74,
+              "above2": 0,
+              "max": 1
+            }
+          }
+        }
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "stroke overlay follows zoom, fractional origin, DPR, scroll and viewport resizing",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-chromium",
+        "title": "fillOpacity overlay follows zoom, fractional origin, DPR, scroll and viewport resizing",
+        "status": "passed",
+        "metrics": {
+          "retina-100.json": {
+            "metric": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "display": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "geometry": {
+              "canvas": {
+                "x": 881,
+                "y": 601.5,
+                "width": 320,
+                "height": 240,
+                "top": 601.5,
+                "right": 1201,
+                "bottom": 841.5,
+                "left": 881
+              },
+              "ink": {
+                "x": 881,
+                "y": 601.5,
+                "width": 320,
+                "height": 240,
+                "top": 601.5,
+                "right": 1201,
+                "bottom": 841.5,
+                "left": 881
+              },
+              "backing": {
+                "width": 640,
+                "height": 480
+              },
+              "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 320px; height: 240px;"
+            }
+          },
+          "retina-150.json": {
+            "metric": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "display": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "geometry": {
+              "canvas": {
+                "x": 815,
+                "y": 532.5,
+                "width": 480,
+                "height": 360,
+                "top": 532.5,
+                "right": 1295,
+                "bottom": 892.5,
+                "left": 815
+              },
+              "ink": {
+                "x": 815,
+                "y": 532.5,
+                "width": 480,
+                "height": 360,
+                "top": 532.5,
+                "right": 1295,
+                "bottom": 892.5,
+                "left": 815
+              },
+              "backing": {
+                "width": 960,
+                "height": 720
+              },
+              "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 480px; height: 360px;"
+            }
+          },
+          "retina-50.json": {
+            "metric": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "display": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "geometry": {
+              "canvas": {
+                "x": 806,
+                "y": 558.5,
+                "width": 160,
+                "height": 120,
+                "top": 558.5,
+                "right": 966,
+                "bottom": 678.5,
+                "left": 806
+              },
+              "ink": {
+                "x": 806,
+                "y": 558.5,
+                "width": 160,
+                "height": 120,
+                "top": 558.5,
+                "right": 966,
+                "bottom": 678.5,
+                "left": 806
+              },
+              "backing": {
+                "width": 320,
+                "height": 240
+              },
+              "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 160px; height: 120px;"
+            }
+          },
+          "retina-zoom.json": [
+            {
+              "zoom": 100,
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            {
+              "zoom": 150,
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            {
+              "zoom": 50,
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            }
+          ]
+        }
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "stroke overlay follows zoom, fractional origin, DPR, scroll and viewport resizing",
+        "status": "passed",
+        "metrics": {}
+      },
+      {
+        "browser": "stroke-firefox",
+        "title": "fillOpacity overlay follows zoom, fractional origin, DPR, scroll and viewport resizing",
+        "status": "passed",
+        "metrics": {
+          "retina-100.json": {
+            "metric": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "display": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "geometry": {
+              "canvas": {
+                "x": 881,
+                "y": 602.5,
+                "width": 320,
+                "height": 240,
+                "top": 602.5,
+                "right": 1201,
+                "bottom": 842.5,
+                "left": 881
+              },
+              "ink": {
+                "x": 881,
+                "y": 602.5,
+                "width": 320,
+                "height": 240,
+                "top": 602.5,
+                "right": 1201,
+                "bottom": 842.5,
+                "left": 881
+              },
+              "backing": {
+                "width": 640,
+                "height": 480
+              },
+              "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 320px; height: 240px;"
+            }
+          },
+          "retina-150.json": {
+            "metric": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "display": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "geometry": {
+              "canvas": {
+                "x": 815,
+                "y": 533.5,
+                "width": 480,
+                "height": 360,
+                "top": 533.5,
+                "right": 1295,
+                "bottom": 893.5,
+                "left": 815
+              },
+              "ink": {
+                "x": 815,
+                "y": 533.5,
+                "width": 480,
+                "height": 360,
+                "top": 533.5,
+                "right": 1295,
+                "bottom": 893.5,
+                "left": 815
+              },
+              "backing": {
+                "width": 960,
+                "height": 720
+              },
+              "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 480px; height: 360px;"
+            }
+          },
+          "retina-50.json": {
+            "metric": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "display": {
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            "geometry": {
+              "canvas": {
+                "x": 807,
+                "y": 558.5,
+                "width": 160,
+                "height": 120,
+                "top": 558.5,
+                "right": 967,
+                "bottom": 678.5,
+                "left": 807
+              },
+              "ink": {
+                "x": 807,
+                "y": 558.5,
+                "width": 160,
+                "height": 120,
+                "top": 558.5,
+                "right": 967,
+                "bottom": 678.5,
+                "left": 807
+              },
+              "backing": {
+                "width": 320,
+                "height": 240
+              },
+              "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 7; display: block; left: 0px; top: 0px; transform: none; width: 160px; height: 120px;"
+            }
+          },
+          "retina-zoom.json": [
+            {
+              "zoom": 100,
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            {
+              "zoom": 150,
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            },
+            {
+              "zoom": 50,
+              "changed": 0,
+              "above2": 0,
+              "max": 0
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

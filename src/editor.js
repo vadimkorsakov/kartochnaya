@@ -1158,7 +1158,7 @@ function mixedTextLayout(e){
 // Eligibility describes supported paint semantics, never a guessed CSS wrap.
 function supportsWysiwygProjection(e){
  if(e.mobileGlow||e.mobileBackground)return false;
- const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','lineHeight','bold','italic','underline','strikethrough','strokeWidth','stroke']);
+ const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','lineHeight','bold','italic','underline','strikethrough','strokeWidth','stroke','fillOpacity']);
  if((e.textRuns||[]).some(run=>Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
  try{return richTextEngine.layout(e).rows.every(row=>Number.isFinite(row.baseline)&&row.height>0&&Number.isFinite(row.width));}
  catch{return false;}
@@ -2362,16 +2362,16 @@ function styleInlineLayer(key,value,final){
  return app.wysiwyg.applyLayerStyle(patch,{key,final});
 }
 function styleInlineSelection(key,value,final){
- if(app.wysiwyg&&['strokeWidth','stroke'].includes(key)&&!inlineStyleRange()){toast('Выделите фрагмент текста для обводки');return true;}
- if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke'].includes(key))return false;
+ if(app.wysiwyg&&['strokeWidth','stroke','fillOpacity'].includes(key)&&!inlineStyleRange()){toast(key==='fillOpacity'?'Выделите фрагмент текста для непрозрачности заливки':'Выделите фрагмент текста для обводки');return true;}
+ if(!['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity'].includes(key))return false;
  const c=inlineStyleRange(),e=active();if(!c||e?.id!==app.editingId)return false;
  if(key==='lineHeight'&&!supportsHorizontalTextLayout(e))return false;
  let patch={[key]:value};
  const session=app.inlineSession;
  if(!session.pendingStyle||session.pendingStyle.key!==key)session.pendingStyle={key,fontSize:e.fontSize,baseFontSize:e.textRunsBaseFontSize||e.fontSize};
- if(['fontSize','letterSpacing','lineHeight','strokeWidth'].includes(key)){
+ if(['fontSize','letterSpacing','lineHeight','strokeWidth','fillOpacity'].includes(key)){
   if(String(value).trim()==='')return true;
-  const n=Number(value);if(!Number.isFinite(n)||key==='lineHeight'&&n<=0)return true;
+  const n=Number(value);if(!Number.isFinite(n)||key==='lineHeight'&&n<=0||key==='fillOpacity'&&(n<0||n>100))return true;
   patch[key]=key==='fontSize'?Math.max(1,n)*session.pendingStyle.baseFontSize/session.pendingStyle.fontSize:key==='strokeWidth'?Math.max(0,n):n;
  }
  if(key==='fontVariant'){const [weight,style]=String(value).split(':');patch={fontWeight:weight||'400',fontStyle:style||'normal',bold:null,italic:null}}
@@ -2392,7 +2392,7 @@ function styleInlineSelection(key,value,final){
  // A manual size uses the fitted scale, then opts out of fitting just like
  // the layer size field. Other fragments keep both their units and scale.
  if(key==='fontSize'){e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}
- retainRichTextSizeBase(e);if(!['underline','strikethrough','strokeWidth','stroke'].includes(key))autoFitTextFont(e);positionInlineText();restoreInlineCaret(false);
+ retainRichTextSizeBase(e);if(!['underline','strikethrough','strokeWidth','stroke','fillOpacity'].includes(key))autoFitTextFont(e);positionInlineText();restoreInlineCaret(false);
  if(final){recordInlineSession();session.pendingStyle=null}updateHistoryButtons();paint();return true;
 }
 // Ownership lasts through the native mouse/focus/click sequence, including
@@ -3570,7 +3570,8 @@ function syncTextFill(e){if(e?.type==='text'&&(e.fillType||'solid')==='solid')e.
 function currentPickerKey(){const p=$('#fillPopover');return p.dataset.key==='fill'&&active()?.fillType==='gradient'?'gradientStop':p.dataset.key}
 function pickerAlphaKey(){const k=$('#fillPopover').dataset.key;return k==='stroke'?'strokeOpacity':'fillOpacity'}
 function cpCurrentHex(){if(currentPickerKey()==='gradientStop')return getGradientStop()?.color||'#ffffff';return normalizeHex(targetFillValue(currentPickerKey()))||'#ffffff'}
-function cpCurrentAlpha(){if($('#fillPopover').dataset.key==='_effect')return 100;if($('#fillPopover').dataset.key==='_ink')return app.inkSettings.alpha;if($('#fillPopover').dataset.key==='_docBackground')return app.doc.backgroundAlpha??100;if(currentPickerKey()==='gradientStop')return getGradientStop()?.alpha??100;const k=pickerAlphaKey();return Number(active()?.[k]??100)}
+function pickerRangeFill(){return !!app.wysiwyg&&['fill','textColor'].includes(currentPickerKey())&&(active()?.fillType||'solid')==='solid';}
+function cpCurrentAlpha(){if(pickerRangeFill()&&inlineStyleRange()){const c=inlineStyleRange(),values=richTextSpans(active()).filter(p=>p.start<c.end&&p.end>c.start).map(p=>p.style.fillOpacity);return values.every(v=>v===values[0])?values[0]:'mixed';}if($('#fillPopover').dataset.key==='_effect')return 100;if($('#fillPopover').dataset.key==='_ink')return app.inkSettings.alpha;if($('#fillPopover').dataset.key==='_docBackground')return app.doc.backgroundAlpha??100;if(currentPickerKey()==='gradientStop')return getGradientStop()?.alpha??100;const k=pickerAlphaKey();return Number((active()||picked()[0])?.[k]??100)}
 function updatePickerColor(hex,final=false){hex=normalizeHex(hex);if(!hex)return;const k=currentPickerKey(),e=active();
  if(['fill','textColor','stroke'].includes(k)&&styleInlineSelection(k==='stroke'?'stroke':'textColor',hex,final)){refreshPickerVisual(false);return}
  if(app.wysiwyg&&!fallbackInlineWysiwyg('Цвет слоя'))return;
@@ -3587,7 +3588,7 @@ function updatePickerColor(hex,final=false){hex=normalizeHex(hex);if(!hex)return
  else if(['fill','stroke','textColor','rasterFillColor','mobileBackgroundColor'].includes(k)){if(app.selectedIds.length>1){for(const o of picked()){o[k]=hex;if(k==='stroke'&&o.type==='text')restoreTextRuns(o,applyTextStyle(o,0,o.text.length,{stroke:null}).textRuns);}if(final)commit();else{paint();saveSoon()}}else changeProperty(k,hex,final)}
  if(!final)refreshColorRowOnly();else refreshInspector();
 }
-function updatePickerAlpha(alpha,final=false){if(app.wysiwyg&&currentPickerKey()==='stroke'){toast('Непрозрачность обводки слоя меняется вне редактирования текста');return;}if(app.wysiwyg&&!fallbackInlineWysiwyg('Непрозрачность'))return;const e=active();const val=clamp(Number(alpha),0,100);if($('#fillPopover').dataset.key==='_effect')return;if($('#fillPopover').dataset.key==='_ink'){app.inkSettings.alpha=val;inkRefreshColor();inkPersist();return}if($('#fillPopover').dataset.key==='_docBackground'){app.doc.backgroundAlpha=val;if(final)commit();else{paint();saveSoon()}return}if(!e)return;
+function updatePickerAlpha(alpha,final=false){if(String(alpha).trim()===''||!Number.isFinite(Number(alpha)))return;if(pickerRangeFill()){styleInlineSelection('fillOpacity',clamp(Number(alpha),0,100),final);return;}if(app.wysiwyg&&currentPickerKey()==='stroke'){toast('Непрозрачность обводки слоя меняется вне редактирования текста');return;}if(app.wysiwyg&&!fallbackInlineWysiwyg('Непрозрачность'))return;const e=active()||(app.selectedIds.length>1?picked()[0]:null);const val=clamp(Number(alpha),0,100);if($('#fillPopover').dataset.key==='_effect')return;if($('#fillPopover').dataset.key==='_ink'){app.inkSettings.alpha=val;inkRefreshColor();inkPersist();return}if($('#fillPopover').dataset.key==='_docBackground'){app.doc.backgroundAlpha=val;if(final)commit();else{paint();saveSoon()}return}if(!e)return;
  if(currentPickerKey()==='gradientStop'){const st=getGradientStop();if(!st)return;st.alpha=val;if(final)commit();else{paint();saveSoon()}}
  else{const k=pickerAlphaKey();if(app.selectedIds.length>1){for(const p of picked())p[k]=val;if(final)commit();else{paint();saveSoon()}}else changeProperty(k,val,final)}
  if(final)refreshInspector();
@@ -3613,8 +3614,9 @@ function refreshColorRowOnly(){const b=$('#inspector [data-fill-open="'+$('#fill
 function renderPickerChannels(){const p=$('#fillPopover'),fmt=p.dataset.format||'HEX',vals=cpFormatValues(cpCurrentHex(),fmt),wrap=p.querySelector('#cpChannels');if(!wrap)return;wrap.classList.toggle('single',vals.length===1);wrap.innerHTML=vals.map((v,i)=>`<input data-cp-part="${i}" aria-label="${fmt} ${i+1}" value="${String(v).replaceAll('"','&quot;')}" spellcheck="false">`).join('')}
 function refreshPickerVisual(updateChannels=true){const p=$('#fillPopover');if(p.classList.contains('hidden'))return;const col=cpCurrentHex(),[h,s,v]=rgbHSV(...hexRgb(col)),square=p.querySelector('#cpSquare'),pt=p.querySelector('#cpPoint');if(square){square.style.backgroundColor=`hsl(${h},100%,50%)`;pt.style.left=s+'%';pt.style.top=(100-v)+'%'}
  const hue=p.querySelector('#cpHue');if(hue)hue.value=h;
- const alpha=p.querySelector('#cpAlpha');if(alpha){alpha.disabled=!!app.wysiwyg&&currentPickerKey()==='stroke';alpha.value=cpCurrentAlpha();alpha.style.backgroundImage=`linear-gradient(to right,transparent,${col}),repeating-conic-gradient(#999 0 25%,#555 0 50%)`;alpha.style.backgroundSize='auto,12px 12px'}
- const aInput=p.querySelector('#cpAlphaInput');if(aInput){aInput.disabled=!!app.wysiwyg&&currentPickerKey()==='stroke';aInput.value=Math.round(cpCurrentAlpha());}
+ const alphaValue=cpCurrentAlpha();
+ const alpha=p.querySelector('#cpAlpha');if(alpha){alpha.disabled=!!app.wysiwyg&&currentPickerKey()==='stroke';alpha.value=alphaValue==='mixed'?inlineSelectionStyle().fillOpacity:alphaValue;alpha.setAttribute('aria-valuetext',alphaValue==='mixed'?'Mixed':String(alphaValue));alpha.style.backgroundImage=`linear-gradient(to right,transparent,${col}),repeating-conic-gradient(#999 0 25%,#555 0 50%)`;alpha.style.backgroundSize='auto,12px 12px'}
+ const aInput=p.querySelector('#cpAlphaInput');if(aInput){aInput.disabled=!!app.wysiwyg&&currentPickerKey()==='stroke';aInput.placeholder=alphaValue==='mixed'?'Mixed':'';if(updateChannels||document.activeElement!==aInput)aInput.value=alphaValue==='mixed'?'':Math.round(alphaValue);}
  if(updateChannels)renderPickerChannels();syncEffectColorSwatches();if(active()?.fillType==='gradient')paint();
  if(active()?.fillType==='gradient'){const paint=p.querySelector('.cp-gradient-paint');if(paint)paint.style.background=gradientCSS(active());for(const b of p.querySelectorAll('[data-gstop]')){const st=gradientStops(active()).find(st=>st.id===b.dataset.gstop);if(st){b.style.left=st.pos+'%';b.style.setProperty('--stop',hexAlpha(st.color,st.alpha));b.classList.toggle('active',st.id===getGradientStop()?.id)}}for(const row of p.querySelectorAll('[data-stop-row]')){const st=gradientStops(active()).find(st=>st.id===row.dataset.stopRow);if(st){row.classList.toggle('active',st.id===getGradientStop()?.id);const sw=row.querySelector('.stop-swatch');if(sw)sw.style.background=hexAlpha(st.color,st.alpha);const ae=row.querySelector('[data-stop-alpha]');if(ae&&document.activeElement!==ae)ae.value=Math.round(st.alpha);const he=row.querySelector('[data-stop-hex]');if(he&&document.activeElement!==he)he.value=st.color.toUpperCase()}}}
 }
@@ -3778,6 +3780,7 @@ $('#fillPopover').addEventListener('click',async ev=>{
  if(b.hasAttribute('data-cp-eyedrop')){if('EyeDropper'in window&&window.isSecureContext){try{const result=await new EyeDropper().open();cpLiveColor(result.sRGBHex,true);refreshPickerVisual();return}catch{}}
  app.pipetteArmed=true;$('#stageScroller').classList.add('pipette-mode');toast('Пипетка: щёлкни по цвету на карточке');}
 });
+$('#fillPopover').addEventListener('keydown',ev=>{const field=ev.target;if(field.id==='cpAlphaInput'&&field.value===''&&pickerRangeFill()&&inlineStyleRange()&&['ArrowUp','ArrowDown'].includes(ev.key)){ev.preventDefault();field.value=clamp(inlineSelectionStyle().fillOpacity+(ev.key==='ArrowUp'?1:-1),0,100);field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));}});
 $('#fillPopover').addEventListener('change',ev=>{const el=ev.target,p=$('#fillPopover');if(el.dataset.key==='imageFit'){changeProperty('imageFit',el.value,true);refreshInspector();renderFillPopover();return;}if(el.id==='cpFormat'){p.dataset.format=el.value;renderPickerChannels()}else if(el.hasAttribute('data-cp-part')){const hex=cpParseChannels();if(hex){cpLiveColor(hex,true);refreshPickerVisual()}else toast('Некорректное значение цвета')}else if(el.id==='cpHue'||el.id==='cpAlpha'||el.id==='cpAlphaInput'){if(el.id==='cpHue')updatePickerColor(rgbHex(...hsvRGB(+el.value,rgbHSV(...hexRgb(cpCurrentHex()))[1],rgbHSV(...hexRgb(cpCurrentHex()))[2])),true);else updatePickerAlpha(el.value,true);refreshPickerVisual()}else if(el.dataset.key){handleInspectorChange(ev,true)}});
 $('#fillPopover').addEventListener('input',ev=>{const el=ev.target;if(el.hasAttribute('data-cp-part')&&app.wysiwyg){const hex=cpParseChannels();if(hex)cpLiveColor(hex,false)}else if(el.id==='cpHue'){const hsv=rgbHSV(...hexRgb(cpCurrentHex()));cpLiveColor(rgbHex(...hsvRGB(+el.value,hsv[1],hsv[2])),false)}else if(el.id==='cpAlpha'||el.id==='cpAlphaInput'){updatePickerAlpha(el.value,false);const a=$('#fillPopover #cpAlpha');if(a&&el!==a)a.value=el.value;const v=$('#fillPopover #cpAlphaInput');if(v&&el!==v)v.value=el.value;refreshPickerVisual(false)}else if(el.dataset.key)handleInspectorChange(ev,false)});
 $('#fillPopover').addEventListener('click',ev=>{const action=ev.target.closest('[data-action]')?.dataset.action;if(!action)return;ev.preventDefault();ev.stopPropagation();if(action==='toggleCrop'){closeFillPopover();enterCrop()}else if(action==='image'){app.pendingImage={kind:'fill',id:active()?.id};$('#imageInput').click()}});
@@ -4890,7 +4893,10 @@ document.addEventListener('click',ev=>{
  try{
   // Mixed range typography starts at the effective first character, not empty -> 0.
   // Add the step directly so a fractional origin is not snapped to a grid.
-  if((field.dataset.key==='letterSpacing'&&inlineStyleRange())||(field.dataset.key==='lineHeight'&&active()?.type==='text')||(field.dataset.key==='strokeWidth'&&(active()||picked()[0])?.type==='text')){
+  if(field.id==='cpAlphaInput'&&pickerRangeFill()&&inlineStyleRange()){
+   const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:inlineSelectionStyle().fillOpacity;
+   field.value=String(clamp(base+(button.dataset.numDirection==='up'?1:-1)*(Number(field.step)||1),0,100));
+  }else if((field.dataset.key==='letterSpacing'&&inlineStyleRange())||(field.dataset.key==='lineHeight'&&active()?.type==='text')||(field.dataset.key==='strokeWidth'&&(active()||picked()[0])?.type==='text')){
    const style=inlineStyleRange()?inlineSelectionStyle():field.dataset.key==='strokeWidth'?(richTextSpans(active()||picked()[0])[0]?.style||resolveRichTextStyle(active()||picked()[0])):resolveRichTextStyle(active());
    const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:style[field.dataset.key],step=Number(field.step)||.5;
    let next=base+(button.dataset.numDirection==='up'?step:-step);

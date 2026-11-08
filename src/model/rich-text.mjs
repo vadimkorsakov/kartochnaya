@@ -30,6 +30,8 @@ function styleData(value, base = {}) {
     if (v === undefined || v === null) continue;
     if (['fontFamily', 'fontStyle', 'textColor', 'fontWeight'].includes(k) && typeof v !== 'string') continue;
     if (['fontSize', 'lineHeight'].includes(k) && !(typeof v === 'number' && v > 0)) continue;
+    if (k === 'strokeWidth' && !(typeof v === 'number' && Number.isFinite(v) && v >= 0)) continue;
+    if (k === 'stroke' && !(typeof v === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v))) continue;
     if (['bold', 'italic', 'underline', 'strikethrough'].includes(k) && typeof v !== 'boolean') continue;
     // Run sizes stay in the original reference units after mixed-text fitting.
     let inherited = base[k];
@@ -39,7 +41,11 @@ function styleData(value, base = {}) {
     if ((k === 'bold' && base.fontWeight) || (k === 'italic' && base.fontStyle)) inherited = undefined;
     // A base-equal explicit key still wins over a conflicting run alias.
     const alias = k === 'fontWeight' ? 'bold' : k === 'fontStyle' ? 'italic' : null;
-    if (!equal(v, inherited) || alias && typeof value[alias] === 'boolean') out[k] = v;
+    // Explicit stroke zero must continue disabling a range after a later layer
+    // stroke edit, even if it currently equals the inherited layer width.
+    if (k === 'strokeWidth' || k === 'stroke') out[k] = k === 'stroke' ?
+      (v.length === 4 ? '#'+v.slice(1).split('').map(c=>c+c).join('') : v).toLowerCase() : v;
+    else if (!equal(v, inherited) || alias && typeof value[alias] === 'boolean') out[k] = v;
   }
   return out;
 }
@@ -116,7 +122,7 @@ export function effectiveTextStyles(element, start = 0, end = element.text.lengt
   const runs = normalizeRuns(element.text, element.textRuns, element);
   const points = [...new Set([start, end, ...runs.flatMap(r => [r.start, r.end]).filter(i => i > start && i < end)])].sort((a, b) => a - b);
   const base = styleData(Object.fromEntries(Object.entries(element).filter(([k]) =>
-    ['fontFamily','fontWeight','fontStyle','fontVariant','fontSize','lineHeight','textColor','bold','italic','underline','underlineDetails','strikethrough','strikethroughDetails','mobileUnderline','mobileStrike','letterSpacing','baselineShift','fontFeatures','fontVariationSettings'].includes(k) || runs.some(r => Object.hasOwn(r.style,k)))));
+    ['fontFamily','fontWeight','fontStyle','fontVariant','fontSize','lineHeight','textColor','strokeWidth','stroke','bold','italic','underline','underlineDetails','strikethrough','strikethroughDetails','mobileUnderline','mobileStrike','letterSpacing','baselineShift','fontFeatures','fontVariationSettings'].includes(k) || runs.some(r => Object.hasOwn(r.style,k)))));
   return points.slice(0, -1).map((a, i) => ({ start: a, end: points[i + 1], style: { ...base, ...runs.find(r => r.start <= a && r.end > a)?.style } }));
 }
 export function effectiveTextStyleAt(element, index) {

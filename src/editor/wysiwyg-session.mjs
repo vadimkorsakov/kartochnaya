@@ -1,6 +1,7 @@
 import {richTextSpans, resolveRichTextStyle, richTextFont, retainRichTextSizeBase} from '../render/rich-text-layout.mjs';
 import {replaceText, applyTextStyle} from '../model/rich-text.mjs';
 import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-history.mjs';
+import {paintHorizontalTextPass, hasHorizontalTextStroke} from '../render/text-stroke.mjs';
 
 const ctx = document.createElement('canvas').getContext('2d');
 function lineHeight(style) {
@@ -25,7 +26,7 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=
  // color/font/size changes invisible until the editor was closed.
  if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')==='0'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
  if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&e.textAlign!=='left')||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
- if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||e.strokeWidth||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
+ if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100||(e.fillOpacity??100)!==100)return false;
  // Supported paint semantics apply equally to plain and sparse-rich text.
  // Geometry is supplied by the shared row layout, never a CSS parity guess.
  if(!compatible(e))return false;
@@ -34,13 +35,39 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=
 
 // Canonical layer + the editor's existing session history own all confirmed data.
 // Unknown DOM remains on screen until explicit recovery; it is never persisted.
-export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, compatible=()=>false, layout=()=>null, fit=()=>false}) {
+export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, compatible=()=>false, layout=()=>null, fit=()=>false, viewport=()=>({width:Infinity,height:Infinity})}) {
  let layer=element, composing=false, fallback=null, pasteText=null, confirmedHTML, inactive=false;
  const safe={phase:'confirmed', deferred:false};
  let savedSelection=null, preview=null, verticalX=null;
  const abort=new AbortController(), listen=(name,fn)=>host.addEventListener(name,fn,{signal:abort.signal});
+ const overlay=document.createElement('canvas');overlay.dataset.textStrokeOverlay='';overlay.setAttribute('aria-hidden','true');
+ Object.assign(overlay.style,{position:'absolute',pointerEvents:'none',transformOrigin:'0 0',zIndex:'7',display:'none'});
+ host.after(overlay);
+ let density=1,overlayKey=null;
+ function releaseOverlay(){overlay.remove();overlay.width=overlay.height=1;host.classList.remove('wysiwyg-canvas-ink');}
+ function syncOverlay(nextDensity=density){
+  density=nextDensity;
+  if(inactive||fallback||composing){overlay.style.display='none';host.classList.remove('wysiwyg-canvas-ink');return;}
+  const projection=layout(layer),active=hasHorizontalTextStroke(projection);
+  host.classList.toggle('wysiwyg-canvas-ink',active);overlay.style.display=active?'block':'none';
+  if(!active)return;
+  const frame=viewport();
+  // Match the main Canvas's complete raster and CSS box. A cropped Canvas with
+  // a CSS scale/translation gets a different compositor sampling phase in
+  // Gecko at fractional zoom, even when its backing pixels are identical.
+  const matrix=new DOMMatrix(host.style.transform||undefined);
+  overlay.style.left=((parseFloat(host.style.left)||0)-(layer.x||0)*matrix.a)+'px';overlay.style.top=((parseFloat(host.style.top)||0)-(layer.y||0)*matrix.d)+'px';
+  overlay.style.transform='none';
+  const width=Number.isFinite(frame.width)?frame.width:layer.w,height=Number.isFinite(frame.height)?frame.height:layer.h;
+  overlay.style.width=width*matrix.a+'px';overlay.style.height=height*matrix.d+'px';
+  const key=JSON.stringify([layer,density,width,height]);if(key===overlayKey)return;overlayKey=key;
+  overlay.width=Math.max(1,Math.round(width*density));overlay.height=Math.max(1,Math.round(height*density));
+  const c=overlay.getContext('2d');c.setTransform(density,0,0,density,0,0);
+  c.translate((layer.x||0)+layer.w/2,(layer.y||0)+layer.h/2);c.translate(-layer.w/2,-layer.h/2);
+  paintHorizontalTextPass(c,layer,projection,'fill');paintHorizontalTextPass(c,layer,projection,'stroke');
+ }
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
- function stop(reason){pasteText=null;fallback=reason;safe.phase='recovery-required';if(!inactive)onRecovery(reason);}
+ function stop(reason){pasteText=null;fallback=reason;safe.phase='recovery-required';syncOverlay();if(!inactive)onRecovery(reason);}
  function project(value,selection){
   verticalX=null;
   // Probe measurements also attach temporary DOM nodes. Capture the owner
@@ -58,6 +85,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // Soft wraps add no characters. Only source LF occupies a UTF-16 offset.
   const projection=layout(value);
   if(!projection?.rows?.length)throw Error('Text layout unavailable');
+  const canvasInk=hasHorizontalTextStroke(projection);
   const nodes=[];
   for(const row of projection.rows){
    const rowNode=document.createElement('span');rowNode.dataset.wysiwygRow='';
@@ -65,7 +93,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    // CSS backgrounds contain no DOM nodes or characters, so native Selection,
    // UTF-16 indexing and confirmedHTML validation keep their existing contract.
    Object.assign(rowNode.style, {width:value.w+'px',
-    backgroundImage:row.decorations.map(r=>`linear-gradient(${r.color}, ${r.color})`).join(','),
+    backgroundImage:canvasInk?'':row.decorations.map(r=>`linear-gradient(${r.color}, ${r.color})`).join(','),
     backgroundPosition:row.decorations.map(r=>`${r.x}px ${r.y-row.y}px`).join(','),
     backgroundSize:row.decorations.map(r=>`${r.width}px ${r.height}px`).join(','),backgroundRepeat:'no-repeat'});
    nodes.push(rowNode);let advance=0;
@@ -93,6 +121,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   if(!host.childNodes.length)host.append(document.createTextNode(''));
   if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';nodes.at(-1).lastChild.append(br);}
   confirmedHTML=host.innerHTML;
+  syncOverlay();
   // setBaseAndExtent focuses contenteditable in Chromium and would blur a
   // numeric/HEX input (emitting change in the middle of its input callback).
   // Keep the range in UTF-16 while a panel owns focus; restore on host focus.
@@ -147,7 +176,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   }
   if(key==='fontSize')next.autoFontSize=false;
   retainRichTextSizeBase(next);
-  if(next.autoFontSize&&!['underline','strikethrough'].includes(key))fit(next);
+  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke'].includes(key))fit(next);
   if(!compatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}
@@ -208,7 +237,7 @@ for(const type of ['copy','cut'])listen(type,event=>{
   catch{stop('Text projection unavailable');}
  }
 });
- listen('compositionstart',()=>{composing=true;safe.deferred=true;safe.phase='composing';onRecovery('IME: завершите композицию, затем восстановите подтверждённый текст');});
+ listen('compositionstart',()=>{composing=true;safe.deferred=true;safe.phase='composing';syncOverlay();onRecovery('IME: завершите композицию, затем восстановите подтверждённый текст');});
  listen('compositionend',()=>{composing=false;if(inactive)host.contentEditable='false';stop('Результат IME требует явного восстановления');});
 function index(){
  let text='';const points=new Map(),leaves=[];
@@ -339,10 +368,10 @@ listen('input',()=>{
 
  host.contentEditable='plaintext-only';host.classList.remove('hidden');
  const initial={anchor:layer.text.length,focus:layer.text.length};project(structuredClone(layer),initial);recordInlineHistory(history,layer,caret(initial));
- return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection,requestFallback,clean,applyRangeStyle,applyLayerStyle,finishPreview,
-  preserve(){inactive=true;if(!composing)host.contentEditable='false';},
+ return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection,requestFallback,clean,applyRangeStyle,applyLayerStyle,finishPreview,syncOverlay,
+  preserve(){inactive=true;releaseOverlay();if(!composing)host.contentEditable='false';},
   focus(){host.focus({preventScroll:true});},
   recover(){if(composing)return false;fallback=null;safe.deferred=false;safe.phase='confirmed';project(structuredClone(layer),{anchor:layer.text.length,focus:layer.text.length});onChange();return true;},
-  dispose(){abort.abort();host.classList.add('hidden');}
+  dispose(){abort.abort();releaseOverlay();host.classList.add('hidden');}
  };
 }

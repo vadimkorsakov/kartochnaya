@@ -1553,6 +1553,8 @@ html,body{background:#1e1f27!important;}
 .mp-auto-font{display:flex;align-items:center;gap:4px;white-space:nowrap;font-size:12px;font-weight:650;padding:0 4px;cursor:pointer}
 
 .inline-wysiwyg{white-space:pre!important;overflow-wrap:normal;word-break:normal;overflow:hidden;min-width:0;min-height:0;}
+.wysiwyg-canvas-ink [data-wysiwyg-fragment]{color:transparent!important;}
+.wysiwyg-canvas-ink ::selection{color:transparent!important;background-color:rgba(128,98,247,.25);}
 .wysiwyg-recovery{position:fixed;bottom:24px;left:20%;right:20%;z-index:1000;padding:16px;background:#242332;color:#fff;border:1px solid #a88afa;user-select:text;}
 .wysiwyg-recovery button{margin:8px;padding:8px;}
 

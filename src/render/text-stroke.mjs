@@ -22,7 +22,7 @@ export function paintHorizontalTextPass(c,e,layout,method='fill') {
    c.save();c.font=richTextFont(s);c.letterSpacing=s.letterSpacing+'px';
    if(method==='stroke'){
     c.lineWidth=s.strokeWidth;c.strokeStyle=s.stroke;
-    c.globalAlpha*=Math.max(0,Math.min(1,(e.strokeOpacity??100)/100));
+    c.globalAlpha*=Math.max(0,Math.min(1,(s.strokeOpacity??e.strokeOpacity??100)/100));
     c.lineJoin='round';c.miterLimit=2;c.lineCap='butt';
     c.setLineDash(e.strokeStyle==='dashed'?[Math.max(3,s.strokeWidth*4),Math.max(2,s.strokeWidth*2)]:
      e.strokeStyle==='dotted'?[Math.max(1,s.strokeWidth*.12),Math.max(2,s.strokeWidth*2)]:[]);

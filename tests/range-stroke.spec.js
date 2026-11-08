@@ -21,12 +21,13 @@ async function seed(page,patch={},multiple=false,backdrop=false){
  }
  await importPayload(page,payload);await expect(page.locator('#toast')).toContainText('Импортировано проектов');
  const stored=(await records(page,'docs')).find(d=>layer(d));await openLibraryDocument(page,stored.id);
- for(let i=0;i<60;i++){const zoom=parseInt(await page.locator('#zoomLabel').textContent());if(zoom===100)break;await page.locator(zoom>100?'#zoomOutBtn':'#zoomInBtn').click();}
+ await actualSize(page);
  await expect(page.locator('#zoomLabel')).toHaveText('100%');
  // Remove only editing affordances from ink measurements; product ink remains.
  await page.addStyleTag({content:'.inline-wysiwyg{outline:none!important;caret-color:transparent!important}.inline-wysiwyg ::selection{background:transparent!important}'});
  return stored;
 }
+async function actualSize(page){for(let i=0;i<60;i++){const zoom=parseInt(await page.locator('#zoomLabel').textContent());if(zoom===100)break;await page.locator(zoom>100?'#zoomOutBtn':'#zoomInBtn').click();}await expect(page.locator('#zoomLabel')).toHaveText('100%');}
 async function edit(page){await page.locator('#layers [data-layer="title"] .layer-name').click();const p=await canvasPoint(page,55,57);await page.mouse.dblclick(p.x,p.y);await expect(page.locator(surface)).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();}
 async function selection(page){return page.locator(surface).evaluate(el=>{
  const s=getSelection(),offset=(node,n)=>{const r=document.createRange();r.setStart(el,0);r.setEnd(node,n);return r.toString().length;};return {anchor:offset(s.anchorNode,s.anchorOffset),focus:offset(s.focusNode,s.focusOffset)};
@@ -410,4 +411,102 @@ for(const partial of [true,false])test(`fill opacity native fi ${partial?'partia
  },partial);
  const oracle=diff(await livePixels(page),expected);await testInfo.attach('fill-native-fi-oracle.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);
  await parity(page,testInfo,'fill-native-fi');
+});
+
+async function strokePicker(page){if(!await page.locator('#fillPopover').isVisible())await page.locator('#inspector [data-fill-open="stroke"]').click();}
+async function strokeAlpha(page,value,slider=false){
+ await strokePicker(page);const input=page.locator(slider?'#cpAlpha':'#cpAlphaInput');
+ if(slider){await input.focus();await input.press('Home');for(let i=0;i<value;i++)await input.press('ArrowRight');await input.press('Tab');}
+ else{await input.fill(String(value));await expect(input).toBeFocused();await input.press('Tab');}
+ await expect(page.locator('#cpAlphaInput')).toHaveValue(String(value));await page.locator('[data-fill-close]').click();
+}
+
+test('stroke opacity Mixed preserves empty input, first-character stepping, backward selection and one preview Undo',async({page},testInfo)=>{
+ await seed(page,{text:'fi AV',fontSize:36,strokeWidth:3,strokeOpacity:75,textRuns:[{start:0,end:1,style:{strokeOpacity:50}}]});await edit(page);await select(page,2,0);
+ await strokePicker(page);const input=page.locator('#cpAlphaInput');await expect(input).toHaveValue('');await expect(input).toHaveAttribute('placeholder','Mixed');await expect(page.locator('#cpAlpha')).toHaveAttribute('aria-valuetext','Mixed');
+ const mixed=await model(page);await input.fill('');await input.press('Tab');expect(await model(page)).toEqual(mixed);
+ await input.focus();await input.press('ArrowUp');await expect(input).toHaveValue('51');
+ await page.locator('[data-fill-close]').click();await page.locator(surface).focus();expect(await selection(page)).toEqual({anchor:2,focus:0});
+ await page.keyboard.press('Control+z');expect(await model(page)).toEqual(mixed);
+ await strokePicker(page);await input.fill('');await input.locator('..').locator('[data-num-direction="up"]').click();await expect(input).toHaveValue('51');
+ await page.locator('[data-fill-close]').click();await page.locator(surface).focus();await page.keyboard.press('Control+z');expect(await model(page)).toEqual(mixed);
+ await strokePicker(page);await input.fill('');await input.pressSequentially('100');await expect(input).toHaveValue('100');
+ // Keep one preview open while applying multiple intermediate input events.
+ await input.fill('50');await input.fill('0');await input.press('Tab');await page.locator('[data-fill-close]').click();await page.locator(surface).focus();
+ const changed=await model(page);expect(changed.textRuns).toEqual([{start:0,end:2,style:{strokeOpacity:0}}]);expect(await selection(page)).toEqual({anchor:2,focus:0});
+ await page.keyboard.press('Control+z');expect(await model(page)).toEqual(mixed);await page.keyboard.press('Control+Shift+z');expect(await model(page)).toEqual(changed);
+ await page.keyboard.press('ArrowRight');await page.keyboard.type('X');const typed=await model(page);expect(typed.text).toBe('fiX AV');expect(typed.textRuns).toEqual([{start:0,end:3,style:{strokeOpacity:0}}]);
+ await page.keyboard.press('Control+z');expect(await model(page)).toEqual(changed);await page.keyboard.press('Control+Shift+z');expect(await model(page)).toEqual(typed);
+ await parity(page,testInfo,'stroke-mixed-history');
+});
+
+for(const autoFontSize of [false,true])test(`stroke opacity preserves LF, wrap, mixed fonts, AV/fi and auto-fit ${autoFontSize}`,async({page},testInfo)=>{
+ const text='AV fi Жук 😀 мягкий перенос\nСледующая строка';
+ await seed(page,{text,strokeWidth:3,fontSize:28,w:180,h:160,autoFontSize,textRuns:[{start:0,end:2,style:{fontWeight:'700',underline:true}},{start:3,end:5,style:{fontFamily:'Stroke Sans',fontSize:36,lineHeight:1.5}},{start:6,end:9,style:{fontSize:22,letterSpacing:1.5,strikethrough:true}}]});
+ await edit(page);const before=await model(page),rows=await page.locator(surface+' [data-wysiwyg-row]').count();
+ await select(page,0,14);await strokeAlpha(page,50);const after=await model(page);expect(after.fontSize).toBe(before.fontSize);expect(after.autoFontSize).toBe(autoFontSize);expect(await page.locator(surface+' [data-wysiwyg-row]').count()).toBe(rows);
+ const visible=await visibleInk(page,140);await parity(page,testInfo,'stroke-mixed-auto-'+autoFontSize);
+ const display=diff(visible.data,(await visibleInk(page,140)).data);await testInfo.attach('fill-US-screen.json',{body:JSON.stringify(display),contentType:'application/json'});expect(display.max).toBeLessThanOrEqual(2);
+});
+
+test('stroke opacity caret requires selection; whole-layer multi edit retains explicit overrides',async({page})=>{
+ const textRuns=[{start:0,end:1,style:{strokeOpacity:100}},{start:1,end:2,style:{strokeOpacity:0}}];
+ await seed(page,{text:'fi AV',strokeWidth:3,strokeOpacity:75,textRuns},true);await edit(page);await select(page,1,1);const before=await model(page);
+ await strokePicker(page);await page.locator('#cpAlphaInput').fill('40');await page.locator('#cpAlphaInput').press('Tab');await page.locator('[data-fill-close]').click();expect(await model(page)).toEqual(before);await expect(page.locator('#toast')).toContainText('Выделите фрагмент текста');await expect(page.locator(surface)).toBeVisible();
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+ await page.locator('#layers [data-layer="second"] .layer-name').click({modifiers:['Control']});await strokeAlpha(page,40);
+ const doc=await exportedDocument(page);for(const e of doc.elements){expect(e.strokeOpacity).toBe(40);expect(e.textRuns).toEqual(textRuns);}
+});
+
+for(const value of [0,40,100])test(`stroke opacity ${value} isolates a word, reveals backdrop and persists through reload/JSON`,async({page,browser},testInfo)=>{
+ const doc=await seed(page,{text:'HH NN',fontSize:48,strokeWidth:4,stroke:'#dd2244',strokeOpacity:75,fillOpacity:100},false,true);
+ await edit(page);await select(page,2,0);if(value===100)await fillAlpha(page,0);await strokeAlpha(page,value,value===40);
+ const e=await model(page);expect(e.strokeOpacity).toBe(75);expect(e.fillOpacity).toBe(100);expect(e.textRuns).toEqual([{start:0,end:2,style:{...(value===100?{fillOpacity:0}:{}),strokeOpacity:value}}]);
+ const native=await page.evaluate(async value=>{
+  const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;const c=canvas.getContext('2d'),img=new Image();img.src=window.__rangeBackdrop;await img.decode();c.drawImage(img,0,0);
+  c.font='normal 400 48px "Stroke Serif"';c.fontKerning='normal';c.letterSpacing='0px';
+  const m=c.measureText('Mg'),baseline=40+m.fontBoundingBoxAscent+(Math.max(48*1.2,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;
+  const x=20+c.measureText('HH NN').width-c.measureText(' NN').width;
+  c.fillStyle='#111111';c.globalAlpha=value===100?0:1;c.fillText('HH',20,baseline);c.globalAlpha=1;c.fillText(' NN',x,baseline);
+  c.lineWidth=4;c.strokeStyle='#dd2244';c.lineJoin='round';c.miterLimit=2;c.globalAlpha=value/100;c.strokeText('HH',20,baseline);c.globalAlpha=.75;c.strokeText(' NN',x,baseline);
+  return [...c.getImageData(0,0,320,240).data];
+ },value);
+ const oracle=diff(await livePixels(page),native);await testInfo.attach('stroke-word-native.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);
+ await parity(page,testInfo,'stroke-word-'+value);
+ await expect.poll(async()=>layer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(e);
+ const payload=await exportedPayload(page);expect(layer(payload.document)).toEqual(e);
+ await page.reload();await openLibraryDocument(page,doc.id);await edit(page);expect(await model(page)).toEqual(e);await page.keyboard.press('Control+Enter');
+ const fresh=await browser.newContext({baseURL:'http://127.0.0.1:4173',viewport:{width:2200,height:1400},acceptDownloads:true});
+ try{const imported=await fresh.newPage();await openHome(imported);await importPayload(imported,payload);await expect(imported.locator('#toast')).toContainText('Документ импортирован');const saved=(await records(imported,'docs')).find(d=>d.elements.some(t=>t.type==='text'&&t.text===e.text));expect({...saved.elements.find(t=>t.type==='text'),id:e.id}).toEqual(e);}finally{await fresh.close();}
+ if(value===40){
+  await page.locator('#documentTabsHome').click();await page.locator('[data-home-nav=data]').click();await page.locator('#zipStorage').click();await expect(page.locator('#zipConfirm')).toBeEnabled();
+  const pending=page.waitForEvent('download');await page.locator('#zipConfirm').click();const bytes=fs.readFileSync(await (await pending).path());await expect(page.locator('#zipStatus')).toContainText('передан браузеру');await page.locator('#zipCancel').click();
+  const {readBackup}=await import('../src/backup/archive.mjs');const backup=await readBackup(bytes);expect(layer(backup.data.docs.find(d=>d.id===doc.id))).toEqual(e);
+  await page.locator('#zipInput').setInputFiles({name:'stroke-opacity.zip',mimeType:'application/zip',buffer:bytes});await expect(page.locator('#zipBackupDialog')).toBeVisible();await expect(page.locator('#zipConfirm')).toBeEnabled();await page.locator('#zipConfirm').click();await expect(page.locator('#zipStatus')).toContainText('Транзакция завершена');await page.locator('#zipCancel').click();
+  const copy=(await records(page,'docs')).find(d=>d.id!==doc.id&&d.elements.some(t=>t.id===e.id));expect(layer(copy)).toEqual(e);await page.locator('[data-home-nav=workspace]').click();await page.locator(`[data-switch-project="${copy.projectId}"]`).click();await openLibraryDocument(page,copy.id);await actualSize(page);await edit(page);expect(await model(page)).toEqual(e);
+  // Reload cleared the fixture background used by livePixels to composite ink.
+  await page.evaluate(src=>window.__rangeBackdrop=src,copy.elements.find(t=>t.id==='backdrop').rasterSrc);
+  await parity(page,testInfo,'stroke-backup');
+ }
+
+});
+
+for(const [pair,partial,strokeWidth] of [['fi',true,3],['fi',false,3],['AV',true,3],['fi',true,0]])test(`stroke opacity native ${pair} ${partial?'partial':'whole'} width ${strokeWidth} oracle preserves fill and contextual kerning`,async({page},testInfo)=>{
+ await seed(page,{text:pair+' AV',fontSize:48,fillOpacity:50,strokeWidth,stroke:'#2266dd',strokeOpacity:75});await edit(page);await select(page,0,partial?1:2);await strokeAlpha(page,40);
+ const expected=await page.evaluate(({pair,partial,strokeWidth})=>{
+  const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;const c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,320,240);c.font='normal 400 48px "Stroke Serif"';c.fontKerning='normal';c.letterSpacing='0px';
+  const m=c.measureText('Mg'),baseline=40+m.fontBoundingBoxAscent+(Math.max(48*1.2,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;
+  const text=pair+' AV',first=partial?pair[0]:pair,rest=partial?pair[1]+' AV':' AV',x=20+c.measureText(text).width-c.measureText(rest).width;
+  c.fillStyle='#111111';c.globalAlpha=.5;if(strokeWidth){c.fillText(first,20,baseline);c.fillText(rest,x,baseline);}else c.fillText(text,20,baseline);
+  if(strokeWidth){c.lineWidth=strokeWidth;c.strokeStyle='#2266dd';c.lineJoin='round';c.miterLimit=2;c.globalAlpha=.4;c.strokeText(first,20,baseline);c.globalAlpha=.75;c.strokeText(rest,x,baseline);}
+  return [...c.getImageData(0,0,320,240).data];
+ },{pair,partial,strokeWidth});
+ const oracle=diff(await livePixels(page),expected);await testInfo.attach('stroke-native-fi-oracle.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);await parity(page,testInfo,'stroke-native-fi');
+});
+
+for(const textMode of ['vertical','path'])test(`stroke opacity keeps legacy ${textMode} textarea changes layer-wide`,async({page})=>{
+ const textRuns=[{start:0,end:1,style:{strokeOpacity:100}}];await seed(page,{text:'fi AV',strokeWidth:3,strokeOpacity:75,textMode,textRuns});
+ await page.locator('#layers [data-layer="title"] .layer-name').click();const point=await canvasPoint(page,55,57);await page.mouse.dblclick(point.x,point.y);const input=page.locator('#inlineText');await expect(input).toBeFocused();await expect(page.locator(surface)).toBeHidden();
+ await input.press('Control+Home');await input.press('Shift+ArrowRight');await strokeAlpha(page,40);
+ const e=await model(page);expect(e.strokeOpacity).toBe(40);expect(e.textRuns).toEqual(textRuns);
 });

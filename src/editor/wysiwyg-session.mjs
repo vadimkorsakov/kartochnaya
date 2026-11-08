@@ -177,7 +177,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   }
   if(key==='fontSize')next.autoFontSize=false;
   retainRichTextSizeBase(next);
-  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity'].includes(key))fit(next);
+  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity'].includes(key))fit(next);
   if(!compatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}

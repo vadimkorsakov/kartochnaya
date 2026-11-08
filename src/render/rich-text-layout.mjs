@@ -40,6 +40,7 @@ export function resolveRichTextStyle(base, override = {}) {
     fontStyle: italic(override) || italic(base) || 'normal',
     fontSize: override.fontSize === undefined ? size : positive(override.fontSize, size / scale) * scale,
     fillOpacity: override.fillOpacity ?? base.fillOpacity ?? 100,
+    strokeOpacity: override.strokeOpacity ?? base.strokeOpacity ?? 100,
     textColor: override.textColor || base.textColor || base.fill || '#000000',
     letterSpacing: spacing(override.letterSpacing ?? base.letterSpacing),
     lineHeight: positive(override.lineHeight, positive(base.lineHeight, 1.15)),
@@ -133,7 +134,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       if (cluster.text === '\n') continue;
       // Leading moves the shared baseline, but cannot split an otherwise
       // continuous decoration (fractional rect edges could leave a seam).
-      const { lineHeight, strokeWidth, stroke, ...decorationStyle } = cluster.style;
+      const { lineHeight, strokeWidth, stroke, strokeOpacity, ...decorationStyle } = cluster.style;
       if (!solid) delete decorationStyle.fillOpacity;
       const last = decorationSpans.at(-1), id = JSON.stringify(decorationStyle);
       if (last?.id === id && last.end === cluster.start) last.end = cluster.end;
@@ -144,12 +145,13 @@ export function createRichTextLayoutEngine(context, fontSet) {
     // Decoration and leading boundaries never split glyph painting (including ligatures).
     const styleKey = ({ underline, strikethrough, lineHeight, ...paint }) => {
       if (!solid) delete paint.fillOpacity;
+      if (!paint.strokeWidth) delete paint.strokeOpacity;
       return JSON.stringify(paint);
     };
     // Paint colors must not alter shaping or move subsequent glyphs. A color
     // split preserves the advance of the full contiguous font/spacing sequence,
     // while keeping separate fragments for per-range drawing and ink bounds.
-    const geometryKey = ({ textColor, fillOpacity, strokeWidth, stroke, underline, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
+    const geometryKey = ({ textColor, fillOpacity, strokeWidth, stroke, strokeOpacity, underline, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
     const requiredHeight = part => part.requiredHeight ?? part.style.fontSize * part.style.lineHeight;
     function append(parts, cluster) {
       const last = parts.at(-1), id = styleKey(cluster.style);
@@ -254,7 +256,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
         let end=i+1;
         while(end<row.fragments.length&&geometryKey(row.fragments[end].style)===geometryKey(row.fragments[i].style)&&row.fragments[end].style.textColor===row.fragments[i].style.textColor)end++;
         const group=row.fragments.slice(i,end);
-        if(new Set(group.map(p=>JSON.stringify([p.style.strokeWidth,p.style.stroke,solid?p.style.fillOpacity:100]))).size>1){
+        if(new Set(group.map(p=>JSON.stringify([p.style.strokeWidth,p.style.stroke,p.style.strokeWidth?p.style.strokeOpacity:100,solid?p.style.fillOpacity:100]))).size>1){
           const text=group.map(p=>p.text).join(''),origin=group[0].x,total=measure(text,group[0].style).width;
           let offset=0;
           for(const part of group){part.logicalX=part.x;part.x=origin+total-measure(text.slice(offset),part.style).width;offset+=part.text.length;}

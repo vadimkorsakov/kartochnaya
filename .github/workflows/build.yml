@@ -133,6 +133,8 @@ jobs:
       - run: npm run test:selection:firefox
       - name: Multiline WYSIWYG in Chromium and Firefox
         run: npx playwright test --config=playwright.multiline.config.js
+      - name: Range stroke WYSIWYG and PNG in Firefox
+        run: npm run test:stroke -- --project=stroke-firefox
       - name: Preserve multiline WYSIWYG measurements
         if: always()
         uses: actions/upload-artifact@v4

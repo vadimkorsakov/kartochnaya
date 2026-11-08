@@ -1,0 +1,274 @@
+{
+  "base": "366223aee2c76dde64f55df39199bbdcedbf1228",
+  "architecture": "shared fill/stroke painter; overlay matches main Canvas raster and CSS box",
+  "deviceScaleFactor": 2,
+  "layer": {
+    "x": 20.25,
+    "y": 40.5,
+    "fontSize": 28.375,
+    "text": "AV fi Жук",
+    "strokeWidth": 4,
+    "stroke": "#2266dd"
+  },
+  "displayROI": {
+    "x": 35,
+    "y": 56,
+    "width": 220,
+    "height": 32,
+    "note": "Excludes resize handles; complete backing raster is compared separately."
+  },
+  "browsers": [
+    {
+      "project": "stroke-chromium",
+      "status": "passed",
+      "checks": [
+        {
+          "zoom": 100,
+          "metric": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "display": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "geometry": {
+            "canvas": {
+              "x": 881,
+              "y": 601.5,
+              "width": 320,
+              "height": 240,
+              "top": 601.5,
+              "right": 1201,
+              "bottom": 841.5,
+              "left": 881
+            },
+            "ink": {
+              "x": 881,
+              "y": 601.5,
+              "width": 320,
+              "height": 240,
+              "top": 601.5,
+              "right": 1201,
+              "bottom": 841.5,
+              "left": 881
+            },
+            "backing": {
+              "width": 640,
+              "height": 480
+            },
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 320px; height: 240px;"
+          }
+        },
+        {
+          "zoom": 150,
+          "metric": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "display": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "geometry": {
+            "canvas": {
+              "x": 815,
+              "y": 532.5,
+              "width": 480,
+              "height": 360,
+              "top": 532.5,
+              "right": 1295,
+              "bottom": 892.5,
+              "left": 815
+            },
+            "ink": {
+              "x": 815,
+              "y": 532.5,
+              "width": 480,
+              "height": 360,
+              "top": 532.5,
+              "right": 1295,
+              "bottom": 892.5,
+              "left": 815
+            },
+            "backing": {
+              "width": 960,
+              "height": 720
+            },
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 480px; height: 360px;"
+          }
+        },
+        {
+          "zoom": 50,
+          "metric": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "display": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "geometry": {
+            "canvas": {
+              "x": 806,
+              "y": 558.5,
+              "width": 160,
+              "height": 120,
+              "top": 558.5,
+              "right": 966,
+              "bottom": 678.5,
+              "left": 806
+            },
+            "ink": {
+              "x": 806,
+              "y": 558.5,
+              "width": 160,
+              "height": 120,
+              "top": 558.5,
+              "right": 966,
+              "bottom": 678.5,
+              "left": 806
+            },
+            "backing": {
+              "width": 320,
+              "height": 240
+            },
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 160px; height: 120px;"
+          }
+        }
+      ]
+    },
+    {
+      "project": "stroke-firefox",
+      "status": "passed",
+      "checks": [
+        {
+          "zoom": 100,
+          "metric": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "display": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "geometry": {
+            "canvas": {
+              "x": 881,
+              "y": 602.5,
+              "width": 320,
+              "height": 240,
+              "top": 602.5,
+              "right": 1201,
+              "bottom": 842.5,
+              "left": 881
+            },
+            "ink": {
+              "x": 881,
+              "y": 602.5,
+              "width": 320,
+              "height": 240,
+              "top": 602.5,
+              "right": 1201,
+              "bottom": 842.5,
+              "left": 881
+            },
+            "backing": {
+              "width": 640,
+              "height": 480
+            },
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 320px; height: 240px;"
+          }
+        },
+        {
+          "zoom": 150,
+          "metric": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "display": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "geometry": {
+            "canvas": {
+              "x": 815,
+              "y": 533.5,
+              "width": 480,
+              "height": 360,
+              "top": 533.5,
+              "right": 1295,
+              "bottom": 893.5,
+              "left": 815
+            },
+            "ink": {
+              "x": 815,
+              "y": 533.5,
+              "width": 480,
+              "height": 360,
+              "top": 533.5,
+              "right": 1295,
+              "bottom": 893.5,
+              "left": 815
+            },
+            "backing": {
+              "width": 960,
+              "height": 720
+            },
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 480px; height: 360px;"
+          }
+        },
+        {
+          "zoom": 50,
+          "metric": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "display": {
+            "changed": 0,
+            "above2": 0,
+            "max": 0
+          },
+          "geometry": {
+            "canvas": {
+              "x": 807,
+              "y": 558.5,
+              "width": 160,
+              "height": 120,
+              "top": 558.5,
+              "right": 967,
+              "bottom": 678.5,
+              "left": 807
+            },
+            "ink": {
+              "x": 807,
+              "y": 558.5,
+              "width": 160,
+              "height": 120,
+              "top": 558.5,
+              "right": 967,
+              "bottom": 678.5,
+              "left": 807
+            },
+            "backing": {
+              "width": 320,
+              "height": 240
+            },
+            "style": "position: absolute; pointer-events: none; transform-origin: 0px 0px 0px; z-index: 8; display: block; left: 0px; top: 0px; transform: none; width: 160px; height: 120px;"
+          }
+        }
+      ]
+    }
+  ]
+}

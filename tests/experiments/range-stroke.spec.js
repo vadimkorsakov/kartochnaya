@@ -68,6 +68,37 @@ async function setup(page){
 }
 async function attach(testInfo,name,value){await testInfo.attach(name,{body:JSON.stringify(value,null,2),contentType:'application/json'});}
 
+test('accepted boundary: fi fill and stroke split together only at a different stroke style',async({page,browserName},testInfo)=>{
+ await setup(page);const results=[];
+ for(const partial of [false,true]){
+  await page.evaluate(()=>probe.mount('fi'));
+  const reference=await page.evaluate(partial=>{
+   const c=probe.init(probe.reference,true),o=probe.init(probe.overlay);
+   const parts=partial?['f','i']:['fi'],host=document.querySelector('#text');
+   host.replaceChildren();host.style.color='transparent';let x=32;const draws=[];
+   for(const [index,text] of parts.entries()){
+    const span=document.createElement('span');span.style.display='inline-block';span.textContent=text;host.append(span);
+    draws.push({text,x,index});
+    x+=c.measureText(text).width;
+   }
+   for(const ctx of [c,o]){
+    for(const part of draws)ctx.fillText(part.text,part.x,100);
+    ctx.lineWidth=4;ctx.strokeText(draws[0].text,draws[0].x,100);
+   }
+   return probe.reference.toDataURL();
+  },partial);
+  const actual=await page.locator('#stage').screenshot();
+  const metric=compare(pixels(actual),decode(reference));results.push({partial,...metric});
+  // Transparent Canvas compositing onto the page can round one channel by one
+  // level in Gecko. Bound both the magnitude and number of affected pixels.
+  await attach(testInfo,'accepted-boundary-'+partial+'.json',{browserName,partial,...metric});
+  expect(metric.max).toBeLessThanOrEqual(1);expect(metric.changed).toBeLessThanOrEqual(2);
+  expect(await page.locator('#text').textContent()).toBe('fi');
+  await testInfo.attach(partial?'split-fill-and-stroke.png':'whole-ligature.png',{body:actual,contentType:'image/png'});
+ }
+ await attach(testInfo,'accepted-boundary.json',{browserName,results});
+});
+
 test('feasibility: characterize native CSS stroke against current round-join Canvas with an exact fill control',async({page,browserName,browser},testInfo)=>{
  await setup(page);const results=[];
  for(const text of ['AV','fi','Обводка','AV fi 😀'])for(const strokeWidth of [0,1,4,12]){

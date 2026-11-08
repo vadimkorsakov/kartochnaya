@@ -44,6 +44,8 @@ export function resolveRichTextStyle(base, override = {}) {
     lineHeight: positive(override.lineHeight, positive(base.lineHeight, 1.15)),
     underline: override.underline ?? base.underline ?? base.mobileUnderline ?? false,
     strikethrough: override.strikethrough ?? base.strikethrough ?? base.mobileStrike ?? false,
+    strokeWidth: Math.max(0, spacing(override.strokeWidth ?? base.strokeWidth)),
+    stroke: String(override.stroke || base.stroke || '#000000').toLowerCase().replace(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/, '#$1$1$2$2$3$3'),
   };
 }
 
@@ -102,6 +104,10 @@ export function createRichTextLayoutEngine(context, fontSet) {
       width: m.width,
       ascent: m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent ?? style.fontSize * .8,
       descent: m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent ?? style.fontSize * .2,
+      inkLeft: m.actualBoundingBoxLeft ?? 0,
+      inkRight: m.actualBoundingBoxRight ?? m.width,
+      inkAscent: m.actualBoundingBoxAscent ?? m.fontBoundingBoxAscent ?? style.fontSize * .8,
+      inkDescent: m.actualBoundingBoxDescent ?? m.fontBoundingBoxDescent ?? style.fontSize * .2,
     }, 4096);
   }
   function layout(e) {
@@ -125,7 +131,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       if (cluster.text === '\n') continue;
       // Leading moves the shared baseline, but cannot split an otherwise
       // continuous decoration (fractional rect edges could leave a seam).
-      const { lineHeight, ...decorationStyle } = cluster.style;
+      const { lineHeight, strokeWidth, stroke, ...decorationStyle } = cluster.style;
       const last = decorationSpans.at(-1), id = JSON.stringify(decorationStyle);
       if (last?.id === id && last.end === cluster.start) last.end = cluster.end;
       else decorationSpans.push({...cluster, id});
@@ -137,7 +143,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
     // Paint colors must not alter shaping or move subsequent glyphs. A color
     // split preserves the advance of the full contiguous font/spacing sequence,
     // while keeping separate fragments for per-range drawing and ink bounds.
-    const geometryKey = ({ textColor, underline, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
+    const geometryKey = ({ textColor, strokeWidth, stroke, underline, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
     const requiredHeight = part => part.requiredHeight ?? part.style.fontSize * part.style.lineHeight;
     function append(parts, cluster) {
       const last = parts.at(-1), id = styleKey(cluster.style);
@@ -234,6 +240,21 @@ export function createRichTextLayoutEngine(context, fontSet) {
         previousGeometry = geometry; previousShapeWidth = shapeWidth;
         return part;
       });
+      // A stroke boundary may decompose a ligature, but must not move the
+      // following geometry group or lose AV's contextual kerning placement.
+      // Keep legacy color-only positioning untouched. Logical advances and
+      // decoration intervals retain the original full-string measurements.
+      for(let i=0;i<row.fragments.length;){
+        let end=i+1;
+        while(end<row.fragments.length&&geometryKey(row.fragments[end].style)===geometryKey(row.fragments[i].style))end++;
+        const group=row.fragments.slice(i,end);
+        if(new Set(group.map(p=>JSON.stringify([p.style.strokeWidth,p.style.stroke]))).size>1){
+          const text=group.map(p=>p.text).join(''),origin=group[0].x,total=measure(text,group[0].style).width;
+          let offset=0;
+          for(const part of group){part.logicalX=part.x;part.x=origin+total-measure(text.slice(offset),part.style).width;offset+=part.text.length;}
+        }
+        i=end;
+      }
       // Decorations use source intervals and the same contextual advances as
       // glyphs. They never contribute to metrics, shaping, wrapping or auto-fit.
       row.decorations = [];
@@ -242,11 +263,16 @@ export function createRichTextLayoutEngine(context, fontSet) {
         if (start >= end || (!span.style.underline && !span.style.strikethrough)) continue;
         const prefix = offset => offset === part.end ? part.width : measure(text.slice(part.start, offset).replaceAll('\r', ''), part.style).width;
         const left = prefix(start), right = prefix(end);
-        row.decorations.push(...textDecorationRects({x:part.x + left, y:part.y, width:right-left}, span.style)
+        row.decorations.push(...textDecorationRects({x:(part.logicalX??part.x) + left, y:part.y, width:right-left}, span.style)
           .map(rect => ({...rect, start, end})));
       }
     }
-    return boundedSet(layouts, key, { rows, width: Math.max(...rows.map(r => r.width)), height: blockHeight }, 128);
+    let inkOverflow=0;
+    for(const row of rows)if(row.y<=height)for(const part of row.fragments){
+      const m=measure(part.text,part.style);
+      inkOverflow=Math.max(inkOverflow,m.inkLeft-part.x,m.inkAscent-part.y,part.x+m.inkRight-width,part.y+m.inkDescent-height);
+    }
+    return boundedSet(layouts, key, { rows, width: Math.max(...rows.map(r => r.width)), height: blockHeight, inkOverflow }, 128);
   }
   return { layout, invalidate };
 }

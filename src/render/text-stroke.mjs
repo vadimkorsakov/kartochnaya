@@ -15,21 +15,24 @@ export function paintHorizontalTextPass(c,e,layout,method='fill') {
  for(const row of layout.rows){
   if(row.y>e.h)break;
   for(const part of row.fragments){
-   const s=part.style;c.font=richTextFont(s);c.letterSpacing=s.letterSpacing+'px';
+   const s=part.style;
+   if(method==='stroke'&&!(s.strokeWidth>0))continue;
+   // Assign text state inside its saved scope. Chromium's save() can clear
+   // the letterSpacing getter even while retaining its measured advance.
+   c.save();c.font=richTextFont(s);c.letterSpacing=s.letterSpacing+'px';
    if(method==='stroke'){
-    if(!(s.strokeWidth>0))continue;
-    c.save();c.lineWidth=s.strokeWidth;c.strokeStyle=s.stroke;
+    c.lineWidth=s.strokeWidth;c.strokeStyle=s.stroke;
     c.globalAlpha*=Math.max(0,Math.min(1,(e.strokeOpacity??100)/100));
     c.lineJoin='round';c.miterLimit=2;c.lineCap='butt';
     c.setLineDash(e.strokeStyle==='dashed'?[Math.max(3,s.strokeWidth*4),Math.max(2,s.strokeWidth*2)]:
      e.strokeStyle==='dotted'?[Math.max(1,s.strokeWidth*.12),Math.max(2,s.strokeWidth*2)]:[]);
     if(e.strokeStyle==='dotted')c.lineCap='round';
-    c.strokeText(part.text,part.x,part.y);c.restore();
+    c.strokeText(part.text,part.x,part.y);
    }else{
-    c.save();
     if(solid){c.fillStyle=s.textColor;c.globalAlpha*=Math.max(0,Math.min(1,(s.fillOpacity??e.fillOpacity??100)/100));}
-    c.fillText(part.text,part.x,part.y);c.restore();
+    c.fillText(part.text,part.x,part.y);
    }
+   c.restore();
   }
   if(method==='fill')for(const rect of row.decorations){
    c.save();

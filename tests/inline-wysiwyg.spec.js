@@ -853,7 +853,9 @@ test('hard-LF mixed tracking stays in WYSIWYG with Canvas fragment x parity',asy
 });
 
 test('plain near-width projection preserves Canvas/PNG geometry on first color',async({page},testInfo)=>{
- const editNarrow=async()=>{const p=await canvasPoint(page,64,175);await page.mouse.dblclick(p.x,p.y)};
+ // Session focus is scheduled for the next frame; every reopen must be
+ // focused before keyboard input, just like the first open below.
+ const editNarrow=async()=>{const p=await canvasPoint(page,64,175);await page.mouse.dblclick(p.x,p.y);await expect(page.locator(surface)).toBeFocused()};
  await observePlainGeometry(page);
  const doc=await seedPlain(page,{fontSize:32,lineHeight:1,w:88,h:100});
  const original=getLayer(doc);

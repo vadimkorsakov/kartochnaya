@@ -6,10 +6,10 @@ test.describe.configure({timeout:90000});
 const font=(family,file)=>({name:family,family,weight:400,style:'normal',data:'data:font/ttf;base64,'+fs.readFileSync(path.join(__dirname,'fixtures/fonts',file)).toString('base64')});
 const fonts=[font('Stroke Serif','DejaVuSerif.ttf'),font('Stroke Sans','DejaVuSans.ttf')];
 const layer=d=>d.elements.find(e=>e.id==='title');
-async function seed(page,patch={},multiple=false,backdrop=false){
+async function seed(page,patch={},multiple=false,backdrop=false,documentPatch={}){
  await page.setViewportSize({width:2200,height:1400});
  await openHome(page);const payload=structuredClone(fixture);payload.fonts=fonts;payload.documents=[payload.documents[0]];
- const doc=payload.documents[0];doc.groups=[];doc.background='#ffffff';doc.elements=doc.elements.filter(e=>e.id==='title');
+ const doc=payload.documents[0];Object.assign(doc,documentPatch);doc.groups=[];doc.background='#ffffff';doc.elements=doc.elements.filter(e=>e.id==='title');
  Object.assign(doc.elements[0],{text:'Первое второе слово',x:20,y:40,w:280,h:160,fontFamily:'Stroke Serif',fontSize:24,lineHeight:1.2,textColor:'#111111',autoFontSize:false,rotation:0,textAlign:'left',verticalAlign:'top',...patch});
  if(multiple)doc.elements.push({...structuredClone(doc.elements[0]),id:'second',text:'Другой текст',y:130,h:60});
  if(backdrop){
@@ -21,8 +21,7 @@ async function seed(page,patch={},multiple=false,backdrop=false){
  }
  await importPayload(page,payload);await expect(page.locator('#toast')).toContainText('Импортировано проектов');
  const stored=(await records(page,'docs')).find(d=>layer(d));await openLibraryDocument(page,stored.id);
- await actualSize(page);
- await expect(page.locator('#zoomLabel')).toHaveText('100%');
+ if(!Object.keys(documentPatch).length){await actualSize(page);await expect(page.locator('#zoomLabel')).toHaveText('100%');}
  // Remove only editing affordances from ink measurements; product ink remains.
  await page.addStyleTag({content:'.inline-wysiwyg{outline:none!important;caret-color:transparent!important}.inline-wysiwyg ::selection{background:transparent!important}'});
  return stored;
@@ -509,4 +508,192 @@ for(const textMode of ['vertical','path'])test(`stroke opacity keeps legacy ${te
  await page.locator('#layers [data-layer="title"] .layer-name').click();const point=await canvasPoint(page,55,57);await page.mouse.dblclick(point.x,point.y);const input=page.locator('#inlineText');await expect(input).toBeFocused();await expect(page.locator(surface)).toBeHidden();
  await input.press('Control+Home');await input.press('Shift+ArrowRight');await strokeAlpha(page,40);
  const e=await model(page);expect(e.strokeOpacity).toBe(40);expect(e.textRuns).toEqual(textRuns);
+});
+
+const strokeStyleSelect=page=>page.locator('#inspector [data-key="strokeStyle"]');
+test('range stroke style three words, Mixed, backward selection, history, caret and reload',async({page},testInfo)=>{
+ const doc=await seed(page,{text:'SOLID DASH DOT',strokeWidth:4,stroke:'#2266dd',strokeOpacity:75,fillOpacity:50,strokeStyle:'solid'});await edit(page);
+ await select(page,10,6);await expect(strokeStyleSelect(page)).toHaveValue('solid');
+ const initial=await model(page);await strokeStyleSelect(page).focus();expect(await model(page)).toEqual(initial);
+ await strokeStyleSelect(page).selectOption('dashed');await page.locator(surface).focus();expect(await selection(page)).toEqual({anchor:10,focus:6});
+ await select(page,11,14);await strokeStyleSelect(page).selectOption('dotted');
+ const three=await model(page);expect(three.textRuns).toEqual([{start:6,end:10,style:{strokeStyle:'dashed'}},{start:11,end:14,style:{strokeStyle:'dotted'}}]);
+ expect(three.strokeWidth).toBe(4);expect(three.strokeOpacity).toBe(75);expect(three.fillOpacity).toBe(50);expect(three.stroke).toBe('#2266dd');
+ await select(page,14,0);await expect(strokeStyleSelect(page)).toHaveValue('');await expect(strokeStyleSelect(page).locator('option:checked')).toHaveText('Mixed');await expect(strokeStyleSelect(page).locator('option:checked')).toHaveAttribute('disabled','');
+ await strokeStyleSelect(page).selectOption('solid');await page.locator(surface).focus();expect(await selection(page)).toEqual({anchor:14,focus:0});
+ expect((await model(page)).textRuns).toEqual([{start:0,end:14,style:{strokeStyle:'solid'}}]);
+ await page.keyboard.press('Control+z');expect(await model(page)).toEqual(three);await page.keyboard.press('Control+Shift+z');expect((await model(page)).textRuns).toEqual([{start:0,end:14,style:{strokeStyle:'solid'}}]);await page.keyboard.press('Control+z');
+ await select(page,2,2);const before=await model(page);await strokeStyleSelect(page).selectOption('dashed');await expect(page.locator('#toast')).toContainText('Выделите фрагмент текста для изменения вида обводки');expect(await model(page)).toEqual(before);await expect(strokeStyleSelect(page)).toHaveValue('solid');
+ await parity(page,testInfo,'style-three');
+ await expect.poll(async()=>layer((await records(page,'docs')).find(d=>d.id===doc.id))).toEqual(three);
+ expect(layer((await exportedPayload(page)).document)).toEqual(three);await page.reload();await openLibraryDocument(page,doc.id);await actualSize(page);await edit(page);expect(await model(page)).toEqual(three);await parity(page,testInfo,'style-reloaded');
+});
+
+for(const [pair,partial,strokeWidth,strokeOpacity,fillOpacity] of [['fi',true,3,75,50],['fi',false,3,75,50],['AV',true,3,75,50],['fi',true,0,75,50],['AV',true,1,100,0],['fi',true,7,0,50]])test(`range stroke style native ${pair} partial ${partial} width ${strokeWidth} alpha ${strokeOpacity} fill ${fillOpacity}`,async({page},testInfo)=>{
+ await seed(page,{text:pair+' AV',fontSize:48,fillOpacity,strokeWidth,stroke:'#2266dd',strokeOpacity,strokeStyle:'solid'});await edit(page);await select(page,0,partial?1:2);await strokeStyleSelect(page).selectOption('dotted');
+ const expected=await page.evaluate(({pair,partial,strokeWidth,strokeOpacity,fillOpacity})=>{
+  const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;const c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,320,240);c.font='normal 400 48px "Stroke Serif"';c.fontKerning='normal';c.letterSpacing='0px';
+  const m=c.measureText('Mg'),baseline=40+m.fontBoundingBoxAscent+(Math.max(48*1.2,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;
+  const text=pair+' AV',first=partial?pair[0]:pair,rest=partial?pair[1]+' AV':' AV',x=20+c.measureText(text).width-c.measureText(rest).width;
+  c.fillStyle='#111111';c.globalAlpha=fillOpacity/100;if(strokeWidth){c.fillText(first,20,baseline);c.fillText(rest,x,baseline);}else c.fillText(text,20,baseline);
+  if(strokeWidth){c.lineWidth=strokeWidth;c.strokeStyle='#2266dd';c.lineJoin='round';c.miterLimit=2;c.globalAlpha=strokeOpacity/100;c.setLineDash([Math.max(1,strokeWidth*.12),Math.max(2,strokeWidth*2)]);c.lineCap='round';c.strokeText(first,20,baseline);c.setLineDash([]);c.lineCap='butt';c.strokeText(rest,x,baseline);}
+  return [...c.getImageData(0,0,320,240).data];
+ },{pair,partial,strokeWidth,strokeOpacity,fillOpacity});
+ const oracle=diff(await livePixels(page),expected);await testInfo.attach('style-native-oracle.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);await parity(page,testInfo,'style-native');
+});
+
+for(const autoFontSize of [false,true])test(`range stroke style LF, wrap, mixed sizes, decorations, tracking and auto-fit ${autoFontSize}`,async({page},testInfo)=>{
+ const text='AV fi Жук 😀 мягкий перенос\nСледующая строка';
+ await seed(page,{text,strokeWidth:3,fontSize:28,w:180,h:160,autoFontSize,textRuns:[{start:0,end:2,style:{fontWeight:'700',underline:true,strokeWidth:1,strokeOpacity:40}},{start:3,end:5,style:{fontFamily:'Stroke Sans',fontSize:36,lineHeight:1.5,fillOpacity:0}},{start:6,end:9,style:{fontSize:22,letterSpacing:1.5,strikethrough:true,stroke:'#dd2244'}}]});
+ await edit(page);const before=await model(page),rows=await page.locator(surface+' [data-wysiwyg-row]').count();
+ await select(page,0,14);await strokeStyleSelect(page).selectOption('dashed');const after=await model(page);expect(after.fontSize).toBe(before.fontSize);expect(after.autoFontSize).toBe(autoFontSize);expect(await page.locator(surface+' [data-wysiwyg-row]').count()).toBe(rows);
+ const visible=await visibleInk(page,140);await parity(page,testInfo,'style-mixed-auto-'+autoFontSize);
+ const display=diff(visible.data,(await visibleInk(page,140)).data);await testInfo.attach('style-US-screen.json',{body:JSON.stringify(display),contentType:'application/json'});expect(display.max).toBeLessThanOrEqual(2);
+});
+test('range stroke style layer and multiple-layer edits preserve explicit solid override',async({page})=>{
+ const textRuns=[{start:0,end:1,style:{strokeStyle:'solid'}}];await seed(page,{text:'fi AV',strokeWidth:3,strokeStyle:'solid',textRuns},true);
+ await page.locator('#layers [data-layer="title"] .layer-name').click();await strokeStyleSelect(page).selectOption('dashed');expect((await model(page)).strokeStyle).toBe('dashed');expect((await model(page)).textRuns).toEqual(textRuns);
+ await page.locator('#layers [data-layer="second"] .layer-name').click({modifiers:['Control']});await strokeStyleSelect(page).selectOption('dotted');
+ for(const e of (await exportedDocument(page)).elements){expect(e.strokeStyle).toBe('dotted');expect(e.textRuns).toEqual(textRuns);}
+});
+for(const textMode of ['vertical','path'])test(`range stroke style legacy ${textMode} textarea changes layer-wide`,async({page})=>{
+ const textRuns=[{start:0,end:1,style:{strokeStyle:'solid'}}];await seed(page,{text:'fi AV',strokeWidth:3,strokeStyle:'solid',textMode,textRuns});
+ await page.locator('#layers [data-layer="title"] .layer-name').click();const point=await canvasPoint(page,55,57);await page.mouse.dblclick(point.x,point.y);const input=page.locator('#inlineText');await expect(input).toBeFocused();await expect(page.locator(surface)).toBeHidden();
+ await input.press('Control+Home');await input.press('Shift+ArrowRight');await strokeStyleSelect(page).selectOption('dotted');
+ const e=await model(page);expect(e.strokeStyle).toBe('dotted');expect(e.textRuns).toEqual(textRuns);
+});
+
+test('range stroke style native solid dashed dotted neighbors preserve contextual advances',async({page},testInfo)=>{
+ await seed(page,{text:'AV fi AV',fontSize:48,fillOpacity:40,strokeWidth:4,stroke:'#2266dd',strokeOpacity:75,strokeStyle:'solid'});await edit(page);
+ await select(page,3,5);await strokeStyleSelect(page).selectOption('dashed');await select(page,6,8);await strokeStyleSelect(page).selectOption('dotted');
+ const expected=await page.evaluate(()=>{
+  const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;const c=canvas.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,320,240);c.font='normal 400 48px "Stroke Serif"';c.fontKerning='normal';c.letterSpacing='0px';
+  const m=c.measureText('Mg'),baseline=40+m.fontBoundingBoxAscent+(Math.max(48*1.2,m.fontBoundingBoxAscent+m.fontBoundingBoxDescent)-m.fontBoundingBoxAscent-m.fontBoundingBoxDescent)/2;
+  const text='AV fi AV',parts=['AV ','fi',' ','AV'],positions=parts.map((_,i)=>20+c.measureText(text).width-c.measureText(parts.slice(i).join('')).width);
+  c.fillStyle='#111111';c.globalAlpha=.4;parts.forEach((p,i)=>c.fillText(p,positions[i],baseline));
+  c.lineWidth=4;c.strokeStyle='#2266dd';c.lineJoin='round';c.miterLimit=2;c.globalAlpha=.75;
+  parts.forEach((p,i)=>{c.setLineDash(i===1?[16,8]:i===3?[1,8]:[]);c.lineCap=i===3?'round':'butt';c.strokeText(p,positions[i],baseline);});
+  return [...c.getImageData(0,0,320,240).data];
+ });
+ const oracle=diff(await livePixels(page),expected);await testInfo.attach('style-neighbors-oracle.json',{body:JSON.stringify(oracle),contentType:'application/json'});expect(oracle.max).toBeLessThanOrEqual(2);await parity(page,testInfo,'style-neighbors');
+});
+
+// Require large, high-contrast changes and actual white holes, rather than
+// accepting a few antialiasing pixels or equality with the same Canvas backend.
+function strokeSemanticMetrics(images,roi){
+ const inside=(x,y)=>x>=roi.left&&x<roi.right&&y>=roi.top&&y<roi.bottom;
+ const ink=(data,i)=>data[i]<128&&data[i+1]<180&&data[i+2]>150&&data[i+2]-data[i]>60;
+ const white=(data,i)=>data[i]>245&&data[i+1]>245&&data[i+2]>245;
+ const result={pairs:{},solidInk:0,gaps:{dashed:0,dotted:0},components:{}};
+ for(let y=0;y<240;y++)for(let x=0;x<320;x++)if(inside(x,y)){
+  const i=(y*320+x)*4;if(ink(images.solid,i)){result.solidInk++;for(const style of ['dashed','dotted'])if(white(images[style],i))result.gaps[style]++;}
+ }
+ for(const [a,b]of[['solid','dashed'],['solid','dotted'],['dashed','dotted']]){
+  let selectedAbove32=0,neighborAbove2=0;
+  for(let y=0;y<240;y++)for(let x=0;x<320;x++){
+   const i=(y*320+x)*4,d=Math.max(...[0,1,2,3].map(k=>Math.abs(images[a][i+k]-images[b][i+k])));
+   if(inside(x,y)){if(d>32)selectedAbove32++;}else if(d>2)neighborAbove2++;
+  }
+  result.pairs[a+'/'+b]={selectedAbove32,neighborAbove2};
+ }
+ for(const style of ['solid','dashed','dotted']){
+  const visited=new Uint8Array(320*240);let components=0;
+  for(let y=0;y<240;y++)for(let x=0;x<320;x++){
+   const start=y*320+x;if(!inside(x,y)||visited[start]||!ink(images[style],start*4))continue;
+   const queue=[start];visited[start]=1;let area=0;
+   while(queue.length){const n=queue.pop(),nx=n%320,ny=Math.floor(n/320);area++;for(const [dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const xx=nx+dx,yy=ny+dy,j=yy*320+xx;if(inside(xx,yy)&&!visited[j]&&ink(images[style],j*4)){visited[j]=1;queue.push(j);}}}
+   if(area>=3)components++;
+  }
+  result.components[style]=components;
+ }
+ return result;
+}
+for(const family of ['Stroke Serif','Arial'])test('stroke style semantic gaps and isolated neighbors via native select '+family,async({page},testInfo)=>{
+ await page.addInitScript(()=>{window.__strokeCalls=[];const native=CanvasRenderingContext2D.prototype.strokeText;CanvasRenderingContext2D.prototype.strokeText=function(text,...args){window.__strokeCalls.push({text,args,dash:this.getLineDash(),lineCap:this.lineCap,lineJoin:this.lineJoin,alpha:this.globalAlpha,width:this.lineWidth,color:this.strokeStyle,font:this.font});return native.call(this,text,...args)};});
+ await seed(page,{text:'AV fi TEST',fontFamily:family,fontSize:72,strokeWidth:5,stroke:'#2266dd',strokeOpacity:100,fillOpacity:0,strokeStyle:'solid',w:280,h:190});await edit(page);await select(page,0,2);
+ const roi=await page.evaluate(family=>{const c=document.createElement('canvas').getContext('2d');c.font='72px "'+family+'"';const m=c.measureText('AV');return{left:13,right:Math.ceil(20+m.width+7),top:33,bottom:134};},family);
+ const captures={},images={live:{},canvas:{},png:{}};
+ for(const style of ['solid','dashed','dotted']){
+  // Native pointer/focus/keyboard events exercise the actual select lifecycle.
+  await strokeStyleSelect(page).click();await strokeStyleSelect(page).press('Home');for(let i=0;i<['solid','dashed','dotted'].indexOf(style);i++)await strokeStyleSelect(page).press('ArrowDown');await strokeStyleSelect(page).press('Enter');
+  images.live[style]=await livePixels(page);captures[style]={model:await model(page),calls:await page.evaluate(()=>window.__strokeCalls.slice(-35))};
+  await testInfo.attach('semantic-'+style+'-interface.png',{body:await page.screenshot(),contentType:'image/png'});
+  images.png[style]=(await parity(page,testInfo,'semantic-'+style)).data;
+  images.canvas[style]=await page.locator('#canvas').evaluate(c=>[...c.getContext('2d').getImageData(0,0,c.width,c.height).data]);
+  if(style!=='dotted'){await edit(page);await select(page,0,2);}
+ }
+ const metrics=Object.fromEntries(Object.entries(images).map(([view,styles])=>[view,strokeSemanticMetrics(styles,roi)]));
+ await testInfo.attach('semantic-diagnosis.json',{body:JSON.stringify({roi,metrics,captures}),contentType:'application/json'});console.log('SEMANTIC',testInfo.project.name,family,JSON.stringify(metrics));
+ for(const view of Object.values(metrics)){
+  // 64 pixels and 5% of solid core ink are deliberately far above a handful
+  // of rasterizer edge differences. Gaps must turn opaque blue core into white.
+  const threshold=Math.max(64,Math.ceil(view.solidInk*.05));
+  for(const pair of Object.values(view.pairs)){expect(pair.selectedAbove32).toBeGreaterThan(threshold);expect(pair.neighborAbove2).toBe(0);}
+  expect(view.gaps.dashed).toBeGreaterThan(threshold);expect(view.gaps.dotted).toBeGreaterThan(threshold);
+  expect(view.components.dotted).toBeGreaterThan(view.components.solid+4);
+ }
+});
+
+// Same document, same effective paint; only the source of dotted differs.
+test.describe('layer versus range dotted ABC',()=>{
+ test.use({deviceScaleFactor:1.5});
+ test('A B C pixels and semantic gaps agree on every surface',async({browser},testInfo)=>{
+  test.setTimeout(180000);
+  const installTrace=()=>{
+   const ids=new WeakMap();let nextId=0;window.__abcCalls=[];window.__abcPhase='';
+   for(const method of ['fillText','strokeText']){const native=CanvasRenderingContext2D.prototype[method];CanvasRenderingContext2D.prototype[method]=function(text,...args){
+    if(text&&'AV fi TEST'.includes(text)){
+     if(!ids.has(this.canvas))ids.set(this.canvas,++nextId);
+     window.__abcCalls.push({phase:window.__abcPhase,canvas:ids.get(this.canvas),canvasId:this.canvas.id,size:[this.canvas.width,this.canvas.height],method,text,args,dash:this.getLineDash(),cap:this.lineCap,width:this.lineWidth,alpha:this.globalAlpha,font:this.font,letterSpacing:this.letterSpacing,transform:Array.from(this.getTransform().toFloat64Array())});
+    }
+    return native.call(this,text,...args);
+   };}
+  };
+  let page;
+  const variants={
+   solid:{strokeStyle:'solid',textRuns:[{start:0,end:10,style:{fillOpacity:0}}]},
+   A:{strokeStyle:'dotted',textRuns:[{start:0,end:10,style:{fillOpacity:0}}]},
+   B:{strokeStyle:'solid',textRuns:[{start:0,end:10,style:{fillOpacity:0,strokeStyle:'dotted'}}]},
+   C:{strokeStyle:'dotted',textRuns:[{start:0,end:3,style:{fillOpacity:0}},{start:3,end:10,style:{fillOpacity:0,strokeStyle:'dotted'}}]},
+  };
+  const roi={x:100,y:380,width:650,height:150},images={},traces={};
+  const capture=async live=>page.evaluate(({live,roi})=>{
+   const main=document.querySelector('#canvas'),ink=document.querySelector('[data-text-stroke-overlay]');
+   const image=document.createElement('canvas');image.width=1080;image.height=1350;const c=image.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,1080,1350);
+   if(live){const a=main.getBoundingClientRect(),b=ink.getBoundingClientRect(),scale=a.width/1080;c.drawImage(ink,(b.left-a.left)/scale,(b.top-a.top)/scale,b.width/scale,b.height/scale);}else c.drawImage(main,0,0,1080,1350);
+   return [...c.getImageData(roi.x,roi.y,roi.width,roi.height).data];
+  },{live,roi});
+  for(const [name,variant]of Object.entries(variants)){
+   page=await browser.newPage({baseURL:testInfo.project.use.baseURL,deviceScaleFactor:1.5,viewport:{width:2200,height:1400},locale:'ru-RU'});
+   const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(installTrace);
+   await seed(page,{text:'AV fi TEST',fontFamily:'Arial',fontSize:72,fontWeight:'400',x:127,y:413,w:827,h:555,fillType:'solid',fillOpacity:100,textColor:'#033aff',strokeWidth:5,stroke:'#0030ff',strokeOpacity:100,...variant},false,false,{width:1080,height:1350});
+   expect(await model(page)).toMatchObject({strokeStyle:variant.strokeStyle,textRuns:variant.textRuns});
+   await page.evaluate(name=>{window.__abcPhase=name+'-live';window.__abcCalls=[];},name);
+   await page.locator('#layers [data-layer="title"] .layer-name').click();const p=await canvasPoint(page,147,433,1080,1350);await page.mouse.dblclick(p.x,p.y);await expect(page.locator(surface)).toBeFocused();
+   images[name]={live:await capture(true)};
+   await page.evaluate(name=>window.__abcPhase=name+'-closed',name);await page.keyboard.press('Control+Enter');const outside=await canvasPoint(page,1000,100,1080,1350);await page.mouse.click(outside.x,outside.y);
+   images[name].canvas=await capture(false);
+   await page.evaluate(name=>window.__abcPhase=name+'-png',name);const png=(await exportPNG(page,1080,1350)).image;
+   const pixels=[];for(let y=roi.y;y<roi.y+roi.height;y++)for(let x=roi.x;x<roi.x+roi.width;x++){const i=(y*1080+x)*4;pixels.push(...png.data.subarray(i,i+4));}images[name].png=pixels;
+   traces[name]=await page.evaluate(()=>window.__abcCalls);
+   for(const [view,data]of Object.entries(images[name]))await testInfo.attach(`abc-${name}-${view}.png`,{body:PNG.sync.write({width:roi.width,height:roi.height,data:Buffer.from(data)}),contentType:'image/png'});
+   expect(errors).toEqual([]);await page.close();
+  }
+  const metrics={};for(const view of ['live','canvas','png']){
+   metrics[view]={AB:diff(images.A[view],images.B[view]),AC:diff(images.A[view],images.C[view]),semantics:{}};
+   for(const name of ['A','B','C']){
+    const a=images.solid[view],b=images[name][view];let solidCore=0,whiteGaps=0,strongChanges=0;
+    const mask=new Uint8Array(roi.width*roi.height);for(let i=0;i<a.length;i+=4){const core=a[i]<96&&a[i+1]<128&&a[i+2]>200,white=b[i]>245&&b[i+1]>245&&b[i+2]>245;
+     if(core){solidCore++;if(white)whiteGaps++;}if(Math.max(...[0,1,2].map(k=>Math.abs(a[i+k]-b[i+k])))>32)strongChanges++;mask[i/4]=b[i]<96&&b[i+1]<128&&b[i+2]>200?1:0;
+    }
+    let components=0;for(let i=0;i<mask.length;i++)if(mask[i]){const queue=[i];mask[i]=0;let area=0;while(queue.length){const n=queue.pop(),x=n%roi.width,y=Math.floor(n/roi.width);area++;for(const [xx,yy]of[[x-1,y],[x+1,y],[x,y-1],[x,y+1]]){const j=yy*roi.width+xx;if(xx>=0&&xx<roi.width&&yy>=0&&yy<roi.height&&mask[j]){mask[j]=0;queue.push(j);}}}if(area>=3)components++;}
+    metrics[view].semantics[name]={solidCore,whiteGaps,strongChanges,components};
+   }
+  }
+  await testInfo.attach('abc-metrics.json',{body:JSON.stringify(metrics),contentType:'application/json'});await testInfo.attach('abc-real-canvas-calls.json',{body:JSON.stringify(traces),contentType:'application/json'});
+  for(const m of Object.values(metrics)){
+   expect(m.AB.max).toBeLessThanOrEqual(2);expect(m.AC.max).toBeLessThanOrEqual(2);
+   for(const semantic of Object.values(m.semantics)){const threshold=Math.max(64,Math.ceil(semantic.solidCore*.05));expect(semantic.whiteGaps).toBeGreaterThan(threshold);expect(semantic.strongChanges).toBeGreaterThan(threshold);expect(semantic.components).toBeGreaterThan(10);}
+  }
+ });
 });

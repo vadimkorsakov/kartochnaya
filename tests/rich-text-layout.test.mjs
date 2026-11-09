@@ -11,7 +11,7 @@ test('explicit keys win within a scope, run aliases override the base, missing k
  assert.equal(resolveRichTextStyle(base,{italic:false,fontStyle:'italic'}).fontStyle,'italic');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontWeight,'500');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontStyle,'oblique');
- assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,fillOpacity:100,strokeOpacity:100,textColor:'red',letterSpacing:2,lineHeight:1.15,underline:false,strikethrough:false,strokeWidth:0,stroke:'#000000'});
+ assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,fillOpacity:100,strokeOpacity:100,strokeStyle:'solid',textColor:'red',letterSpacing:2,lineHeight:1.15,underline:false,strikethrough:false,strokeWidth:0,stroke:'#000000'});
 });
 test('render projection repairs UTF-16 ranges without mutating source or unknown properties',()=>{
  const e={...base,textRuns:[{start:2,end:3,style:{fontSize:40,underline:true,baselineShift:'super',fontFeatures:{liga:0}}}]};
@@ -258,4 +258,46 @@ test('stroke opacity is paint-only, preserves contextual shaping and does not sp
  const av=engine.layout({...base,textRuns:[{start:0,end:1,style:{strokeOpacity:0}}]});assert.equal(av.rows[0].fragments[1].x,8);
  const plain=engine.layout({...base,strokeWidth:0}),invisible=engine.layout({...base,strokeWidth:0,textRuns:[{start:3,end:4,style:{strokeOpacity:0}}]});
  assert.deepEqual(invisible.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])),plain.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])));
+});
+
+test('stroke style is paint-only, preserves contextual shaping and does not split un-stroked ligatures',()=>{
+ const context={measureText(text){return {width:[...text].length*10-(text.includes('AV')?2:0)-(text.includes('fi')?1:0),fontBoundingBoxAscent:16,fontBoundingBoxDescent:4};}};
+ const engine=createRichTextLayoutEngine(context);
+ const base={text:'AV fi 😀\nAV fi wrapped',w:72,h:200,fontSize:20,lineHeight:1.2,strokeWidth:3,underline:true,strikethrough:true};
+ const geometry=x=>x.rows.map(({start,end,nextStart,width,y,height,baseline})=>({start,end,nextStart,width,y,height,baseline}));
+ for(const [start,end] of [[0,1],[3,4],[3,5],[1,6]]){
+  const before=engine.layout(base),after=engine.layout({...base,textRuns:[{start,end,style:{strokeStyle:'dashed'}}]});
+  assert.deepEqual(geometry(after),geometry(before));
+  assert.ok(after.rows.flatMap(r=>r.fragments).some(p=>p.style.strokeStyle==='dashed'));
+  assert.ok(after.rows.flatMap(r=>r.decorations).every(r=>r.fillOpacity===100));
+ }
+ const av=engine.layout({...base,textRuns:[{start:0,end:1,style:{strokeStyle:'dotted'}}]});assert.equal(av.rows[0].fragments[1].x,8);
+ const plain=engine.layout({...base,strokeWidth:0}),invisible=engine.layout({...base,strokeWidth:0,textRuns:[{start:3,end:4,style:{strokeStyle:'dotted'}}]});
+ assert.deepEqual(invisible.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])),plain.rows.map(r=>r.fragments.map(p=>[p.text,p.x,p.width])));
+});
+
+test('layer-only, full-range and redundant-boundary dotted resolve to the same actual painter fragment',async()=>{
+ const base={text:'AV fi TEST',fontFamily:'Arial',fontSize:72,fontWeight:'400',w:827,h:555,fillType:'solid',fillOpacity:100,textColor:'#033aff',strokeWidth:5,stroke:'#0030ff',strokeOpacity:100};
+ const variants=[
+  {...base,strokeStyle:'dotted',textRuns:[{start:0,end:10,style:{fillOpacity:0}}]},
+  {...base,strokeStyle:'solid',textRuns:[{start:0,end:10,style:{fillOpacity:0,strokeStyle:'dotted'}}]},
+  {...base,strokeStyle:'dotted',textRuns:[{start:0,end:3,style:{fillOpacity:0}},{start:3,end:10,style:{fillOpacity:0,strokeStyle:'dotted'}}]},
+ ];
+ const {paintHorizontalTextPass}=await import('../src/render/text-stroke.mjs');
+ const context={measureText(text){return {width:[...text].length*36-(text.includes('AV')?2:0)-(text.includes('fi')?1:0),fontBoundingBoxAscent:60,fontBoundingBoxDescent:14};}};
+ const engine=createRichTextLayoutEngine(context),layouts=variants.map(e=>engine.layout(e));
+ assert.deepEqual(layouts[1],layouts[0]);assert.deepEqual(layouts[2],layouts[0]);
+ for(const l of layouts){assert.equal(l.rows[0].fragments.length,1);const p=l.rows[0].fragments[0];assert.equal(p.text,'AV fi TEST');assert.equal(p.start,0);assert.equal(p.end,10);assert.equal(p.style.strokeStyle,'dotted');assert.equal(p.style.fillOpacity,0);}
+ const paint=(element,layout)=>{
+  const calls=[],stack=[],c={globalAlpha:1,dash:[],lineCap:'butt',lineWidth:1,font:'initial',letterSpacing:'0px',
+   save(){stack.push({globalAlpha:this.globalAlpha,dash:this.dash,lineCap:this.lineCap,lineWidth:this.lineWidth,font:this.font,letterSpacing:this.letterSpacing});},restore(){Object.assign(this,stack.pop());},beginPath(){},rect(){},clip(){},setLineDash(d){this.dash=d;},fillRect(){},
+   fillText(text,x,y){calls.push({method:'fill',text,x,y,alpha:this.globalAlpha,font:this.font,letterSpacing:this.letterSpacing});},
+   strokeText(text,x,y){calls.push({method:'stroke',text,x,y,alpha:this.globalAlpha,dash:this.dash,cap:this.lineCap,width:this.lineWidth,font:this.font,letterSpacing:this.letterSpacing});},
+  };
+  paintHorizontalTextPass(c,element,layout,'fill');paintHorizontalTextPass(c,element,layout,'stroke');return calls;
+ };
+ const calls=variants.map((e,i)=>paint(e,layouts[i]));assert.deepEqual(calls[1],calls[0]);assert.deepEqual(calls[2],calls[0]);
+ assert.deepEqual(calls[0].map(c=>[c.method,c.text,c.alpha]),[['fill','AV fi TEST',0],['stroke','AV fi TEST',1]]);
+ assert.deepEqual(calls[0][1].dash,[1,10]);assert.equal(calls[0][1].cap,'round');assert.equal(calls[0][1].width,5);assert.equal(calls[0][1].letterSpacing,'0px');
+
 });

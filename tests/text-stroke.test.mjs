@@ -210,3 +210,85 @@ test('stroke alpha multiplies incoming alpha once, restores state and leaves fil
  const patched=applyTextStyle(decorated,1,3,{strokeOpacity:40});assert.equal(effectiveTextStyleAt(patched,1).fillOpacity,0);assert.equal(effectiveTextStyleAt(patched,1).underline,true);
  assert.deepEqual(applyTextStyle(patched,1,3,{strokeOpacity:null}),decorated);
 });
+
+test('stroke style validates strictly, preserves explicit solid and resets to inheritance',()=>{
+ const base={text:'abcd',strokeStyle:'solid'};
+ for(const value of [NaN,Infinity,0,1,'', 'SOLID','dashed ', 'url(x)',{},[],true]){
+  assert.deepEqual(normalizeRuns(base.text,[{start:0,end:2,style:{strokeStyle:value}}],base),[]);
+  const styled=applyTextStyle(base,0,2,{strokeStyle:'dotted'});
+  assert.deepEqual(applyTextStyle(styled,0,2,{strokeStyle:value}),styled);
+ }
+ for(const value of ['solid','dashed','dotted']){
+  const e=applyTextStyle(base,0,2,{strokeStyle:value});
+  assert.deepEqual(e.textRuns,[{start:0,end:2,style:{strokeStyle:value}}]);
+  assert.equal(effectiveTextStyleAt({...e,strokeStyle:'dotted'},0).strokeStyle,value);
+  assert.equal(effectiveTextStyleAt({...e,strokeStyle:'dotted'},3).strokeStyle,'dotted');
+  assert.equal(applyTextStyle(e,0,2,{strokeStyle:null}).textRuns,undefined);
+ }
+ for(const strokeStyle of ['solid','dotted']){
+  const e=applyTextStyle({...base,strokeStyle},0,2,{strokeStyle});
+  assert.deepEqual(normalizeRuns(e.text,e.textRuns,e),[{start:0,end:2,style:{strokeStyle}}]);
+ }
+ assert.equal(resolveRichTextStyle({}).strokeStyle,'solid');
+ assert.equal(resolveRichTextStyle({strokeStyle:'dashed'},{strokeStyle:'dotted'}).strokeStyle,'dotted');
+});
+test('stroke style overlapping runs, UTF-16 typing/deletion, JSON and Undo/Redo retain sparse inheritance',()=>{
+ const base={text:'f😀i AV',strokeStyle:'dashed'},history=createInlineHistory(base);
+ let e=applyTextStyle(base,0,3,{strokeStyle:'dotted'});
+ e=applyTextStyle(e,1,4,{strokeStyle:'solid'});
+ assert.deepEqual(e.textRuns,[{start:0,end:1,style:{strokeStyle:'dotted'}},{start:1,end:4,style:{strokeStyle:'solid'}}]);
+ recordInlineHistory(history,e,{start:0,end:4,direction:'backward'});
+ const inserted=replaceText(e,3,3,'X');assert.equal(effectiveTextStyleAt(inserted,3).strokeStyle,'solid');
+ const left=replaceText(e,1,1,'Q');assert.equal(effectiveTextStyleAt(left,1).strokeStyle,'dotted');
+ const right=replaceText(e,0,0,'Q');assert.equal(effectiveTextStyleAt(right,0).strokeStyle,'dotted');
+ const deleted=replaceText(inserted,2,3,'');assert.equal(deleted.text,'fXi AV');
+ assert.equal(effectiveTextStyleAt(deleted,1).strokeStyle,'solid');
+ recordInlineHistory(history,deleted,{start:1,end:1,direction:'forward'});
+ assert.deepEqual(moveInlineHistory(history,-1),{element:e,caret:{start:0,end:4,direction:'backward'}});
+ assert.deepEqual(moveInlineHistory(history,-1).element,base);
+ assert.deepEqual(moveInlineHistory(history,1).element,e);
+ assert.deepEqual(moveInlineHistory(history,1).element,deleted);
+ const json=JSON.parse(JSON.stringify(deleted));assert.deepEqual(normalizeRuns(json.text,json.textRuns,json),deleted.textRuns);
+ const reset=applyTextStyle(e,1,3,{strokeStyle:null});assert.equal(effectiveTextStyleAt(reset,1).strokeStyle,'dashed');
+});
+
+test('IndexedDB v3 and backup roundtrip retain all three stroke styles and layer inheritance',async()=>{
+ const {IDBFactory}=await import('fake-indexeddb');
+ const {openDatabase,runStoreRequest}=await import('../src/storage/indexeddb.mjs');
+ const {createBackup,readBackup}=await import('../src/backup/archive.mjs');
+ const base={id:'text',text:'A😀V fi',strokeStyle:'dashed'};
+ const element=['solid','dashed','dotted'].reduce((e,strokeStyle,i)=>applyTextStyle(e,i===0?0:i===1?1:3,i===0?1:i===1?3:4,{strokeStyle}),base);
+ const doc={id:'d',projectId:'p',width:320,height:240,elements:[element]},data={projects:[{id:'p',name:'Opacity'}],docs:[doc],fonts:[],settings:[]};
+ assert.deepEqual((await readBackup((await createBackup(data)).bytes)).data.docs[0],doc);
+ const indexedDB=new IDBFactory(),db=await openDatabase({indexedDB});assert.equal(db.version,3);
+ await runStoreRequest(db,'docs','readwrite',s=>s.put(doc));db.close();
+ const reopened=await openDatabase({indexedDB});
+ try{const saved=await runStoreRequest(reopened,'docs','readonly',s=>s.get('d'));assert.deepEqual(saved,doc);assert.deepEqual(normalizeRuns(element.text,saved.elements[0].textRuns,element),element.textRuns);}finally{reopened.close();}
+});
+
+test('stroke style patch/reset preserves independent paint, decoration and unknown run properties',()=>{
+ const base=applyTextStyle({text:'abcd',strokeStyle:'solid'},0,4,{strokeWidth:4,stroke:'#2266dd',strokeOpacity:0,fillOpacity:40,underline:true,fontFeatures:{liga:0}});
+ const changed=applyTextStyle(base,1,3,{strokeStyle:'solid'});
+ assert.equal(effectiveTextStyleAt({...changed,strokeStyle:'dashed'},1).strokeStyle,'solid');
+ assert.equal(effectiveTextStyleAt({...changed,strokeStyle:'dashed'},0).strokeStyle,'dashed');
+ assert.deepEqual(applyTextStyle(changed,1,3,{strokeStyle:null}),base);
+ assert.deepEqual(normalizeRuns(changed.text,changed.textRuns,changed),changed.textRuns);
+});
+test('stroke painter isolates dash/cap/alpha/width and sets text state inside every saved scope',async()=>{
+ const {paintHorizontalTextPass}=await import('../src/render/text-stroke.mjs');
+ const stack=[],calls=[],c={globalAlpha:.8,lineCap:'square',lineWidth:9,dash:[9],font:'initial',letterSpacing:'7px',save(){stack.push({...this});this.letterSpacing='0px';},restore(){Object.assign(this,stack.pop());},beginPath(){},rect(){},clip(){},setLineDash(v){this.dash=v;},strokeText(text){calls.push([text,this.dash,this.lineCap,this.lineWidth,this.globalAlpha,this.letterSpacing,this.font,this.strokeStyle]);}};
+ const style=resolveRichTextStyle({fontSize:20,letterSpacing:2,strokeWidth:3,stroke:'#2266dd',strokeOpacity:50});
+ const fragments=['solid','dashed','dotted','solid'].map((strokeStyle,i)=>({text:String(i),x:i*20,y:20,style:{...style,strokeStyle}}));
+ paintHorizontalTextPass(c,{w:100,h:60,strokeStyle:'dotted'},{rows:[{y:0,fragments,decorations:[]}]},'stroke');
+ assert.deepEqual(calls.map(x=>x.slice(0,6)),[['0',[],'butt',3,.4,'2px'],['1',[12,6],'butt',3,.4,'2px'],['2',[1,6],'round',3,.4,'2px'],['3',[],'butt',3,.4,'2px']]);
+ assert.ok(calls.every(x=>x[6].includes('20px')&&x[7]==='#2266dd'));assert.equal(c.globalAlpha,.8);assert.equal(c.lineCap,'square');assert.deepEqual(c.dash,[9]);assert.equal(stack.length,0);
+});
+
+test('stroke style normalization merges equal adjacent runs and resolves overlapping keys independently',()=>{
+ const text='abcd';
+ const runs=normalizeRuns(text,[{start:0,end:2,style:{strokeStyle:'solid',strokeWidth:4}},{start:2,end:4,style:{strokeStyle:'solid',strokeWidth:4}},{start:1,end:3,style:{strokeStyle:'dashed'}}]);
+ assert.deepEqual(runs,[{start:0,end:1,style:{strokeStyle:'solid',strokeWidth:4}},{start:1,end:3,style:{strokeStyle:'dashed',strokeWidth:4}},{start:3,end:4,style:{strokeStyle:'solid',strokeWidth:4}}]);
+ const e=applyTextStyle({text,strokeStyle:'solid',textRuns:runs},1,3,{strokeStyle:'solid'});
+ assert.deepEqual(e.textRuns,[{start:0,end:4,style:{strokeStyle:'solid',strokeWidth:4}}]);
+ assert.deepEqual(normalizeRuns(text,e.textRuns,e),e.textRuns);
+});

@@ -1,0 +1,196 @@
+{
+  "format": "kartochnaya-project-v1",
+  "project": {
+    "id": "stroke-abc",
+    "name": "Firefox range stroke ABC",
+    "resources": []
+  },
+  "documents": [
+    {
+      "id": "stroke-abc-A",
+      "title": "Stroke A",
+      "type": "template",
+      "width": 1080,
+      "height": 1350,
+      "background": "#ffffff",
+      "backgroundAlpha": 100,
+      "groups": [],
+      "elements": [
+        {
+          "x": 127,
+          "y": 413,
+          "w": 827,
+          "h": 555,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#0030ff",
+          "strokeWidth": 5,
+          "id": "title",
+          "type": "text",
+          "name": "Title",
+          "groupId": null,
+          "text": "AV fi TEST",
+          "fontFamily": "Arial",
+          "fontWeight": "400",
+          "fontSize": 72,
+          "textColor": "#033aff",
+          "textMode": "horizontal",
+          "clipped": false,
+          "isTitleLayer": true,
+          "fontStyle": "normal",
+          "autoFontSize": false,
+          "textAlign": "left",
+          "verticalAlign": "top",
+          "lineHeight": 1.2,
+          "letterSpacing": 0,
+          "strokeOpacity": 100,
+          "strokeStyle": "dotted",
+          "textRuns": [
+            {
+              "start": 0,
+              "end": 10,
+              "style": {
+                "fillOpacity": 0
+              }
+            }
+          ]
+        }
+      ],
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "projectId": "stroke-abc"
+    },
+    {
+      "id": "stroke-abc-B",
+      "title": "Stroke B",
+      "type": "template",
+      "width": 1080,
+      "height": 1350,
+      "background": "#ffffff",
+      "backgroundAlpha": 100,
+      "groups": [],
+      "elements": [
+        {
+          "x": 127,
+          "y": 413,
+          "w": 827,
+          "h": 555,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#0030ff",
+          "strokeWidth": 5,
+          "id": "title",
+          "type": "text",
+          "name": "Title",
+          "groupId": null,
+          "text": "AV fi TEST",
+          "fontFamily": "Arial",
+          "fontWeight": "400",
+          "fontSize": 72,
+          "textColor": "#033aff",
+          "textMode": "horizontal",
+          "clipped": false,
+          "isTitleLayer": true,
+          "fontStyle": "normal",
+          "autoFontSize": false,
+          "textAlign": "left",
+          "verticalAlign": "top",
+          "lineHeight": 1.2,
+          "letterSpacing": 0,
+          "strokeOpacity": 100,
+          "strokeStyle": "solid",
+          "textRuns": [
+            {
+              "start": 0,
+              "end": 10,
+              "style": {
+                "fillOpacity": 0,
+                "strokeStyle": "dotted"
+              }
+            }
+          ]
+        }
+      ],
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "projectId": "stroke-abc"
+    },
+    {
+      "id": "stroke-abc-C",
+      "title": "Stroke C",
+      "type": "template",
+      "width": 1080,
+      "height": 1350,
+      "background": "#ffffff",
+      "backgroundAlpha": 100,
+      "groups": [],
+      "elements": [
+        {
+          "x": 127,
+          "y": 413,
+          "w": 827,
+          "h": 555,
+          "rotation": 0,
+          "opacity": 100,
+          "visible": true,
+          "locked": false,
+          "fillType": "solid",
+          "fillOpacity": 100,
+          "fill": "#ab92fb",
+          "stroke": "#0030ff",
+          "strokeWidth": 5,
+          "id": "title",
+          "type": "text",
+          "name": "Title",
+          "groupId": null,
+          "text": "AV fi TEST",
+          "fontFamily": "Arial",
+          "fontWeight": "400",
+          "fontSize": 72,
+          "textColor": "#033aff",
+          "textMode": "horizontal",
+          "clipped": false,
+          "isTitleLayer": true,
+          "fontStyle": "normal",
+          "autoFontSize": false,
+          "textAlign": "left",
+          "verticalAlign": "top",
+          "lineHeight": 1.2,
+          "letterSpacing": 0,
+          "strokeOpacity": 100,
+          "strokeStyle": "dotted",
+          "textRuns": [
+            {
+              "start": 0,
+              "end": 3,
+              "style": {
+                "fillOpacity": 0
+              }
+            },
+            {
+              "start": 3,
+              "end": 10,
+              "style": {
+                "fillOpacity": 0,
+                "strokeStyle": "dotted"
+              }
+            }
+          ]
+        }
+      ],
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000,
+      "projectId": "stroke-abc"
+    }
+  ]
+}

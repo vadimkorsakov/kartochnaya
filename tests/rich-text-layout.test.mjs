@@ -331,3 +331,47 @@ test('vertical origins use shared block height for empty rows, wrapping, mixed l
   }
  }
 });
+
+test('experimental justify reuses wraps, preserves UTF-16/source/runs and only expands soft rows',()=>{
+ const context={measureText(text){const n=[...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(text)].length;return {width:n*(10+parseFloat(this.letterSpacing)),fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
+ const engine=createRichTextLayoutEngine(context);
+ for(const text of ['one','one two','one   two three four','one two\nthree four\n\nfive six\n','abcdefghijklmnop','😀 e\u0301 👩‍👩‍👧‍👦 more words here',' A B C D ','A\r\nB C D E','A\rB C D E'])for(const letterSpacing of [-1,0,2])for(const w of [49.99,50,50.01,100]){
+  const e={text,w,h:400,fontSize:20,letterSpacing,textAlign:'justify',textRuns:[{start:0,end:2,style:{bold:true,textColor:'red',underline:true,strokeWidth:2}}]},before=structuredClone(e);
+  const natural=engine.layout({...e,textAlign:'left'}),result=engine.layoutJustified(e);
+  assert.deepEqual(e,before);
+  assert.deepEqual(result.rows.map(r=>[r.start,r.end,r.nextStart,r.softWrap,r.baseline]),natural.rows.map(r=>[r.start,r.end,r.nextStart,r.softWrap,r.baseline]));
+  for(let i=0;i<result.rows.length;i++){
+   const row=result.rows[i],old=natural.rows[i];
+   assert.equal(row.fragments.map(p=>p.text).join(''),old.fragments.map(p=>p.text).join(''));
+   for(const p of row.fragments){assert.equal(p.text,text.slice(p.start,p.end).replaceAll('\r',''));assert.ok([p.x,p.y,p.width].every(Number.isFinite));assert.ok(p.x>=0&&p.width>=0);}
+   for(const c of row.carets){assert.ok(Number.isFinite(c.x)&&c.x>=0);assert.ok([...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(text)].some(s=>s.index===c.offset)||c.offset===text.length);}
+   if(row.justification.extraPerSpace){assert.ok(row.softWrap);assert.ok(Math.abs(row.justification.contentWidth-w)<1e-8);assert.ok(row.justification.extraPerSpace>0);assert.ok(Math.abs((row.fragments.findLast(p=>/\S/u.test(p.text)).x+row.fragments.findLast(p=>/\S/u.test(p.text)).width)-w)<1e-8);}
+   if(!row.softWrap)assert.equal(row.width,old.width);
+  }
+  assert.deepEqual(engine.layout({...e,textAlign:'left'}),natural,'projection cannot mutate cached layout');
+ }
+});
+
+test('justify expands each interior ordinary space, keeps trailing spaces and all paragraph ends natural',()=>{
+ const engine=createRichTextLayoutEngine(leadingContext);
+ const e={text:'A  B C D\nE F\n\nG H',w:75,h:300,fontSize:20,textAlign:'justify'};
+ const rows=engine.layoutJustified(e).rows;
+ assert.equal(rows[0].softWrap,true);assert.equal(rows[0].justification.extraPerSpace,15/3);
+ assert.deepEqual(rows[0].justification.spaces,[1,2,4]);
+ assert.equal(rows[0].justification.contentWidth,75);assert.equal(rows[0].width,85);
+ assert.ok(rows.filter(r=>!r.softWrap).every(r=>r.justification.extraPerSpace===0));
+ for(const text of ['\n\n','ABCDEFG','A\tB C','A\u00a0B C']){
+  const r=engine.layoutJustified({...e,text,w:40});
+  assert.ok(r.rows.every(row=>row.justification.extraPerSpace===0));
+ }
+});
+
+test('justify supports mixed metrics and paint ranges, retaining left/center/right caches',()=>{
+ const engine=createRichTextLayoutEngine({measureText(text){const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);return {width:[...text].length*(size/2+parseFloat(this.letterSpacing)),fontBoundingBoxAscent:size*.8,fontBoundingBoxDescent:size*.2}}});
+ const e={text:'AA BB CC DD EE',w:130,h:300,fontSize:20,textRuns:[{start:3,end:5,style:{fontFamily:'serif',fontSize:32,bold:true,italic:true,letterSpacing:2,lineHeight:2,underline:true,strikethrough:true,textColor:'red',strokeWidth:2,stroke:'#0000ff'}}]};
+ const old=['left','center','right'].map(textAlign=>engine.layout({...e,textAlign}));
+ const result=engine.layoutJustified(e),word=result.rows[0].fragments.find(p=>p.text==='BB');
+ assert.equal(word.style.fontSize,32);assert.equal(word.width,36);assert.equal(word.style.stroke,'#0000ff');assert.ok(result.rows[0].decorations.length>=2);
+ for(const [i,textAlign] of ['left','center','right'].entries())assert.deepEqual(engine.layout({...e,textAlign}),old[i]);
+ assert.equal(supportsHorizontalTextLayout({...e,textAlign:'justify'}),false);
+});

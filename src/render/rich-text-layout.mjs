@@ -284,5 +284,83 @@ export function createRichTextLayoutEngine(context, fontSet) {
     }
     return boundedSet(layouts, key, { rows, width: Math.max(...rows.map(r => r.width)), height: blockHeight, inkOverflow }, 128);
   }
-  return { layout, invalidate };
+  /** Experimental projection only: callers must opt in explicitly. The shipping
+   * eligibility/painter stays legacy for justify. Reuse shared rows and metrics;
+   * only U+0020 spaces between words on soft-wrapped rows receive extra advance.
+   * Hard-break and terminal rows (each paragraph's last row) stay natural.
+   */
+  function layoutJustified(e) {
+    const natural = layout({...e, textAlign:'left'});
+    const sourceText = String(e.text ?? '');
+    // Shared layout omits legacy standalone CRs from glyph text, but source
+    // coordinates still include them. Map rendered prefix lengths back to UTF-16.
+    const sourceOffset = (part, index) => {
+      if (index === part.text.length) return part.end;
+      if (!sourceText.includes('\r')) return part.start + index;
+      let visible = 0;
+      for (let i=part.start; i<part.end; i++) {
+        if (sourceText[i] !== '\r' && visible++ === index) return i;
+      }
+      return part.end;
+    };
+    const frameWidth = Math.max(1, Number(e.w) || 1);
+    const rows = natural.rows.map(row => {
+      const source = row.fragments.map(p => p.text).join('');
+      // Leading/trailing whitespace and tabs/NBSP are retained, never expanded.
+      const first = source.search(/\S/u), last = source.search(/\s*$/u);
+      const spaces = [];
+      let local = 0, contentWidth = 0;
+      const prefix = (part, offset) => offset === part.text.length ? part.width : measure(part.text.slice(0, offset), part.style).width;
+      for (const part of row.fragments) {
+        if (last > local && last <= local + part.text.length) contentWidth = (part.logicalX ?? part.x) + prefix(part, last-local);
+        for (const {segment, index} of segmenter.segment(part.text)) {
+          if (segment === ' ' && local + index > first && local + index < last) spaces.push(sourceOffset(part,index));
+        }
+        local += part.text.length;
+      }
+      // Preserved trailing spaces hang after the frame; the final word's
+      // logical advance, rather than invisible trailing content, meets its edge.
+      const extra = row.softWrap && spaces.length ? Math.max(0, frameWidth - contentWidth) / spaces.length : 0;
+      const shift = offset => {
+        let low=0, high=spaces.length;
+        while(low<high){const mid=(low+high)>>>1;if(spaces[mid]<offset)low=mid+1;else high=mid;}
+        return low*extra;
+      };
+      const carets = [], fragments = [];
+      for (const part of row.fragments) {
+        // Contextual prefix advances retain shaping inside words, including at
+        // paint-only run boundaries. Never split a source grapheme for a run.
+        const segments = [...segmenter.segment(part.text)];
+        const cuts = new Set([0, part.text.length]);
+        for (const {segment,index} of segments) {
+          const offset = sourceOffset(part,index);
+          carets.push({offset, x:(part.logicalX ?? part.x) + prefix(part,index) + shift(offset)});
+          if (/^\s+$/u.test(segment)) { cuts.add(index); cuts.add(index + segment.length); }
+        }
+        carets.push({offset:part.end, x:(part.logicalX ?? part.x) + part.width + shift(part.end)});
+        const boundaries = [...cuts].sort((a,b) => a-b);
+        for (let i=1; i<boundaries.length; i++) {
+          const a=boundaries[i-1], b=boundaries[i], start=sourceOffset(part,a), end=sourceOffset(part,b);
+          const x=(part.logicalX ?? part.x)+prefix(part,a)+shift(start);
+          fragments.push({...part, text:part.text.slice(a,b), start, end, x,
+            logicalX:x, width:prefix(part,b)-prefix(part,a)+shift(end)-shift(start)});
+        }
+      }
+      const decorations = row.decorations.map(rect => ({...rect,
+        x:rect.x+shift(rect.start), width:rect.width+shift(rect.end)-shift(rect.start)}));
+      return {...row, fragments, decorations, width:row.width+spaces.length*extra,
+        justification:{naturalWidth:row.width, contentWidth:contentWidth+spaces.length*extra, extraPerSpace:extra, spaces:extra ? spaces : []},
+        // Duplicate offsets at paint boundaries have the same logical advance.
+        // LF/soft-wrap affinity is represented by the owning row, as before.
+        carets:carets.length ? [...new Map(carets.map(c => [c.offset,c])).values()] : [{offset:row.start,x:row.x}]};
+    });
+    let inkOverflow=0;
+    const frameHeight=Math.max(0,Number(e.h)||0);
+    for(const row of rows)if(row.y<=frameHeight)for(const part of row.fragments){
+      const m=measure(part.text,part.style);
+      inkOverflow=Math.max(inkOverflow,m.inkLeft-part.x,m.inkAscent-part.y,part.x+m.inkRight-frameWidth,part.y+m.inkDescent-frameHeight);
+    }
+    return {...natural, rows, width:Math.max(...rows.map(row=>row.width)), inkOverflow};
+  }
+  return { layout, layoutJustified, invalidate };
 }

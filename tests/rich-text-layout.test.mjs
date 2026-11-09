@@ -301,3 +301,17 @@ test('layer-only, full-range and redundant-boundary dotted resolve to the same a
  assert.deepEqual(calls[0][1].dash,[1,10]);assert.equal(calls[0][1].cap,'round');assert.equal(calls[0][1].width,5);assert.equal(calls[0][1].letterSpacing,'0px');
 
 });
+
+test('row origins include aligned empty LF rows and retain fragment advances',()=>{
+ const context={measureText(text){return {width:[...text].length*10,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
+ const engine=createRichTextLayoutEngine(context);
+ for(const textAlign of ['left','center','right']){
+  const e={text:'AB\n\nC\n',w:100,h:200,fontSize:20,textAlign,textRuns:[{start:1,end:2,style:{textColor:'red'}}]},before=structuredClone(e);
+  const rows=engine.layout(e).rows;assert.equal(rows.length,4);
+  for(const row of rows){
+   const expected=textAlign==='center'?(100-row.width)/2:textAlign==='right'?100-row.width:0;
+   assert.equal(row.x,expected);if(row.fragments.length)assert.equal(row.fragments[0].x,row.x);
+  }
+  assert.equal(rows[1].width,0);assert.equal(rows[3].width,0);assert.deepEqual(e,before);
+ }
+});

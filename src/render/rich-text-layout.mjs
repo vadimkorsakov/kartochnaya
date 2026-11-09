@@ -240,6 +240,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       e.verticalAlign === 'bottom' ? Math.max(0, height - blockHeight) : 0;
     for (const row of rows) {
       let x = e.textAlign === 'center' ? (width - row.width) / 2 : e.textAlign === 'right' ? width - row.width : 0;
+      row.x = x; // Retain the shared alignment origin even for empty rows.
       row.y += y; row.baseline += y;
       let previousGeometry = null, previousShapeWidth = 0;
       row.fragments = row.fragments.map(({ text, style, start, end, geometry, shapeWidth }) => {

@@ -6,10 +6,10 @@ test.describe.configure({timeout:90000});
 const font=(family,file)=>({name:family,family,weight:400,style:'normal',data:'data:font/ttf;base64,'+fs.readFileSync(path.join(__dirname,'fixtures/fonts',file)).toString('base64')});
 const fonts=[font('Stroke Serif','DejaVuSerif.ttf'),font('Stroke Sans','DejaVuSans.ttf')];
 const layer=d=>d.elements.find(e=>e.id==='title');
-async function seed(page,patch={},multiple=false,backdrop=false){
+async function seed(page,patch={},multiple=false,backdrop=false,documentPatch={}){
  await page.setViewportSize({width:2200,height:1400});
  await openHome(page);const payload=structuredClone(fixture);payload.fonts=fonts;payload.documents=[payload.documents[0]];
- const doc=payload.documents[0];doc.groups=[];doc.background='#ffffff';doc.elements=doc.elements.filter(e=>e.id==='title');
+ const doc=payload.documents[0];Object.assign(doc,documentPatch);doc.groups=[];doc.background='#ffffff';doc.elements=doc.elements.filter(e=>e.id==='title');
  Object.assign(doc.elements[0],{text:'Первое второе слово',x:20,y:40,w:280,h:160,fontFamily:'Stroke Serif',fontSize:24,lineHeight:1.2,textColor:'#111111',autoFontSize:false,rotation:0,textAlign:'left',verticalAlign:'top',...patch});
  if(multiple)doc.elements.push({...structuredClone(doc.elements[0]),id:'second',text:'Другой текст',y:130,h:60});
  if(backdrop){
@@ -21,8 +21,7 @@ async function seed(page,patch={},multiple=false,backdrop=false){
  }
  await importPayload(page,payload);await expect(page.locator('#toast')).toContainText('Импортировано проектов');
  const stored=(await records(page,'docs')).find(d=>layer(d));await openLibraryDocument(page,stored.id);
- await actualSize(page);
- await expect(page.locator('#zoomLabel')).toHaveText('100%');
+ if(!Object.keys(documentPatch).length){await actualSize(page);await expect(page.locator('#zoomLabel')).toHaveText('100%');}
  // Remove only editing affordances from ink measurements; product ink remains.
  await page.addStyleTag({content:'.inline-wysiwyg{outline:none!important;caret-color:transparent!important}.inline-wysiwyg ::selection{background:transparent!important}'});
  return stored;
@@ -633,4 +632,68 @@ for(const family of ['Stroke Serif','Arial'])test('stroke style semantic gaps an
   expect(view.gaps.dashed).toBeGreaterThan(threshold);expect(view.gaps.dotted).toBeGreaterThan(threshold);
   expect(view.components.dotted).toBeGreaterThan(view.components.solid+4);
  }
+});
+
+// Same document, same effective paint; only the source of dotted differs.
+test.describe('layer versus range dotted ABC',()=>{
+ test.use({deviceScaleFactor:1.5});
+ test('A B C pixels and semantic gaps agree on every surface',async({browser},testInfo)=>{
+  test.setTimeout(180000);
+  const installTrace=()=>{
+   const ids=new WeakMap();let nextId=0;window.__abcCalls=[];window.__abcPhase='';
+   for(const method of ['fillText','strokeText']){const native=CanvasRenderingContext2D.prototype[method];CanvasRenderingContext2D.prototype[method]=function(text,...args){
+    if(text&&'AV fi TEST'.includes(text)){
+     if(!ids.has(this.canvas))ids.set(this.canvas,++nextId);
+     window.__abcCalls.push({phase:window.__abcPhase,canvas:ids.get(this.canvas),canvasId:this.canvas.id,size:[this.canvas.width,this.canvas.height],method,text,args,dash:this.getLineDash(),cap:this.lineCap,width:this.lineWidth,alpha:this.globalAlpha,font:this.font,letterSpacing:this.letterSpacing,transform:Array.from(this.getTransform().toFloat64Array())});
+    }
+    return native.call(this,text,...args);
+   };}
+  };
+  let page;
+  const variants={
+   solid:{strokeStyle:'solid',textRuns:[{start:0,end:10,style:{fillOpacity:0}}]},
+   A:{strokeStyle:'dotted',textRuns:[{start:0,end:10,style:{fillOpacity:0}}]},
+   B:{strokeStyle:'solid',textRuns:[{start:0,end:10,style:{fillOpacity:0,strokeStyle:'dotted'}}]},
+   C:{strokeStyle:'dotted',textRuns:[{start:0,end:3,style:{fillOpacity:0}},{start:3,end:10,style:{fillOpacity:0,strokeStyle:'dotted'}}]},
+  };
+  const roi={x:100,y:380,width:650,height:150},images={},traces={};
+  const capture=async live=>page.evaluate(({live,roi})=>{
+   const main=document.querySelector('#canvas'),ink=document.querySelector('[data-text-stroke-overlay]');
+   const image=document.createElement('canvas');image.width=1080;image.height=1350;const c=image.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,1080,1350);
+   if(live){const a=main.getBoundingClientRect(),b=ink.getBoundingClientRect(),scale=a.width/1080;c.drawImage(ink,(b.left-a.left)/scale,(b.top-a.top)/scale,b.width/scale,b.height/scale);}else c.drawImage(main,0,0,1080,1350);
+   return [...c.getImageData(roi.x,roi.y,roi.width,roi.height).data];
+  },{live,roi});
+  for(const [name,variant]of Object.entries(variants)){
+   page=await browser.newPage({baseURL:testInfo.project.use.baseURL,deviceScaleFactor:1.5,viewport:{width:2200,height:1400},locale:'ru-RU'});
+   const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(installTrace);
+   await seed(page,{text:'AV fi TEST',fontFamily:'Arial',fontSize:72,fontWeight:'400',x:127,y:413,w:827,h:555,fillType:'solid',fillOpacity:100,textColor:'#033aff',strokeWidth:5,stroke:'#0030ff',strokeOpacity:100,...variant},false,false,{width:1080,height:1350});
+   expect(await model(page)).toMatchObject({strokeStyle:variant.strokeStyle,textRuns:variant.textRuns});
+   await page.evaluate(name=>{window.__abcPhase=name+'-live';window.__abcCalls=[];},name);
+   await page.locator('#layers [data-layer="title"] .layer-name').click();const p=await canvasPoint(page,147,433,1080,1350);await page.mouse.dblclick(p.x,p.y);await expect(page.locator(surface)).toBeFocused();
+   images[name]={live:await capture(true)};
+   await page.evaluate(name=>window.__abcPhase=name+'-closed',name);await page.keyboard.press('Control+Enter');const outside=await canvasPoint(page,1000,100,1080,1350);await page.mouse.click(outside.x,outside.y);
+   images[name].canvas=await capture(false);
+   await page.evaluate(name=>window.__abcPhase=name+'-png',name);const png=(await exportPNG(page,1080,1350)).image;
+   const pixels=[];for(let y=roi.y;y<roi.y+roi.height;y++)for(let x=roi.x;x<roi.x+roi.width;x++){const i=(y*1080+x)*4;pixels.push(...png.data.subarray(i,i+4));}images[name].png=pixels;
+   traces[name]=await page.evaluate(()=>window.__abcCalls);
+   for(const [view,data]of Object.entries(images[name]))await testInfo.attach(`abc-${name}-${view}.png`,{body:PNG.sync.write({width:roi.width,height:roi.height,data:Buffer.from(data)}),contentType:'image/png'});
+   expect(errors).toEqual([]);await page.close();
+  }
+  const metrics={};for(const view of ['live','canvas','png']){
+   metrics[view]={AB:diff(images.A[view],images.B[view]),AC:diff(images.A[view],images.C[view]),semantics:{}};
+   for(const name of ['A','B','C']){
+    const a=images.solid[view],b=images[name][view];let solidCore=0,whiteGaps=0,strongChanges=0;
+    const mask=new Uint8Array(roi.width*roi.height);for(let i=0;i<a.length;i+=4){const core=a[i]<96&&a[i+1]<128&&a[i+2]>200,white=b[i]>245&&b[i+1]>245&&b[i+2]>245;
+     if(core){solidCore++;if(white)whiteGaps++;}if(Math.max(...[0,1,2].map(k=>Math.abs(a[i+k]-b[i+k])))>32)strongChanges++;mask[i/4]=b[i]<96&&b[i+1]<128&&b[i+2]>200?1:0;
+    }
+    let components=0;for(let i=0;i<mask.length;i++)if(mask[i]){const queue=[i];mask[i]=0;let area=0;while(queue.length){const n=queue.pop(),x=n%roi.width,y=Math.floor(n/roi.width);area++;for(const [xx,yy]of[[x-1,y],[x+1,y],[x,y-1],[x,y+1]]){const j=yy*roi.width+xx;if(xx>=0&&xx<roi.width&&yy>=0&&yy<roi.height&&mask[j]){mask[j]=0;queue.push(j);}}}if(area>=3)components++;}
+    metrics[view].semantics[name]={solidCore,whiteGaps,strongChanges,components};
+   }
+  }
+  await testInfo.attach('abc-metrics.json',{body:JSON.stringify(metrics),contentType:'application/json'});await testInfo.attach('abc-real-canvas-calls.json',{body:JSON.stringify(traces),contentType:'application/json'});
+  for(const m of Object.values(metrics)){
+   expect(m.AB.max).toBeLessThanOrEqual(2);expect(m.AC.max).toBeLessThanOrEqual(2);
+   for(const semantic of Object.values(m.semantics)){const threshold=Math.max(64,Math.ceil(semantic.solidCore*.05));expect(semantic.whiteGaps).toBeGreaterThan(threshold);expect(semantic.strongChanges).toBeGreaterThan(threshold);expect(semantic.components).toBeGreaterThan(10);}
+  }
+ });
 });

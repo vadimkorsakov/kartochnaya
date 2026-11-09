@@ -1,3 +1,4 @@
+import { nextZoom, parseZoomPercent } from './core/zoom.mjs';
 import {eligibleWysiwyg, createWysiwygSession} from './editor/wysiwyg-session.mjs';
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from './render/text-stroke.mjs';
 import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
@@ -2233,7 +2234,7 @@ function routeWysiwygPanelAction(ev){
 // Capture input/change as well: a keyboard-activated control need not have a
 // pointerdown, and separate tools must hand off before their mutation callback.
 for(const type of ['pointerdown','click','input','change'])document.addEventListener(type,routeWysiwygPanelAction,true);
-$('#canvasHost').addEventListener('focusout',ev=>{if(ev.target.id!=='inlineWysiwyg')return;if(!app.wysiwyg||ev.relatedTarget?.closest('#wysiwygRecovery,#undoBtn,#redoBtn'))return;if(ev.relatedTarget?.closest(inlineFormattingRoots)||(!ev.relatedTarget&&app.inlineToolPointer))return;closeInlineText();});
+$('#canvasHost').addEventListener('focusout',ev=>{if(ev.target.id!=='inlineWysiwyg')return;if(!app.wysiwyg||ev.relatedTarget?.closest('#wysiwygRecovery,#undoBtn,#redoBtn,.zoom-control'))return;if(ev.relatedTarget?.closest(inlineFormattingRoots)||(!ev.relatedTarget&&app.inlineToolPointer))return;closeInlineText();});
 $('#canvasHost').addEventListener('keydown',ev=>{if(ev.target.id!=='inlineWysiwyg')return;
  if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(true);canvas.focus();}
  if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText();}
@@ -2295,7 +2296,7 @@ $('#inlineText').addEventListener('beforeinput',ev=>{if(app.inlineSession?.forma
 $('#inlineText').addEventListener('input',ev=>{const e=app.doc?.elements.find(x=>x.id===app.editingId);if(e){if(app.inlineRichHistory&&!app.inlineSession?.formatted){const result=editTextWithHistory(e,app.inlineRichHistory,ev.target.value,{selection:app.inlineInputSelection,inputType:ev.inputType});app.inlineRichHistory=result.history;e.text=result.element.text;restoreTextRuns(e,result.element.textRuns)}else setTextValue(e,ev.target.value,app.inlineInputSelection);app.inlineInputSelection=null;if(autoFitTextFont(e))positionInlineText();syncAutoCardTitle();rememberInlineCaret();recordInlineSession(ev.inputType);refreshSaveStatus();paint()}});
 $('#inlineText').addEventListener('blur',ev=>{
  rememberInlineCaret();
- if(app.inlineToolPointer||ev.relatedTarget?.closest(inlineFormattingRoots))return;
+ if(app.inlineToolPointer||ev.relatedTarget?.closest(inlineFormattingRoots+',.zoom-control'))return;
  // Android Back may dismiss only the IME. Keep the session and its visible exit.
  if(matchMedia('(max-width:760px)').matches&&(!ev.relatedTarget||ev.relatedTarget.closest('#documentTabsMenu,#documentTabsMenuToggle,#mobileToolbars,#mobilePropertyUI,#stageScroller,#zoomInBtn,#zoomOutBtn,#zoomLabel')))return;
  closeInlineText();
@@ -2417,7 +2418,7 @@ document.addEventListener('mousedown',ev=>{
  // native focus, keyboard and text-selection behavior on desktop and Android.
  if((document.activeElement===$('#inlineText')||app.wysiwyg&&ev.target.closest('[data-text-decoration]'))&&ev.target.closest('button'))ev.preventDefault();
 },true);
-document.addEventListener('keydown',ev=>{if(app.wysiwyg&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&ev.target.closest(inlineFormattingRoots)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
+document.addEventListener('keydown',ev=>{if(app.wysiwyg&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&ev.target.closest(inlineFormattingRoots)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&ev.target.id!=='zoomInput'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
 
 // Keep caret ownership when existing buttons operate on the selected text layer.
 function rememberInlineCaret(){if(app.wysiwyg){try{const c=app.wysiwyg.rememberSelection();app.inlineCaret={start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'};}catch{}syncInspectorFontFamily();return;}const e=$('#inlineText');if(app.editingId&&document.activeElement===e){app.inlineCaret={start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection};syncInspectorFontFamily()}}
@@ -2474,7 +2475,7 @@ $('#quickBubble').addEventListener('pointerdown',ev=>ev.stopPropagation());
 $('#quickBubble').addEventListener('click',ev=>{ev.stopPropagation();const a=ev.target.closest('[data-quick]');if(!a)return;const action=a.dataset.quick;if(action==='edit')openInlineText();if(action==='duplicate')duplicateElement();if(action==='delete')deleteElement(true);if(action==='group')groupSelected();if(action==='ungroup')ungroupSelected();if(action==='multi'){app.multiMode=!app.multiMode;updateQuickBubble();toast(app.multiMode?'Выбирай другие слои':'Множественный выбор выключен')}if(action==='lock'){const val=!picked().every(e=>e.locked);picked().filter(e=>!ancestorGroups(e.groupId).some(g=>g.locked)).forEach(e=>e.locked=val);commit();refreshLayers();refreshInspector();updateQuickBubble()}});
 function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=Math.max(80,area.clientHeight-gutter*2);app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);app.lastZoom=app.zoom;applyZoom();if(mobile)requestAnimationFrame(()=>{area.scrollLeft=Math.max(0,(area.scrollWidth-area.clientWidth)/2);area.scrollTop=Math.max(0,(area.scrollHeight-area.clientHeight)/2)})}
 function applyZoom(anchor){const d=app.doc,ratio=Math.min(window.devicePixelRatio||1,8192/(d.width*app.zoom),8192/(d.height*app.zoom),Math.sqrt(24000000/(d.width*d.height*app.zoom*app.zoom))),stage=$('#stageScroller'),old=app.lastZoom||app.zoom;app.renderScale=ratio;const rect=canvas.getBoundingClientRect();const pointer=anchor||{x:stage.getBoundingClientRect().left+stage.clientWidth/2,y:stage.getBoundingClientRect().top+stage.clientHeight/2};const dx=(pointer.x-rect.left)/old,dy=(pointer.y-rect.top)/old;app.lastZoom=app.zoom;canvas.style.width=Math.max(1,d.width*app.zoom)+'px';canvas.style.height=Math.max(1,d.height*app.zoom)+'px';canvas.width=Math.max(1,Math.round(d.width*app.zoom*ratio));canvas.height=Math.max(1,Math.round(d.height*app.zoom*ratio));$('#zoomLabel').textContent=Math.round(app.zoom*100)+'%';positionInlineText();updateQuickBubble();requestAnimationFrame(renderRulers);if(Math.abs(old-app.zoom)>.0001){const after=canvas.getBoundingClientRect();stage.scrollLeft+=(after.left+dx*app.zoom-pointer.x);stage.scrollTop+=(after.top+dy*app.zoom-pointer.y)}paint()}
-function setZoom(z,anchor){if(app.editingId||mobileV36State.expanded)mobileV36State.userViewAdjusted=true;const keepText=!!app.editingId&&!anchor;if(keepText){const r=$(app.wysiwyg?'#inlineWysiwyg':'#inlineText').getBoundingClientRect();anchor={x:r.left+r.width/2,y:r.top+r.height/2}}app.zoom=clamp(z,.04,8);applyZoom(anchor);if(keepText)requestAnimationFrame(revealInlineText)}
+function setZoom(z,anchor){if(!Number.isFinite(z))return;if(app.editingId||mobileV36State.expanded)mobileV36State.userViewAdjusted=true;const keepText=!!app.editingId&&!anchor;if(keepText){const r=$(app.wysiwyg?'#inlineWysiwyg':'#inlineText').getBoundingClientRect();anchor={x:r.left+r.width/2,y:r.top+r.height/2}}app.zoom=clamp(z,.04,8);applyZoom(anchor);if(keepText)requestAnimationFrame(revealInlineText)}
 function clientDocPoint(ev){const r=canvas.getBoundingClientRect();return {x:(ev.clientX-r.left)/app.zoom,y:(ev.clientY-r.top)/app.zoom}}
 function rotateHandles(e){const z=29/app.zoom;return [[e.w/2,0,e.w/2,-z],[e.w/2,e.h,e.w/2,e.h+z],[0,e.h/2,-z,e.h/2],[e.w,e.h/2,e.w+z,e.h/2]]}
 function hitHandle(e,p){if(e.isFxRegion)return null;const t=9/app.zoom,l=toLocal(e,p);if(rotateHandles(e).some(([x,y,ex,ey])=>Math.hypot(l.x-ex,l.y-ey)<12/app.zoom))return 'rotate';for(const [key,x,y] of handleCoords(e).filter(([k])=>k.length===2))if(Math.abs(l.x-x)<t&&Math.abs(l.y-y)<t)return key;if(l.x>=-t&&l.x<=e.w+t){if(Math.abs(l.y)<t)return 'n';if(Math.abs(l.y-e.h)<t)return 's'}if(l.y>=-t&&l.y<=e.h+t){if(Math.abs(l.x)<t)return 'w';if(Math.abs(l.x-e.w)<t)return 'e'}return null}
@@ -2902,10 +2903,33 @@ document.addEventListener('wheel',ev=>{
  if(!(ev.ctrlKey||ev.metaKey)||ev.target.closest('#stageScroller'))return;
  ev.preventDefault();
 },{capture:true,passive:false});
-$('#stageScroller').addEventListener('wheel',ev=>{if(ev.altKey)ev.preventDefault();if(ev.ctrlKey||ev.metaKey){ev.preventDefault();setZoom(Math.round((app.zoom+(ev.deltaY<0?.1:-.1))*100)/100,{x:ev.clientX,y:ev.clientY})}else if(app.cropMode&&active()){ev.preventDefault();active().cropZoom=clamp((active().cropZoom||1)*Math.exp(-ev.deltaY*.002),1,12);commit()}},{passive:false});
-window.addEventListener('keydown',ev=>{if(!app.cropMode)return;if(ev.key==='Enter'||ev.key==='Escape'){ev.preventDefault();ev.stopImmediatePropagation();exitCrop(ev.key==='Enter')}},{capture:true});
+$('#stageScroller').addEventListener('wheel',ev=>{if(ev.altKey)ev.preventDefault();if(ev.ctrlKey||ev.metaKey){ev.preventDefault();setZoom(nextZoom(app.zoom,ev.deltaY<0?1:-1),{x:ev.clientX,y:ev.clientY})}else if(app.cropMode&&active()){ev.preventDefault();active().cropZoom=clamp((active().cropZoom||1)*Math.exp(-ev.deltaY*.002),1,12);commit()}},{passive:false});
+window.addEventListener('keydown',ev=>{if(!app.cropMode||ev.target.id==='zoomInput')return;if(ev.key==='Enter'||ev.key==='Escape'){ev.preventDefault();ev.stopImmediatePropagation();exitCrop(ev.key==='Enter')}},{capture:true});
 $('#cropDoneBtn').onclick=()=>exitCrop(true);$('#cropCancelBtn').onclick=()=>exitCrop(false);
-$('#zoomInBtn').onclick=()=>setZoom(Math.round((app.zoom+(innerWidth<=760?.03:.1))*100)/100);$('#zoomOutBtn').onclick=()=>setZoom(Math.round((app.zoom-(innerWidth<=760?.03:.1))*100)/100);$('#zoomLabel').onclick=fitCanvas;
+$('#zoomInBtn').onclick=()=>setZoom(nextZoom(app.zoom,1,innerWidth<=760));
+$('#zoomOutBtn').onclick=()=>setZoom(nextZoom(app.zoom,-1,innerWidth<=760));
+function closeZoomInput(restoreFocus=false){
+ $('#zoomInput').classList.add('hidden');$('#zoomLabel').style.visibility='';$('#zoomLabel').setAttribute('aria-expanded','false');
+ if(restoreFocus)$('#zoomLabel').focus({preventScroll:true});
+}
+$('#zoomLabel').onclick=()=>{
+ if(!app.doc)return;
+ const input=$('#zoomInput');input.value=Math.round(app.zoom*100);input.removeAttribute('aria-invalid');
+ $('#zoomLabel').style.visibility='hidden';$('#zoomLabel').setAttribute('aria-expanded','true');
+ input.classList.remove('hidden');input.focus({preventScroll:true});input.select();
+};
+$('#zoomInput').addEventListener('keydown',ev=>{
+ ev.stopPropagation();
+ if(ev.key==='Escape'){ev.preventDefault();closeZoomInput(true)}
+ if(ev.key==='Enter'){
+  ev.preventDefault();const zoom=parseZoomPercent(ev.target.value);
+  if(zoom===null){ev.target.setAttribute('aria-invalid','true');return}
+  setZoom(zoom);closeZoomInput(true);
+ }
+});
+$('#zoomInput').addEventListener('blur',()=>closeZoomInput());
+// Non-focusable canvas areas must cancel an unfinished edit too.
+document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('.zoom-control'))closeZoomInput()},true);
 // Ctrl/Cmd+0 fits the canvas; Ctrl/Cmd+Plus/Minus adjusts document zoom.
 // Intercept browser zoom in the home workspace too, but never redirect
 // text-field shortcuts or editing sessions into canvas zoom.
@@ -2922,7 +2946,7 @@ window.addEventListener('keydown',ev=>{
  const target=ev.target;
  if(target?.isContentEditable||target?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"]'))return;
  if(action==='fit')fitCanvas();
- else setZoom(Math.round((app.zoom+(action==='in'?1:-1)*(innerWidth<=760?.03:.1))*100)/100);
+ else setZoom(nextZoom(app.zoom,action==='in'?1:-1,innerWidth<=760));
 },{capture:true});
 const validImageFiles=files=>[...files].filter(f=>f.type.startsWith('image/'));
 $('#stageScroller').addEventListener('dragover',ev=>{if(ev.dataTransfer?.types&&Array.from(ev.dataTransfer.types).includes('Files')){ev.preventDefault();ev.dataTransfer.dropEffect='copy';$('#stageScroller').classList.add('drag-over')}});
@@ -4964,7 +4988,7 @@ function mobileBack(){
  return false;
 }
 window.addEventListener('keydown',ev=>{
- if(!mobileV36Small()||!['Escape','BrowserBack','GoBack'].includes(ev.key))return;
+ if(ev.target.id==='zoomInput'||!mobileV36Small()||!['Escape','BrowserBack','GoBack'].includes(ev.key))return;
  if(mobileBack()){ev.preventDefault();ev.stopImmediatePropagation()}
 },true);
 const mobileBackObserver=new MutationObserver(()=>{if(mobileV36Small())rearmBackGuard()});

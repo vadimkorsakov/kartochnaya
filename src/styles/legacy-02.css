@@ -24,3 +24,8 @@
 [data-text-decoration][aria-pressed="mixed"] { border-style:dashed; }
 .decoration-mixed { font-size:10px; margin-left:4px; }
 [data-text-decoration]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* Exact zoom editor occupies the percentage button without moving the toolbar. */
+.zoom-control{position:relative;display:inline-flex}
+.zoom-input{position:absolute;inset:0;width:100%;min-width:0;box-sizing:border-box;border:1px solid #a991df;border-radius:6px;background:#34343a;color:#f5f5fc;padding:4px;text-align:center;font:inherit;outline-offset:2px}
+.zoom-input[aria-invalid="true"]{border-color:#ff9292}

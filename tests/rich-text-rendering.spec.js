@@ -185,7 +185,7 @@ test('at document scale the real display Canvas and PNG are pixel-identical',asy
   const size=page.viewportSize();
   await page.setViewportSize({width:1280,height:size.height+delta});
  }
- await page.locator('#zoomLabel').click();
+ await page.locator('#fitBtn').click();
  await expect(page.locator('#zoomLabel')).toHaveText('100%');
  await expect.poll(()=>page.locator('#canvas').evaluate(el=>[el.width,el.height])).toEqual([320,240]);
  const screen=await canvasImage(page);expect([screen.width,screen.height]).toEqual([320,240]);

@@ -160,7 +160,7 @@ test('Alt + wheel leaves editing and scroll unchanged; Ctrl/Cmd + wheel still zo
     await page.keyboard.down(modifier);
     await page.mouse.wheel(0, -120);
     await page.keyboard.up(modifier);
-    await expect(page.locator('#zoomLabel')).toHaveText(`${old + 10}%`);
+    await expect(page.locator('#zoomLabel')).toHaveText(`${(Math.floor(old / 10) + 1) * 10}%`);
   }
   // This exercises editor behavior in Chromium. It does not prove Firefox's
   // browser/OS history shortcut can always be cancelled by a web page.
@@ -188,7 +188,7 @@ test('wheel cropping keeps its behavior, including Alt; Ctrl still controls canv
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -120);
   await page.keyboard.up('Control');
-  await expect(page.locator('#zoomLabel')).toHaveText(`${parseInt(zoom) + 10}%`);
+  await expect(page.locator('#zoomLabel')).toHaveText(`${(Math.floor(parseInt(zoom) / 10) + 1) * 10}%`);
   expect((await exportedDocument(page)).elements[0].cropZoom).toBe(altCropped);
   await page.locator('#cropDoneBtn').click();
 });

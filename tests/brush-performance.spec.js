@@ -215,7 +215,7 @@ for (const mobile of [false, true]) test.describe(mobile ? 'mobile brush DPR 2' 
     expect(boxes.a).toEqual(boxes.b); expect(boxes.dimensions.slice(0, 2)).toEqual(boxes.dimensions.slice(2));
     await page.mouse.up(); await released(page);
     const doc = await exportedDocument(page); expect(pixel(decode(doc.elements[0].rasterSrc), 100, 83)[3]).toBeGreaterThan(0);
-    await page.locator('#zoomLabel').evaluate(e => e.click()); await frame(page);
+    await page.locator('#fitBtn').evaluate(e => e.click()); await frame(page);
     if (mobile) {
       const p = await canvasPoint(page, 210, 140); await page.touchscreen.tap(p.x, p.y); await released(page);
       expect(pixel(decode((await exportedDocument(page)).elements[0].rasterSrc), 210, 140)[3]).toBeGreaterThan(0);

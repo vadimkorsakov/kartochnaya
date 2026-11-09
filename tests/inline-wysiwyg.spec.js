@@ -1150,3 +1150,23 @@ test('numeric steppers and font variant edit only the WYSIWYG selection without 
  await expect(page.locator('#inspector [data-key="fontVariant"]')).toHaveValue('400:normal');
  await page.keyboard.press('Control+Enter');
 });
+
+test('manual zoom keeps the active text session and its layer geometry aligned',async({page})=>{
+ await seed(page);await edit(page);
+ const before=await value(page);
+ for(const percent of [100,125]){
+  await page.locator('#zoomLabel').click();
+  await expect(page.locator(surface)).toBeVisible();
+  await page.locator('#zoomInput').fill(String(percent));await page.keyboard.press('Enter');
+  await expect(page.locator('#zoomInput')).toBeHidden();await expect(page.locator('#zoomLabel')).toHaveText(`${percent}%`);
+  await expect(page.locator(surface)).toBeVisible();
+  const rect=await page.locator(surface).boundingBox(),board=await page.locator('#canvas').boundingBox();
+  expect(Math.abs(rect.x-(board.x+before.x*percent/100))).toBeLessThan(1);
+  expect(Math.abs(rect.y-(board.y+before.y*percent/100))).toBeLessThan(1);
+  expect(Math.abs(rect.width-before.w*percent/100)).toBeLessThan(1);
+ }
+ await page.locator('#zoomLabel').click();await page.locator('#zoomInput').fill('100');await page.keyboard.press('Escape');
+ await expect(page.locator(surface)).toBeVisible();await expect(page.locator('#zoomLabel')).toHaveText('125%');
+ await page.locator(surface).focus();await page.keyboard.press('Control+Enter');
+ expect(await value(page)).toEqual(before);
+});

@@ -58,11 +58,21 @@ async function mockViewport(page, viewport) {
   }, viewport);
 }
 async function zoomTo29(page) {
-  await page.locator('#zoomLabel').click();
+  await page.locator('#fitBtn').click();
   await expect(page.locator('#zoomLabel')).toHaveText('29%');
 }
 for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }]) test.describe(`inline finish ${viewport.width}`, () => {
   test.use({ viewport, hasTouch: true, isMobile: true });
+  test('manual zoom keeps mobile text editing and Escape only cancels the zoom field',async({page})=>{
+    await open(page,{legacy:true});await edit(page);
+    const value=await page.locator(editor).inputValue();
+    await page.locator('#zoomLabel').tap();await page.locator('#zoomInput').fill('125');await page.keyboard.press('Enter');
+    await expect(page.locator(editor)).toBeVisible();await expect(page.locator('#zoomLabel')).toHaveText('125%');
+    await page.locator('#zoomLabel').tap();await page.locator('#zoomInput').fill('100');await page.keyboard.press('Escape');
+    await expect(page.locator('#zoomInput')).toBeHidden();await expect(page.locator(editor)).toBeVisible();
+    await expect(page.locator(editor)).toHaveValue(value);await expect(page.locator('#zoomLabel')).toHaveText('125%');
+    await expect(page.locator(done)).toBeVisible();
+  });
   test('IME diagnostics measure the flex chain, detect a CSS gap and follow viewport lifecycle', async ({ page, context }, info) => {
     await mockViewport(page, viewport);
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);

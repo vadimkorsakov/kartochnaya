@@ -26,7 +26,7 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=
  // A previous opt-in gate left normal users on plain textarea, making range
  // color/font/size changes invisible until the editor was closed.
  if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')==='0'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
- if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&!['left','center','right'].includes(e.textAlign))||(e.verticalAlign&&e.verticalAlign!=='top'))return false;
+ if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&!['left','center','right'].includes(e.textAlign))||(e.verticalAlign&&!['top','middle','bottom'].includes(e.verticalAlign)))return false;
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100)return false;
  // Supported paint semantics apply equally to plain and sparse-rich text.
  // Geometry is supplied by the shared row layout, never a CSS parity guess.
@@ -173,12 +173,12 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   let next=range?applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch):structuredClone(origin);
   if(!range){
    if(['underline','strikethrough'].includes(key))next=applyTextStyle(next,0,next.text.length,{[key]:null});
-   if(key!=='textAlign')retainRichTextSizeBase(next);Object.assign(next,patch);
+   if(!['textAlign','verticalAlign'].includes(key))retainRichTextSizeBase(next);Object.assign(next,patch);
   }
   if(key==='fontSize')next.autoFontSize=false;
   // Alignment changes row origins only; preserve all existing size metadata.
-  if(key!=='textAlign')retainRichTextSizeBase(next);
-  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle','textAlign'].includes(key))fit(next);
+  if(!['textAlign','verticalAlign'].includes(key))retainRichTextSizeBase(next);
+  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle','textAlign','verticalAlign'].includes(key))fit(next);
   if(!compatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}

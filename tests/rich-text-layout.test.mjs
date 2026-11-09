@@ -315,3 +315,19 @@ test('row origins include aligned empty LF rows and retain fragment advances',()
   assert.equal(rows[1].width,0);assert.equal(rows[3].width,0);assert.deepEqual(e,before);
  }
 });
+
+test('vertical origins use shared block height for empty rows, wrapping, mixed leading and overflow',()=>{
+ const engine=createRichTextLayoutEngine(leadingContext);
+ for(const patch of [
+  {text:'A'}, {text:'A\n\n\nB\n'}, {text:'AAAA BBBB CCCC',w:50},
+  {text:'AB\nCD',textRuns:[{start:1,end:4,style:{fontSize:32,lineHeight:2,letterSpacing:-1}}]},
+  {text:'A\nB\nC',h:10}, {text:'A\nB',lineHeight:.8}
+ ]){
+  const e={fontSize:20,lineHeight:1.2,w:100,h:200,...patch},top=engine.layout(e);
+  for(const verticalAlign of ['top','middle','bottom']){
+   const aligned=engine.layout({...e,verticalAlign}),offset=verticalAlign==='middle'?Math.max(0,(e.h-top.height)/2):verticalAlign==='bottom'?Math.max(0,e.h-top.height):0;
+   assert.equal(aligned.height,top.height);
+   assert.deepEqual(aligned.rows,top.rows.map(row=>({...row,y:row.y+offset,baseline:row.baseline+offset,fragments:row.fragments.map(p=>({...p,y:p.y+offset})),decorations:row.decorations.map(d=>({...d,y:d.y+offset}))})));
+  }
+ }
+});

@@ -2228,7 +2228,7 @@ function routeWysiwygPanelAction(ev){
  // Custom numeric steppers are proxy controls for their data-key inputs.
  // Preserve the WYSIWYG range; their click handler emits input/change on
  // the underlying number field. They must not enter the generic fallback.
- if(ev.target.closest('[data-align=left],[data-align=hcenter],[data-align=right]'))return;
+ if(ev.target.closest('[data-align=left],[data-align=hcenter],[data-align=right],[data-align=top],[data-align=vcenter],[data-align=bottom]'))return;
  if(ev.target.closest('[data-key],[data-hex],[data-fill-open],[data-text-decoration],[data-text-auto-font],[data-font-open],[data-font-option],.font-family-menu,.k-num-step,#fontDialog,#fillPopover,#undoBtn,#redoBtn'))return;
  if(ev.target.closest('button,input,select,[data-align]')&&!fallbackInlineWysiwyg('Форматирование')){ev.preventDefault();ev.stopImmediatePropagation();}
 }
@@ -2290,7 +2290,7 @@ function closeInlineText(cancel=false){
    restoreInlineElement(e,final);
   }
   commit('Изменение текста');
- }else paint();
+ }else{paint();updateHistoryButtons();}
  refreshInspector();updateQuickBubble();
 }
 $('#inlineText').addEventListener('beforeinput',ev=>{if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
@@ -2417,7 +2417,7 @@ document.addEventListener('mousedown',ev=>{
  app.inlineToolPointer=true;rememberInlineCaret();
  // Buttons can operate on the focused selection. Inputs/selects must retain
  // native focus, keyboard and text-selection behavior on desktop and Android.
- if((document.activeElement===$('#inlineText')||app.wysiwyg&&ev.target.closest('[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right]'))&&ev.target.closest('button'))ev.preventDefault();
+ if((document.activeElement===$('#inlineText')||app.wysiwyg&&ev.target.closest('[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=top],[data-align=vcenter],[data-align=bottom]'))&&ev.target.closest('button'))ev.preventDefault();
 },true);
 document.addEventListener('keydown',ev=>{if(app.wysiwyg&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&ev.target.closest(inlineFormattingRoots)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&ev.target.id!=='zoomInput'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
 
@@ -3443,7 +3443,7 @@ function showContextMenu(x,y){const m=$('#contextMenu');m.classList.remove('hidd
 function hideContextMenu(){$('#contextMenu').classList.add('hidden')}
 function arrangeLayer(mode){const chosen=new Set(app.selectedIds);if(!chosen.size)return;const rest=app.doc.elements.filter(e=>!chosen.has(e.id)),a=app.doc.elements.filter(e=>chosen.has(e.id));let target=0;
  if(mode==='front')app.doc.elements=[...rest,...a];else if(mode==='back')app.doc.elements=[...a,...rest];else{let indexes=app.doc.elements.map((e,i)=>chosen.has(e.id)?i:-1).filter(i=>i>=0);const index=mode==='forward'?Math.min(app.doc.elements.length-a.length,Math.max(...indexes)+1):Math.max(0,Math.min(...indexes)-1);rest.splice(index,0,...a);app.doc.elements=rest}commit();refreshLayers()}
-function alignPicked(action){const es=picked().filter(e=>!e.locked);if(!es.length)return;const bounds=selectionBounds(),doc=app.doc;if(es.length===1){const e=es[0];if(e.type==='text'){if(app.wysiwyg&&e.id===app.editingId&&['left','hcenter','right'].includes(action)){app.wysiwyg.applyLayerStyle({textAlign:{left:'left',hcenter:'center',right:'right'}[action]},{key:'textAlign',final:true});return}if(['left','hcenter','right'].includes(action))e.textAlign={left:'left',hcenter:'center',right:'right'}[action];else e.verticalAlign={top:'top',vcenter:'middle',bottom:'bottom'}[action];commit();refreshInspector();return}if(e.fillType==='image'){const g=imageGeometry(e);if(g){const ox=Math.max(0,(g.dw-e.w)/2)/e.w*100,oy=Math.max(0,(g.dh-e.h)/2)/e.h*100;if(['left','hcenter','right'].includes(action))e.cropX={left:ox,hcenter:0,right:-ox}[action];else e.cropY={top:oy,vcenter:0,bottom:-oy}[action];commit();refreshInspector()}return}toast('Выравнивание внутри рамки доступно для текста и фото');return}for(const e of es){const B=boundsOf(e);let dx=0,dy=0;const area=es.length===1?{x:0,y:0,right:doc.width,bottom:doc.height}:bounds;
+function alignPicked(action){const es=picked().filter(e=>!e.locked);if(!es.length)return;const bounds=selectionBounds(),doc=app.doc;if(es.length===1){const e=es[0];if(e.type==='text'){if(app.wysiwyg&&e.id===app.editingId&&['left','hcenter','right','top','vcenter','bottom'].includes(action)){const key=['left','hcenter','right'].includes(action)?'textAlign':'verticalAlign',value={left:'left',hcenter:'center',right:'right',top:'top',vcenter:'middle',bottom:'bottom'}[action];app.wysiwyg.applyLayerStyle({[key]:value},{key,final:true});return}if(['left','hcenter','right'].includes(action))e.textAlign={left:'left',hcenter:'center',right:'right'}[action];else e.verticalAlign={top:'top',vcenter:'middle',bottom:'bottom'}[action];commit();refreshInspector();return}if(e.fillType==='image'){const g=imageGeometry(e);if(g){const ox=Math.max(0,(g.dw-e.w)/2)/e.w*100,oy=Math.max(0,(g.dh-e.h)/2)/e.h*100;if(['left','hcenter','right'].includes(action))e.cropX={left:ox,hcenter:0,right:-ox}[action];else e.cropY={top:oy,vcenter:0,bottom:-oy}[action];commit();refreshInspector()}return}toast('Выравнивание внутри рамки доступно для текста и фото');return}for(const e of es){const B=boundsOf(e);let dx=0,dy=0;const area=es.length===1?{x:0,y:0,right:doc.width,bottom:doc.height}:bounds;
  if(action==='left')dx=area.x-B.x;if(action==='right')dx=area.right-B.right;if(action==='hcenter')dx=(area.x+area.right-B.x-B.right)/2;
  if(action==='top')dy=area.y-B.y;if(action==='bottom')dy=area.bottom-B.bottom;if(action==='vcenter')dy=(area.y+area.bottom-B.y-B.bottom)/2;
  e.x=fmt(e.x+dx);e.y=fmt(e.y+dy);

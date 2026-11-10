@@ -37,6 +37,8 @@ async function projection(page,e){return page.evaluate(async e=>{
  return createRichTextLayoutEngine(document.createElement('canvas').getContext('2d'),document.fonts).layoutJustified(e);
 },e)}
 const glyphs=calls=>calls.filter(p=>p.method!=='fillRect');
+// Firefox exposes Canvas globalAlpha with float32 rounding; keep a strict numeric tolerance.
+const alphaNear=(actual,expected)=>Math.abs(actual-expected)<=1e-6;
 async function parity(page,info,label){
  for(let i=0;i<60;i++){const z=parseInt(await page.locator('#zoomLabel').textContent());if(z===100)break;await page.locator(z>100?'#zoomOutBtn':'#zoomInBtn').click()}
  await page.keyboard.press('Escape');const p=await canvasPoint(page,310,230);await page.mouse.click(p.x,p.y);
@@ -74,9 +76,9 @@ for(const rich of [false,true])test(`shared justify actual glyphs, decorations a
  if(rich){
   const strokes=calls.filter(p=>p.method==='strokeText');
   expect(strokes.map(p=>p.args)).toEqual(parts.filter(p=>p.style.strokeWidth>0).map(p=>[p.text,p.x,p.y]));
-  expect(strokes.some(p=>p.alpha===.35&&p.dash[0]===4)).toBe(true);
-  expect(strokes.some(p=>p.alpha===.6&&p.cap==='round'&&p.dash[0]===1)).toBe(true);
-  expect(fills.some(p=>p.alpha===.45&&p.color==='#cc2244'&&p.font.includes('italic')&&p.font.includes('24px'))).toBe(true);
+  expect(strokes.some(p=>alphaNear(p.alpha,.35)&&p.dash[0]===4)).toBe(true);
+  expect(strokes.some(p=>alphaNear(p.alpha,.6)&&p.cap==='round'&&p.dash[0]===1)).toBe(true);
+  expect(fills.some(p=>alphaNear(p.alpha,.45)&&p.color==='#cc2244'&&p.font.includes('italic')&&p.font.includes('24px'))).toBe(true);
   const rects=calls.filter(p=>p.method==='fillRect'&&p.args[3]<5);
   expect(rects.map(p=>p.args)).toEqual(layout.rows.flatMap(r=>r.decorations).map(r=>[r.x,r.y,r.width,r.height]));
   const first=layout.rows[0];expect(Math.max(...first.decorations.map(r=>r.x+r.width))).toBeGreaterThanOrEqual(e.w);

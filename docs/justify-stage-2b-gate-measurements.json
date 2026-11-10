@@ -1,0 +1,484 @@
+{
+  "base": "7022d89",
+  "browser": "Chromium 154.0.8037.57 (Debian)",
+  "geometryTolerance": 0.1,
+  "units": "CSS px at scale 1",
+  "cases": [
+    {
+      "prototype": false,
+      "rich": false,
+      "nativeCaretMaxDelta": 2.25,
+      "nativeFragmentEndpointMaxDelta": 12.0859375,
+      "worstFragmentEndpoint": {
+        "row": 0,
+        "text": " ",
+        "edge": "after",
+        "offset": 9,
+        "expected": 145.0859375,
+        "actual": 133,
+        "delta": -12.0859375,
+        "hasRect": true,
+        "selection": {
+          "anchor": 9,
+          "focus": 9
+        }
+      },
+      "wordOriginMaxDelta": 0.03515625,
+      "navigationCases": 91,
+      "navigationMismatches": [],
+      "spaceEndpoints": [
+        {
+          "row": 0,
+          "text": " ",
+          "edge": "after",
+          "offset": 7,
+          "expected": 107.62760416666667,
+          "actual": 95.5625,
+          "delta": -12.065104166666671,
+          "hasRect": true,
+          "selection": {
+            "anchor": 7,
+            "focus": 7
+          }
+        },
+        {
+          "row": 0,
+          "text": " ",
+          "edge": "before",
+          "offset": 7,
+          "expected": 107.62760416666667,
+          "actual": 107.625,
+          "delta": -0.0026041666666714036,
+          "hasRect": true,
+          "selection": {
+            "anchor": 7,
+            "focus": 7
+          }
+        }
+      ],
+      "kerningExample": {
+        "row": 0,
+        "offset": 10,
+        "source": "o ",
+        "expected": 159.3125,
+        "actual": 157.0625,
+        "delta": -2.25,
+        "hasRect": true,
+        "selection": {
+          "anchor": 10,
+          "focus": 10
+        },
+        "owner": 0
+      },
+      "selectionRanges": [
+        {
+          "anchor": 0,
+          "focus": 6,
+          "read": {
+            "anchor": 0,
+            "focus": 6
+          },
+          "text": "AVATAR",
+          "matchesSource": true
+        },
+        {
+          "anchor": 6,
+          "focus": 0,
+          "read": {
+            "anchor": 6,
+            "focus": 0
+          },
+          "text": "AVATAR",
+          "matchesSource": true
+        },
+        {
+          "anchor": 6,
+          "focus": 9,
+          "read": {
+            "anchor": 6,
+            "focus": 9
+          },
+          "text": "   ",
+          "matchesSource": true
+        },
+        {
+          "anchor": 9,
+          "focus": 6,
+          "read": {
+            "anchor": 9,
+            "focus": 6
+          },
+          "text": "   ",
+          "matchesSource": true
+        },
+        {
+          "anchor": 2,
+          "focus": 45,
+          "read": {
+            "anchor": 2,
+            "focus": 45
+          },
+          "text": "ATAR   To WA 😀 é alpha beta gamma\nAV To\n\n",
+          "matchesSource": true
+        }
+      ]
+    },
+    {
+      "prototype": false,
+      "rich": true,
+      "nativeCaretMaxDelta": 2.234375,
+      "nativeFragmentEndpointMaxDelta": 11.4765625,
+      "worstFragmentEndpoint": {
+        "row": 0,
+        "text": " ",
+        "edge": "after",
+        "offset": 9,
+        "expected": 145.0859375,
+        "actual": 133.609375,
+        "delta": -11.4765625,
+        "hasRect": true,
+        "selection": {
+          "anchor": 9,
+          "focus": 9
+        }
+      },
+      "wordOriginMaxDelta": 0.03515625,
+      "navigationCases": 91,
+      "navigationMismatches": [],
+      "spaceEndpoints": [
+        {
+          "row": 0,
+          "text": " ",
+          "edge": "after",
+          "offset": 7,
+          "expected": 108.81510416666667,
+          "actual": 97.359375,
+          "delta": -11.455729166666671,
+          "hasRect": true,
+          "selection": {
+            "anchor": 7,
+            "focus": 7
+          }
+        },
+        {
+          "row": 0,
+          "text": " ",
+          "edge": "before",
+          "offset": 7,
+          "expected": 108.81510416666667,
+          "actual": 108.828125,
+          "delta": 0.013020833333328596,
+          "hasRect": true,
+          "selection": {
+            "anchor": 7,
+            "focus": 7
+          }
+        }
+      ],
+      "kerningExample": {
+        "row": 0,
+        "offset": 10,
+        "source": "o ",
+        "expected": 159.3125,
+        "actual": 157.078125,
+        "delta": -2.234375,
+        "hasRect": true,
+        "selection": {
+          "anchor": 10,
+          "focus": 10
+        },
+        "owner": 0
+      },
+      "selectionRanges": [
+        {
+          "anchor": 0,
+          "focus": 6,
+          "read": {
+            "anchor": 0,
+            "focus": 6
+          },
+          "text": "AVATAR",
+          "matchesSource": true
+        },
+        {
+          "anchor": 6,
+          "focus": 0,
+          "read": {
+            "anchor": 6,
+            "focus": 0
+          },
+          "text": "AVATAR",
+          "matchesSource": true
+        },
+        {
+          "anchor": 6,
+          "focus": 9,
+          "read": {
+            "anchor": 6,
+            "focus": 9
+          },
+          "text": "   ",
+          "matchesSource": true
+        },
+        {
+          "anchor": 9,
+          "focus": 6,
+          "read": {
+            "anchor": 9,
+            "focus": 6
+          },
+          "text": "   ",
+          "matchesSource": true
+        },
+        {
+          "anchor": 2,
+          "focus": 45,
+          "read": {
+            "anchor": 2,
+            "focus": 45
+          },
+          "text": "ATAR   To WA 😀 é alpha beta gamma\nAV To\n\n",
+          "matchesSource": true
+        }
+      ]
+    },
+    {
+      "prototype": true,
+      "rich": false,
+      "nativeCaretMaxDelta": 2.22265625,
+      "nativeFragmentEndpointMaxDelta": 0.453125,
+      "worstFragmentEndpoint": {
+        "row": 0,
+        "text": "To",
+        "edge": "after",
+        "offset": 11,
+        "expected": 170,
+        "actual": 170.453125,
+        "delta": 0.453125,
+        "hasRect": true,
+        "selection": {
+          "anchor": 11,
+          "focus": 11
+        }
+      },
+      "wordOriginMaxDelta": 0.05078125,
+      "navigationCases": 91,
+      "navigationMismatches": [],
+      "spaceEndpoints": [
+        {
+          "row": 0,
+          "text": " ",
+          "edge": "after",
+          "offset": 7,
+          "expected": 107.62760416666667,
+          "actual": 107.625,
+          "delta": -0.0026041666666714036,
+          "hasRect": true,
+          "selection": {
+            "anchor": 7,
+            "focus": 7
+          }
+        },
+        {
+          "row": 0,
+          "text": " ",
+          "edge": "before",
+          "offset": 7,
+          "expected": 107.62760416666667,
+          "actual": 107.640625,
+          "delta": 0.013020833333328596,
+          "hasRect": true,
+          "selection": {
+            "anchor": 7,
+            "focus": 7
+          }
+        }
+      ],
+      "kerningExample": {
+        "row": 0,
+        "offset": 10,
+        "source": "o ",
+        "expected": 159.3125,
+        "actual": 157.109375,
+        "delta": -2.203125,
+        "hasRect": true,
+        "selection": {
+          "anchor": 10,
+          "focus": 10
+        },
+        "owner": 0
+      },
+      "selectionRanges": [
+        {
+          "anchor": 0,
+          "focus": 6,
+          "read": {
+            "anchor": 0,
+            "focus": 6
+          },
+          "text": "AVATAR",
+          "matchesSource": true
+        },
+        {
+          "anchor": 6,
+          "focus": 0,
+          "read": {
+            "anchor": 6,
+            "focus": 0
+          },
+          "text": "AVATAR",
+          "matchesSource": true
+        },
+        {
+          "anchor": 6,
+          "focus": 9,
+          "read": {
+            "anchor": 6,
+            "focus": 9
+          },
+          "text": "   ",
+          "matchesSource": true
+        },
+        {
+          "anchor": 9,
+          "focus": 6,
+          "read": {
+            "anchor": 9,
+            "focus": 6
+          },
+          "text": "   ",
+          "matchesSource": true
+        },
+        {
+          "anchor": 2,
+          "focus": 45,
+          "read": {
+            "anchor": 2,
+            "focus": 45
+          },
+          "text": "ATAR   To WA 😀 é alpha beta gamma\nAV To\n\n",
+          "matchesSource": true
+        }
+      ]
+    },
+    {
+      "prototype": true,
+      "rich": true,
+      "nativeCaretMaxDelta": 2.22265625,
+      "nativeFragmentEndpointMaxDelta": 1.78125,
+      "worstFragmentEndpoint": {
+        "row": 0,
+        "text": "V",
+        "edge": "after",
+        "offset": 2,
+        "expected": 30.234375,
+        "actual": 32.015625,
+        "delta": 1.78125,
+        "hasRect": true,
+        "selection": {
+          "anchor": 2,
+          "focus": 2
+        }
+      },
+      "wordOriginMaxDelta": 0.0390625,
+      "navigationCases": 91,
+      "navigationMismatches": [],
+      "spaceEndpoints": [
+        {
+          "row": 0,
+          "text": " ",
+          "edge": "after",
+          "offset": 7,
+          "expected": 108.81510416666667,
+          "actual": 108.828125,
+          "delta": 0.013020833333328596,
+          "hasRect": true,
+          "selection": {
+            "anchor": 7,
+            "focus": 7
+          }
+        },
+        {
+          "row": 0,
+          "text": " ",
+          "edge": "before",
+          "offset": 7,
+          "expected": 108.81510416666667,
+          "actual": 108.84375,
+          "delta": 0.028645833333328596,
+          "hasRect": true,
+          "selection": {
+            "anchor": 7,
+            "focus": 7
+          }
+        }
+      ],
+      "kerningExample": {
+        "row": 0,
+        "offset": 10,
+        "source": "o ",
+        "expected": 159.3125,
+        "actual": 157.125,
+        "delta": -2.1875,
+        "hasRect": true,
+        "selection": {
+          "anchor": 10,
+          "focus": 10
+        },
+        "owner": 0
+      },
+      "selectionRanges": [
+        {
+          "anchor": 0,
+          "focus": 6,
+          "read": {
+            "anchor": 0,
+            "focus": 6
+          },
+          "text": "AVATAR",
+          "matchesSource": true
+        },
+        {
+          "anchor": 6,
+          "focus": 0,
+          "read": {
+            "anchor": 6,
+            "focus": 0
+          },
+          "text": "AVATAR",
+          "matchesSource": true
+        },
+        {
+          "anchor": 6,
+          "focus": 9,
+          "read": {
+            "anchor": 6,
+            "focus": 9
+          },
+          "text": "   ",
+          "matchesSource": true
+        },
+        {
+          "anchor": 9,
+          "focus": 6,
+          "read": {
+            "anchor": 9,
+            "focus": 6
+          },
+          "text": "   ",
+          "matchesSource": true
+        },
+        {
+          "anchor": 2,
+          "focus": 45,
+          "read": {
+            "anchor": 2,
+            "focus": 45
+          },
+          "text": "ATAR   To WA 😀 é alpha beta gamma\nAV To\n\n",
+          "matchesSource": true
+        }
+      ]
+    }
+  ]
+}

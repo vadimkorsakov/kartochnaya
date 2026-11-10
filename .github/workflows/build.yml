@@ -180,6 +180,20 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Justify Stage 2B native caret gate in Chromium and Firefox
+        if: always()
+        run: npx playwright test --config=playwright.justify-gate.config.js
+      - name: Preserve Stage 2B native caret measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: justify-stage-2b-caret-gate
+          path: |
+            test-results/justify-gate
+            test-results/justify-gate-results.json
+          if-no-files-found: warn
+          retention-days: 14
+
   browser:
     name: browser-shard-${{ matrix.shard }}-of-3
     runs-on: ubuntu-latest

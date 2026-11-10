@@ -1,8 +1,9 @@
 const {test,expect}=require('@playwright/test');
 const fs=require('node:fs/promises'),path=require('node:path');
+const {isDeepStrictEqual}=require('node:util');
 test.use({serviceWorkers:'block'});
-test.describe.configure({timeout:120000});
-const variants=['A-left','B-left-split','C-justify','D-justify-space-fix'];
+test.describe.configure({timeout:180000});
+const variants=['A-left','B-left-split','C-justify','D-justify-space-fix','E-letter-spacing','F-explicit-width'];
 // Gecko uses 1/60 CSS px; Chromium uses 1/64. Two independently rounded
 // native Range coordinates can differ by at most two of the coarser units.
 const localRounding=2/60;
@@ -18,20 +19,25 @@ async function routes(page){
   if(file==='/render/rich-text-layout.mjs')replace('const extra = row.softWrap && spaces.length ?', 'const extra = !e.__gateNoStretch && row.softWrap && spaces.length ?');
   if(file==='/editor/wysiwyg-session.mjs'){
    replace('rowNode.append(span);ctx.font=richTextFont(part.style);',`ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';
-    if(value.__gateSpaceFix&&part.text===' ')span.style.wordSpacing=(part.width-ctx.measureText(part.text).width)+'px';
+    if(value.__gateSpaceFix&&part.text===' '){
+     const natural=ctx.measureText(part.text).width;
+     if(value.__gateSpaceFix==='word')span.style.wordSpacing=(part.width-natural)+'px';
+     if(value.__gateSpaceFix==='letter')span.style.letterSpacing=(part.style.letterSpacing+part.width-natural)+'px';
+     if(value.__gateSpaceFix==='width')span.style.width=part.width+'px';
+    }
     rowNode.append(span);ctx.font=richTextFont(part.style);`);
    replace('advance=part.x+ctx.measureText(part.text).width;',"advance=part.x+(value.__gateSpaceFix&&part.text===' '?part.width:ctx.measureText(part.text).width);");
   }
   return route.fulfill({contentType:'text/javascript',body});
  });
 }
-async function setup(page,variant,rich){
- return page.evaluate(async({variant,rich})=>{
+async function setup(page,variant,rich,tracking=0){
+ return page.evaluate(async({variant,rich,tracking})=>{
   window.gate?.session.dispose();const host=document.querySelector('#host');host.replaceChildren();
   const {createWysiwygSession}=await import('/editor/wysiwyg-session.mjs');
   const {createRichTextLayoutEngine,richTextFont}=await import('/render/rich-text-layout.mjs');
   const {createInlineHistory}=await import('/model/inline-text-history.mjs');
-  const layer={type:'text',text:'AVATAR   To WA 😀 é alpha beta gamma\nAV To\n\nZ',w:170,h:600,fontFamily:'Arial',fontSize:24,lineHeight:1.2,textAlign:variant.startsWith('A')||variant.startsWith('B')?'left':'justify',__gateNoStretch:variant.startsWith('B'),__gateSpaceFix:variant.startsWith('D'),...(rich?{textRuns:[{start:1,end:2,style:{textColor:'#cc2244',fillOpacity:50}},{start:12,end:14,style:{fontWeight:'700',letterSpacing:1}}]}:{})};
+  const layer={type:'text',text:'AVATAR   To WA 😀 é alpha beta gamma\nAV To\n\nZ',w:170,h:600,fontFamily:'Arial',fontSize:24,lineHeight:1.2,textAlign:variant.startsWith('A')||variant.startsWith('B')?'left':'justify',__gateNoStretch:variant.startsWith('B'),letterSpacing:tracking,__gateSpaceFix:variant.startsWith('D')?'word':variant.startsWith('E')?'letter':variant.startsWith('F')?'width':false,...(rich?{textRuns:[{start:1,end:2,style:{textColor:'#cc2244',fillOpacity:50}},{start:12,end:14,style:{fontWeight:'700',letterSpacing:1}}]}:{})};
   const ctx=document.createElement('canvas').getContext('2d'),engine=createRichTextLayoutEngine(ctx,document.fonts),segmenter=new Intl.Segmenter(undefined,{granularity:'grapheme'});
   const layout=e=>{
    if(!variant.startsWith('A'))return engine.layoutJustified(e);
@@ -48,6 +54,7 @@ async function setup(page,variant,rich){
     return {...row,carets:points.length?[...new Map(points.map(p=>[p.offset,p])).values()]:[{offset:row.start,x:row.x}]};
    })};
   };
+  const requestedText=layer.text,requestedRuns=JSON.stringify(layer.textRuns);
   const session=createWysiwygSession({host,element:layer,history:createInlineHistory(layer),layout,compatible:()=>true,onChange(){},onRecovery(){},onFallback(){}});
   window.gate={layer,session,layout};session.focus();const projection=layout(layer),origin=host.getBoundingClientRect();
   const caretMeasurements=[],endpoints=[],fragments=[],spaces=[];
@@ -59,7 +66,7 @@ async function setup(page,variant,rich){
    for(const point of row.carets){session.setSelection(point.offset,point.offset,ri);caretMeasurements.push({...sample(point.offset,ri),expected:point.x,delta:sample(point.offset,ri).actual-point.x})}
    for(const [pi,span] of [...host.children[ri].children].entries()){
     const p=row.fragments[pi];if(!p)continue;const box=span.getBoundingClientRect();
-    fragments.push({row:ri,start:p.start,end:p.end,text:p.text,x:p.x,logicalX:p.logicalX??p.x,width:p.width,actualX:box.x-origin.x,actualWidth:box.width});
+    fragments.push({row:ri,start:p.start,end:p.end,text:p.text,x:p.x,logicalX:p.logicalX??p.x,width:p.width,actualX:box.x-origin.x,actualWidth:box.width,cssLetterSpacing:span.style.letterSpacing,cssWordSpacing:span.style.wordSpacing,cssWidth:span.style.width,sourceTracking:p.style.letterSpacing});
     for(const [edge,index,offset] of [['before',0,p.start],['after',p.text.length,p.end]]){
      getSelection().setBaseAndExtent(span.firstChild,index,span.firstChild,index);
      const value=sample(offset,ri),expected=row.carets.find(c=>c.offset===offset).x;
@@ -72,28 +79,36 @@ async function setup(page,variant,rich){
    if(row.softWrap)for(let i=first+1;i<last;i++)if(source[i]===' '){
     const start=row.start+i,end=start+1,left=row.carets.find(c=>c.offset===start),right=row.carets.find(c=>c.offset===end);
     session.setSelection(start,start,ri);const r=getSelection().getRangeAt(0).getBoundingClientRect();
-    spaces.push({row:ri,start,end,x:left.x,right:right.x,width:right.x-left.x,y:r.y+r.height/2});
+    const pi=row.fragments.findIndex(p=>p.start<=start&&p.end>=end),part=row.fragments[pi],node=host.children[ri].children[pi].firstChild;
+    const ends=[];
+    for(const offset of [start,end]){getSelection().setBaseAndExtent(node,offset-part.start,node,offset-part.start);ends.push(sample(offset,ri))}
+    spaces.push({row:ri,start,end,x:left.x,right:right.x,width:right.x-left.x,y:r.y+r.height/2,nativeBefore:ends[0],nativeAfter:ends[1]});
    }
   }
   const selections=[];
   for(const [anchor,focus] of [[0,6],[6,0],[6,9],[9,6],[2,layer.text.length-1]]){
    session.setSelection(anchor,focus);selections.push({anchor,focus,read:session.readSelection(),text:getSelection().toString(),expected:layer.text.slice(Math.min(anchor,focus),Math.max(anchor,focus))});
   }
-  return {variant,rich,projection,caretMeasurements,endpoints,fragments,spaces,selections,sourceText:layer.text,text:host.textContent,origin:{x:origin.x,y:origin.y},nativeCanvasCarets:!variant.startsWith('A')};
- },{variant,rich});
+  return {variant,rich,tracking,sourceRuns:structuredClone(layer.textRuns),sourcePreserved:layer.text===requestedText&&host.textContent===requestedText,runsPreserved:JSON.stringify(layer.textRuns)===requestedRuns,trackingPreserved:layer.letterSpacing===tracking,projection,caretMeasurements,endpoints,fragments,spaces,selections,sourceText:layer.text,text:host.textContent,origin:{x:origin.x,y:origin.y},nativeCanvasCarets:!variant.startsWith('A')};
+ },{variant,rich,tracking});
 }
 async function readMouse(page){return page.evaluate(()=>{
  const host=document.querySelector('#host'),s=getSelection(),node=s.focusNode?.nodeType===3?s.focusNode.parentElement:s.focusNode;
  try{return {clean:gate.session.clean(),domMatchesCanonical:host.textContent===gate.layer.text,selection:gate.session.readSelection(),text:s.toString(),owner:[...host.children].indexOf(node?.closest('[data-wysiwyg-row]'))}}catch(e){return {error:String(e),text:s.toString()}}
 })}
-async function mouseProbes(page,result){
- const clicks=[],drags=[];
- for(const space of result.spaces)for(const [label,fraction] of [['before',0],['near-middle-left',.4],['middle',.5],['near-middle-right',.6],['after',1]]){
+const clickFractions=[0,.2,.3,.4,.45,.5,.55,.6,.7,.8,1];
+async function clickSpaces(page,result){
+ const clicks=[];
+ for(const space of result.spaces)for(const fraction of clickFractions){
   const x=result.origin.x+space.x+fraction*space.width;
   await page.mouse.click(x,space.y);
-  const actual=await readMouse(page),allowed=label==='middle'?[space.start,space.end]:[fraction<.5?space.start:space.end];
-  clicks.push({...space,label,x,allowed,...actual,ok:!actual.error&&actual.clean&&actual.domMatchesCanonical&&actual.owner===space.row&&actual.selection.anchor===actual.selection.focus&&allowed.includes(actual.selection.focus)&&actual.text===''});
+  const actual=await readMouse(page),allowed=fraction===.5?[space.start,space.end]:[fraction<.5?space.start:space.end];
+  clicks.push({...space,fraction,x,allowed,...actual,distanceBefore:Math.abs(x-result.origin.x-space.nativeBefore.actual),distanceAfter:Math.abs(x-result.origin.x-space.nativeAfter.actual),ok:!actual.error&&actual.clean&&actual.domMatchesCanonical&&actual.owner===space.row&&actual.selection.anchor===actual.selection.focus&&allowed.includes(actual.selection.focus)&&actual.text===''});
  }
+ return clicks;
+}
+async function mouseProbes(page,result){
+ const clicks=await clickSpaces(page,result),drags=[];
  // Coordinates come from the layout, never setSelection or caret hit APIs.
  // Real pointer drags include spaces, a soft wrap, surrogate + combining text.
  const point=(row,offset)=>{
@@ -137,41 +152,97 @@ function compare(candidate,control){
  }
  return {control:control.variant,pairs,maxSignedDifference:maximum(pairs.map(p=>Math.abs(p.signedDifference))),maxAdditionalError:maximum(pairs.map(p=>p.additionalError)),beyondRounding:pairs.filter(p=>p.additionalError>p.roundingBound)};
 }
-for(const rich of [false,true])test(`left versus justify native geometry and real mouse rich=${rich}`,async({page},info)=>{
- await routes(page);await page.goto('http://gate.test/');const results=[];
- for(const variant of variants){
-  const r=await setup(page,variant,rich);r.mouse=await mouseProbes(page,r);r.navigation=await navigationProbes(page,r);results.push(r);
+test('single-space pilot: B D E F at the Firefox counterexample',async({page},info)=>{
+ await routes(page);await page.goto('http://gate.test/');const result=[];
+ for(const variant of variants.filter(v=>!v.startsWith('A')&&!v.startsWith('C'))){
+  const r=await setup(page,variant,false);r.spaces=r.spaces.filter(s=>s.start===6);
+  const mouse=await clickSpaces(page,r);result.push({variant,space:r.spaces[0],clicks:mouse,fragments:r.fragments.filter(p=>p.start>=6&&p.end<=9)});
  }
- for(const r of results){
-  r.relativeToLeft=compare(r,results[0]);r.relativeToSplitLeft=compare(r,results[1]);
-  r.summary={variant:r.variant,rich,maxAbsoluteCaret:maximum(r.caretMeasurements.filter(p=>p.hasRect).map(p=>Math.abs(p.delta))),maxAbsoluteEndpoint:maximum(r.endpoints.filter(p=>p.hasRect).map(p=>Math.abs(p.delta))),additionalVsA:r.relativeToLeft.maxAdditionalError,additionalVsB:r.relativeToSplitLeft.maxAdditionalError,signedDifferenceVsB:r.relativeToSplitLeft.maxSignedDifference,
-   stretchedSpaceEndpointError:maximum((r.variant.startsWith('A')?r.caretMeasurements.filter(p=>p.hasRect&&r.spaces.some(s=>s.row===p.row&&(s.start===p.offset||s.end===p.offset))):r.endpoints.filter(p=>p.hasRect&&r.spaces.some(s=>s.start===p.start&&s.end===p.end))).map(p=>Math.abs(p.delta))),clickErrors:r.mouse.clicks.filter(p=>!p.ok).length,clicks:r.mouse.clicks.length,dragErrors:r.mouse.drags.filter(p=>!p.ok).length,drags:r.mouse.drags.length,navigationErrors:r.navigation.filter(p=>!p.ok).length,utf16Preserved:r.text===r.sourceText&&r.selections.every(p=>p.read.anchor===p.anchor&&p.read.focus===p.focus&&p.text===p.expected)};
- }
- await info.attach('left-justify-native-measurements.json',{body:JSON.stringify({localRounding,results},null,2),contentType:'application/json'});
- console.log('LEFT_JUSTIFY_SUMMARY',JSON.stringify(results.map(r=>r.summary)));
- for(const r of results){
-  expect.soft(r.summary.utf16Preserved,r.variant+' UTF-16').toBe(true);
-  for(const p of r.caretMeasurements){expect.soft(p.selection,r.variant+' source offset').toEqual({anchor:p.offset,focus:p.offset});expect.soft(p.owner,r.variant+' row affinity').toBe(p.row)}
-  expect.soft(r.summary.navigationErrors,r.variant+' keyboard').toBe(0);
- }
- const candidate=results[3];
- const structure=r=>r.projection.rows.map(row=>({start:row.start,end:row.end,nextStart:row.nextStart,fragments:row.fragments.map(({start,end,text,style})=>({start,end,text,style}))}));
- for(const r of results.slice(2))expect.soft(structure(r),r.variant+' source/style structure vs B').toEqual(structure(results[1]));
- expect.soft(candidate.relativeToSplitLeft.pairs.length,'complete B/D endpoint and caret pairing').toBe(candidate.caretMeasurements.filter(p=>p.hasRect).length+candidate.endpoints.filter(p=>p.hasRect).length);
- expect.soft(results[2].mouse.clicks.some(p=>!p.ok),'unfixed C must expose real space hit-testing failure').toBe(true);
- const localShapes=[];
+ await info.attach('single-space-pilot.json',{body:JSON.stringify(result,null,2),contentType:'application/json'});
+ console.log('SPACE_PILOT',JSON.stringify(result.map(r=>({variant:r.variant,rangeWidth:r.space.nativeAfter.actual-r.space.nativeBefore.actual,targetWidth:r.space.width,clickErrors:r.clicks.filter(p=>!p.ok).length,at40:r.clicks.find(p=>p.fraction===.4)?.selection}))));
+ expect(result.every(r=>r.space.start===6&&r.space.end===7)).toBe(true);
+});
+
+function candidateGeometry(candidate,control){
+ const relative=compare(candidate,control),localShapes=[],wordOrigins=[];
  for(const p of candidate.caretMeasurements.filter(p=>p.hasRect)){
   const f=candidate.fragments.findLast(f=>f.row===p.row&&f.start<=p.offset&&p.offset<=f.end);
   if(!f||!f.text.trim())continue;
-  const control=results[1],q=control.caretMeasurements.find(q=>q.hasRect&&q.row===p.row&&q.offset===p.offset),g=control.fragments.find(g=>g.row===f.row&&g.start===f.start&&g.end===f.end);
+  const q=control.caretMeasurements.find(q=>q.hasRect&&q.row===p.row&&q.offset===p.offset),g=control.fragments.find(g=>g.row===f.row&&g.start===f.start&&g.end===f.end);
   if(q&&g)localShapes.push({row:p.row,offset:p.offset,text:f.text,difference:(p.actual-f.actualX)-(q.actual-g.actualX)});
  }
- expect.soft(localShapes.length,'nonempty native shaping control').toBeGreaterThan(0);
- await info.attach('native-shaping-translation.json',{body:JSON.stringify({rich,tolerance:localRounding,localShapes}),contentType:'application/json'});
- expect.soft(localShapes.filter(p=>Math.abs(p.difference)>localRounding),'D native shaping vs B after translation').toEqual([]);
- // Native Canvas-prefix equality is NOT required when the left control also
- // differs. C remains a measured negative control, not an expected-failure test.
- expect.soft(candidate.relativeToSplitLeft.beyondRounding,'D additional error vs structurally identical B').toEqual([]);
- expect.soft(candidate.mouse.clicks.filter(p=>!p.ok),'D real space clicks').toEqual([]);
- expect.soft(candidate.mouse.drags.filter(p=>!p.ok),'D real source-range drags').toEqual([]);
+ for(const f of candidate.fragments.filter(f=>f.text.trim())){
+  const g=control.fragments.find(g=>g.row===f.row&&g.start===f.start&&g.end===f.end);
+  if(g)wordOrigins.push({row:f.row,text:f.text,start:f.start,difference:(f.actualX-f.x)-(g.actualX-g.x),bound:4*(candidate.fragments.filter(p=>p.row===f.row&&p.start<=f.start).length+1)/60});
+ }
+ const sourceSpaces=candidate.spaces.map(p=>({row:p.row,start:p.start,target:p.width,actual:p.nativeAfter.actual-p.nativeBefore.actual,error:Math.abs(p.nativeAfter.actual-p.nativeBefore.actual-p.width)}));
+ return {relative,localShapes,wordOrigins,sourceSpaces,
+  completePairs:relative.pairs.length===candidate.caretMeasurements.filter(p=>p.hasRect).length+candidate.endpoints.filter(p=>p.hasRect).length,
+  affinity:candidate.caretMeasurements.every(p=>p.owner===p.row&&p.selection.anchor===p.offset&&p.selection.focus===p.offset),
+  ok:relative.beyondRounding.length===0&&localShapes.length>0&&localShapes.every(p=>Math.abs(p.difference)<=localRounding)&&wordOrigins.every(p=>Math.abs(p.difference)<=p.bound)&&sourceSpaces.every(p=>p.error<=localRounding)};
+}
+function runStructure(result){return result.projection.rows.map(row=>({start:row.start,end:row.end,nextStart:row.nextStart,fragments:row.fragments.map(({start,end,text,style})=>({start,end,text,style}))}))}
+async function editingProbes(page,variant,rich,tracking=0){
+ const results=[];
+ for(const [name,fraction,operation] of [['arrows',.4,'arrows'],['type-left',.4,'type'],['type-right',.6,'type'],['Backspace',.4,'delete-back'],['Delete',.4,'delete-forward']]){
+  const initial=await setup(page,variant,rich,tracking),space=initial.spaces.find(p=>p.start===6),offset=fraction<.5?6:7;
+  await page.mouse.click(initial.origin.x+space.x+fraction*space.width,space.y);
+  const click=await readMouse(page),arrowStates=[];
+  let start=offset,end=offset,insert='';
+  if(operation==='arrows'){
+   for(const [key,expected] of [['ArrowRight',offset+1],['ArrowLeft',offset]]){await page.keyboard.press(key);arrowStates.push({key,expected,...await readMouse(page)})}
+  }else if(operation==='type'){insert='X';await page.keyboard.type(insert)}
+  else if(operation==='delete-back'){start--;await page.keyboard.press('Backspace')}
+  else {end++;await page.keyboard.press('Delete')}
+  const expectedText=initial.sourceText.slice(0,start)+insert+initial.sourceText.slice(end),delta=insert.length-(end-start),expectedOffset=operation==='arrows'?offset:start+insert.length;
+  // Edits are deliberately outside every sparse run in this fixture; ranges
+  // after the edit shift, earlier ranges keep their exact original style.
+  const expectedRuns=initial.sourceRuns?.map(run=>({...run,start:run.start>=end?run.start+delta:run.start,end:run.end>=end?run.end+delta:run.end}));
+  const final=await readMouse(page),model=await page.evaluate(()=>structuredClone(gate.layer));
+  const exactUTF16=final.selection?.anchor===expectedOffset&&final.selection?.focus===expectedOffset;
+  const runsPreserved=isDeepStrictEqual(model.textRuns,expectedRuns),trackingPreserved=model.letterSpacing===tracking;
+  results.push({name,offset,click,arrowStates,expectedText,actualText:model.text,domText:await page.locator('#host').textContent(),expectedOffset,final,expectedRuns,actualRuns:model.textRuns,runsPreserved,trackingPreserved,exactUTF16,
+   ok:click.selection?.anchor===offset&&click.selection?.focus===offset&&arrowStates.every(p=>p.selection?.anchor===p.expected&&p.selection?.focus===p.expected)&&model.text===expectedText&&final.clean&&final.domMatchesCanonical&&exactUTF16&&runsPreserved&&trackingPreserved});
+ }
+ return results;
+}
+function summarize(r,control){
+ const geometry=candidateGeometry(r,control);
+ const sourceOK=r.sourcePreserved&&r.runsPreserved&&r.trackingPreserved&&r.text===r.sourceText&&r.selections.every(p=>p.read.anchor===p.anchor&&p.read.focus===p.focus&&p.text===p.expected);
+ const structureOK=JSON.stringify(runStructure(r))===JSON.stringify(runStructure(control));
+ const clicks=r.mouse.clicks,drags=r.mouse.drags,editing=r.editing||[];
+ const summary={variant:r.variant,rich:r.rich,tracking:r.tracking,maxAbsolute:maximum([...r.caretMeasurements,...r.endpoints].filter(p=>p.hasRect).map(p=>Math.abs(p.delta))),additionalVsB:geometry.relative.maxAdditionalError,
+  maxSpaceWidthError:maximum(geometry.sourceSpaces.map(p=>p.error)),maxLocalShapeDifference:maximum(geometry.localShapes.map(p=>Math.abs(p.difference))),maxWordOriginDifference:maximum(geometry.wordOrigins.map(p=>Math.abs(p.difference))),
+  clickErrors:clicks.filter(p=>!p.ok).length,clicks:clicks.length,dragErrors:drags.filter(p=>!p.ok).length,drags:drags.length,navigationErrors:r.navigation.filter(p=>!p.ok).length,navigationCases:r.navigation.length,
+  inputErrors:editing.filter(p=>!p.ok).length,inputCases:editing.length,utf16Preserved:sourceOK&&editing.every(p=>p.exactUTF16),runsPreserved:r.runsPreserved&&editing.every(p=>p.runsPreserved),geometryOK:geometry.ok&&geometry.completePairs&&geometry.affinity,structureOK};
+ summary.pass=summary.geometryOK&&structureOK&&sourceOK&&summary.clickErrors===0&&summary.dragErrors===0&&summary.navigationErrors===0&&summary.inputErrors===0;
+ return {summary,geometry};
+}
+for(const rich of [false,true])test(`CSS candidates geometry, real mouse and input rich=${rich}`,async({page},info)=>{
+ await routes(page);await page.goto('http://gate.test/');const results=[];
+ for(const variant of variants){
+  const r=await setup(page,variant,rich);r.mouse=await mouseProbes(page,r);r.navigation=await navigationProbes(page,r);
+  // B and all CSS candidates also undergo independent real-click editing.
+  r.editing=!variant.startsWith('A')&&!variant.startsWith('C')?await editingProbes(page,variant,rich):[];results.push(r);
+ }
+ for(const r of results)Object.assign(r,summarize(r,results[1]));
+ const winners=results.filter(r=>/^[EF]-/.test(r.variant)&&r.summary.pass).map(r=>r.variant);
+ await info.attach('css-candidates-measurements.json',{body:JSON.stringify({localRounding,results,winners},null,2),contentType:'application/json'});
+ console.log('CSS_CANDIDATES_SUMMARY',JSON.stringify({rich,rows:results.map(r=>r.summary),winners}));
+ for(const r of results.slice(0,2))expect.soft(r.sourcePreserved&&r.runsPreserved&&r.trackingPreserved,r.variant+' unchanged source/style').toBe(true);
+ expect.soft(results[2].mouse.clicks.some(p=>!p.ok),'C remains a live negative control').toBe(true);
+ expect.soft(winners,'at least one complete E/F candidate').not.toEqual([]);
+});
+
+test('CSS candidates preserve positive and negative user tracking',async({page},info)=>{
+ await routes(page);await page.goto('http://gate.test/');const results=[];
+ for(const tracking of [-.5,1.25])for(const variant of variants.filter(v=>!v.startsWith('A')&&!v.startsWith('C'))){
+  const r=await setup(page,variant,true,tracking);r.spaces=r.spaces.filter(s=>s.start===6);r.mouse={clicks:await clickSpaces(page,r),drags:[]};r.navigation=[];
+  r.editing=await editingProbes(page,variant,true,tracking);results.push(r);
+ }
+ for(const r of results)Object.assign(r,summarize(r,results.find(p=>p.tracking===r.tracking&&p.variant.startsWith('B'))));
+ const winners=variants.filter(v=>/^[EF]-/.test(v)&&results.filter(r=>r.variant===v).every(r=>r.summary.pass));
+ await info.attach('css-candidates-tracking.json',{body:JSON.stringify({localRounding,results,winners},null,2),contentType:'application/json'});
+ console.log('CSS_TRACKING_SUMMARY',JSON.stringify({rows:results.map(r=>r.summary),winners}));
+ expect.soft(winners,'one E/F candidate retains user tracking and input').not.toEqual([]);
 });

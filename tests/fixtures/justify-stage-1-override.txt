@@ -1,0 +1,21 @@
+// Historical shipping override at f3439bd (#136), retained only for compatibility measurements.
+const mobileV36BaseDrawText=drawTextGlyphs;
+drawTextGlyphs=function(c,e,method='fill'){
+ if(supportsHorizontalTextLayout(e))return mobileV36BaseDrawText(c,e,method);
+ if(e.type==='text'&&e.mobileArcRadius&&e.textMode!=='path'){
+  c.save();c.font=fontString(e);c.textBaseline='middle';c.textAlign='center';
+  const source=String(e.text||'').split('\n')[0],r=Math.max(70,Math.abs(e.mobileArcRadius)*3),dir=Math.sign(e.mobileArcRadius)||1;
+  const widths=[...source].map(ch=>c.measureText(ch).width),len=widths.reduce((a,b)=>a+b,0),start=-len/(2*r),center=e.w/2;
+  let offset=0;for(let i=0;i<source.length;i++){const angle=start+(offset+widths[i]/2)/r;const y=dir*r*(1-Math.cos(angle));c.save();c.translate(center+r*Math.sin(angle),e.h/2+y);c.rotate(dir*angle);if(method==='stroke')c.strokeText(source[i],0,0);else c.fillText(source[i],0,0);c.restore();offset+=widths[i]}c.restore();return
+ }
+ if(e.type==='text'&&e.textAlign==='justify'&&e.textMode!=='vertical'&&e.textMode!=='path'){
+  c.save();c.font=fontString(e);c.textBaseline='top';c.textAlign='left';
+  const lines=wrapLines(c,e),lh=(e.lineHeight||1.15)*(e.fontSize||24),spacing=Number(e.letterSpacing||0),blockH=lines.length*lh,offsetY=e.verticalAlign==='middle'?Math.max(0,(e.h-blockH)/2):e.verticalAlign==='bottom'?Math.max(0,e.h-blockH):0;
+  lines.forEach((line,i)=>{const words=String(line).split(/\s+/).filter(Boolean);if(!words.length)return;const widths=words.map(w=>c.measureText(w).width+Math.max(0,w.length-1)*spacing),base=widths.reduce((a,b)=>a+b,0),gap=(i===lines.length-1||words.length===1)?c.measureText(' ').width:Math.max(c.measureText(' ').width,(e.w-base)/(words.length-1));let x=0;for(let j=0;j<words.length;j++){if(method==='stroke')c.strokeText(words[j],x,offsetY+i*lh);else c.fillText(words[j],x,offsetY+i*lh);x+=widths[j]+gap}});c.restore();
+ }else mobileV36BaseDrawText(c,e,method);
+ const decorations=resolveRichTextStyle(e);
+ if(method!=='fill'||(!decorations.underline&&!decorations.strikethrough)||e.textMode==='vertical'||e.textMode==='path')return;
+ c.save();c.font=fontString(e);const lines=wrapLines(c,e),lh=(e.lineHeight||1.15)*(e.fontSize||24),linew=Math.max(1,e.fontSize/19);
+ c.strokeStyle=c.fillStyle;c.lineWidth=linew;
+ lines.forEach((line,i)=>{const w=Math.min(e.w,c.measureText(line).width+Math.max(0,line.length-1)*(e.letterSpacing||0));const x=e.textAlign==='center'?(e.w-w)/2:e.textAlign==='right'?e.w-w:0;const y=i*lh+e.fontSize*.8;for(const offset of [decorations.underline?e.fontSize*.1:null,decorations.strikethrough?-e.fontSize*.31:null])if(offset!==null){c.beginPath();c.moveTo(x,y+offset);c.lineTo(x+w,y+offset);c.stroke()}});c.restore();
+};

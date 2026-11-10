@@ -1162,7 +1162,8 @@ const textFitContext=document.createElement('canvas').getContext('2d');
 const richTextEngine=createRichTextLayoutEngine(document.createElement('canvas').getContext('2d'),document.fonts);
 function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
- return richTextEngine.layout(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
+ const sample=preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e;
+ return sample.textAlign==='justify'?richTextEngine.layoutJustified(sample):richTextEngine.layout(sample);
 }
 // The editable surface projects the same positioned rows as Canvas/PNG.
 // Eligibility describes supported paint semantics, never a guessed CSS wrap.
@@ -1180,6 +1181,7 @@ function autoFitTextFont(e){
  const before=e.fontSize,lh=Math.max(.5,Number(e.lineHeight)||1.15),maxW=Math.max(10,e.w)-1,maxH=Math.max(1,e.h)-1;
  const fits=size=>{
   const sample={...e,fontSize:size};
+  // Fit natural advances: stretched rows and hanging source spaces are not overflow.
   if(supportsHorizontalTextLayout(sample)){const layout=richTextEngine.layout(sample);return layout.height<=maxH&&layout.width<=maxW}
   textFitContext.font=fontString(sample);
   const lines=wrapLines(textFitContext,sample);
@@ -1196,6 +1198,7 @@ function fitTextBoxToContent(e){
  // Match Canvas wrapping; do not accidentally turn soft-wrapped paragraphs into
  // enormously wide single lines. Grow only if a single glyph cannot fit.
  textFitContext.font=fontString(e);
+ // Size from natural rows, never from justify's expanded/hanging row.width.
  const mixed=supportsHorizontalTextLayout(e)?richTextEngine.layout(e):null,lines=mixed?null:wrapLines(textFitContext,e);
  const naturalWidth=mixed?Math.max(12,Math.ceil(mixed.width+2)):Math.max(12,...lines.map(line=>Math.ceil(measuredTextWidth(textFitContext,e,line)+2)));
  const nextW=Math.max(12,naturalWidth+2),nextSample={...e,w:nextW};
@@ -5004,11 +5007,7 @@ drawTextGlyphs=function(c,e,method='fill'){
   const widths=[...source].map(ch=>c.measureText(ch).width),len=widths.reduce((a,b)=>a+b,0),start=-len/(2*r),center=e.w/2;
   let offset=0;for(let i=0;i<source.length;i++){const angle=start+(offset+widths[i]/2)/r;const y=dir*r*(1-Math.cos(angle));c.save();c.translate(center+r*Math.sin(angle),e.h/2+y);c.rotate(dir*angle);if(method==='stroke')c.strokeText(source[i],0,0);else c.fillText(source[i],0,0);c.restore();offset+=widths[i]}c.restore();return
  }
- if(e.type==='text'&&e.textAlign==='justify'&&e.textMode!=='vertical'&&e.textMode!=='path'){
-  c.save();c.font=fontString(e);c.textBaseline='top';c.textAlign='left';
-  const lines=wrapLines(c,e),lh=(e.lineHeight||1.15)*(e.fontSize||24),spacing=Number(e.letterSpacing||0),blockH=lines.length*lh,offsetY=e.verticalAlign==='middle'?Math.max(0,(e.h-blockH)/2):e.verticalAlign==='bottom'?Math.max(0,e.h-blockH):0;
-  lines.forEach((line,i)=>{const words=String(line).split(/\s+/).filter(Boolean);if(!words.length)return;const widths=words.map(w=>c.measureText(w).width+Math.max(0,w.length-1)*spacing),base=widths.reduce((a,b)=>a+b,0),gap=(i===lines.length-1||words.length===1)?c.measureText(' ').width:Math.max(c.measureText(' ').width,(e.w-base)/(words.length-1));let x=0;for(let j=0;j<words.length;j++){if(method==='stroke')c.strokeText(words[j],x,offsetY+i*lh);else c.fillText(words[j],x,offsetY+i*lh);x+=widths[j]+gap}});c.restore();
- }else mobileV36BaseDrawText(c,e,method);
+ mobileV36BaseDrawText(c,e,method);
  const decorations=resolveRichTextStyle(e);
  if(method!=='fill'||(!decorations.underline&&!decorations.strikethrough)||e.textMode==='vertical'||e.textMode==='path')return;
  c.save();c.font=fontString(e);const lines=wrapLines(c,e),lh=(e.lineHeight||1.15)*(e.fontSize||24),linew=Math.max(1,e.fontSize/19);

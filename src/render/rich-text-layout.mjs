@@ -4,7 +4,7 @@ import { normalizeRuns } from '../model/rich-text.mjs';
 // Ordinary horizontal text always uses one renderer, whether or not styled
 // ranges exist. A formatting operation must not switch the rendering engine.
 export const supportsHorizontalTextLayout = e =>
-  (!e.textMode || e.textMode === 'horizontal') && !e.mobileArcRadius && e.textAlign !== 'justify';
+  (!e.textMode || e.textMode === 'horizontal') && !e.mobileArcRadius;
 // Keep the sparse-range predicate separate for session/model migrations.
 export const usesRichTextLayout = e => supportsHorizontalTextLayout(e) &&
   Array.isArray(e.textRuns) && e.textRuns.length > 0;
@@ -284,8 +284,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
     }
     return boundedSet(layouts, key, { rows, width: Math.max(...rows.map(r => r.width)), height: blockHeight, inkOverflow }, 128);
   }
-  /** Experimental projection only: callers must opt in explicitly. The shipping
-   * eligibility/painter stays legacy for justify. Reuse shared rows and metrics;
+  /** Horizontal justify projection. Reuse shared rows and metrics;
    * only U+0020 spaces between words on soft-wrapped rows receive extra advance.
    * Hard-break and terminal rows (each paragraph's last row) stay natural.
    */
@@ -341,9 +340,12 @@ export function createRichTextLayoutEngine(context, fontSet) {
         const boundaries = [...cuts].sort((a,b) => a-b);
         for (let i=1; i<boundaries.length; i++) {
           const a=boundaries[i-1], b=boundaries[i], start=sourceOffset(part,a), end=sourceOffset(part,b);
-          const x=(part.logicalX ?? part.x)+prefix(part,a)+shift(start);
+          // Keep the shared painter's contextual glyph origin separate from
+          // logical advances (opacity/stroke boundaries can kern inside a word).
+          const logicalX=(part.logicalX ?? part.x)+prefix(part,a)+shift(start);
+          const x=part.x+prefix(part,a)+shift(start);
           fragments.push({...part, text:part.text.slice(a,b), start, end, x,
-            logicalX:x, width:prefix(part,b)-prefix(part,a)+shift(end)-shift(start)});
+            logicalX, width:prefix(part,b)-prefix(part,a)+shift(end)-shift(start)});
         }
       }
       const decorations = row.decorations.map(rect => ({...rect,

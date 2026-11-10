@@ -26,13 +26,14 @@ test('render projection repairs UTF-16 ranges without mutating source or unknown
 });
 test('plain horizontal text uses the shared painter while specialized modes keep their own geometry',()=>{
  assert.equal(supportsHorizontalTextLayout({...base}),true);
+ assert.equal(supportsHorizontalTextLayout({...base,textAlign:'justify'}),true);
  assert.equal(supportsHorizontalTextLayout({...base,textRuns:[]}),true);
  assert.equal(supportsHorizontalTextLayout({...base,textRuns:[{start:0,end:1,style:{textColor:'red'}}]}),true);
- for(const patch of [{textMode:'vertical'},{textMode:'path'},{textMode:'boundary'},{mobileArcRadius:30},{textAlign:'justify'}])
+ for(const patch of [{textMode:'vertical'},{textMode:'path'},{textMode:'boundary'},{mobileArcRadius:30}])
   assert.equal(supportsHorizontalTextLayout({...base,...patch}),false);
 });
 test('sparse-run editing predicate continues to distinguish plain layers',()=>{
- for(const patch of [{textRuns:undefined},{textRuns:[]},{textMode:'vertical'},{textMode:'path'},{textMode:'boundary'},{mobileArcRadius:30},{textAlign:'justify'}])
+ for(const patch of [{textRuns:undefined},{textRuns:[]},{textMode:'vertical'},{textMode:'path'},{textMode:'boundary'},{mobileArcRadius:30}])
   assert.equal(usesRichTextLayout({...base,textRuns:[{start:0,end:1,style:{bold:true}}],...patch}),false);
 });
 test('bounded measurement cache reuses layouts and invalidates on font completion/error',()=>{
@@ -373,5 +374,13 @@ test('justify supports mixed metrics and paint ranges, retaining left/center/rig
  const result=engine.layoutJustified(e),word=result.rows[0].fragments.find(p=>p.text==='BB');
  assert.equal(word.style.fontSize,32);assert.equal(word.width,36);assert.equal(word.style.stroke,'#0000ff');assert.ok(result.rows[0].decorations.length>=2);
  for(const [i,textAlign] of ['left','center','right'].entries())assert.deepEqual(engine.layout({...e,textAlign}),old[i]);
- assert.equal(supportsHorizontalTextLayout({...e,textAlign:'justify'}),false);
+ assert.equal(supportsHorizontalTextLayout({...e,textAlign:'justify'}),true);
+});
+
+test('justify preserves contextual glyph origins and separate logical advances at paint boundaries',()=>{
+ const engine=createRichTextLayoutEngine({measureText(text){return {width:text==='AV'?20:[...text].length*12,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}});
+ const e={text:'AV',w:100,h:100,fontSize:20,textRuns:[{start:0,end:1,style:{fillOpacity:50,strokeWidth:1}}]};
+ const natural=engine.layout(e).rows[0],justified=engine.layoutJustified(e).rows[0];
+ assert.equal(natural.fragments[1].x,8);assert.equal(natural.fragments[1].logicalX,12);
+ assert.deepEqual(justified.fragments.map(p=>[p.text,p.x,p.logicalX]),natural.fragments.map(p=>[p.text,p.x,p.logicalX]));
 });

@@ -21,6 +21,8 @@ function unifiedDOMOffset(base, projection, text) {
  finally {probe.remove();}
 }
 export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=()=>false) {
+ // Justify uses the shared Canvas painter, but still edits through textarea (stage 2B).
+ if(e.textAlign==='justify')return false;
  // Rich inline editing is the desktop default. The explicit =0 switch is
  // retained only for diagnosis and for fallback-focused regression tests.
  // A previous opt-in gate left normal users on plain textarea, making range

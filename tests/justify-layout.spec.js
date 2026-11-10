@@ -12,10 +12,10 @@ async function setup(page){
  });
  await openHome(page);
  const source=await fs.readFile(path.join(__dirname,'../src/editor.js'),'utf8');
- // Execute the ACTUAL shipping wrapLines and late justify override; no copied
+ // Execute the shipping wrapLines and exact historical stage-1 override; no reimplemented
  // word-spacing formula or separate legacy layout implementation in the test.
  const wrap=source.slice(source.indexOf('const textLayoutProbe='),source.indexOf('// Horizontal text layout uses Canvas metrics'));
- const override=source.slice(source.indexOf('const mobileV36BaseDrawText='),source.indexOf('const mobileV36BasePaintText='));
+ const override=await fs.readFile(path.join(__dirname,'fixtures/justify-stage-1-override.txt'),'utf8');
  await page.evaluate(({wrap,override})=>{
   window.legacyJustify=new Function('c','e',`
    const supportsHorizontalTextLayout=()=>false;
@@ -26,7 +26,7 @@ async function setup(page){
  },{wrap,override});
 }
 
-test('legacy compatibility matrix versus opt-in shared rows with real Canvas metrics',async({page},info)=>{
+test('stage-1 compatibility matrix versus shared rows with real Canvas metrics',async({page},info)=>{
  await setup(page);
  const measurements=await page.evaluate(async()=>{
   const {createRichTextLayoutEngine}=await import('/__shipping/render/rich-text-layout.mjs');
@@ -59,7 +59,7 @@ test('legacy compatibility matrix versus opt-in shared rows with real Canvas met
  await fs.writeFile(path.join(__dirname,'../work/justify-measurements.json'),JSON.stringify(measurements,null,2));
 });
 
-test('saved justify layers still use legacy Canvas/PNG and textarea fallback',async({page})=>{
+test('saved justify layers use shared Canvas/PNG and textarea fallback',async({page})=>{
  await page.addInitScript(()=>{
   window.justifyFrame=[];window.justifyExport=[];
   const p=CanvasRenderingContext2D.prototype,clear=p.clearRect,fill=p.fillText;
@@ -74,7 +74,7 @@ test('saved justify layers still use legacy Canvas/PNG and textarea fallback',as
  await openLibraryDocument(page,doc.id);
  await expect.poll(()=>page.evaluate(()=>window.justifyFrame.filter(p=>['AA','BB','CC','DD'].includes(p.text)).length)).toBe(4);
  const live=await page.evaluate(()=>window.justifyFrame.filter(p=>['AA','BB','CC','DD'].includes(p.text)));
- expect(live.every(p=>p.baseline==='top')).toBe(true);expect(live[1].x).toBeGreaterThan(150);expect(live[3].x).toBeLessThan(60);
+ expect(live.every(p=>p.baseline==='alphabetic')).toBe(true);expect(live[1].x).toBeLessThan(60);expect(live[3].x).toBeLessThan(60);
  await page.evaluate(()=>{window.captureJustify=true});await exportPNG(page);
  const exported=await page.evaluate(()=>window.justifyExport.filter(p=>['AA','BB','CC','DD'].includes(p.text)));
  expect(exported).toEqual(live);

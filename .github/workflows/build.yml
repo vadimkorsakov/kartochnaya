@@ -135,6 +135,18 @@ jobs:
         run: npx playwright test --config=playwright.multiline.config.js
       - name: Text alignment WYSIWYG in Chromium and Firefox
         run: npx playwright test --config=playwright.alignment.config.js
+      - name: Shared justify Canvas and PNG in Chromium and Firefox
+        run: npx playwright test --config=playwright.justify.config.js
+      - name: Preserve justify measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: justify-painter-measurements
+          path: |
+            test-results/justify
+            test-results/justify-results.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Preserve text alignment measurements
         if: always()
         uses: actions/upload-artifact@v4

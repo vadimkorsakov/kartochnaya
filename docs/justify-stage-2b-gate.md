@@ -1,6 +1,7 @@
 # Justify Stage 2B: left controls and native interaction
 
-Next diagnostic phase: [bounded CSS candidates E/F](justify-stage-2b-space-candidates.md).
+Current phase: [D + narrow pointer adapter](justify-stage-2b-pointer-adapter.md).
+Previous diagnostic phase: [bounded CSS candidates E/F](justify-stage-2b-space-candidates.md).
 Its latest cross-browser verdict is recorded in Draft PR #140 and the CI summary artifact.
 
 Issue #139; existing draft PR #140; branch `fix/139-justify-wysiwyg`.

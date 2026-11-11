@@ -119,9 +119,9 @@ jobs:
       - name: Justify Stage 2B native caret gate in Chromium and Firefox
         if: always()
         run: npx playwright test --config=playwright.justify-gate.config.js
-      - name: Qualify shared source-space CSS candidate
+      - name: Qualify narrow source-space pointer adapter
         if: ${{ always() && hashFiles('test-results/justify-gate-results.json') != '' }}
-        run: node scripts/justify-css-summary.cjs
+        run: node scripts/justify-pointer-summary.cjs
       - name: Preserve Stage 2B native caret measurements
         if: always()
         uses: actions/upload-artifact@v4
@@ -130,8 +130,8 @@ jobs:
           path: |
             test-results/justify-gate
             test-results/justify-gate-results.json
-            test-results/justify-css-summary.json
-            test-results/justify-css-summary.md
+            test-results/justify-pointer-summary.json
+            test-results/justify-pointer-summary.md
           if-no-files-found: warn
           retention-days: 14
       - run: npm run test:spike

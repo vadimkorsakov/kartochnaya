@@ -1,5 +1,9 @@
 # Justify Stage 2B: bounded source-space CSS candidates
 
+Historical CSS-only phase at `7bcf6f2`: no shared CSS-only winner.
+Current continuation: [D + narrow pointer adapter](justify-stage-2b-pointer-adapter.md).
+The active CI qualifier evaluates that adapter; E/F measurements below are preserved.
+
 Continuation of Draft PR #140 / issue #139, based on `c7c0d07`. The established
 left/native shaping baseline is reused, not reinvestigated. Production justify
 WYSIWYG remains disabled. This phase changes only the experiment, its report and

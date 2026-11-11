@@ -1171,7 +1171,7 @@ function supportsWysiwygProjection(e){
  if(e.mobileGlow||e.mobileBackground)return false;
  const allowed=new Set(['textColor','fontFamily','fontWeight','fontStyle','fontSize','letterSpacing','lineHeight','bold','italic','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle']);
  if((e.textRuns||[]).some(run=>Object.keys(run?.style||{}).some(key=>!allowed.has(key))))return false;
- try{return richTextEngine.layout(e).rows.every(row=>Number.isFinite(row.baseline)&&row.height>0&&Number.isFinite(row.width));}
+ try{return mixedTextLayout(e).rows.every(row=>Number.isFinite(row.baseline)&&row.height>0&&Number.isFinite(row.width));}
  catch{return false;}
 }
 function measuredTextWidth(c,e,line){c.save();c.fontKerning='normal';c.letterSpacing=(e.letterSpacing||0)+'px';const width=c.measureText(line).width;c.restore();return width}
@@ -2181,7 +2181,7 @@ function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=n
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
 function startInlineWysiwyg(e){
  const host=$('#inlineWysiwyg');app.inlineSession.wysiwyg=true;app.inlineSession.formatted=true;
- app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,compatible:supportsWysiwygProjection,layout:layer=>richTextEngine.layout(layer),fit:autoFitTextFont,viewport:()=>({width:app.doc.width,height:app.doc.height}),
+ app.wysiwyg=createWysiwygSession({host,element:e,history:app.inlineSession,compatible:supportsWysiwygProjection,layout:layer=>mixedTextLayout(layer),fit:autoFitTextFont,viewport:()=>({width:app.doc.width,height:app.doc.height}),
   available:family=>!v41FontUnavailable(family),
   onChange(){
    // Do not interrupt a focused numeric field or an active color/font picker.
@@ -2243,7 +2243,7 @@ $('#canvasHost').addEventListener('keydown',ev=>{if(ev.target.id!=='inlineWysiwy
  if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(true);canvas.focus();}
  if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText();}
 });
-function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&e.textAlign!=='justify'?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),supportsWysiwygProjection)){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;
+function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;const live=eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),supportsWysiwygProjection);app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&(e.textAlign!=='justify'||live)?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(live){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;
  // A user or Playwright may already have focused the editor and selected text
  // for replacement. Never collapse that selection in this deferred open frame.
  if(document.activeElement!==editor){editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length)}
@@ -2376,6 +2376,11 @@ function styleInlineLayer(key,value,final){
  return app.wysiwyg.applyLayerStyle(patch,{key,final});
 }
 function styleInlineSelection(key,value,final){
+ if(!app.wysiwyg&&app.editingId&&active()?.textAlign==='justify'&&['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key)){
+  rememberInlineCaret();const c=app.inlineCaret;
+  if(c&&c.end>c.start){toast('Форматирование выделения justify доступно в экспериментальном WYSIWYG. Снимите выделение для изменения всего слоя.');return true;}
+ }
+
  // Legacy textarea and specialized modes keep layer-wide stroke alpha/style.
  if(['strokeOpacity','strokeStyle'].includes(key)&&!app.wysiwyg)return false;
  if(app.wysiwyg&&['strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key)&&!inlineStyleRange()){toast(key==='strokeStyle'?'Выделите фрагмент текста для изменения вида обводки':key==='fillOpacity'?'Выделите фрагмент текста для непрозрачности заливки':'Выделите фрагмент текста для обводки');return true;}
@@ -2420,7 +2425,7 @@ document.addEventListener('mousedown',ev=>{
  app.inlineToolPointer=true;rememberInlineCaret();
  // Buttons can operate on the focused selection. Inputs/selects must retain
  // native focus, keyboard and text-selection behavior on desktop and Android.
- if((document.activeElement===$('#inlineText')||app.wysiwyg&&ev.target.closest('[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=top],[data-align=vcenter],[data-align=bottom]'))&&ev.target.closest('button'))ev.preventDefault();
+ if((document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
 },true);
 document.addEventListener('keydown',ev=>{if(app.wysiwyg&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&ev.target.closest(inlineFormattingRoots)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&ev.target.id!=='zoomInput'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
 

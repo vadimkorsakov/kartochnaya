@@ -1,0 +1,582 @@
+{
+  "base": "4449e2f",
+  "units": "CSS px at scale 1",
+  "cases": [
+    {
+      "browser": "Chromium 154.0.8037.57",
+      "variant": "A-left",
+      "rich": false,
+      "maxAbsoluteCaret": 2.66015625,
+      "maxAbsoluteEndpoint": 0.0074462890625,
+      "additionalVsA": 0,
+      "additionalVsB": 1.3203125,
+      "signedDifferenceVsB": 1.34375,
+      "stretchedSpaceEndpointError": 1.33203125,
+      "clickErrors": 1,
+      "clicks": 30,
+      "dragErrors": 0,
+      "drags": 4,
+      "navigationErrors": 0,
+      "utf16Preserved": true,
+      "maxAbsoluteIncludingEndpoints": 2.66015625,
+      "nativeCanvasCarets": false,
+      "navigationCases": 91,
+      "localShapeComparedToB": null,
+      "examples": [
+        {
+          "row": 0,
+          "offset": 1,
+          "expected": 16.0078125,
+          "actual": 14.21875,
+          "delta": -1.7890625
+        },
+        {
+          "row": 0,
+          "offset": 3,
+          "expected": 44.4609375,
+          "actual": 42.671875,
+          "delta": -1.7890625
+        },
+        {
+          "row": 0,
+          "offset": 10,
+          "expected": 123.12890625,
+          "actual": 120.46875,
+          "delta": -2.66015625
+        },
+        {
+          "row": 3,
+          "offset": 42,
+          "expected": 51.12890625,
+          "actual": 48.46875,
+          "delta": -2.66015625
+        }
+      ],
+      "worstAdditionalVsB": null,
+      "largestSignedDifferenceVsB": null,
+      "firstClickMismatch": {
+        "row": 1,
+        "start": 14,
+        "end": 15,
+        "x": 59.90703125,
+        "right": 43.11328125,
+        "width": 5.34375,
+        "y": 63.1875,
+        "label": "near-middle-left",
+        "allowed": [
+          14
+        ],
+        "clean": true,
+        "domMatchesCanonical": true,
+        "selection": {
+          "anchor": 15,
+          "focus": 15
+        },
+        "text": "",
+        "owner": 1,
+        "ok": false
+      },
+      "dragMismatches": []
+    },
+    {
+      "browser": "Chromium 154.0.8037.57",
+      "variant": "B-left-split",
+      "rich": false,
+      "maxAbsoluteCaret": 2.22265625,
+      "maxAbsoluteEndpoint": 1.32421875,
+      "additionalVsA": 0.4296875,
+      "additionalVsB": 0,
+      "signedDifferenceVsB": 0,
+      "stretchedSpaceEndpointError": 1.32421875,
+      "clickErrors": 1,
+      "clicks": 30,
+      "dragErrors": 0,
+      "drags": 4,
+      "navigationErrors": 0,
+      "utf16Preserved": true,
+      "maxAbsoluteIncludingEndpoints": 2.22265625,
+      "nativeCanvasCarets": true,
+      "navigationCases": 91,
+      "localShapeComparedToB": null,
+      "examples": [
+        {
+          "row": 0,
+          "offset": 1,
+          "expected": 16.0078125,
+          "actual": 14.21875,
+          "delta": -1.7890625
+        },
+        {
+          "row": 0,
+          "offset": 3,
+          "expected": 44.4609375,
+          "actual": 42.671875,
+          "delta": -1.7890625
+        },
+        {
+          "row": 0,
+          "offset": 10,
+          "expected": 123.12890625,
+          "actual": 120.921875,
+          "delta": -2.20703125
+        },
+        {
+          "row": 3,
+          "offset": 42,
+          "expected": 51.12890625,
+          "actual": 48.90625,
+          "delta": -2.22265625
+        }
+      ],
+      "worstAdditionalVsB": null,
+      "largestSignedDifferenceVsB": null,
+      "firstClickMismatch": {
+        "row": 1,
+        "start": 14,
+        "end": 15,
+        "x": 60.97578125,
+        "right": 43.11328125,
+        "width": 5.34375,
+        "y": 63.1875,
+        "label": "near-middle-right",
+        "allowed": [
+          15
+        ],
+        "clean": true,
+        "domMatchesCanonical": true,
+        "selection": {
+          "anchor": 14,
+          "focus": 14
+        },
+        "text": "",
+        "owner": 1,
+        "ok": false
+      },
+      "dragMismatches": []
+    },
+    {
+      "browser": "Chromium 154.0.8037.57",
+      "variant": "C-justify",
+      "rich": false,
+      "maxAbsoluteCaret": 2.25,
+      "maxAbsoluteEndpoint": 12.0859375,
+      "additionalVsA": 0.4296875,
+      "additionalVsB": 12.08203125,
+      "signedDifferenceVsB": 12.08984375,
+      "stretchedSpaceEndpointError": 12.0859375,
+      "clickErrors": 6,
+      "clicks": 30,
+      "dragErrors": 0,
+      "drags": 4,
+      "navigationErrors": 0,
+      "utf16Preserved": true,
+      "maxAbsoluteIncludingEndpoints": 12.0859375,
+      "nativeCanvasCarets": true,
+      "navigationCases": 91,
+      "localShapeComparedToB": null,
+      "examples": [
+        {
+          "row": 0,
+          "offset": 1,
+          "expected": 16.0078125,
+          "actual": 14.21875,
+          "delta": -1.7890625
+        },
+        {
+          "row": 0,
+          "offset": 3,
+          "expected": 44.4609375,
+          "actual": 42.671875,
+          "delta": -1.7890625
+        },
+        {
+          "row": 0,
+          "offset": 10,
+          "expected": 159.3125,
+          "actual": 157.0625,
+          "delta": -2.25
+        },
+        {
+          "row": 3,
+          "offset": 42,
+          "expected": 51.12890625,
+          "actual": 48.90625,
+          "delta": -2.22265625
+        }
+      ],
+      "worstAdditionalVsB": null,
+      "largestSignedDifferenceVsB": null,
+      "firstClickMismatch": {
+        "row": 0,
+        "start": 6,
+        "end": 7,
+        "x": 116.39010416666667,
+        "right": 107.62760416666667,
+        "width": 18.72916666666667,
+        "y": 34.390625,
+        "label": "near-middle-left",
+        "allowed": [
+          6
+        ],
+        "clean": true,
+        "domMatchesCanonical": true,
+        "selection": {
+          "anchor": 7,
+          "focus": 7
+        },
+        "text": "",
+        "owner": 0,
+        "ok": false
+      },
+      "dragMismatches": []
+    },
+    {
+      "browser": "Chromium 154.0.8037.57",
+      "variant": "D-justify-space-fix",
+      "rich": false,
+      "maxAbsoluteCaret": 2.22265625,
+      "maxAbsoluteEndpoint": 0.453125,
+      "additionalVsA": 0.4296875,
+      "additionalVsB": 0.00390625,
+      "signedDifferenceVsB": 1.3139241536458357,
+      "stretchedSpaceEndpointError": 0.048299153645828596,
+      "clickErrors": 0,
+      "clicks": 30,
+      "dragErrors": 0,
+      "drags": 4,
+      "navigationErrors": 0,
+      "utf16Preserved": true,
+      "maxAbsoluteIncludingEndpoints": 2.22265625,
+      "nativeCanvasCarets": true,
+      "navigationCases": 91,
+      "localShapeComparedToB": {
+        "points": 34,
+        "maxDifference": 0,
+        "roundingTolerance": 0.03333333333333333
+      },
+      "examples": [
+        {
+          "row": 0,
+          "offset": 1,
+          "expected": 16.0078125,
+          "actual": 14.21875,
+          "delta": -1.7890625
+        },
+        {
+          "row": 0,
+          "offset": 3,
+          "expected": 44.4609375,
+          "actual": 42.671875,
+          "delta": -1.7890625
+        },
+        {
+          "row": 0,
+          "offset": 10,
+          "expected": 159.3125,
+          "actual": 157.109375,
+          "delta": -2.203125
+        },
+        {
+          "row": 3,
+          "offset": 42,
+          "expected": 51.12890625,
+          "actual": 48.90625,
+          "delta": -2.22265625
+        }
+      ],
+      "worstAdditionalVsB": {
+        "kind": "endpoints",
+        "row": 0,
+        "offset": 12,
+        "text": " ",
+        "edge": "after",
+        "controlError": 0.03125,
+        "candidateError": 0.03515625,
+        "signedDifference": 0.00390625,
+        "additionalError": 0.00390625,
+        "roundingBound": 0.4666666666666667
+      },
+      "largestSignedDifferenceVsB": {
+        "kind": "endpoints",
+        "row": 1,
+        "offset": 15,
+        "text": " ",
+        "edge": "after",
+        "controlError": 1.32421875,
+        "candidateError": 0.010294596354164298,
+        "signedDifference": -1.3139241536458357,
+        "additionalError": 0,
+        "roundingBound": 0.26666666666666666
+      },
+      "firstClickMismatch": null,
+      "dragMismatches": []
+    },
+    {
+      "browser": "Chromium 154.0.8037.57",
+      "variant": "A-left",
+      "rich": true,
+      "maxAbsoluteCaret": 2.66015625,
+      "maxAbsoluteEndpoint": 1.796875,
+      "additionalVsA": 0,
+      "additionalVsB": 0.453125,
+      "signedDifferenceVsB": 0.453125,
+      "stretchedSpaceEndpointError": 0.41796875,
+      "clickErrors": 0,
+      "clicks": 30,
+      "dragErrors": 0,
+      "drags": 4,
+      "navigationErrors": 0,
+      "utf16Preserved": true,
+      "maxAbsoluteIncludingEndpoints": 2.66015625,
+      "nativeCanvasCarets": false,
+      "navigationCases": 91,
+      "localShapeComparedToB": null,
+      "examples": [
+        {
+          "row": 0,
+          "offset": 1,
+          "expected": 16.0078125,
+          "actual": 16.015625,
+          "delta": 0.0078125
+        },
+        {
+          "row": 0,
+          "offset": 3,
+          "expected": 46.2421875,
+          "actual": 44.46875,
+          "delta": -1.7734375
+        },
+        {
+          "row": 0,
+          "offset": 10,
+          "expected": 124.91015625,
+          "actual": 122.265625,
+          "delta": -2.64453125
+        },
+        {
+          "row": 3,
+          "offset": 42,
+          "expected": 51.12890625,
+          "actual": 48.46875,
+          "delta": -2.66015625
+        }
+      ],
+      "worstAdditionalVsB": null,
+      "largestSignedDifferenceVsB": null,
+      "firstClickMismatch": null,
+      "dragMismatches": []
+    },
+    {
+      "browser": "Chromium 154.0.8037.57",
+      "variant": "B-left-split",
+      "rich": true,
+      "maxAbsoluteCaret": 2.22265625,
+      "maxAbsoluteEndpoint": 1.828125,
+      "additionalVsA": 0.4296875,
+      "additionalVsB": 0,
+      "signedDifferenceVsB": 0,
+      "stretchedSpaceEndpointError": 0.0394287109375,
+      "clickErrors": 0,
+      "clicks": 30,
+      "dragErrors": 0,
+      "drags": 4,
+      "navigationErrors": 0,
+      "utf16Preserved": true,
+      "maxAbsoluteIncludingEndpoints": 2.22265625,
+      "nativeCanvasCarets": true,
+      "navigationCases": 91,
+      "localShapeComparedToB": null,
+      "examples": [
+        {
+          "row": 0,
+          "offset": 1,
+          "expected": 16.0078125,
+          "actual": 16.015625,
+          "delta": 0.0078125
+        },
+        {
+          "row": 0,
+          "offset": 3,
+          "expected": 46.2421875,
+          "actual": 44.46875,
+          "delta": -1.7734375
+        },
+        {
+          "row": 0,
+          "offset": 10,
+          "expected": 124.91015625,
+          "actual": 122.71875,
+          "delta": -2.19140625
+        },
+        {
+          "row": 3,
+          "offset": 42,
+          "expected": 51.12890625,
+          "actual": 48.90625,
+          "delta": -2.22265625
+        }
+      ],
+      "worstAdditionalVsB": null,
+      "largestSignedDifferenceVsB": null,
+      "firstClickMismatch": null,
+      "dragMismatches": []
+    },
+    {
+      "browser": "Chromium 154.0.8037.57",
+      "variant": "C-justify",
+      "rich": true,
+      "maxAbsoluteCaret": 2.234375,
+      "maxAbsoluteEndpoint": 11.4765625,
+      "additionalVsA": 0.4296875,
+      "additionalVsB": 11.45703125,
+      "signedDifferenceVsB": 11.49609375,
+      "stretchedSpaceEndpointError": 11.4765625,
+      "clickErrors": 6,
+      "clicks": 30,
+      "dragErrors": 0,
+      "drags": 4,
+      "navigationErrors": 0,
+      "utf16Preserved": true,
+      "maxAbsoluteIncludingEndpoints": 11.4765625,
+      "nativeCanvasCarets": true,
+      "navigationCases": 91,
+      "localShapeComparedToB": null,
+      "examples": [
+        {
+          "row": 0,
+          "offset": 1,
+          "expected": 16.0078125,
+          "actual": 16.015625,
+          "delta": 0.0078125
+        },
+        {
+          "row": 0,
+          "offset": 3,
+          "expected": 46.2421875,
+          "actual": 44.46875,
+          "delta": -1.7734375
+        },
+        {
+          "row": 0,
+          "offset": 10,
+          "expected": 159.3125,
+          "actual": 157.078125,
+          "delta": -2.234375
+        },
+        {
+          "row": 3,
+          "offset": 42,
+          "expected": 51.12890625,
+          "actual": 48.90625,
+          "delta": -2.22265625
+        }
+      ],
+      "worstAdditionalVsB": null,
+      "largestSignedDifferenceVsB": null,
+      "firstClickMismatch": {
+        "row": 0,
+        "start": 6,
+        "end": 7,
+        "x": 117.93385416666666,
+        "right": 108.81510416666667,
+        "width": 18.13541666666667,
+        "y": 34.390625,
+        "label": "near-middle-left",
+        "allowed": [
+          6
+        ],
+        "clean": true,
+        "domMatchesCanonical": true,
+        "selection": {
+          "anchor": 7,
+          "focus": 7
+        },
+        "text": "",
+        "owner": 0,
+        "ok": false
+      },
+      "dragMismatches": []
+    },
+    {
+      "browser": "Chromium 154.0.8037.57",
+      "variant": "D-justify-space-fix",
+      "rich": true,
+      "maxAbsoluteCaret": 2.22265625,
+      "maxAbsoluteEndpoint": 1.78125,
+      "additionalVsA": 0.4296875,
+      "additionalVsB": 0.00390625,
+      "signedDifferenceVsB": 1.77734375,
+      "stretchedSpaceEndpointError": 0.033976236979171404,
+      "clickErrors": 0,
+      "clicks": 30,
+      "dragErrors": 0,
+      "drags": 4,
+      "navigationErrors": 0,
+      "utf16Preserved": true,
+      "maxAbsoluteIncludingEndpoints": 2.22265625,
+      "nativeCanvasCarets": true,
+      "navigationCases": 91,
+      "localShapeComparedToB": {
+        "points": 34,
+        "maxDifference": 0,
+        "roundingTolerance": 0.03333333333333333
+      },
+      "examples": [
+        {
+          "row": 0,
+          "offset": 1,
+          "expected": 16.0078125,
+          "actual": 16.015625,
+          "delta": 0.0078125
+        },
+        {
+          "row": 0,
+          "offset": 3,
+          "expected": 46.2421875,
+          "actual": 44.46875,
+          "delta": -1.7734375
+        },
+        {
+          "row": 0,
+          "offset": 10,
+          "expected": 159.3125,
+          "actual": 157.125,
+          "delta": -2.1875
+        },
+        {
+          "row": 3,
+          "offset": 42,
+          "expected": 51.12890625,
+          "actual": 48.90625,
+          "delta": -2.22265625
+        }
+      ],
+      "worstAdditionalVsB": {
+        "kind": "endpoints",
+        "row": 0,
+        "offset": 11,
+        "text": " ",
+        "edge": "before",
+        "controlError": 0.05859375,
+        "candidateError": 0.0625,
+        "signedDifference": 0.00390625,
+        "additionalError": 0.00390625,
+        "roundingBound": 0.6
+      },
+      "largestSignedDifferenceVsB": {
+        "kind": "endpoints",
+        "row": 0,
+        "offset": 12,
+        "text": " ",
+        "edge": "after",
+        "controlError": 1.828125,
+        "candidateError": 0.05078125,
+        "signedDifference": -1.77734375,
+        "additionalError": 0,
+        "roundingBound": 0.6
+      },
+      "firstClickMismatch": null,
+      "dragMismatches": []
+    }
+  ]
+}

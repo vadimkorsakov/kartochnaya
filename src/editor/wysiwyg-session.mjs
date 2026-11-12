@@ -21,14 +21,14 @@ function unifiedDOMOffset(base, projection, text) {
  finally {probe.remove();}
 }
 export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=()=>false) {
- // Justify uses the shared Canvas painter, but still edits through textarea (stage 2B).
- if(e.textAlign==='justify')return false;
+ const experimentalJustify=new URLSearchParams(location.search).get('experimentalJustifyWysiwyg')==='1';
+ if(e.textAlign==='justify'&&!experimentalJustify)return false;
  // Rich inline editing is the desktop default. The explicit =0 switch is
  // retained only for diagnosis and for fallback-focused regression tests.
  // A previous opt-in gate left normal users on plain textarea, making range
  // color/font/size changes invisible until the editor was closed.
  if(new URLSearchParams(location.search).get('experimentalTextWysiwyg')==='0'||matchMedia('(max-width:760px), (pointer:coarse)').matches||/Android|iPhone|iPad|AppleWebKit(?!.*(?:Chrome|Chromium|Edg))/i.test(navigator.userAgent))return false;
- if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&!['left','center','right'].includes(e.textAlign))||(e.verticalAlign&&!['top','middle','bottom'].includes(e.verticalAlign)))return false;
+ if(locked||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||e.rotation||e.textPathId||e.mobileArcRadius||e.text.includes('\r')||(e.textAlign&&!['left','center','right','justify'].includes(e.textAlign))||(e.verticalAlign&&!['top','middle','bottom'].includes(e.verticalAlign)))return false;
  if((e.fillType&&e.fillType!=='solid')||e.maskSrc||e.mask||e.layerMaskSrc||e.clipped||(e.effects||[]).some(f=>f.enabled!==false)||e.flipX||e.flipY||(e.blendMode&&!['normal','source-over'].includes(e.blendMode))||(e.opacity??100)!==100)return false;
  // Supported paint semantics apply equally to plain and sparse-rich text.
  // Geometry is supplied by the shared row layout, never a CSS parity guess.
@@ -70,8 +70,8 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   paintHorizontalTextPass(c,layer,projection,'fill');paintHorizontalTextPass(c,layer,projection,'stroke');
  }
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
- function stop(reason){pasteText=null;fallback=reason;safe.phase='recovery-required';syncOverlay();if(!inactive)onRecovery(reason);}
- function project(value,selection){
+ function stop(reason){clearPointerGesture();pasteText=null;fallback=reason;safe.phase='recovery-required';syncOverlay();if(!inactive)onRecovery(reason);}
+ function project(value,selection){pointerEpoch++;clearPointerGesture();
   verticalX=null;
   // Probe measurements also attach temporary DOM nodes. Capture the owner
   // before any measurement, not just before replaceChildren: the browser can
@@ -110,7 +110,10 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
     Object.assign(span.style,{position:'relative',display:'inline-block',verticalAlign:'top',marginLeft:part.x-advance+'px',top:offset+'px',height:row.height+'px',
      font:richTextFont(part.style),fontKerning:'normal',lineHeight:row.height+'px',letterSpacing:part.style.letterSpacing+'px',
      color:part.style.textColor,whiteSpace:'pre',overflowWrap:'normal'});
-    rowNode.append(span);ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';ctx.fontKerning='normal';advance=part.x+ctx.measureText(part.text).width;
+    rowNode.append(span);ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';ctx.fontKerning='normal';const naturalWidth=ctx.measureText(part.text).width;
+    const expanded=part.text===' '&&row.justification?.spaces.includes(part.start);
+    if(expanded)span.style.wordSpacing=(part.width-naturalWidth)+'px';
+    advance=part.x+(expanded?part.width:naturalWidth);
    }
   }
   const next=structuredClone(value);
@@ -194,6 +197,86 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
 const applyRangeStyle=(patch,options)=>applyStyle(patch,options);
 const applyLayerStyle=(patch,options)=>applyStyle(patch,{...options,range:false});
 const graphemes=new Intl.Segmenter(undefined,{granularity:'grapheme'});
+// Expanded source spaces alone need a bounded post-native click correction.
+// No independent text positions, document flags or replacement Selection model.
+let pointerEpoch=0,pointerGesture=null;
+const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.task!==undefined)clearTimeout(p.task);};
+if(layer.textAlign==='justify'){
+ const doc=host.ownerDocument;
+ const watch=(target,type,handler,capture=false)=>target.addEventListener(type,handler,{capture,signal:abort.signal});
+ function stretchedHit(clientX,clientY){
+  if(layer.textAlign!=='justify'||inactive||fallback||composing||safe.phase!=='confirmed'||!clean())return null;
+  const rect=host.getBoundingClientRect(),css=getComputedStyle(host),matrix=new DOMMatrix(css.transform==='none'?undefined:css.transform);
+  if(matrix.b||matrix.c||matrix.a<=0||matrix.d<=0)return null;
+  const sx=rect.width/parseFloat(css.width),sy=rect.height/parseFloat(css.height);
+  if(!(sx>0&&sy>0))return null;
+  const x=(clientX-rect.left)/sx,y=(clientY-rect.top)/sy,projection=layout(layer);
+  const key=JSON.stringify([layer,[rect.x,rect.y,rect.width,rect.height],projection.rows.map(r=>[r.start,r.end,r.y,r.height,r.carets,r.justification])]);
+  for(const [rowIndex,row] of projection.rows.entries()){
+   if(y<row.y||y>=row.y+row.height||!(row.justification?.extraPerSpace>0))continue;
+   for(const start of row.justification.spaces){
+    if(layer.text[start]!==' ')continue;
+    const before=row.carets.find(p=>p.offset===start),after=row.carets.find(p=>p.offset===start+1);
+    if(!before||!after||!(after.x>before.x)||x<before.x||x>after.x)continue;
+    return {rowIndex,start,end:start+1,target:x<=(before.x+after.x)/2?start:start+1,key,x,before:before.x,after:after.x};
+   }
+  }
+  return null;
+ }
+ listen('pointerdown',event=>{
+  clearPointerGesture();
+  if(!event.isTrusted||event.pointerType!=='mouse'||!event.isPrimary||event.button!==0||event.altKey||event.ctrlKey||event.metaKey)return;
+  const hit=stretchedHit(event.clientX,event.clientY);if(!hit)return;
+  let anchor=null,anchorNode=null,anchorOffset=null;
+  if(event.shiftKey){try{if(document.activeElement!==host||!selectionInside())return;anchor=readSelection().anchor;anchorNode=getSelection().anchorNode;anchorOffset=getSelection().anchorOffset}catch{return}}
+  pointerGesture={id:event.pointerId,x:event.clientX,y:event.clientY,epoch:pointerEpoch,key:hit.key,start:hit.start,rowIndex:hit.rowIndex,anchor,anchorNode,anchorOffset,shift:event.shiftKey,up:false};
+ });
+ watch(doc,'pointerdown',event=>{if(!host.contains(event.target))clearPointerGesture()},true);
+ watch(doc,'pointermove',event=>{const p=pointerGesture;if(p&&!p.clicked&&p.id===event.pointerId&&(event.clientX!==p.x||event.clientY!==p.y))clearPointerGesture()},true);
+ watch(doc,'pointerup',event=>{
+  const p=pointerGesture;if(!p||p.id!==event.pointerId)return;
+  if(!host.contains(event.target)||event.clientX!==p.x||event.clientY!==p.y){clearPointerGesture();return}
+  p.up=true;
+ },true);
+ watch(doc,'pointercancel',clearPointerGesture,true);
+ listen('dragstart',clearPointerGesture);
+ listen('focusout',clearPointerGesture);
+ watch(window,'blur',clearPointerGesture);
+ listen('compositionstart',clearPointerGesture);
+ function flushBeforeInput(event){
+  if(event.isComposing||event.keyCode===229||composing){clearPointerGesture();return}
+  if(pointerGesture?.clicked)applyClick();else clearPointerGesture();
+ }
+ listen('keydown',flushBeforeInput);
+ listen('beforeinput',flushBeforeInput);
+ watch(doc,'selectionchange',event=>{if(event.isTrusted&&pointerGesture?.clicked)applyClick()});
+ function applyClick(){
+  const p=pointerGesture;if(!p?.clicked)return;
+  pointerGesture=null;if(p.task!==undefined)clearTimeout(p.task);
+  const hit=stretchedHit(p.cx,p.cy);
+  if(document.activeElement!==host||!hit||p.epoch!==pointerEpoch||p.key!==hit.key||p.start!==hit.start||p.rowIndex!==hit.rowIndex){return}
+  let native;try{native=readSelection()}catch{return}
+  if(!p.shift&&native.anchor!==native.focus){return}
+  if(p.shift&&!host.contains(p.anchorNode)){return}
+  const anchor=p.shift?p.anchor:hit.target;
+  const sameAnchor=!p.shift||(getSelection().anchorNode===p.anchorNode&&getSelection().anchorOffset===p.anchorOffset);
+  if(native.anchor===anchor&&native.focus===hit.target&&sameAnchor){return}
+  setSelection(anchor,hit.target,hit.rowIndex);
+  if(p.shift){const s=getSelection();s.setBaseAndExtent(p.anchorNode,p.anchorOffset,s.focusNode,s.focusOffset)}
+ }
+ listen('click',event=>{
+  const p=pointerGesture;
+  if(!p)return;
+  if(!p.up||!event.isTrusted||event.button!==0||event.detail!==1||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey!==p.shift||document.activeElement!==host){clearPointerGesture();return}
+  const hit=stretchedHit(event.clientX,event.clientY);
+  if(!hit||p.epoch!==pointerEpoch||p.key!==hit.key||p.start!==hit.start||p.rowIndex!==hit.rowIndex){clearPointerGesture();return}
+  p.clicked=true;p.cx=event.clientX;p.cy=event.clientY;
+  // A native Selectionchange may run first. Input guards consume the same
+  // token if the browser prioritizes keyboard/beforeinput over the timer task.
+  p.task=setTimeout(()=>{if(pointerGesture===p)applyClick()});
+ });
+}
+
 listen('pointerdown',()=>{verticalX=null;});
 listen('keydown',event=>{
  if(composing||event.isComposing||event.altKey||!clean())return;
@@ -208,6 +291,7 @@ listen('keydown',event=>{
  let next=c.focus,targetRow=null;
  if(vertical){
   const xAt=(row,offset)=>{
+   const shared=row.carets?.find(p=>p.offset===offset);if(shared)return shared.x;
    const part=row.fragments.findLast(p=>p.start<=offset)||row.fragments[0];if(!part)return row.x;
    ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';ctx.fontKerning='normal';
    return part.x+ctx.measureText(layer.text.slice(part.start,Math.min(offset,part.end))).width;
@@ -372,10 +456,10 @@ listen('input',()=>{
 
  host.contentEditable='plaintext-only';host.classList.remove('hidden');
  const initial={anchor:layer.text.length,focus:layer.text.length};project(structuredClone(layer),initial);recordInlineHistory(history,layer,caret(initial));
- return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection,requestFallback,clean,applyRangeStyle,applyLayerStyle,finishPreview,syncOverlay,
-  preserve(){inactive=true;releaseOverlay();if(!composing)host.contentEditable='false';},
+ return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection(...args){clearPointerGesture();return setSelection(...args);},requestFallback,clean,applyRangeStyle,applyLayerStyle,finishPreview,syncOverlay,
+  preserve(){pointerEpoch++;clearPointerGesture();inactive=true;releaseOverlay();if(!composing)host.contentEditable='false';},
   focus(){host.focus({preventScroll:true});},
   recover(){if(composing)return false;fallback=null;safe.deferred=false;safe.phase='confirmed';project(structuredClone(layer),{anchor:layer.text.length,focus:layer.text.length});onChange();return true;},
-  dispose(){abort.abort();releaseOverlay();host.classList.add('hidden');}
+  dispose(){pointerEpoch++;clearPointerGesture();abort.abort();releaseOverlay();host.classList.add('hidden');}
  };
 }

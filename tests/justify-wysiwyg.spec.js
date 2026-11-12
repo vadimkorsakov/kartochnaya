@@ -182,3 +182,20 @@ test('experimental justify keeps mobile textarea',async({page})=>{
  await seed(page,{text:'AVATAR   To WA',w:170,textAlign:'justify'},experimental);await page.setViewportSize({width:700,height:900});
  const p=await canvasPoint(page,55,57);await page.mouse.dblclick(p.x,p.y);await expect(page.locator('#inlineText')).toBeVisible();await expect(page.locator(surface)).toBeHidden();
 });
+
+// Stage 2B.2 gate: the adapter must also exist in sessions opened as left.
+test('late justify activation: first space and immediate input',async({page})=>{
+ await seed(page,{text:'AVATAR   To WA more words across rows',w:170,textAlign:'left'},experimental);await edit(page);
+ await select(page,0,6);
+ await page.locator(surface).evaluate(host=>window.originalJustifyHost=host);
+ for(const value of ['justify','left','justify']){
+  await page.locator(`#inspector [data-align=${value}]`).last().click();
+  await expect(page.locator(surface)).toBeFocused();
+  expect(await selection(page)).toEqual({anchor:0,focus:6});
+  expect((await model(page)).textAlign).toBe(value);
+ }
+ expect(await page.locator(surface).evaluate(host=>host===window.originalJustifyHost)).toBe(true);
+ const p=await spacePoint(page);await page.mouse.click(p.x,p.y);await page.keyboard.type('X');
+ expect((await model(page)).text).toBe('AVATARX   To WA more words across rows');
+ expect(await selection(page)).toEqual({anchor:7,focus:7});
+});

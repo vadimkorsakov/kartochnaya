@@ -1,5 +1,5 @@
 import { nextZoom, parseZoomPercent } from './core/zoom.mjs';
-import {eligibleWysiwyg, createWysiwygSession} from './editor/wysiwyg-session.mjs';
+import {eligibleWysiwyg, justifyWysiwygEnabled, createWysiwygSession} from './editor/wysiwyg-session.mjs';
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from './render/text-stroke.mjs';
 import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
 import { applyTextStyle, updateText, transformText, replaceText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
@@ -2387,7 +2387,7 @@ function styleInlineLayer(key,value,final){
 function styleInlineSelection(key,value,final){
  if(!app.wysiwyg&&app.editingId&&active()?.textAlign==='justify'&&['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key)){
   rememberInlineCaret();const c=app.inlineCaret;
-  if(c&&c.end>c.start){toast('Форматирование выделения justify доступно в экспериментальном WYSIWYG. Снимите выделение для изменения всего слоя.');return true;}
+  if(c&&c.end>c.start){toast('Форматирование выделенного диапазона недоступно в текущем режиме. Снимите выделение для изменения всего слоя.');return true;}
  }
 
  // Legacy textarea and specialized modes keep layer-wide stroke alpha/style.
@@ -3470,11 +3470,11 @@ function alignPicked(action,scope='all'){
   const texts=es.filter(e=>e.type==='text');if(!texts.length)return;
   const e=texts[0];
   if(app.wysiwyg&&e.id===app.editingId){
-   if(value!=='justify'||new URLSearchParams(location.search).get('experimentalJustifyWysiwyg')==='1'){
+   if(value!=='justify'||justifyWysiwygEnabled()){
     if(!app.wysiwyg.applyLayerStyle({[key]:value},{key,final:true}))toast('Выравнивание недоступно в WYSIWYG');
     return;
    }
-   if(!fallbackInlineWysiwyg('Выравнивание по ширине требует experimentalJustifyWysiwyg=1'))return;
+   if(!fallbackInlineWysiwyg('WYSIWYG для выравнивания по ширине отключён в текущем режиме'))return;
   }
   if(app.inlineSession)recordInlineSession();
   for(const text of texts)text[key]=value;

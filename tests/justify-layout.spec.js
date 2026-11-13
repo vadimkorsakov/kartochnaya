@@ -59,7 +59,7 @@ test('stage-1 compatibility matrix versus shared rows with real Canvas metrics',
  await fs.writeFile(path.join(__dirname,'../work/justify-measurements.json'),JSON.stringify(measurements,null,2));
 });
 
-test('saved justify layers use shared Canvas/PNG and textarea fallback',async({page})=>{
+test('saved justify layers use shared Canvas/PNG and default WYSIWYG',async({page})=>{
  await page.addInitScript(()=>{
   window.justifyFrame=[];window.justifyExport=[];
   const p=CanvasRenderingContext2D.prototype,clear=p.clearRect,fill=p.fillText;
@@ -80,5 +80,5 @@ test('saved justify layers use shared Canvas/PNG and textarea fallback',async({p
  expect(exported).toEqual(live);
  await page.locator('#layers .layer-name').filter({hasText:'Justify'}).click();
  const point=await canvasPoint(page,50,30);await page.mouse.dblclick(point.x,point.y);
- await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator('#inlineWysiwyg')).toBeHidden();
+ await expect(page.locator('#inlineWysiwyg')).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();
 });

@@ -4,7 +4,7 @@ const fixture=require('./fixtures/canvas-graph.json');
 test.use({serviceWorkers:'block'});
 test.describe.configure({timeout:60000});
 
-async function seed(page,patch={}){
+async function seed(page,patch={},url='/'){
  await page.setViewportSize({width:1600,height:1100});
  await page.route('**/__shipping/**',async route=>{
   const name=new URL(route.request().url()).pathname.slice('/__shipping/'.length);
@@ -23,7 +23,7 @@ async function seed(page,patch={}){
    };
   }
  });
- await openHome(page);const payload=structuredClone(fixture);payload.documents=[payload.documents[0]];
+ await openHome(page,url);const payload=structuredClone(fixture);payload.documents=[payload.documents[0]];
  const doc=payload.documents[0];doc.groups=[];doc.background='#ffffff';doc.elements=doc.elements.filter(e=>e.id==='title');
  Object.assign(doc.elements[0],{text:'AA   BB CC DD EE\nFF GG\n\nHH II\r\nJJ\tKK\u00a0LL 👩‍💻 é',x:20,y:20,w:130,h:210,fontFamily:'Arial',fontSize:20,lineHeight:1.2,letterSpacing:0,textColor:'#111111',autoFontSize:false,rotation:0,textAlign:'justify',verticalAlign:'top',...patch});
  await importPayload(page,payload);await expect(page.locator('#toast')).toContainText('Импортировано проектов');
@@ -90,7 +90,7 @@ for(const rich of [false,true])test(`shared justify actual glyphs, decorations a
 });
 
 test('justify textarea fallback, undo/redo, closing painter and zoom/mobile export',async({page},info)=>{
- const doc=await seed(page,{text:'AA BB CC DD EE'}),original=layer(doc).text;
+ const doc=await seed(page,{text:'AA BB CC DD EE'},'/?experimentalJustifyWysiwyg=0'),original=layer(doc).text;
  await page.locator('#layers [data-layer="title"] .layer-name').click();let p=await canvasPoint(page,50,35);await page.mouse.dblclick(p.x,p.y);
  await expect(page.locator('#inlineText')).toBeFocused();await expect(page.locator('#inlineWysiwyg')).toBeHidden();
  await page.locator('#inlineText').fill(original+' FF');await page.keyboard.press('Control+Enter');await expect(page.locator('#inlineText')).toBeHidden();

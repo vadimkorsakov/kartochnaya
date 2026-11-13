@@ -20,9 +20,14 @@ function unifiedDOMOffset(base, projection, text) {
  try {return projection.baseline-(baseline.getBoundingClientRect().bottom-probe.getBoundingClientRect().top);}
  finally {probe.remove();}
 }
+// Justify shares the desktop default; the explicit opt-out is URL-only.
+export function justifyWysiwygEnabled() {
+ const params=new URLSearchParams(location.search);
+ return params.get('experimentalTextWysiwyg')!=='0'&&params.get('experimentalJustifyWysiwyg')!=='0';
+}
+
 export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=()=>false) {
- const experimentalJustify=new URLSearchParams(location.search).get('experimentalJustifyWysiwyg')==='1';
- if(e.textAlign==='justify'&&!experimentalJustify)return false;
+ if(e.textAlign==='justify'&&!justifyWysiwygEnabled())return false;
  // Rich inline editing is the desktop default. The explicit =0 switch is
  // retained only for diagnosis and for fallback-focused regression tests.
  // A previous opt-in gate left normal users on plain textarea, making range

@@ -201,7 +201,9 @@ const graphemes=new Intl.Segmenter(undefined,{granularity:'grapheme'});
 // No independent text positions, document flags or replacement Selection model.
 let pointerEpoch=0,pointerGesture=null;
 const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.task!==undefined)clearTimeout(p.task);};
-if(layer.textAlign==='justify'){
+// Register for the session lifetime; stretchedHit gates correction on the
+// current alignment and expanded source spaces. project invalidates tokens.
+{
  const doc=host.ownerDocument;
  const watch=(target,type,handler,capture=false)=>target.addEventListener(type,handler,{capture,signal:abort.signal});
  function stretchedHit(clientX,clientY){

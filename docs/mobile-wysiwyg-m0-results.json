@@ -1,0 +1,719 @@
+{
+  "base": "7a2c864bf26bc02319983b0cfc5a57dfa59d1dea",
+  "date": "2026-11-13",
+  "environment": "Cloud Linux Chromium 154.0.8037.57, touch emulation, no physical IME",
+  "viewports": [
+    {
+      "width": 360,
+      "height": 640
+    },
+    {
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "checks": {
+    "baselineMobileAndTouch": 34,
+    "experiment": 14,
+    "source": 17,
+    "unit": 615,
+    "build": true,
+    "buildVerify": true
+  },
+  "limitations": [
+    "Fragment-start X only for B, not every native caret or pixel parity",
+    "Synthetic composition boundary replay, not real Android IME",
+    "220 CSS px layout resize surrogate, not OS keyboard",
+    "Slider tested through native keyboard input/change, not physical drag"
+  ],
+  "observations": [
+    {
+      "name": "A-360-left.json",
+      "browser": "154.0.8037.57",
+      "samples": 16,
+      "mismatches": 16,
+      "hits": [
+        {
+          "x": 49.87166666666667,
+          "y": 186.82041666666666,
+          "expected": 0,
+          "actual": 31
+        },
+        {
+          "x": 79.71181559244792,
+          "y": 186.82041666666666,
+          "expected": 3,
+          "actual": 34
+        },
+        {
+          "x": 108.66192545572916,
+          "y": 186.82041666666666,
+          "expected": 7,
+          "actual": 37
+        },
+        {
+          "x": 133.88499674479166,
+          "y": 186.82041666666666,
+          "expected": 10,
+          "actual": 40
+        },
+        {
+          "x": 160.06168131510418,
+          "y": 186.82041666666666,
+          "expected": 13,
+          "actual": 44
+        },
+        {
+          "x": 204.18130615234375,
+          "y": 181.75708333333333,
+          "expected": 17,
+          "actual": 19
+        },
+        {
+          "x": 252.83059407552082,
+          "y": 181.75708333333333,
+          "expected": 20,
+          "actual": 25
+        },
+        {
+          "x": 58.009166666666665,
+          "y": 207.61625,
+          "expected": 24,
+          "actual": 58
+        },
+        {
+          "x": 85.38581461588541,
+          "y": 207.61625,
+          "expected": 27,
+          "actual": 61
+        },
+        {
+          "x": 121.44034342447917,
+          "y": 207.61625,
+          "expected": 32,
+          "actual": 65
+        },
+        {
+          "x": 150.93878092447915,
+          "y": 207.61625,
+          "expected": 35,
+          "actual": 69
+        },
+        {
+          "x": 185.23707194010416,
+          "y": 207.61625,
+          "expected": 39,
+          "actual": 73
+        },
+        {
+          "x": 210.19789957682292,
+          "y": 207.61625,
+          "expected": 42,
+          "actual": 76
+        },
+        {
+          "x": 234.5468253580729,
+          "y": 207.61625,
+          "expected": 45,
+          "actual": 80
+        },
+        {
+          "x": 264.4823356119791,
+          "y": 207.61625,
+          "expected": 49,
+          "actual": 83
+        },
+        {
+          "x": 49.87166666666667,
+          "y": 227.96,
+          "expected": 53,
+          "actual": 88
+        }
+      ]
+    },
+    {
+      "name": "A-360-left-resize.json",
+      "kind": "layout resize surrogate, no OS keyboard",
+      "state": {
+        "zoom": 0.9041666666666667,
+        "caret": {
+          "start": 88,
+          "end": 88,
+          "direction": "forward"
+        },
+        "live": false,
+        "history": {
+          "index": 0,
+          "length": 1
+        }
+      }
+    },
+    {
+      "name": "A-360-justify.json",
+      "browser": "154.0.8037.57",
+      "samples": 16,
+      "mismatches": 16,
+      "hits": [
+        {
+          "x": 49.87166666666667,
+          "y": 186.82041666666666,
+          "expected": 0,
+          "actual": 31
+        },
+        {
+          "x": 79.71181559244792,
+          "y": 186.82041666666666,
+          "expected": 3,
+          "actual": 34
+        },
+        {
+          "x": 120.28541178385416,
+          "y": 186.82041666666666,
+          "expected": 7,
+          "actual": 38
+        },
+        {
+          "x": 145.50848307291665,
+          "y": 186.82041666666666,
+          "expected": 10,
+          "actual": 40
+        },
+        {
+          "x": 171.68516764322916,
+          "y": 186.82041666666666,
+          "expected": 13,
+          "actual": 43
+        },
+        {
+          "x": 227.42827880859375,
+          "y": 181.75708333333333,
+          "expected": 17,
+          "actual": 20
+        },
+        {
+          "x": 276.07756673177084,
+          "y": 181.75708333333333,
+          "expected": 20,
+          "actual": 26
+        },
+        {
+          "x": 58.009166666666665,
+          "y": 207.61625,
+          "expected": 24,
+          "actual": 58
+        },
+        {
+          "x": 85.38581461588541,
+          "y": 207.61625,
+          "expected": 27,
+          "actual": 61
+        },
+        {
+          "x": 132.88767618815103,
+          "y": 207.61625,
+          "expected": 32,
+          "actual": 66
+        },
+        {
+          "x": 162.38611368815106,
+          "y": 207.61625,
+          "expected": 35,
+          "actual": 69
+        },
+        {
+          "x": 202.40807108561197,
+          "y": 207.61625,
+          "expected": 39,
+          "actual": 74
+        },
+        {
+          "x": 227.36889872233073,
+          "y": 207.61625,
+          "expected": 42,
+          "actual": 76
+        },
+        {
+          "x": 251.71782450358072,
+          "y": 207.61625,
+          "expected": 45,
+          "actual": 79
+        },
+        {
+          "x": 287.37700113932294,
+          "y": 207.61625,
+          "expected": 49,
+          "actual": 83
+        },
+        {
+          "x": 49.87166666666667,
+          "y": 227.96,
+          "expected": 53,
+          "actual": 88
+        }
+      ]
+    },
+    {
+      "name": "A-360-justify-resize.json",
+      "kind": "layout resize surrogate, no OS keyboard",
+      "state": {
+        "zoom": 0.9041666666666667,
+        "caret": {
+          "start": 88,
+          "end": 88,
+          "direction": "forward"
+        },
+        "live": false,
+        "history": null
+      }
+    },
+    {
+      "name": "control-360.json",
+      "samples": 8,
+      "mismatches": 0,
+      "hits": [
+        {
+          "x": 49.87166666666667,
+          "y": 172.35375,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "x": 97.22651285807291,
+          "y": 172.35375,
+          "expected": 5,
+          "actual": 5
+        },
+        {
+          "x": 142.02249674479168,
+          "y": 172.35375,
+          "expected": 11,
+          "actual": 11
+        },
+        {
+          "x": 189.8064689127604,
+          "y": 172.35375,
+          "expected": 17,
+          "actual": 17
+        },
+        {
+          "x": 238.1864493815104,
+          "y": 172.35375,
+          "expected": 23,
+          "actual": 23
+        },
+        {
+          "x": 287.09091715494793,
+          "y": 172.35375,
+          "expected": 29,
+          "actual": 29
+        },
+        {
+          "x": 88.42148356119792,
+          "y": 192.6975,
+          "expected": 35,
+          "actual": 35
+        },
+        {
+          "x": 139.7258780924479,
+          "y": 192.6975,
+          "expected": 41,
+          "actual": 41
+        }
+      ]
+    },
+    {
+      "name": "selection-360.json",
+      "caret": {
+        "start": 125,
+        "end": 211,
+        "direction": "backward"
+      },
+      "zoom": 0.9041666666666667,
+      "live": false,
+      "history": {
+        "index": 3,
+        "length": 5
+      },
+      "exactUndoRedo": true,
+      "previewHistoryUnchanged": true,
+      "multiline": true,
+      "resumedTyping": true,
+      "textUnchanged": true
+    },
+    {
+      "name": "B-360.json",
+      "geometry": {
+        "maxStartError": 0.08008542404874675,
+        "samples": 45,
+        "rows": 14
+      },
+      "panelFallback": true,
+      "state": {
+        "zoom": 0.9041666666666667,
+        "caret": {
+          "start": 1,
+          "end": 1,
+          "direction": "forward"
+        },
+        "live": true,
+        "clean": false,
+        "history": {
+          "index": 1,
+          "length": 2
+        }
+      },
+      "ime": "synthetic boundary replay; recovery required; canonical model preserved"
+    },
+    {
+      "name": "justify-bold-360.json",
+      "beforeWeight": "400",
+      "afterWeight": "700",
+      "runsUnchanged": true,
+      "scope": "whole-layer despite selected word; existing defect"
+    },
+    {
+      "name": "A-390-left.json",
+      "browser": "154.0.8037.57",
+      "samples": 16,
+      "mismatches": 16,
+      "hits": [
+        {
+          "x": 26.804375,
+          "y": 236.6853125,
+          "expected": 0,
+          "actual": 31
+        },
+        {
+          "x": 65.37654907226562,
+          "y": 236.6853125,
+          "expected": 3,
+          "actual": 34
+        },
+        {
+          "x": 102.79823486328124,
+          "y": 236.6853125,
+          "expected": 7,
+          "actual": 37
+        },
+        {
+          "x": 135.40225097656247,
+          "y": 236.6853125,
+          "expected": 10,
+          "actual": 40
+        },
+        {
+          "x": 169.23893310546873,
+          "y": 236.6853125,
+          "expected": 13,
+          "actual": 44
+        },
+        {
+          "x": 226.26913940429685,
+          "y": 230.1403125,
+          "expected": 17,
+          "actual": 19
+        },
+        {
+          "x": 289.1545092773437,
+          "y": 230.1403125,
+          "expected": 20,
+          "actual": 25
+        },
+        {
+          "x": 37.323125,
+          "y": 263.56656250000003,
+          "expected": 24,
+          "actual": 58
+        },
+        {
+          "x": 72.71091186523438,
+          "y": 263.56656250000003,
+          "expected": 27,
+          "actual": 61
+        },
+        {
+          "x": 119.31595947265625,
+          "y": 263.56656250000003,
+          "expected": 32,
+          "actual": 65
+        },
+        {
+          "x": 157.44642822265624,
+          "y": 263.56656250000003,
+          "expected": 35,
+          "actual": 69
+        },
+        {
+          "x": 201.78131591796873,
+          "y": 263.56656250000003,
+          "expected": 39,
+          "actual": 73
+        },
+        {
+          "x": 234.04634887695312,
+          "y": 263.56656250000003,
+          "expected": 42,
+          "actual": 76
+        },
+        {
+          "x": 265.52042114257813,
+          "y": 263.56656250000003,
+          "expected": 45,
+          "actual": 80
+        },
+        {
+          "x": 304.21586181640623,
+          "y": 263.56656250000003,
+          "expected": 49,
+          "actual": 83
+        },
+        {
+          "x": 26.804375,
+          "y": 289.86343750000003,
+          "expected": 53,
+          "actual": 88
+        }
+      ]
+    },
+    {
+      "name": "A-390-left-resize.json",
+      "kind": "layout resize surrogate, no OS keyboard",
+      "state": {
+        "zoom": 1.16875,
+        "caret": {
+          "start": 88,
+          "end": 88,
+          "direction": "forward"
+        },
+        "live": false,
+        "history": {
+          "index": 0,
+          "length": 1
+        }
+      }
+    },
+    {
+      "name": "A-390-justify.json",
+      "browser": "154.0.8037.57",
+      "samples": 16,
+      "mismatches": 16,
+      "hits": [
+        {
+          "x": 26.804375,
+          "y": 236.6853125,
+          "expected": 0,
+          "actual": 31
+        },
+        {
+          "x": 65.37654907226562,
+          "y": 236.6853125,
+          "expected": 3,
+          "actual": 34
+        },
+        {
+          "x": 117.82306396484374,
+          "y": 236.6853125,
+          "expected": 7,
+          "actual": 38
+        },
+        {
+          "x": 150.427080078125,
+          "y": 236.6853125,
+          "expected": 10,
+          "actual": 40
+        },
+        {
+          "x": 184.26376220703125,
+          "y": 236.6853125,
+          "expected": 13,
+          "actual": 43
+        },
+        {
+          "x": 256.31879760742186,
+          "y": 230.1403125,
+          "expected": 17,
+          "actual": 20
+        },
+        {
+          "x": 319.20416748046875,
+          "y": 230.1403125,
+          "expected": 20,
+          "actual": 26
+        },
+        {
+          "x": 37.323125,
+          "y": 263.56656250000003,
+          "expected": 24,
+          "actual": 58
+        },
+        {
+          "x": 72.71091186523438,
+          "y": 263.56656250000003,
+          "expected": 27,
+          "actual": 61
+        },
+        {
+          "x": 134.1130877685547,
+          "y": 263.56656250000003,
+          "expected": 32,
+          "actual": 66
+        },
+        {
+          "x": 172.24355651855467,
+          "y": 263.56656250000003,
+          "expected": 35,
+          "actual": 69
+        },
+        {
+          "x": 223.9770083618164,
+          "y": 263.56656250000003,
+          "expected": 39,
+          "actual": 74
+        },
+        {
+          "x": 256.24204132080075,
+          "y": 263.56656250000003,
+          "expected": 42,
+          "actual": 76
+        },
+        {
+          "x": 287.71611358642576,
+          "y": 263.56656250000003,
+          "expected": 45,
+          "actual": 79
+        },
+        {
+          "x": 333.81011840820315,
+          "y": 263.56656250000003,
+          "expected": 49,
+          "actual": 83
+        },
+        {
+          "x": 26.804375,
+          "y": 289.86343750000003,
+          "expected": 53,
+          "actual": 88
+        }
+      ]
+    },
+    {
+      "name": "A-390-justify-resize.json",
+      "kind": "layout resize surrogate, no OS keyboard",
+      "state": {
+        "zoom": 1.16875,
+        "caret": {
+          "start": 88,
+          "end": 88,
+          "direction": "forward"
+        },
+        "live": false,
+        "history": null
+      }
+    },
+    {
+      "name": "control-390.json",
+      "samples": 8,
+      "mismatches": 0,
+      "hits": [
+        {
+          "x": 26.804375,
+          "y": 217.9853125,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "x": 88.01651489257813,
+          "y": 217.9853125,
+          "expected": 5,
+          "actual": 5
+        },
+        {
+          "x": 145.92100097656248,
+          "y": 217.9853125,
+          "expected": 11,
+          "actual": 11
+        },
+        {
+          "x": 207.68784057617185,
+          "y": 217.9853125,
+          "expected": 17,
+          "actual": 17
+        },
+        {
+          "x": 270.22509643554685,
+          "y": 217.9853125,
+          "expected": 23,
+          "actual": 23
+        },
+        {
+          "x": 333.44031860351566,
+          "y": 217.9853125,
+          "expected": 29,
+          "actual": 29
+        },
+        {
+          "x": 76.63489868164064,
+          "y": 244.2821875,
+          "expected": 35,
+          "actual": 35
+        },
+        {
+          "x": 142.9523303222656,
+          "y": 244.2821875,
+          "expected": 41,
+          "actual": 41
+        }
+      ]
+    },
+    {
+      "name": "selection-390.json",
+      "caret": {
+        "start": 125,
+        "end": 211,
+        "direction": "backward"
+      },
+      "zoom": 1.16875,
+      "live": false,
+      "history": {
+        "index": 3,
+        "length": 5
+      },
+      "exactUndoRedo": true,
+      "previewHistoryUnchanged": true,
+      "multiline": true,
+      "resumedTyping": true,
+      "textUnchanged": true
+    },
+    {
+      "name": "B-390.json",
+      "geometry": {
+        "maxStartError": 0.08007728493930699,
+        "samples": 45,
+        "rows": 14
+      },
+      "panelFallback": true,
+      "state": {
+        "zoom": 1.16875,
+        "caret": {
+          "start": 1,
+          "end": 1,
+          "direction": "forward"
+        },
+        "live": true,
+        "clean": false,
+        "history": {
+          "index": 1,
+          "length": 2
+        }
+      },
+      "ime": "synthetic boundary replay; recovery required; canonical model preserved"
+    },
+    {
+      "name": "justify-bold-390.json",
+      "beforeWeight": "400",
+      "afterWeight": "700",
+      "runsUnchanged": true,
+      "scope": "whole-layer despite selected word; existing defect"
+    }
+  ]
+}

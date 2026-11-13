@@ -116,6 +116,20 @@ jobs:
           "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" --version
       - name: Install Firefox for selection regressions
         run: npx playwright install --with-deps firefox
+      - name: Fetch fixed WYSIWYG profiling comparisons
+        run: git fetch --no-tags origin a07c1a60cca9d53a1a199c1572000f4395b86942 cecc9f16aca98471aa90e580a018f3912f27142a
+      - name: WYSIWYG selection and measured palette scenario in both browsers
+        run: npx playwright test --config=playwright.wysiwyg-ux.config.js
+      - name: Preserve WYSIWYG selection screenshots and profiling evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wysiwyg-ux-measurements
+          path: |
+            test-results/wysiwyg-ux/
+            test-results/wysiwyg-ux-results.json
+          if-no-files-found: warn
+          retention-days: 14
       - run: npm run test:spike
       - name: Report diagnostic execution separately from Gate 0A / Gate 0
         if: always()

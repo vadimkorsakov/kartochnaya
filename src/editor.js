@@ -3651,7 +3651,7 @@ function pickerRangeFill(){return !!app.wysiwyg&&['fill','textColor'].includes(c
 function pickerRangeAlpha(){return pickerRangeFill()||!!app.wysiwyg&&currentPickerKey()==='stroke';}
 function cpCurrentAlpha(){if(pickerRangeAlpha()&&inlineStyleRange()){const c=inlineStyleRange(),values=richTextSpans(active()).filter(p=>p.start<c.end&&p.end>c.start).map(p=>p.style[pickerAlphaKey()]);return values.every(v=>v===values[0])?values[0]:'mixed';}if($('#fillPopover').dataset.key==='_effect')return 100;if($('#fillPopover').dataset.key==='_ink')return app.inkSettings.alpha;if($('#fillPopover').dataset.key==='_docBackground')return app.doc.backgroundAlpha??100;if(currentPickerKey()==='gradientStop')return getGradientStop()?.alpha??100;const k=pickerAlphaKey();return Number((active()||picked()[0])?.[k]??100)}
 function updatePickerColor(hex,final=false){hex=normalizeHex(hex);if(!hex)return;const k=currentPickerKey(),e=active();
- if(['fill','textColor','stroke'].includes(k)&&styleInlineSelection(k==='stroke'?'stroke':'textColor',hex,final)){refreshPickerVisual(false);return}
+ if(['fill','textColor','stroke'].includes(k)&&styleInlineSelection(k==='stroke'?'stroke':'textColor',hex,final))return;
  if(app.wysiwyg&&!fallbackInlineWysiwyg('Цвет слоя'))return;
  if(k==='_effect'){const p=$('#fillPopover'),field=p.dataset.effectField||'color';
   const {e,effect,legacyKey}=effectColorBinding(p.dataset.effectType,field,p.dataset.effectId);

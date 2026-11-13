@@ -173,7 +173,7 @@ for(const strokeStyle of ['solid','dashed','dotted'])for(const textAlign of ['ce
 });
 
 for(const [name,patch,url] of [
- ['justify',{textAlign:'justify'}],['vertical',{textMode:'vertical'}],['rotation',{rotation:10}],['mask',{mask:true}],['clipping',{clipped:true}],['effect',{effects:[{type:'blur',enabled:true}]}],['invalid vertical alignment',{verticalAlign:'justify'}],['blend',{blendMode:'multiply'}],['path',{textMode:'path'}],['opt-out',{textAlign:'right'},'/?experimentalTextWysiwyg=0']
+ ['justify opt-out',{textAlign:'justify'},'/?experimentalJustifyWysiwyg=0'],['vertical',{textMode:'vertical'}],['rotation',{rotation:10}],['mask',{mask:true}],['clipping',{clipped:true}],['effect',{effects:[{type:'blur',enabled:true}]}],['invalid vertical alignment',{verticalAlign:'justify'}],['blend',{blendMode:'multiply'}],['path',{textMode:'path'}],['opt-out',{textAlign:'right'},'/?experimentalTextWysiwyg=0']
 ])test(`alignment fallback: ${name}`,async({page})=>{await seed(page,{textAlign:'center',...patch},url);await edit(page,false)});
 test('alignment fallback: mobile width',async({page})=>{
  await seed(page,{textAlign:'right'});await page.setViewportSize({width:700,height:900});

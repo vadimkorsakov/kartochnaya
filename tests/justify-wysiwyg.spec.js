@@ -6,10 +6,10 @@ test.describe.configure({timeout:60000});
 // Exercise the shipped bundle with a deterministic fresh document.
 test.use({serviceWorkers:'block'});
 
-async function seed(page,patch={},url='/'){
+async function seed(page,patch={},url='/',docPatch={}){
  await page.setViewportSize({width:1600,height:1100});
  await openHome(page,url);const payload=structuredClone(fixture);payload.documents=[payload.documents[0]];
- const doc=payload.documents[0];doc.groups=[];doc.background='#ffffff';doc.palette=['#ff0000','#000000'];doc.elements=doc.elements.filter(e=>e.id==='title');
+ const doc=Object.assign(payload.documents[0],docPatch);doc.groups=[];doc.background='#ffffff';doc.palette=['#ff0000','#000000'];doc.elements=doc.elements.filter(e=>e.id==='title');
  Object.assign(doc.elements[0],{text:'ABCD',x:20,y:40,w:280,h:170,fontFamily:'Arial',fontSize:24,lineHeight:1.2,letterSpacing:0,textColor:'#111111',autoFontSize:false,rotation:0,textAlign:'left',verticalAlign:'top',...patch});
  await importPayload(page,payload);await expect(page.locator('#toast')).toContainText('Импортировано проектов');
  const stored=(await records(page,'docs')).find(d=>d.elements.some(e=>e.id==='title'));await openLibraryDocument(page,stored.id);
@@ -53,8 +53,8 @@ async function parity(page,info,label){
  expect(result.canvas.max).toBeLessThanOrEqual(1);expect(result.wysiwyg.max).toBeLessThanOrEqual(2);expect(result.wysiwyg.above2).toBe(0);
 }
 
-test('baseline real app smoke: one word and source space',async({page})=>{
- await seed(page,{text:'AVATAR   To WA',w:170,textAlign:'justify'});await edit(page,false);
+test('explicit opt-out smoke: one word and source space',async({page})=>{
+ await seed(page,{text:'AVATAR   To WA',w:170,textAlign:'justify'},optOut);await edit(page,false);
  await page.locator('#inlineText').evaluate(e=>e.setSelectionRange(0,6));
  await page.keyboard.type('WORD');expect((await model(page)).text).toBe('WORD   To WA');
 });
@@ -70,7 +70,7 @@ test('experimental app smoke: first expanded space and immediate input',async({p
  await page.keyboard.type('X');expect((await model(page)).text).toBe('AVATARX   To WA');
 });
 
-const experimental='/?experimentalJustifyWysiwyg=1';
+const optOut='/?experimentalJustifyWysiwyg=0';
 async function zoom(page,value){await page.locator('#zoomLabel').click();const field=page.locator('#zoomInput');await field.fill(String(value));await field.press('Enter');await expect(page.locator('#zoomLabel')).toHaveText(value+'%');await page.locator(surface).focus();}
 async function spacePoint(page,fraction=.4){return page.locator(surface).evaluate((host,fraction)=>{
  const span=[...host.querySelectorAll('[data-wysiwyg-fragment]')].find(s=>s.textContent===' '),r=span.getBoundingClientRect();return {x:r.x+r.width*fraction,y:r.y+r.height*.5};
@@ -80,7 +80,7 @@ async function pointAt(page,offset){return page.locator(surface).evaluate((host,
  while(n=walker.nextNode()){if(left<=n.length){const r=document.createRange();r.setStart(n,left);r.collapse(true);const b=r.getBoundingClientRect();return {x:b.x,y:b.y+b.height*.5}}left-=n.length}
 },offset)}
 for(const opened of ['justify','left'])for(const scale of [60,100,150])test(`real clicks, editing, native drag and Shift at ${scale}% opened ${opened}`,async({page})=>{
- await seed(page,{text:'AVATAR   To WA more words across rows',w:170,textAlign:opened},experimental);await edit(page);if(opened==='left')await alignmentButton(page,'justify').click();await zoom(page,scale);
+ await seed(page,{text:'AVATAR   To WA more words across rows',w:170,textAlign:opened});await edit(page);if(opened==='left')await alignmentButton(page,'justify').click();await zoom(page,scale);
  const original=await model(page);
  for(const [key,text,caret] of [['X','AVATARX   To WA more words across rows',7],['Backspace','AVATA   To WA more words across rows',5],['Delete','AVATAR  To WA more words across rows',6]]){
   const p=await spacePoint(page);await page.mouse.click(p.x,p.y);
@@ -102,7 +102,7 @@ for(const opened of ['justify','left'])for(const scale of [60,100,150])test(`rea
 });
 
 test('real word formatting, inspector focus, reprojection, history and saved document',async({page})=>{
- await seed(page,{text:'AVATAR   To WA more words across rows',w:170,textAlign:'justify'},experimental);await edit(page);
+ await seed(page,{text:'AVATAR   To WA more words across rows',w:170,textAlign:'justify'});await edit(page);
  const p=await pointAt(page,3);await page.mouse.dblclick(p.x,p.y);expect(await selection(page)).toEqual({anchor:0,focus:6});
  await page.locator('#inspector [data-fill-open=fill]').click();await expect(page.locator(surface)).toBeFocused();
  await page.locator('#fillPopover [data-fill-palette="#ff0000"]').click();
@@ -122,21 +122,23 @@ test('real word formatting, inspector focus, reprojection, history and saved doc
  await page.reload();const docs=await records(page,'docs'),stored=docs.find(d=>d.elements.some(e=>e.id==='title'));await openLibraryDocument(page,stored.id);await edit(page);expect(await model(page)).toEqual(changed);
 });
 
-for(const url of ['/',experimental+'&experimentalTextWysiwyg=0'])test(`safe textarea range formatting ${url}`,async({page})=>{
+for(const url of [optOut,'/?experimentalTextWysiwyg=0','/?experimentalJustifyWysiwyg=1&experimentalTextWysiwyg=0'])test(`safe textarea range formatting ${url}`,async({page})=>{
  await seed(page,{text:'AVATAR   To WA',w:170,textAlign:'justify'},url);await edit(page,false);const before=await model(page);
  await page.locator('#inlineText').evaluate(e=>e.setSelectionRange(0,6));
- await page.locator('#inspector [data-text-decoration=underline]').click();await expect(page.locator('#toast')).toContainText('Форматирование выделения justify');expect(await model(page)).toEqual(before);
+ await page.locator('#inspector [data-text-decoration=underline]').click();await expect(page.locator('#toast')).toContainText('Форматирование выделенного диапазона недоступно');expect(await model(page)).toEqual(before);
  await page.locator('#inspector [data-fill-open=fill]').click();await page.locator('#fillPopover [data-fill-palette="#ff0000"]').click();expect(await model(page)).toEqual(before);
- await page.locator('#fillPopover [data-fill-close]').click();await page.locator('#inlineText').focus();await page.locator('#inlineText').evaluate(e=>e.setSelectionRange(0,0));
+ await page.locator('#fillPopover [data-fill-close]').click();
+ for(const kind of ['fill','stroke'])for(const action of ['HEX','RGB','hue','alpha input','preset']){await paletteAction(page,kind,action);expect(await model(page)).toEqual(before)}
+ await page.locator('#inlineText').focus();await page.locator('#inlineText').evaluate(e=>e.setSelectionRange(0,0));
  await page.locator('#inspector [data-text-decoration=underline]').click();expect((await model(page)).underline).toBe(true);
 });
 
-for(const textAlign of ['left','center','right'])test(`experimental flag retains native ${textAlign}`,async({page})=>{
- await seed(page,{text:'AVATAR   To WA',w:170,textAlign},experimental);await edit(page);await select(page,0,6);await page.keyboard.type('X');expect((await model(page)).text).toBe('X   To WA');await page.keyboard.press('Control+z');expect((await model(page)).text).toBe('AVATAR   To WA');
+for(const textAlign of ['left','center','right'])test(`justify opt-out retains native ${textAlign}`,async({page})=>{
+ await seed(page,{text:'AVATAR   To WA',w:170,textAlign},optOut);await edit(page);await select(page,0,6);await page.keyboard.type('X');expect((await model(page)).text).toBe('X   To WA');await page.keyboard.press('Control+z');expect((await model(page)).text).toBe('AVATAR   To WA');
 });
 
 test('justify Canvas/PNG and live ink keep strict pixel tolerances',async({page},info)=>{
- await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify',strokeWidth:2,stroke:'#cc2244',strokeOpacity:60,fillOpacity:75,underline:true,textRuns:[{start:9,end:11,style:{textColor:'#ff0000',strikethrough:true}}]},experimental);await edit(page);await parity(page,info,'justify');
+ await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify',strokeWidth:2,stroke:'#cc2244',strokeOpacity:60,fillOpacity:75,underline:true,textRuns:[{start:9,end:11,style:{textColor:'#ff0000',strikethrough:true}}]});await edit(page);await parity(page,info,'justify');
 });
 
 // Hold only the adapter's post-click task and Selectionchange notification.
@@ -148,7 +150,7 @@ async function holdCorrection(page){await page.addInitScript(()=>{
  window.releaseJustify=()=>{window.holdJustify=false;for(const fn of window.pendingJustify.splice(0))fn()};
 })}
 test('post-click input guard and stale callbacks across inspector, zoom and close',async({page})=>{
- await holdCorrection(page);await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify'},experimental);await edit(page);
+ await holdCorrection(page);await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify'});await edit(page);
  await page.evaluate(()=>window.holdJustify=true);let p=await spacePoint(page);await page.mouse.click(p.x,p.y);expect(await page.evaluate(()=>window.pendingJustify.length)).toBeGreaterThan(0);await page.keyboard.type('X');
  expect((await model(page)).text).toBe('AVATARX   To WA more words');await page.evaluate(()=>window.releaseJustify());await page.keyboard.press('Control+z');
  for(const action of ['inspector','zoom','close']){
@@ -162,10 +164,10 @@ test('post-click input guard and stale callbacks across inspector, zoom and clos
  await expect(page.locator(surface)).toBeHidden();expect((await model(page)).text).toBe('AVATAR   To WA more words');
 });
 
-for(const [name,patch] of [['rotation',{rotation:10}],['mask',{mask:true}],['effect',{effects:[{type:'blur',enabled:true}]}],['vertical',{textMode:'vertical'}]])test(`experimental justify retains ${name} fallback`,async({page})=>{await seed(page,{text:'AVATAR   To WA',w:170,textAlign:'justify',...patch},experimental);await edit(page,false)});
+for(const [name,patch] of [['rotation',{rotation:10}],['mask',{mask:true}],['effect',{effects:[{type:'blur',enabled:true}]}],['vertical',{textMode:'vertical'}],['path',{textMode:'path'}],['unavailable font',{fontFamily:'Unavailable WYSIWYG Test Font'}]])test(`default justify retains ${name} fallback`,async({page})=>{await seed(page,{text:'AVATAR   To WA',w:170,textAlign:'justify',...patch});await edit(page,false);const before=await model(page);await page.locator('#inlineText').evaluate(e=>e.setSelectionRange(0,6));await page.locator('#inspector [data-text-decoration=underline]').click();await expect(page.locator('#toast')).toContainText('Форматирование выделенного диапазона недоступно');expect(await model(page)).toEqual(before)});
 
 for(const cancellation of ['pointercancel','transform','composition'])test(`pending click invalidation: ${cancellation}`,async({page})=>{
- await holdCorrection(page);await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify'},experimental);await edit(page);
+ await holdCorrection(page);await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify'});await edit(page);
  await page.evaluate(()=>window.holdJustify=true);const p=await spacePoint(page);await page.mouse.click(p.x,p.y);
  expect(await page.evaluate(()=>window.pendingJustify.length)).toBeGreaterThan(0);
  await page.locator(surface).evaluate((host,cancellation)=>{
@@ -178,14 +180,14 @@ for(const cancellation of ['pointercancel','transform','composition'])test(`pend
  await page.evaluate(()=>window.releaseJustify());expect(await selection(page)).toEqual({anchor:0,focus:0});expect((await model(page)).text).toBe('AVATAR   To WA more words');
 });
 
-test('experimental justify keeps mobile textarea',async({page})=>{
- await seed(page,{text:'AVATAR   To WA',w:170,textAlign:'justify'},experimental);await page.setViewportSize({width:700,height:900});
+test('default justify keeps mobile textarea',async({page})=>{
+ await seed(page,{text:'AVATAR   To WA',w:170,textAlign:'justify'});await page.setViewportSize({width:700,height:900});
  const p=await canvasPoint(page,55,57);await page.mouse.dblclick(p.x,p.y);await expect(page.locator('#inlineText')).toBeVisible();await expect(page.locator(surface)).toBeHidden();
 });
 
 // Stage 2B.2 gate: the adapter must also exist in sessions opened as left.
 test('late justify activation: first space and immediate input',async({page})=>{
- await seed(page,{text:'AVATAR   To WA more words across rows',w:170,textAlign:'left'},experimental);await edit(page);
+ await seed(page,{text:'AVATAR   To WA more words across rows',w:170,textAlign:'left'});await edit(page);
  await select(page,0,6);
  await page.locator(surface).evaluate(host=>window.originalJustifyHost=host);
  for(const value of ['justify','left','justify']){
@@ -202,7 +204,7 @@ test('late justify activation: first space and immediate input',async({page})=>{
 
 const alignmentButton=(page,value)=>page.locator(`#inspector [data-align-scope=text] [data-align=${value==='center'?'hcenter':value}]`);
 for(const verticalAlign of ['top','middle','bottom'])test(`four live alignments, history and LF rows: ${verticalAlign}`,async({page})=>{
- await seed(page,{text:'AVATAR   To WA more words\nA😀 é 👩‍💻 end',w:170,verticalAlign,textRuns:[{start:9,end:11,style:{textColor:'#ff0000'}}]},experimental);await edit(page);
+ await seed(page,{text:'AVATAR   To WA more words\nA😀 é 👩‍💻 end',w:170,verticalAlign,textRuns:[{start:9,end:11,style:{textColor:'#ff0000'}}]});await edit(page);
  const host=await page.locator(surface).elementHandle();let previous=await model(page);
  await select(page,21,9);
  for(const value of ['justify','left','center','justify','right','center','justify']){
@@ -220,8 +222,8 @@ for(const verticalAlign of ['top','middle','bottom'])test(`four live alignments,
  await page.reload();const stored=(await records(page,'docs')).find(d=>d.elements.some(e=>e.id==='title'));await openLibraryDocument(page,stored.id);await edit(page);expect(await model(page)).toEqual(previous);
 });
 
-test('justify button keyboard activation and ordinary live session fallback',async({page})=>{
- await seed(page,{text:'AVATAR   To WA',w:170});await edit(page);await select(page,0,6);
+test('justify button keyboard activation and explicit opt-out session fallback',async({page})=>{
+ await seed(page,{text:'AVATAR   To WA',w:170,textRuns:[{start:9,end:11,style:{fontWeight:'700',textColor:'#cc2244'}}]},optOut);await edit(page);await select(page,0,6);
  await page.keyboard.type('EDITED');await select(page,6,0);const before=await model(page);
  const button=alignmentButton(page,'justify');await button.focus();await button.press('Space');
  await expect(page.locator(surface)).toBeHidden();await expect(page.locator('#inlineText')).toBeVisible();
@@ -233,7 +235,7 @@ test('justify button keyboard activation and ordinary live session fallback',asy
 });
 
 test('typography multi-select alignment changes no frame coordinates',async({page})=>{
- await seed(page,{text:'AVATAR   To WA',w:170},experimental);
+ await seed(page,{text:'AVATAR   To WA',w:170});
  await page.locator('#layers [data-layer=title] .layer-name').click();
  await page.locator('#inspector [data-action=duplicate]').click();
  await page.locator('#layers [data-layer=title] .layer-name').click({modifiers:['Control']});
@@ -245,7 +247,7 @@ test('typography multi-select alignment changes no frame coordinates',async({pag
 });
 
 test('alignment invalidates held post-click work from a session opened left',async({page})=>{
- await holdCorrection(page);await seed(page,{text:'AVATAR   To WA more words',w:170},experimental);await edit(page);
+ await holdCorrection(page);await seed(page,{text:'AVATAR   To WA more words',w:170});await edit(page);
  await alignmentButton(page,'justify').click();await page.evaluate(()=>window.holdJustify=true);
  const p=await spacePoint(page);await page.mouse.click(p.x,p.y);expect(await page.evaluate(()=>window.pendingJustify.length)).toBeGreaterThan(0);
  await alignmentButton(page,'left').click();await select(page,9,11);
@@ -290,7 +292,7 @@ async function assertRangeChange(page,before,after,start,end,patch){
   if(patch.fontStyle)expect(f.style).toBe(patch.fontStyle);
   if(patch.fontSize)expect(f.size).toBeCloseTo(patch.fontSize*after.fontSize/(after.textRunsBaseFontSize||after.fontSize),3);
   if(patch.letterSpacing)expect(f.spacing).toBe(patch.letterSpacing);
-  if(patch.textColor)expect(f.color).toBe('rgb(204, 34, 68)');
+  if(patch.textColor)expect(f.color).toBe('rgb('+patch.textColor.slice(1).match(/../g).map(v=>parseInt(v,16)).join(', ')+')');
  }
  expect(await page.locator('[data-text-stroke-overlay]').evaluate(c=>getComputedStyle(c).display)).toBe('block');
 }
@@ -303,7 +305,7 @@ const styleGroups={
 };
 for(const [group,operations] of Object.entries(styleGroups))test(`justify full range styles: ${group}`,async({page},info)=>{
  test.setTimeout(120000);
- await seed(page,{text:'AVATAR   To WA more words\nlast line',w:170,textAlign:'justify',strokeWidth:1,stroke:'#111111',textRuns:[{start:0,end:2,style:{textColor:'#ff0000'}},{start:10,end:11,style:{letterSpacing:.5}}]},experimental);await edit(page);
+ await seed(page,{text:'AVATAR   To WA more words\nlast line',w:170,textAlign:'justify',strokeWidth:1,stroke:'#111111',textRuns:[{start:0,end:2,style:{textColor:'#ff0000'}},{start:10,end:11,style:{letterSpacing:.5}}]});await edit(page);
  await select(page,11,9);
  for(const [key,value,patch] of operations){
   const before=await model(page),inkBefore=await page.locator('[data-text-stroke-overlay]').evaluate(c=>c.toDataURL());await rangeOperation(page,key,value);const changed=await model(page);
@@ -317,7 +319,7 @@ for(const [group,operations] of Object.entries(styleGroups))test(`justify full r
 });
 
 for(const autoFontSize of [false,true])test(`justify range font size, cancellation and Mixed auto=${autoFontSize}`,async({page},info)=>{
- await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify',autoFontSize,strokeWidth:1,textRuns:[{start:0,end:6,style:{fontFamily:'Georgia'}}]},experimental);await edit(page);
+ await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify',autoFontSize,strokeWidth:1,textRuns:[{start:0,end:6,style:{fontFamily:'Georgia'}}]});await edit(page);
  const original=await model(page);await select(page,0,11);await expect(page.locator('#inspector [data-font-current]')).toHaveText('Mixed');
  await select(page,11,9);await rangeOperation(page,'fontSize',28);const changed=await model(page);
  expect(changed.autoFontSize).toBe(false);await expect(page.locator('#inspector [data-text-auto-font]')).not.toBeChecked();
@@ -333,7 +335,7 @@ for(const autoFontSize of [false,true])test(`justify range font size, cancellati
 
 for(const kind of ['spaces','unicode cross rows'])test(`justify exact source range: ${kind}`,async({page},info)=>{
  const text='AVATAR   To WA\né 😀 👩‍💻 more words';
- await seed(page,{text,w:170,textAlign:'justify',strokeWidth:1},experimental);await edit(page);
+ await seed(page,{text,w:170,textAlign:'justify',strokeWidth:1});await edit(page);
  const start=kind==='spaces'?6:9,end=kind==='spaces'?9:text.indexOf(' more');await select(page,end,start);
  const before=await model(page);await rangeOperation(page,'strikethrough',true);const changed=await model(page);
  expect(changed.textRuns).toEqual([{start,end,style:{strikethrough:true}}]);await assertRangeChange(page,before,changed,start,end,{strikethrough:true});
@@ -343,14 +345,14 @@ for(const kind of ['spaces','unicode cross rows'])test(`justify exact source ran
 });
 
 test('justify styled JSON export/import preserves the document and editing',async({page,browser})=>{
- await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify',strokeWidth:1},experimental);await edit(page);await select(page,9,11);
+ await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify',strokeWidth:1});await edit(page);await select(page,9,11);
  await rangeOperation(page,'fontVariant','700:italic');await rangeOperation(page,'fillOpacity',60);await alignmentButton(page,'right').click();await alignmentButton(page,'justify').click();
  const changed=await model(page);await page.keyboard.press('Control+Enter');
  const pending=page.waitForEvent('download');await page.locator('#jsonExportBtn').evaluate(el=>el.click());const download=await pending;
  const payload=JSON.parse(require('node:fs').readFileSync(await download.path(),'utf8'));
  const context=await browser.newContext({baseURL:'http://127.0.0.1:4173',viewport:{width:1600,height:1100},acceptDownloads:true,serviceWorkers:'block'});
  try{
-  const imported=await context.newPage();await openHome(imported,experimental);await importPayload(imported,payload);await expect(imported.locator('#toast')).toContainText('Документ импортирован');
+  const imported=await context.newPage();await openHome(imported);await importPayload(imported,payload);await expect(imported.locator('#toast')).toContainText('Документ импортирован');
   const stored=(await records(imported,'docs')).find(d=>d.elements.some(e=>e.text===changed.text));await openLibraryDocument(imported,stored.id);
   const restored=stored.elements.find(e=>e.text===changed.text);expect({...restored,id:changed.id}).toEqual(changed);
   await imported.locator(`#layers [data-layer="${restored.id}"] .layer-name`).click();const p=await canvasPoint(imported,55,57);await imported.mouse.dblclick(p.x,p.y);await expect(imported.locator(surface)).toBeFocused();
@@ -359,11 +361,133 @@ test('justify styled JSON export/import preserves the document and editing',asyn
 });
 
 test('late justify keyboard and rapid click regressions',async({page})=>{
- await seed(page,{text:'AVATAR   To WA more words across rows',w:170},experimental);await edit(page);await alignmentButton(page,'justify').click();const original=await model(page);
+ await seed(page,{text:'AVATAR   To WA more words across rows',w:170});await edit(page);await alignmentButton(page,'justify').click();const original=await model(page);
  await select(page,6,6);await page.keyboard.press('ArrowRight');expect(await selection(page)).toEqual({anchor:7,focus:7});await page.keyboard.press('ArrowLeft');expect(await selection(page)).toEqual({anchor:6,focus:6});
  await page.keyboard.press('Home');expect(await selection(page)).toEqual({anchor:0,focus:0});await page.keyboard.press('End');const end=await selection(page);expect(end.focus).toBeGreaterThan(6);expect(end.focus).toBeLessThan(original.text.length);
  await select(page,0,0);await page.keyboard.press('ArrowDown');const down=await selection(page);expect(down.focus).toBeGreaterThan(0);await page.keyboard.press('ArrowUp');expect(await selection(page)).toEqual({anchor:0,focus:0});
  await select(page,6,6);await page.keyboard.press('Enter');expect((await model(page)).text).toBe('AVATAR\n   To WA more words across rows');await page.keyboard.press('Control+z');expect(await model(page)).toEqual(original);
  for(const fraction of [.8,.4,.8,.4]){const p=await spacePoint(page,fraction);await page.mouse.click(p.x,p.y)}
  await page.keyboard.type('X');expect((await model(page)).text).toBe('AVATARX   To WA more words across rows');
+});
+
+test('default URL smoke: opens justify, switches left to justify and types palette HEX',async({page})=>{
+ await seed(page,{text:'AVATAR   To WA more words',w:170,textAlign:'justify'});
+ expect(new URL(page.url()).search).toBe('');await edit(page);
+ await alignmentButton(page,'left').click();await select(page,9,11);
+ const host=await page.locator(surface).elementHandle();await alignmentButton(page,'justify').click();
+ expect(await host.evaluate(h=>h===document.querySelector('#inlineWysiwyg'))).toBe(true);
+ expect(await selection(page)).toEqual({anchor:9,focus:11});
+ await rangeOperation(page,'textColor','#cc2244');
+ expect((await model(page)).textRuns).toEqual([{start:9,end:11,style:{textColor:'#cc2244'}}]);
+});
+
+const russianText='Команда готовит новый выпуск редактора: дизайнер проверяет длинные предложения, а инженер сравнивает Canvas и PNG при масштабе 80%. Здесь есть  2 пробела, API v3, UTF-16 и обычная кириллица — всё должно оставаться на своих местах.\n\nВо втором абзаце обсуждаем WYSIWYG, IndexedDB и сохранение документа. После переключения выравнивания слова переносятся внутри рамки; исходные символы, числа 12345 и знаки пунктуации сохраняются без изменений.\n\nПеред публикацией команда меняет несколько слов, проверяет цвета и экспортирует изображение. Этот реалистичный текст помогает заметить потерю выделения и неожиданный выход строк за границы текстового слоя.';
+test('ordinary URL Russian document at 80%: four alignments, edits, save and PNG',async({page},info)=>{
+ await seed(page,{text:russianText,w:600,h:720,fontSize:20},'/',{width:640,height:800});
+ expect(new URL(page.url()).search).toBe('');await edit(page);await zoom(page,80);await select(page,7,0);
+ const host=await page.locator(surface).elementHandle(),before=await model(page);
+ for(const value of ['left','justify','center','right','justify']){
+  await alignmentButton(page,value).click();await expect(page.locator(surface)).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();
+  expect(await host.evaluate(h=>h===document.querySelector('#inlineWysiwyg'))).toBe(true);
+  expect(await selection(page)).toEqual({anchor:7,focus:0});expect(await model(page)).toEqual({...before,textAlign:value});
+  expect(await page.locator(surface).textContent()).toBe(russianText);
+  const geometry=await page.locator(surface).evaluate(h=>{const frame=h.getBoundingClientRect();return [...h.querySelectorAll('[data-wysiwyg-row]')].filter(row=>row.textContent.trimEnd()).map(row=>{const range=document.createRange();range.selectNodeContents(row);let remaining=row.textContent.trimEnd().length;const walker=document.createTreeWalker(row,NodeFilter.SHOW_TEXT);let node;while(node=walker.nextNode()){if(remaining<=node.length){range.setEnd(node,remaining);break}remaining-=node.length}const r=range.getBoundingClientRect();return {left:r.left-frame.left,right:r.right-frame.right,bottom:r.bottom-frame.bottom}})});
+  // Justify preserves source trailing whitespace beyond the last glyph.
+  // Check visible content bounds, while exact source equality above keeps LF/spaces.
+  for(const row of geometry){expect(row.left).toBeGreaterThanOrEqual(-1);expect(row.right).toBeLessThanOrEqual(1);expect(row.bottom).toBeLessThanOrEqual(1)}
+ }
+ // Playwright Firefox implements non-US keyboard.type through IME composition.
+ // Use ordinary key events here; the separate protocol test keeps IME recovery covered.
+ let expected=russianText;
+ for(const [word,replacement] of [['Canvas','Canvas2D'],['PNG','PNG32']]){
+  const start=expected.indexOf(word);await select(page,start,start+word.length);await page.keyboard.type(replacement);
+  expected=expected.slice(0,start)+replacement+expected.slice(start+word.length);
+  await expect(page.locator('#wysiwygRecovery')).toBeHidden();expect((await model(page)).text).toBe(expected);
+ }
+ const changed=await model(page);expect(changed.text).toBe(expected);
+ await info.attach('ordinary-url-80-percent.png',{body:await page.screenshot(),contentType:'image/png'});
+ await zoom(page,100);await page.keyboard.press('Control+Enter');
+ await expect.poll(async()=>(await records(page,'docs')).find(d=>d.elements.some(e=>e.id==='title')).elements.find(e=>e.id==='title')).toEqual(changed);
+ const point=await canvasPoint(page,630,790,640,800);await page.mouse.click(point.x,point.y);
+ const canvas=await page.locator('#canvas').evaluate(c=>[...c.getContext('2d').getImageData(0,0,c.width,c.height).data]);
+ const png=await exportPNG(page,640,800);expect(diff(canvas,png.image.data).max).toBeLessThanOrEqual(1);
+ await page.reload();expect(new URL(page.url()).search).toBe('');const stored=(await records(page,'docs')).find(d=>d.elements.some(e=>e.id==='title'));await openLibraryDocument(page,stored.id);await edit(page);expect(await model(page)).toEqual(changed);
+});
+
+async function keyboardField(page,locator,value){
+ await locator.click();await expect(locator).toBeFocused();await locator.fill('');await locator.pressSequentially(String(value));await expect(locator).toBeFocused();await locator.press('Tab');
+}
+async function paletteAction(page,kind,action){
+ await page.locator(`#inspector [data-fill-open=${kind}]`).click();
+ if(action==='HEX')await keyboardField(page,page.locator('#fillPopover [data-cp-part="0"]'),'#224466');
+ if(action==='RGB'){
+  await page.locator('#cpFormat').focus();await expect(page.locator('#cpFormat')).toBeFocused();await page.locator('#cpFormat').selectOption('RGB');
+  await keyboardField(page,page.locator('#fillPopover [data-cp-part="0"]'),200);
+ }
+ if(action==='hue'||action==='alpha slider'){
+  const slider=page.locator(action==='hue'?'#cpHue':'#cpAlpha');await slider.focus();await expect(slider).toBeFocused();await slider.press('ArrowLeft');
+ }
+ if(action==='alpha input')await keyboardField(page,page.locator('#cpAlphaInput'),42);
+ if(action==='preset')await page.locator('#fillPopover [data-fill-palette="#ff0000"]').first().click();
+ await page.locator('#fillPopover [data-fill-close]').click();
+}
+for(const editing of [true,false])test(`ordinary URL palette real keyboard, sliders, preset and history editing=${editing}`,async({page},info)=>{
+ test.setTimeout(120000);
+ await seed(page,{text:'Соседнее слово рядом',textAlign:'justify',strokeWidth:1});expect(new URL(page.url()).search).toBe('');
+ if(editing){await edit(page);await select(page,14,9)}else await page.locator('#layers [data-layer=title] .layer-name').click();
+ await page.evaluate(()=>{window.paletteEvents=[];for(const type of ['input','change'])document.querySelector('#fillPopover').addEventListener(type,e=>window.paletteEvents.push({type,id:e.target.id,part:e.target.dataset.cpPart}))});
+ for(const kind of ['fill','stroke'])for(const action of ['HEX','RGB','hue','alpha slider','alpha input','preset']){
+  const before=await model(page),key=action.startsWith('alpha')?(kind==='fill'?'fillOpacity':'strokeOpacity'):(kind==='fill'?'textColor':'stroke');
+  const inkBefore=await page.locator(editing?'[data-text-stroke-overlay]':'#canvas').evaluate(c=>c.toDataURL());
+  await page.evaluate(()=>window.paletteEvents=[]);await paletteAction(page,kind,action);const changed=await model(page);
+  const value=editing?effective(changed,9,key):changed[key];expect(value).not.toEqual(editing?effective(before,9,key):before[key]);
+  if(action==='HEX')expect(value).toBe('#224466');if(action==='RGB')expect(value).toBe('#c84466');if(action==='alpha input')expect(value).toBe(42);if(action==='preset')expect(value).toBe('#ff0000');
+  if(action!=='preset'){
+   const events=await page.evaluate(()=>window.paletteEvents);expect(events.some(e=>e.type==='input')).toBe(true);expect(events.some(e=>e.type==='change')).toBe(true);
+  }
+  if(editing){await assertRangeChange(page,before,changed,9,14,{[key]:value});await page.locator(surface).focus();expect(await selection(page)).toEqual({anchor:14,focus:9})}
+  else {expect(changed.text).toBe(before.text);expect(changed.textRuns).toBeUndefined()}
+  expect(await page.locator(editing?'[data-text-stroke-overlay]':'#canvas').evaluate(c=>c.toDataURL())).not.toBe(inkBefore);
+  if(editing)await page.keyboard.press('Control+z');else await page.locator('#undoBtn').click();expect(await model(page)).toEqual(before);
+  if(editing)await page.keyboard.press('Control+Shift+z');else await page.locator('#redoBtn').click();expect(await model(page)).toEqual(changed);
+ }
+ if(editing)await parity(page,info,'real-palette');
+});
+
+for(const textAlign of ['left','center','right','justify'])test(`global Text=0 disables ${textAlign}`,async({page})=>{
+ await seed(page,{textAlign},'/?experimentalTextWysiwyg=0');await edit(page,false);
+});
+
+for(const kind of ['fill','stroke'])test(`collapsed justify selection palette keeps existing ${kind} semantics`,async({page})=>{
+ await seed(page,{text:'Соседнее слово рядом',textAlign:'justify',strokeWidth:1});await edit(page);await select(page,0,0);const before=await model(page);
+ await paletteAction(page,kind,'HEX');const changed=await model(page);
+ if(kind==='fill'){expect(changed.textColor).toBe('#224466');expect(changed.text).toBe(before.text);expect(changed.textRuns).toBeUndefined()}
+ else {expect(changed).toEqual(before);await expect(page.locator('#toast')).toContainText('Выделите фрагмент')}
+});
+test.describe('default justify coarse pointer',()=>{
+ test.use({hasTouch:true});
+ test('desktop-sized coarse pointer retains textarea',async({page})=>{
+  await seed(page,{textAlign:'justify'});expect(await page.evaluate(()=>matchMedia('(pointer:coarse)').matches)).toBe(true);await edit(page,false);
+ });
+});
+
+test('Unicode automation preserves native input or explicit composition recovery',async({page,browserName},info)=>{
+ const text='Команда проверяет Canvas и PNG';await seed(page,{text,textAlign:'justify'});await edit(page);await select(page,0,7);
+ const before=await model(page);
+ await page.locator(surface).evaluate(host=>{
+  window.unicodeInputEvents=[];
+  for(const type of ['keydown','compositionstart','compositionend','beforeinput','input'])host.addEventListener(type,e=>window.unicodeInputEvents.push({type,inputType:e.inputType,isComposing:e.isComposing,data:e.data}));
+ });
+ // In Playwright 1.64.1 Firefox, Page.insertText uses commitCompositionWith.
+ // This automation path is not a qualification of a real OS keyboard or IME.
+ await page.keyboard.type('Группа');const events=await page.evaluate(()=>window.unicodeInputEvents);
+ await info.attach('unicode-protocol-input.json',{body:JSON.stringify(events),contentType:'application/json'});
+ if(browserName==='firefox'){
+  expect(events.some(e=>e.type==='compositionstart')).toBe(true);expect(events.some(e=>e.type==='compositionend')).toBe(true);
+  await expect(page.locator('#wysiwygRecovery')).toBeVisible();expect(await model(page)).toEqual(before);
+  const stored=(await records(page,'docs')).find(d=>d.elements.some(e=>e.id==='title'));expect(stored.elements.find(e=>e.id==='title')).toEqual(before);
+  await page.locator('#wysiwygRecover').click();await expect(page.locator(surface)).toHaveText(text);await expect(page.locator('#wysiwygRecovery')).toBeHidden();expect(await model(page)).toEqual(before);
+ }else{
+  await expect(page.locator('#wysiwygRecovery')).toBeHidden();expect((await model(page)).text).toBe('Группа'+text.slice(7));
+ }
 });

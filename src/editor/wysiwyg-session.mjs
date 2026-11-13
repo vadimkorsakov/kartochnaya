@@ -12,17 +12,31 @@ function lineHeight(style) {
 }
 // CSS inline baselines need not equal Canvas fontBoundingBox baselines.
 // Measure the actual inline baseline before positioning any editable glyphs.
-function unifiedDOMOffset(base, projection, text) {
+function unifiedDOMOffset(base, projection, text, offsets) {
+ const sample=text.split('\n')[0]||'Mg';
+ // Color/alpha previews do not change the CSS baseline. Keep the text in the
+ // key too: fallback glyphs can use different font metrics within one family.
+ const key=JSON.stringify([richTextFont(base),base.letterSpacing,projection.height,projection.baseline,sample]);
+ if(offsets.has(key))return offsets.get(key);
  const probe=document.createElement('div'),baseline=document.createElement('span');
  Object.assign(probe.style,{position:'fixed',left:'-100000px',top:'0',visibility:'hidden',padding:'0',margin:'0',border:'0',font:richTextFont(base),fontKerning:'normal',lineHeight:projection.height+'px',letterSpacing:base.letterSpacing+'px',whiteSpace:'break-spaces',width:'max-content'});
  baseline.style.cssText='display:inline-block;width:0;height:0;padding:0;margin:0;border:0;vertical-align:baseline;line-height:0';
- probe.append(document.createTextNode(text.split('\n')[0]||'Mg'),baseline);document.body.append(probe);
- try {return projection.baseline-(baseline.getBoundingClientRect().bottom-probe.getBoundingClientRect().top);}
+ probe.append(document.createTextNode(sample),baseline);document.body.append(probe);
+ try {
+  const offset=projection.baseline-(baseline.getBoundingClientRect().bottom-probe.getBoundingClientRect().top);
+  if(offsets.size>=512)offsets.clear();
+  offsets.set(key,offset);return offset;
+ }
  finally {probe.remove();}
 }
+// Justify shares the desktop default; the explicit opt-out is URL-only.
+export function justifyWysiwygEnabled() {
+ const params=new URLSearchParams(location.search);
+ return params.get('experimentalTextWysiwyg')!=='0'&&params.get('experimentalJustifyWysiwyg')!=='0';
+}
+
 export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=()=>false) {
- const experimentalJustify=new URLSearchParams(location.search).get('experimentalJustifyWysiwyg')==='1';
- if(e.textAlign==='justify'&&!experimentalJustify)return false;
+ if(e.textAlign==='justify'&&!justifyWysiwygEnabled())return false;
  // Rich inline editing is the desktop default. The explicit =0 switch is
  // retained only for diagnosis and for fallback-focused regression tests.
  // A previous opt-in gate left normal users on plain textarea, making range
@@ -43,6 +57,8 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  const safe={phase:'confirmed', deferred:false};
  let savedSelection=null, preview=null, verticalX=null;
  const abort=new AbortController(), listen=(name,fn)=>host.addEventListener(name,fn,{signal:abort.signal});
+ const baselineOffsets=new Map();
+ for(const type of ['loadingdone','loadingerror'])document.fonts.addEventListener(type,()=>baselineOffsets.clear(),{signal:abort.signal});
  const overlay=document.createElement('canvas');overlay.dataset.textStrokeOverlay='';overlay.setAttribute('aria-hidden','true');
  Object.assign(overlay.style,{position:'absolute',pointerEvents:'none',transformOrigin:'0 0',zIndex:'7',display:'none'});
  host.after(overlay);
@@ -103,13 +119,14 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    const parts=row.fragments.length?row.fragments:[{text:'',style:row.emptyStyle||base,x:row.x}];
    for(let i=0;i<parts.length;i++){
     const part=parts[i],span=document.createElement('span');span.dataset.wysiwygFragment='';
-    const offset=unifiedDOMOffset(part.style,{height:row.height,baseline:row.baseline-row.y},part.text);
+    const offset=unifiedDOMOffset(part.style,{height:row.height,baseline:row.baseline-row.y},part.text,baselineOffsets);
     span.append(document.createTextNode(part.text));
     // Source newlines live with their preceding row, including empty rows.
     if(i===parts.length-1&&row.nextStart>row.end)span.firstChild.data+=value.text.slice(row.end,row.nextStart);
     Object.assign(span.style,{position:'relative',display:'inline-block',verticalAlign:'top',marginLeft:part.x-advance+'px',top:offset+'px',height:row.height+'px',
      font:richTextFont(part.style),fontKerning:'normal',lineHeight:row.height+'px',letterSpacing:part.style.letterSpacing+'px',
      color:part.style.textColor,whiteSpace:'pre',overflowWrap:'normal'});
+    span.style.setProperty('--wysiwyg-ink',part.style.textColor);
     rowNode.append(span);ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';ctx.fontKerning='normal';const naturalWidth=ctx.measureText(part.text).width;
     const expanded=part.text===' '&&row.justification?.spaces.includes(part.start);
     if(expanded)span.style.wordSpacing=(part.width-naturalWidth)+'px';

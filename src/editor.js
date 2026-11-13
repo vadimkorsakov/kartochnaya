@@ -1,5 +1,5 @@
 import { nextZoom, parseZoomPercent } from './core/zoom.mjs';
-import {eligibleWysiwyg, createWysiwygSession} from './editor/wysiwyg-session.mjs';
+import {eligibleWysiwyg, justifyWysiwygEnabled, createWysiwygSession} from './editor/wysiwyg-session.mjs';
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from './render/text-stroke.mjs';
 import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
 import { applyTextStyle, updateText, transformText, replaceText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
@@ -2387,7 +2387,7 @@ function styleInlineLayer(key,value,final){
 function styleInlineSelection(key,value,final){
  if(!app.wysiwyg&&app.editingId&&active()?.textAlign==='justify'&&['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key)){
   rememberInlineCaret();const c=app.inlineCaret;
-  if(c&&c.end>c.start){toast('Форматирование выделения justify доступно в экспериментальном WYSIWYG. Снимите выделение для изменения всего слоя.');return true;}
+  if(c&&c.end>c.start){toast('Форматирование выделенного диапазона недоступно в текущем режиме. Снимите выделение для изменения всего слоя.');return true;}
  }
 
  // Legacy textarea and specialized modes keep layer-wide stroke alpha/style.
@@ -3470,11 +3470,11 @@ function alignPicked(action,scope='all'){
   const texts=es.filter(e=>e.type==='text');if(!texts.length)return;
   const e=texts[0];
   if(app.wysiwyg&&e.id===app.editingId){
-   if(value!=='justify'||new URLSearchParams(location.search).get('experimentalJustifyWysiwyg')==='1'){
+   if(value!=='justify'||justifyWysiwygEnabled()){
     if(!app.wysiwyg.applyLayerStyle({[key]:value},{key,final:true}))toast('Выравнивание недоступно в WYSIWYG');
     return;
    }
-   if(!fallbackInlineWysiwyg('Выравнивание по ширине требует experimentalJustifyWysiwyg=1'))return;
+   if(!fallbackInlineWysiwyg('WYSIWYG для выравнивания по ширине отключён в текущем режиме'))return;
   }
   if(app.inlineSession)recordInlineSession();
   for(const text of texts)text[key]=value;
@@ -3651,7 +3651,7 @@ function pickerRangeFill(){return !!app.wysiwyg&&['fill','textColor'].includes(c
 function pickerRangeAlpha(){return pickerRangeFill()||!!app.wysiwyg&&currentPickerKey()==='stroke';}
 function cpCurrentAlpha(){if(pickerRangeAlpha()&&inlineStyleRange()){const c=inlineStyleRange(),values=richTextSpans(active()).filter(p=>p.start<c.end&&p.end>c.start).map(p=>p.style[pickerAlphaKey()]);return values.every(v=>v===values[0])?values[0]:'mixed';}if($('#fillPopover').dataset.key==='_effect')return 100;if($('#fillPopover').dataset.key==='_ink')return app.inkSettings.alpha;if($('#fillPopover').dataset.key==='_docBackground')return app.doc.backgroundAlpha??100;if(currentPickerKey()==='gradientStop')return getGradientStop()?.alpha??100;const k=pickerAlphaKey();return Number((active()||picked()[0])?.[k]??100)}
 function updatePickerColor(hex,final=false){hex=normalizeHex(hex);if(!hex)return;const k=currentPickerKey(),e=active();
- if(['fill','textColor','stroke'].includes(k)&&styleInlineSelection(k==='stroke'?'stroke':'textColor',hex,final)){refreshPickerVisual(false);return}
+ if(['fill','textColor','stroke'].includes(k)&&styleInlineSelection(k==='stroke'?'stroke':'textColor',hex,final))return;
  if(app.wysiwyg&&!fallbackInlineWysiwyg('Цвет слоя'))return;
  if(k==='_effect'){const p=$('#fillPopover'),field=p.dataset.effectField||'color';
   const {e,effect,legacyKey}=effectColorBinding(p.dataset.effectType,field,p.dataset.effectId);

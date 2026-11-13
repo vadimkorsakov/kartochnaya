@@ -1,0 +1,637 @@
+{
+  "environment": "Linux, Chromium 154.0.8037.57, Playwright 1.64.1, trace enabled",
+  "scenario": "tests/wysiwyg-performance.spec.js: fixed document, 72 input events plus trusted pointer gesture, change/finalization, underline/strike",
+  "results": [
+    {
+      "ref": "pr144",
+      "url": "/?experimentalJustifyWysiwyg=1",
+      "browserName": "chromium",
+      "textLength": 1203,
+      "metrics": {
+        "getBoundingClientRect": {
+          "count": 66628,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "layout": {
+          "count": 440,
+          "total": 456.6999999989057,
+          "p50": 0.09999999997671694,
+          "p95": 6.199999999953434,
+          "max": 8.300000000046566
+        },
+        "layoutJustified": {
+          "count": 440,
+          "total": 2123.499999998603,
+          "p50": 3.699999999953434,
+          "p95": 11,
+          "max": 19.29999999993015
+        },
+        "mixedTextLayout": {
+          "count": 440,
+          "total": 2124.799999998533,
+          "p50": 3.699999999953434,
+          "p95": 11,
+          "max": 19.29999999993015
+        },
+        "supportsWysiwygProjection": {
+          "count": 176,
+          "total": 1118.0999999992782,
+          "p50": 5.800000000046566,
+          "p95": 12.199999999953434,
+          "max": 14.5
+        },
+        "measureText": {
+          "count": 33704,
+          "total": 91.09999999974389,
+          "p50": 0,
+          "p95": 0,
+          "max": 0.40000000002328306
+        },
+        "lineHeight": {
+          "count": 616,
+          "total": 6.499999999883585,
+          "p50": 0,
+          "p95": 0.09999999997671694,
+          "max": 0.19999999995343387
+        },
+        "sessionLayout": {
+          "count": 264,
+          "total": 1009.6999999991385,
+          "p50": 3.400000000023283,
+          "p95": 5.899999999906868,
+          "max": 19.29999999993015
+        },
+        "baselineProbe": {
+          "count": 33088,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "baseline": {
+          "count": 33088,
+          "total": 5099.499999997555,
+          "p50": 0.10000000009313226,
+          "p95": 0.2999999999301508,
+          "max": 16.5
+        },
+        "replaceChildren": {
+          "count": 88,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "inkPass": {
+          "count": 166,
+          "total": 457.80000000062864,
+          "p50": 3.400000000023283,
+          "p95": 4.800000000046566,
+          "max": 14.199999999953434
+        },
+        "syncOverlay": {
+          "count": 176,
+          "total": 1147.3999999999069,
+          "p50": 5.699999999953434,
+          "p95": 12.099999999976717,
+          "max": 27.099999999976717
+        },
+        "project": {
+          "count": 88,
+          "total": 8023.500000000466,
+          "p50": 87.5,
+          "p95": 115.90000000002328,
+          "max": 147.5
+        },
+        "positionInlineText": {
+          "count": 88,
+          "total": 600.6000000004424,
+          "p50": 5.900000000023283,
+          "p95": 10.899999999906868,
+          "max": 27.800000000046566
+        },
+        "paint": {
+          "count": 91,
+          "total": 92.09999999962747,
+          "p50": 0.9000000000232831,
+          "p95": 1.599999999976717,
+          "max": 2.5
+        },
+        "refreshPickerVisualFalse": {
+          "count": 158,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "refreshPickerVisual": {
+          "count": 162,
+          "total": 168.0000000008149,
+          "p50": 0.8000000000465661,
+          "p95": 1.8000000000465661,
+          "max": 7.400000000023283
+        },
+        "updatePickerColor": {
+          "count": 75,
+          "total": 8724.10000000021,
+          "p50": 112.20000000006985,
+          "p95": 157.89999999990687,
+          "max": 179.59999999997672
+        },
+        "cpLiveColor": {
+          "count": 73,
+          "total": 8594.800000000512,
+          "p50": 113.40000000002328,
+          "p95": 159.5,
+          "max": 180.90000000002328
+        }
+      },
+      "events": {
+        "count": 94,
+        "total": 10159.200000000536,
+        "p50": 114,
+        "p95": 148.59999999997672,
+        "max": 181.59999999997672
+      },
+      "inputs": {
+        "count": 72,
+        "total": 8078.000000000931,
+        "p50": 114.09999999997672,
+        "p95": 160.20000000006985,
+        "max": 181.59999999997672
+      },
+      "pointer": {
+        "count": 18,
+        "total": 1631.599999999511,
+        "p50": 113.69999999995343,
+        "p95": 148.59999999997672,
+        "max": 148.59999999997672
+      },
+      "nextAnimationFrame": {
+        "count": 94,
+        "total": 11377.199999999953,
+        "p50": 124.20000000006985,
+        "p95": 180.59999999997672,
+        "max": 247.69999999995343
+      },
+      "longTasks": {
+        "count": 85,
+        "total": 11067,
+        "max": 247
+      },
+      "longTaskSupported": true,
+      "handlersOver50ms": 86,
+      "notes": "Inclusive timings; nested costs overlap. Next rAF is a frame opportunity, not a physical display timestamp. Firefox longtask API may be unavailable. Text=0 keeps legacy range-formatting refusal semantics."
+    },
+    {
+      "ref": "pr147",
+      "url": "/",
+      "browserName": "chromium",
+      "textLength": 1203,
+      "metrics": {
+        "getBoundingClientRect": {
+          "count": 66628,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "layout": {
+          "count": 440,
+          "total": 437.79999999981374,
+          "p50": 0.09999999997671694,
+          "p95": 5.200000000069849,
+          "max": 11.300000000046566
+        },
+        "layoutJustified": {
+          "count": 440,
+          "total": 2078.2000000007683,
+          "p50": 3.5,
+          "p95": 10.800000000046566,
+          "max": 18.900000000023283
+        },
+        "mixedTextLayout": {
+          "count": 440,
+          "total": 2079.7000000007683,
+          "p50": 3.5,
+          "p95": 10.800000000046566,
+          "max": 18.900000000023283
+        },
+        "supportsWysiwygProjection": {
+          "count": 176,
+          "total": 1066.6000000006752,
+          "p50": 5.800000000046566,
+          "p95": 11.5,
+          "max": 18.900000000023283
+        },
+        "measureText": {
+          "count": 33704,
+          "total": 83.59999999869615,
+          "p50": 0,
+          "p95": 0,
+          "max": 0.30000000004656613
+        },
+        "lineHeight": {
+          "count": 616,
+          "total": 6.100000000209548,
+          "p50": 0,
+          "p95": 0.09999999997671694,
+          "max": 0.19999999995343387
+        },
+        "sessionLayout": {
+          "count": 264,
+          "total": 1016.2999999999302,
+          "p50": 3.200000000069849,
+          "p95": 6.400000000023283,
+          "max": 15.400000000023283
+        },
+        "baselineProbe": {
+          "count": 33088,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "baseline": {
+          "count": 33088,
+          "total": 5048.300000005285,
+          "p50": 0.10000000009313226,
+          "p95": 0.2999999999301508,
+          "max": 24.300000000046566
+        },
+        "replaceChildren": {
+          "count": 88,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "inkPass": {
+          "count": 166,
+          "total": 474.6000000006752,
+          "p50": 3.299999999930151,
+          "p95": 5.599999999976717,
+          "max": 17.800000000046566
+        },
+        "syncOverlay": {
+          "count": 176,
+          "total": 1175.4999999997672,
+          "p50": 7.100000000093132,
+          "p95": 13.300000000046566,
+          "max": 31
+        },
+        "project": {
+          "count": 88,
+          "total": 7973.300000000163,
+          "p50": 86.5,
+          "p95": 119,
+          "max": 135.5
+        },
+        "positionInlineText": {
+          "count": 88,
+          "total": 585.7999999992317,
+          "p50": 5.699999999953434,
+          "p95": 11.900000000023283,
+          "max": 21.5
+        },
+        "paint": {
+          "count": 91,
+          "total": 87.30000000004657,
+          "p50": 0.9000000000232831,
+          "p95": 1.400000000023283,
+          "max": 1.599999999976717
+        },
+        "refreshPickerVisualFalse": {
+          "count": 158,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "refreshPickerVisual": {
+          "count": 162,
+          "total": 144.49999999965075,
+          "p50": 0.7999999999301508,
+          "p95": 1.7999999999301508,
+          "max": 2.699999999953434
+        },
+        "updatePickerColor": {
+          "count": 75,
+          "total": 8607.50000000035,
+          "p50": 109.69999999995343,
+          "p95": 146.79999999993015,
+          "max": 175.20000000006985
+        },
+        "cpLiveColor": {
+          "count": 73,
+          "total": 8498.600000000326,
+          "p50": 110.5,
+          "p95": 148.09999999997672,
+          "max": 176.80000000004657
+        }
+      },
+      "events": {
+        "count": 94,
+        "total": 9968.999999999884,
+        "p50": 110.19999999995343,
+        "p95": 148.70000000006985,
+        "max": 177.40000000002328
+      },
+      "inputs": {
+        "count": 72,
+        "total": 7853.100000000442,
+        "p50": 109.80000000004657,
+        "p95": 148.70000000006985,
+        "max": 177.40000000002328
+      },
+      "pointer": {
+        "count": 18,
+        "total": 1658.4999999995343,
+        "p50": 110.90000000002328,
+        "p95": 149.40000000002328,
+        "max": 149.40000000002328
+      },
+      "nextAnimationFrame": {
+        "count": 94,
+        "total": 11191.300000000047,
+        "p50": 119.20000000006985,
+        "p95": 174,
+        "max": 277.0999999999767
+      },
+      "longTasks": {
+        "count": 85,
+        "total": 10889,
+        "max": 276
+      },
+      "longTaskSupported": true,
+      "handlersOver50ms": 86,
+      "notes": "Inclusive timings; nested costs overlap. Next rAF is a frame opportunity, not a physical display timestamp. Firefox longtask API may be unavailable. Text=0 keeps legacy range-formatting refusal semantics."
+    },
+    {
+      "ref": "current",
+      "url": "/",
+      "browserName": "chromium",
+      "textLength": 1203,
+      "metrics": {
+        "getBoundingClientRect": {
+          "count": 452,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "layout": {
+          "count": 440,
+          "total": 410.80000000004657,
+          "p50": 0.09999999997671694,
+          "p95": 5,
+          "max": 9.400000000023283
+        },
+        "layoutJustified": {
+          "count": 440,
+          "total": 2048.1000000002095,
+          "p50": 3.599999999976717,
+          "p95": 10.099999999976717,
+          "max": 22
+        },
+        "mixedTextLayout": {
+          "count": 440,
+          "total": 2049.2000000005355,
+          "p50": 3.599999999976717,
+          "p95": 10.099999999976717,
+          "max": 22
+        },
+        "supportsWysiwygProjection": {
+          "count": 176,
+          "total": 1047.6999999999534,
+          "p50": 5.5,
+          "p95": 11.300000000046566,
+          "max": 22
+        },
+        "measureText": {
+          "count": 33704,
+          "total": 40.8000000002794,
+          "p50": 0,
+          "p95": 0,
+          "max": 0.5
+        },
+        "lineHeight": {
+          "count": 616,
+          "total": 5.800000000279397,
+          "p50": 0,
+          "p95": 0.09999999997671694,
+          "max": 0.6999999999534339
+        },
+        "sessionLayout": {
+          "count": 264,
+          "total": 1003.9000000003725,
+          "p50": 3.200000000069849,
+          "p95": 6.300000000046566,
+          "max": 15.70000000006985
+        },
+        "baseline": {
+          "count": 33088,
+          "total": 57.70000000053551,
+          "p50": 0,
+          "p95": 0,
+          "max": 1.1999999999534339
+        },
+        "replaceChildren": {
+          "count": 88,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "inkPass": {
+          "count": 166,
+          "total": 473.9000000000233,
+          "p50": 3.3999999999068677,
+          "p95": 5.700000000069849,
+          "max": 10.800000000046566
+        },
+        "syncOverlay": {
+          "count": 176,
+          "total": 1161.7000000000698,
+          "p50": 6.400000000023283,
+          "p95": 12.70000000006985,
+          "max": 24
+        },
+        "project": {
+          "count": 88,
+          "total": 2182.1000000002095,
+          "p50": 23.099999999976717,
+          "p95": 36.40000000002328,
+          "max": 48.40000000002328
+        },
+        "positionInlineText": {
+          "count": 88,
+          "total": 635.3999999999069,
+          "p50": 6,
+          "p95": 13.099999999976717,
+          "max": 22.79999999993015
+        },
+        "paint": {
+          "count": 91,
+          "total": 88.50000000046566,
+          "p50": 0.8000000000465661,
+          "p95": 1.5,
+          "max": 5.5
+        },
+        "updatePickerColor": {
+          "count": 75,
+          "total": 3672.79999999993,
+          "p50": 47,
+          "p95": 70.19999999995343,
+          "max": 88
+        },
+        "refreshPickerVisualFalse": {
+          "count": 83,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "refreshPickerVisual": {
+          "count": 87,
+          "total": 91.7999999995809,
+          "p50": 0.8000000000465661,
+          "p95": 1.900000000023283,
+          "max": 9.099999999976717
+        },
+        "cpLiveColor": {
+          "count": 73,
+          "total": 3711.7000000001863,
+          "p50": 48.20000000006985,
+          "p95": 73.10000000009313,
+          "max": 89.5
+        }
+      },
+      "events": {
+        "count": 94,
+        "total": 4313.700000000186,
+        "p50": 46,
+        "p95": 72.69999999995343,
+        "max": 91
+      },
+      "inputs": {
+        "count": 72,
+        "total": 3458.5000000003492,
+        "p50": 47.5,
+        "p95": 72.69999999995343,
+        "max": 78.10000000009313
+      },
+      "pointer": {
+        "count": 18,
+        "total": 689.199999999837,
+        "p50": 43.89999999990687,
+        "p95": 91,
+        "max": 91
+      },
+      "nextAnimationFrame": {
+        "count": 94,
+        "total": 5249.100000000326,
+        "p50": 55.09999999997672,
+        "p95": 91.19999999995343,
+        "max": 127.90000000002328
+      },
+      "longTasks": {
+        "count": 57,
+        "total": 3674,
+        "max": 128
+      },
+      "longTaskSupported": true,
+      "handlersOver50ms": 31,
+      "notes": "Inclusive timings; nested costs overlap. Next rAF is a frame opportunity, not a physical display timestamp. Firefox longtask API may be unavailable. Text=0 keeps legacy range-formatting refusal semantics."
+    },
+    {
+      "ref": "current",
+      "url": "/?experimentalTextWysiwyg=0",
+      "browserName": "chromium",
+      "textLength": 1203,
+      "metrics": {
+        "getBoundingClientRect": {
+          "count": 163,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "paint": {
+          "count": 83,
+          "total": 70.90000000025611,
+          "p50": 0.5999999999767169,
+          "p95": 1.2999999999301508,
+          "max": 20.400000000023283
+        },
+        "updatePickerColor": {
+          "count": 67,
+          "total": 86.69999999995343,
+          "p50": 0.8000000000465661,
+          "p95": 4,
+          "max": 20.699999999953434
+        },
+        "refreshPickerVisualFalse": {
+          "count": 75,
+          "total": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "refreshPickerVisual": {
+          "count": 79,
+          "total": 22.600000000209548,
+          "p50": 0.09999999997671694,
+          "p95": 0.5,
+          "max": 5.600000000093132
+        },
+        "cpLiveColor": {
+          "count": 65,
+          "total": 87.99999999988358,
+          "p50": 0.9000000000232831,
+          "p95": 1.7999999999301508,
+          "max": 20.900000000023283
+        }
+      },
+      "events": {
+        "count": 94,
+        "total": 144.99999999941792,
+        "p50": 1,
+        "p95": 7.800000000046566,
+        "max": 23.599999999976717
+      },
+      "inputs": {
+        "count": 72,
+        "total": 65.69999999983702,
+        "p50": 1,
+        "p95": 1.7000000000698492,
+        "max": 1.8999999999068677
+      },
+      "pointer": {
+        "count": 18,
+        "total": 47.69999999960419,
+        "p50": 1.099999999976717,
+        "p95": 23.599999999976717,
+        "max": 23.599999999976717
+      },
+      "nextAnimationFrame": {
+        "count": 94,
+        "total": 1349.2999999999302,
+        "p50": 16.100000000093132,
+        "p95": 24.5,
+        "max": 36.29999999993015
+      },
+      "longTasks": {
+        "count": 0,
+        "total": 0,
+        "max": 0
+      },
+      "longTaskSupported": true,
+      "handlersOver50ms": 0,
+      "notes": "Inclusive timings; nested costs overlap. Next rAF is a frame opportunity, not a physical display timestamp. Firefox longtask API may be unavailable. Text=0 keeps legacy range-formatting refusal semantics."
+    }
+  ]
+}

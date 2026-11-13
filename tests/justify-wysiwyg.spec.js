@@ -396,8 +396,15 @@ test('ordinary URL Russian document at 80%: four alignments, edits, save and PNG
   // Check visible content bounds, while exact source equality above keeps LF/spaces.
   for(const row of geometry){expect(row.left).toBeGreaterThanOrEqual(-1);expect(row.right).toBeLessThanOrEqual(1);expect(row.bottom).toBeLessThanOrEqual(1)}
  }
- await page.keyboard.type('Группа');const first='Группа'+russianText.slice(7),start=first.indexOf('дизайнер');await select(page,start,start+'дизайнер'.length);await page.keyboard.type('редактор');
- const changed=await model(page);expect(changed.text).toBe(first.replace('дизайнер','редактор'));
+ // Playwright Firefox implements non-US keyboard.type through IME composition.
+ // Use ordinary key events here; the separate protocol test keeps IME recovery covered.
+ let expected=russianText;
+ for(const [word,replacement] of [['Canvas','Canvas2D'],['PNG','PNG32']]){
+  const start=expected.indexOf(word);await select(page,start,start+word.length);await page.keyboard.type(replacement);
+  expected=expected.slice(0,start)+replacement+expected.slice(start+word.length);
+  await expect(page.locator('#wysiwygRecovery')).toBeHidden();expect((await model(page)).text).toBe(expected);
+ }
+ const changed=await model(page);expect(changed.text).toBe(expected);
  await info.attach('ordinary-url-80-percent.png',{body:await page.screenshot(),contentType:'image/png'});
  await zoom(page,100);await page.keyboard.press('Control+Enter');
  await expect.poll(async()=>(await records(page,'docs')).find(d=>d.elements.some(e=>e.id==='title')).elements.find(e=>e.id==='title')).toEqual(changed);
@@ -462,4 +469,25 @@ test.describe('default justify coarse pointer',()=>{
  test('desktop-sized coarse pointer retains textarea',async({page})=>{
   await seed(page,{textAlign:'justify'});expect(await page.evaluate(()=>matchMedia('(pointer:coarse)').matches)).toBe(true);await edit(page,false);
  });
+});
+
+test('Unicode automation preserves native input or explicit composition recovery',async({page,browserName},info)=>{
+ const text='Команда проверяет Canvas и PNG';await seed(page,{text,textAlign:'justify'});await edit(page);await select(page,0,7);
+ const before=await model(page);
+ await page.locator(surface).evaluate(host=>{
+  window.unicodeInputEvents=[];
+  for(const type of ['keydown','compositionstart','compositionend','beforeinput','input'])host.addEventListener(type,e=>window.unicodeInputEvents.push({type,inputType:e.inputType,isComposing:e.isComposing,data:e.data}));
+ });
+ // In Playwright 1.64.1 Firefox, Page.insertText uses commitCompositionWith.
+ // This automation path is not a qualification of a real OS keyboard or IME.
+ await page.keyboard.type('Группа');const events=await page.evaluate(()=>window.unicodeInputEvents);
+ await info.attach('unicode-protocol-input.json',{body:JSON.stringify(events),contentType:'application/json'});
+ if(browserName==='firefox'){
+  expect(events.some(e=>e.type==='compositionstart')).toBe(true);expect(events.some(e=>e.type==='compositionend')).toBe(true);
+  await expect(page.locator('#wysiwygRecovery')).toBeVisible();expect(await model(page)).toEqual(before);
+  const stored=(await records(page,'docs')).find(d=>d.elements.some(e=>e.id==='title'));expect(stored.elements.find(e=>e.id==='title')).toEqual(before);
+  await page.locator('#wysiwygRecover').click();await expect(page.locator(surface)).toHaveText(text);await expect(page.locator('#wysiwygRecovery')).toBeHidden();expect(await model(page)).toEqual(before);
+ }else{
+  await expect(page.locator('#wysiwygRecovery')).toBeHidden();expect((await model(page)).text).toBe('Группа'+text.slice(7));
+ }
 });

@@ -81,7 +81,7 @@ input/change до нового явного focus/pointerdown. При ошибк
 | Смена панели, Back, Done, blur/visibility, смена слоя/документа через штатный UI | Подтвердить перед передачей владения; при невалидном владельце откатить |
 | Явный Escape из numeric/HEX | Отменить gesture; мобильный Back/Escape вне поля сохраняет прежнюю семантику |
 | Невалидный numeric/HEX при подтверждении | Откатить pending gesture; без Undo |
-| Native beforeinput/compositionstart | Отменить preview до изменения текста / composition |
+| Native beforeinput / input fallback / compositionstart | Отменить preview до изменения текста / composition |
 | Stale revision/range/owner, lock, unsupported / split grapheme | Откатить, не переносить действие на слой |
 | Debounce / beforeunload flush / export во время preview | Только подтверждённые поля; без скрытого finish |
 
@@ -129,6 +129,9 @@ pointer drag с 32 moves, а не JS-назначение input.value.
 hue/HEX/touch plane; pointercancel/lostcapture, panel/Back/Done/document switch;
 composition abort и поздний change; numeric bounds; forced flush во время preview;
 Done, IDB reload, JSON import/export и PNG equality после завершения.
+Отдельный input-only fallback E2E на обоих viewport воспроизводит замену текста
+без beforeinput во время preview: откат выполняется до rebasing runs; Done и
+Undo/Redo сохраняют точные snapshots.
 Unit вызывает настоящие функции adapter/lifecycle/save FIFO из исходников:
 stale revision, lock, composition, owner/range/session replacement, failed preview,
 reference units, root/slide snapshots и очередь записей.

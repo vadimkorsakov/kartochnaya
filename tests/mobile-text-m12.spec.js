@@ -132,4 +132,13 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await page.locator('#mobileConfirm').tap();await page.locator('#undoBtn').tap();expect(await element(page)).toEqual(before);await page.locator('#redoBtn').tap();expect(await element(page)).toEqual(after);
  });
 
+ test('native input without beforeinput cancels preview before rebasing runs',async({page})=>{
+  await open(page);const before=await element(page);await tool(page,'size');
+  await drag(page,'[type=range][data-mp-key=fontSize]',{finish:false});
+  // Native event fallback: the input event alone must never rebase preview runs.
+  await page.locator('#inlineText').evaluate(e=>{e.value='Ёж\nХвост 😀';e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertReplacementText',data:'Ёж'}))});
+  await page.mouse.up();const typed=await element(page);expect(typed.text).toBe('Ёж\nХвост 😀');expect(typed.textRuns).toBeUndefined();
+  await page.locator('#mobileConfirm').tap();await page.locator('#undoBtn').tap();expect(await element(page)).toEqual(before);await page.locator('#redoBtn').tap();expect(await element(page)).toEqual(typed);
+ });
+
 });

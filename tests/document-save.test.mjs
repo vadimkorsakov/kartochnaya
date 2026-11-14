@@ -10,7 +10,8 @@ const source = await readFile(
   new URL("../src/editor.js", import.meta.url),
   "utf8",
 );
-const saving = source.slice(
+const committedRead=source.slice(source.indexOf('function mobileTextConfirmedDocument('),source.indexOf('function mobileTextGestureValid('));
+const saving = 'let mobileTextGesture=null;\n'+committedRead+source.slice(
   source.indexOf("const documentSaves="),
   source.indexOf("function add(type)"),
 );
@@ -223,4 +224,21 @@ test("two edits before debounce queue exactly the latest snapshot", async () => 
   await new Promise((resolve) => setTimeout(resolve, 500));
   assert.equal(h.calls.length, 2);
   assert.deepEqual(await h.read(), C);
+});
+
+test('real save FIFO filters active range previews in root and slide, then publishes the finished result',async()=>{
+ const h=await harness();
+ const before={id:'text',text:'АБ',fontSize:24,textRuns:[{start:1,end:2,style:{underline:true}}]};
+ h.app.doc={id:'x',projectId:'p',type:'card',activeSlideIndex:0,elements:[structuredClone(before)],slides:[{elements:[structuredClone(before)]}]};
+ await h.api.flushSave();
+ h.ctx.origin=structuredClone(before);
+ vm.runInContext("mobileTextGesture={doc:app.doc,element:app.doc.elements[0],before:origin,fields:new Set(['textRuns','textRunsBaseFontSize']),slideIndex:0}",h.ctx);
+ h.app.doc.elements[0].textRuns=[{start:0,end:2,style:{fontSize:42}}];h.app.doc.elements[0].textRunsBaseFontSize=24;
+ h.app.doc.slides[0].elements=structuredClone(h.app.doc.elements);
+ assert.equal(await h.api.flushSave(),true);
+ let stored=await h.read();assert.deepEqual(stored.elements,[before]);assert.deepEqual(stored.slides[0].elements,[before]);
+ h.app.doc.title='Confirmed unrelated title';h.hold();const old=h.api.saveDocumentSnapshot(structuredClone(h.app.doc));assert.equal(h.gates.length,1);
+ vm.runInContext('mobileTextGesture=null',h.ctx);
+ const finish=h.api.flushSave();h.release();assert.equal(await old,true);assert.equal(await finish,true);
+ stored=await h.read();assert.deepEqual(stored.elements,h.app.doc.elements);assert.deepEqual(stored.slides,h.app.doc.slides);
 });

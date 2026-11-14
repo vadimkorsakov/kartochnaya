@@ -1908,3 +1908,11 @@ html,body{background:#1e1f27!important;}
  .stage-column .floating-docks{bottom:44px}
  .stage-column:has(.stage-status.has-emergency) .floating-docks{bottom:62px}
 }
+
+/* M1.2: keep the size track usable beside an exact field on 360px screens. */
+@media(max-width:760px){
+ #mobilePropertyUI .mp-pill:has([data-mp-size-scale]){flex-wrap:wrap;height:auto!important;border-radius:18px;row-gap:0!important}
+ #mobilePropertyUI .mp-pill [data-mp-size-scale]{flex:1;min-width:80px}
+ #mobilePropertyUI .mp-pill:has([data-mp-size-scale]) .mp-stepper input{width:64px}
+ #mobilePropertyUI .mp-pill:has([data-mp-size-scale]) .mp-auto-font{flex-basis:100%;justify-content:flex-end;height:22px}
+}

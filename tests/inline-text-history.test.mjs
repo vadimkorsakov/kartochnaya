@@ -22,7 +22,7 @@ test('format previews settle once, undo restores the full layer, new typing trun
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {applyTextStyle} from '../src/model/rich-text.mjs';
-import {retainRichTextSizeBase} from '../src/render/rich-text-layout.mjs';
+import {richTextSpans,resolveRichTextStyle,retainRichTextSizeBase} from '../src/render/rich-text-layout.mjs';
 import {mobileTextStyle} from '../src/editor/mobile-text-style.mjs';
 
 test('mobile query includes default gaps, LF, aliases, reference sizes and all intersecting spans',()=>{
@@ -112,4 +112,17 @@ for(const key of ['letterSpacing','lineHeight','strokeWidth','textColor','stroke
  for(let i=0;i<30;i++)preview(key,key==='textColor'||key==='stroke'?'#123456':key==='lineHeight'?1.2+i*.01:1+i*.1);
  assert.equal(session.states.length,1);c.mobileTextFinishGesture();assert.equal(session.states.length,2);
  const result=structuredClone(e);assert.deepEqual(moveInlineHistory(session,-1).element,before);assert.deepEqual(moveInlineHistory(session,1).element,result);
+});
+
+test('mobile U/S query is scoped to a range; collapsed caret retains existing whole-layer Mixed toggle',async()=>{
+ const source=await readFile(new URL('../src/editor.js',import.meta.url),'utf8');
+ const element={id:'one',type:'text',text:'Первое Второе',mobileUnderline:true,textRuns:[{start:0,end:6,style:{underline:false}}]};
+ let target={kind:'layer'},small=true;
+ const c={start:10,end:10},context={app:{editingId:'one',inlineCaret:c},mobileV36Small:()=>small,active:()=>element,picked:()=>[element],richTextSpans,resolveRichTextStyle,mobileTextTarget:()=>target,mobileV36Style:key=>mobileTextStyle(element,target,key)};
+ vm.createContext(context);vm.runInContext(source.slice(source.indexOf('function textDecorationState('),source.indexOf('function decorationButton(')),context);
+ assert.equal(context.textDecorationState('underline'),'mixed');
+ target={kind:'range',start:0,end:6};assert.equal(context.textDecorationState('underline'),false);
+ target={kind:'range',start:0,end:13};assert.equal(context.textDecorationState('underline'),'mixed');
+ target={kind:'unsupported'};assert.equal(context.textDecorationState('underline'),false);
+ small=false;target={kind:'layer'};assert.equal(context.textDecorationState('underline'),'mixed');
 });

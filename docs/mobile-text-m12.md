@@ -25,7 +25,9 @@ px с учётом `textRunsBaseFontSize`; aliases B/I разрешаются с
 | Stroke width / color | Та же query в существующей stroke sheet | Атомарный gesture / swatch |
 
 Новых контролов для отсутствующих свойств нет. Legacy Effects → «Контур»
-остаётся эффектом всего слоя. Desktop Mixed и `inlineSelectionStyle()` сохранены.
+остаётся эффектом всего слоя. Desktop Mixed и `inlineSelectionStyle()` сохранены. Для U/S новый reader работает
+только при непустом range: collapsed caret сохраняет прежний whole-layer Mixed
+toggle по всем фрагментам, включая legacy mobileUnderline/mobileStrike.
 Строки Mixed/«Смешано» — только UI, никогда patch модели. Selectionchange от
 native textarea и Undo/Redo обновляют существующие DOM controls без пересоздания
 панели; активное numeric/HEX поле и активный gesture защищены от перезаписи.

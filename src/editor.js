@@ -2439,7 +2439,7 @@ function mobileV36SyncTextStyle(){
  for(const button of mobileV36.querySelectorAll('[data-mp-format]')){
   const key={strike:'strikethrough'}[button.dataset.mpFormat]||button.dataset.mpFormat;
   if(!['bold','italic','underline','strikethrough'].includes(key))continue;
-  const state=mobileV36Style(key),pressed=state.kind==='mixed'?'mixed':state.kind==='value'&&state.value===true;
+  const state=mobileV36Style(key),pressed=['underline','strikethrough'].includes(key)?textDecorationState(key):state.kind==='mixed'?'mixed':state.kind==='value'&&state.value===true;
   button.setAttribute('aria-pressed',String(pressed));button.classList.toggle('active',pressed===true);button.classList.toggle('mixed',pressed==='mixed');
  }
  for(const button of mobileV36.querySelectorAll('[data-mp-swatch]'))button.classList.toggle('active',mobileV36StyleValue('textColor')===button.dataset.mpSwatch.toLowerCase());
@@ -2508,7 +2508,7 @@ function inlineStyleRange(){
  const c=app.inlineCaret;return c&&c.end>c.start?c:null;
 }
 function textDecorationState(key){
- if(mobileV36Small()&&!app.wysiwyg&&active()?.type==='text'){const state=mobileV36Style(key);return state.kind==='value'?state.value:state.kind==='mixed'?'mixed':false}
+ if(mobileV36Small()&&!app.wysiwyg&&active()?.type==='text'){const target=mobileTextTarget(key);if(target.kind==='range'){const state=mobileV36Style(key);return state.kind==='value'?state.value:state.kind==='mixed'?'mixed':false}if(target.kind==='unsupported')return false}
  const es=picked().filter(e=>e.type==='text'),c=es.length===1&&es[0].id===app.editingId?app.inlineCaret:null;
  const values=es.flatMap(e=>richTextSpans(e).filter(p=>!c||c.start===c.end||p.start<c.end&&p.end>c.start).map(p=>p.style[key]));
  if(!values.length)return es.length?!!resolveRichTextStyle(es[0])[key]:false;

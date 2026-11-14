@@ -2400,7 +2400,8 @@ function mobileTextPreviewGesture(key,value,final,target){
  try{
   const base=g.before;
   if(key==='fontSize')patch.fontSize*= (base.textRunsBaseFontSize||base.fontSize)/base.fontSize;
-  const next=applyTextStyle(base,g.target.start,g.target.end,patch);
+  const unchanged=g.initial.kind==='value'&&g.initial.value===(['textColor','stroke'].includes(key)?value.toLowerCase():Number(value))&&!(key==='fontSize'&&base.autoFontSize);
+  const next=unchanged?base:applyTextStyle(base,g.target.start,g.target.end,patch);
   // Calculate every preview from the origin; no normalization/auto-fit drift.
   const result=clone(base);
   if(JSON.stringify(next.textRuns)!==JSON.stringify(base.textRuns)||key==='fontSize'&&base.autoFontSize){

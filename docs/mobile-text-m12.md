@@ -69,7 +69,10 @@ Finish повторно валидирует владельцев и точны�
 Cancel восстанавливает только поля preview, не отменяя, например, новый locked
 flag; formatted возвращается к исходному. Отменённый control игнорирует поздние
 input/change до нового явного focus/pointerdown. При ошибке вычисления preview
-откатывается весь жест. Неизменный исходный style не добавляет reference metadata.
+откатывается весь жест. Неизменный исходный эффективный style проверяется до applyTextStyle: он не
+добавляет reference metadata или explicit overrides для inherited defaults
+(stroke width/color, tracking, leading, color). Desktop explicit-paint semantics
+не меняются.
 
 | Граница | Политика |
 | --- | --- |

@@ -82,7 +82,7 @@ for(const interruption of ['cancel','locked','revision','composition','range','d
 });
 
 test('no-op, invalid numeric/HEX and returning to original preview create no history',async()=>{
- for(const [key,value] of [['fontSize',24],['fontSize',''],['fontSize',501],['fontSize',NaN],['letterSpacing','Смешано'],['textColor','Mixed']]){
+ for(const [key,value] of [['fontSize',24],['fontSize',''],['fontSize',501],['fontSize',NaN],['letterSpacing','Смешано'],['textColor','Mixed'],['strokeWidth',0],['stroke','#000000'],['letterSpacing',0],['lineHeight',1.15],['textColor','#000000']]){
   const {preview,session}=await gestureHarness();preview(key,value,true);assert.equal(session.states.length,1,`${key} ${value}`);
  }
  const {preview,context:c,e,session}=await gestureHarness(),before=structuredClone(e);

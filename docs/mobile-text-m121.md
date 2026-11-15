@@ -39,6 +39,10 @@ Zoom во время обычного ввода сохраняет прежни
 форматирования не фокусирует textarea; открытие панели передаёт управление до
 bubble обработчиков кнопок.
 
+Явный Ctrl/Cmd+Enter из панели завершает native session без восстановления
+input focus, как прежний shortcut из textarea. Done/shortcut удаляют подпись
+завершённого range, даже если панель остаётся открытой.
+
 `rememberInlineCaret(true)` допускает адресный capture до handoff/на blur, когда
 `activeElement` уже сменился. Обычные поздние select/selectionchange от unfocused
 textarea игнорируются. В режиме форматирования принудительный повторный capture
@@ -103,6 +107,12 @@ HEAD без исправлений: **6 failed** на 360×640 и 390×844:
 - Justify Bold не создаёт run только для `Оплатить`, `[3,11)`.
 - Открытие Format оставляет textarea сфокусированной.
 - Numeric Enter возвращает фокус textarea.
+
+При последующей проверке жизненного цикла ещё два красных E2E подтвердили,
+что Done оставлял подпись завершённого диапазона. Первый CI также выявил прежний
+mobile U/S → Ctrl+Enter сценарий в Firefox: после handoff shortcut попадал панели
+и не завершал textarea. Обработчик явного finish расширен на native session;
+существующие U/S, selection, hidden-editor и PNG assertions не ослаблялись.
 
 Тесты пишут focusin/focusout/selectionchange/pointerdown и VisualViewport resize
 только из тестового окружения и прикладывают журнал к результату. Production

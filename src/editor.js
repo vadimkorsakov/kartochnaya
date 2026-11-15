@@ -2308,7 +2308,7 @@ function closeInlineText(cancel=false){
   }
   commit('Изменение текста');
  }else{paint();updateHistoryButtons();}
- refreshInspector();updateQuickBubble();
+ refreshInspector();mobileV36SyncSelectionLabel();updateQuickBubble();
 }
 for(const type of ['compositionstart','compositionend'])$('#inlineText').addEventListener(type,()=>{if(type==='compositionstart')mobileTextCancelGesture(false);if(mobileTextSession)mobileTextSession.composing=type==='compositionstart'});
 $('#inlineText').addEventListener('beforeinput',ev=>{mobileTextCancelGesture(false);if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
@@ -2620,7 +2620,7 @@ document.addEventListener('mousedown',ev=>{
  // native focus, keyboard and text-selection behavior on desktop and Android.
  if((!mobileV36Small()&&document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
 },true);
-document.addEventListener('keydown',ev=>{if(app.wysiwyg&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&ev.target.closest(inlineFormattingRoots)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&ev.target.id!=='zoomInput'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
+document.addEventListener('keydown',ev=>{if(app.editingId&&!ev.isComposing&&!mobileTextSession?.composing&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&(ev.target.closest(inlineFormattingRoots)||mobileTextSession?.formatting&&ev.target===document.body)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&ev.target.id!=='zoomInput'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
 
 // Keep caret ownership when existing buttons operate on the selected text layer.
 function rememberInlineCaret(capture=false){

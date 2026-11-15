@@ -54,7 +54,7 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   for(const expected of states.slice(0,-1).reverse()){await page.locator('#undoBtn').tap();await unfocused(page);expect(await element(page)).toEqual(expected)}
   for(const expected of states.slice(1)){await page.locator('#redoBtn').tap();await unfocused(page);expect(await element(page)).toEqual(expected)}
   expect(await focusCount()).toBe(initialFocus);
-  await page.locator('#mobileConfirm').tap();await expect(editor(page)).toBeHidden();
+  await page.locator('#mobileConfirm').tap();await expect(editor(page)).toBeHidden();await expect(page.locator('[data-mobile-text-selection]')).toHaveCount(0);
   await page.locator('#undoBtn').tap();expect(await element(page)).toEqual(states.at(-2));await page.locator('#redoBtn').tap();expect(await element(page)).toEqual(styled);
   const png=(await exportPNG(page)).image.data,final=await exportedDocument(page);
   await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===doc.id)?.elements).toEqual(final.elements);
@@ -143,5 +143,11 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await tool(page,'format');const before=await element(page);await page.locator('[data-mp-format=bold]').tap();
   await expect(page.locator('#toast')).toContainText('Выделение не подтверждено');expect(await element(page)).toEqual(before);await expect(editor(page)).not.toBeFocused();
   await select(page,4,12);await page.locator('[data-mp-format=bold]').tap();expect((await element(page)).textRuns).toEqual([{start:4,end:12,style:{fontWeight:'700'}}]);
+ });
+ test('explicit Ctrl+Enter from a formatting panel ends the session without input focus',async({page})=>{
+  await open(page);await tool(page,'format');await page.locator('[data-mp-format=bold]').tap();await unfocused(page);
+  const before=await page.evaluate(()=>m121Events.filter(e=>e.type==='focusin'&&e.target==='inlineText').length);
+  await page.keyboard.press('Control+Enter');await expect(editor(page)).toBeHidden();await expect(page.locator('[data-mobile-text-selection]')).toHaveCount(0);
+  expect(await page.evaluate(()=>m121Events.filter(e=>e.type==='focusin'&&e.target==='inlineText').length)).toBe(before);expect((await element(page)).textRuns).toEqual([{start:3,end:11,style:{fontWeight:'700'}}]);
  });
 });

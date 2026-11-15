@@ -24,20 +24,31 @@ Transient native session хранит признак `formatting`. Это не �
 
 1. Capture pointerdown панели сохраняет native start/end/direction.
 2. `pauseInlineTextInput()` подтверждает snapshot до blur, устанавливает режим
-   форматирования и снимает фокус textarea. Программное открытие панели и
+   форматирования, временные `readOnly` / `inputmode=none` и снимает фокус textarea.
+   Программное открытие панели и
    keyboard focusin настоящего поля используют тот же handoff.
 3. `restoreSelectionWithoutFocus()` восстанавливает native offsets без `.focus()`.
 4. `restoreInlineCaret()` сохраняет прежнюю desktop-политику, но в mobile
    formatting не фокусирует textarea. Это охватывает и family/alignment/history.
 5. Mobile `resumeInlineTextFromButton()` восстанавливает только selection.
    Numeric/HEX/search Enter освобождает настоящее поле и оставляет панель открытой.
-6. Явный Edit использует `resumeTextInputWithFocus()`. Обычный native tap по
-   textarea также возвращает ввод; браузер сам определяет позицию этого tap.
+6. Явный Edit использует `resumeTextInputWithFocus()`. Native pointerdown по
+   textarea через `enableInlineTextInput()` снимает временные ограничения до
+   штатного focus/IME; браузер сам определяет позицию этого tap.
    Deferred open callback не возвращает фокус, если панель уже получила управление.
 
 Zoom во время обычного ввода сохраняет прежний focus/IME контракт. Zoom во время
 форматирования не фокусирует textarea; открытие панели передаёт управление до
 bubble обработчиков кнопок.
+
+Событие focus само по себе не является разрешением ввода. Даже если Brave/IME
+поздно вернул DOM focus readonly textarea, session остаётся в formatting, query
+использует подтверждённый snapshot и selectionchange не заменяет его кареткой.
+Повторный `focus → blur → focus` цикл не создаётся. `readOnly` действует только
+в formatting: явный tap/Edit включает прежний native ввод; Done сбрасывает
+атрибуты скрытого textarea. Numeric/HEX/search остаются отдельными editable
+полями, и их Enter не делает textarea writable. Без изменения DOM selection
+`setSelectionRange` повторно не вызывается.
 
 Явный Ctrl/Cmd+Enter из панели завершает native session без восстановления
 input focus, как прежний shortcut из textarea. Done/shortcut удаляют подпись
@@ -114,6 +125,23 @@ mobile U/S → Ctrl+Enter сценарий в Firefox: после handoff shortc
 и не завершал textarea. Обработчик явного finish расширен на native session;
 существующие U/S, selection, hidden-editor и PNG assertions не ослаблялись.
 
+При проверке preview, опубликованного для `f3c75ed`, пользователь сообщил, что на OnePlus 13
+в Brave любое действие в меню форматирования возвращает системную клавиатуру,
+при любом alignment. Версии Android/Brave/клавиатуры не указаны; фактические
+native события на телефоне не измерялись; версия уже открытой офлайн-страницы
+уточняется отдельно. Физическая приёмка **не пройдена**.
+Один blur и запрет программного focus оказались недостаточной моделью для
+этого сообщения; прежний focus listener также безусловно включал input mode.
+
+Добавлены **4 красных E2E** на `f3c75ed`: textarea оставалась writable в formatting;
+replay позднего focus + collapsed selection мог изменить `fontWeight` слоя
+`400 → 700` вместо run `[3,11)`. Новая защита временной native editability и
+замороженного snapshot делает эти проверки зелёными. Это браузерный replay,
+а не измерение Gboard или доказательство исправления телефона.
+Selection helpers при возврате к вводу теперь делают настоящий tap перед
+native selection; прямой `.focus()` в тесте не подменяет явный запрос ввода.
+Исходные проверки текста, runs, истории и PNG сохранены.
+
 Тесты пишут focusin/focusout/selectionchange/pointerdown и VisualViewport resize
 только из тестового окружения и прикладывают журнал к результату. Production
 debug bridge не добавлен. Отсутствие focusin после handoff проверяется отдельно
@@ -155,7 +183,9 @@ Deploy Preview приведены в PR #154. Неизменённый успе�
 
 Playwright проверяет DOM focus и native Chromium selection в эмуляции, но не
 Gboard, реальные handles/long-press и OEM VisualViewport. **Физическая приёмка
-не выполнена; PR #154 не готов к merge до успешной проверки ниже. M2 не начат.**
+на OnePlus 13/Brave выявила возвращающуюся клавиатуру в `f3c75ed`;
+PR #154 не готов к merge до успешной повторной проверки текущего исправления ниже.
+M2 не начат.**
 
 На `https://deploy-preview-154--kartochnaya.netlify.app` после подтверждения
 публикации нового HEAD записать модель телефона, Android, Brave и клавиатуру:

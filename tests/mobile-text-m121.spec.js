@@ -5,7 +5,7 @@ const editor=page=>page.locator('#inlineText');
 const field=(page,key)=>page.locator(`input[type=number][data-mp-key=${key}]`);
 const element=async page=>(await exportedDocument(page)).elements[0];
 const caret=page=>editor(page).evaluate(e=>[e.selectionStart,e.selectionEnd,e.selectionDirection]);
-const select=(page,start=3,end=11,direction='backward')=>editor(page).evaluate((e,c)=>{e.focus();e.setSelectionRange(...c);e.dispatchEvent(new Event('select',{bubbles:true}))},[start,end,direction]);
+const select=async(page,start=3,end=11,direction='backward')=>{if(await editor(page).evaluate(e=>e.readOnly))await editor(page).tap({position:{x:5,y:12}});await editor(page).evaluate((e,c)=>{e.focus();e.setSelectionRange(...c);e.dispatchEvent(new Event('select',{bubbles:true}))},[start,end,direction])};
 async function open(page,patch={}){
  await openHome(page);const payload=structuredClone(fixture);
  Object.assign(payload.document.elements[0],{id:'m121',name:'M121',text:'До Оплатить после и ещё слова для переноса строки.\nДругой абзац 👨‍👩‍👧‍👦 😀 е\u0301',x:16,y:16,w:288,h:200,fontFamily:'Arial',fontSize:20,fontWeight:'400',fontStyle:'normal',textAlign:'justify',autoFontSize:false,textColor:'#000000',...patch});
@@ -18,7 +18,7 @@ async function unfocused(page){await expect(editor(page)).not.toBeFocused();expe
 test.beforeEach(async({page})=>{
  await page.addInitScript(()=>{
   window.m121Events=[];
-  const log=ev=>{const e=document.querySelector('#inlineText');m121Events.push({type:ev.type,target:ev.target?.id||ev.target?.tagName||'viewport',active:document.activeElement?.id||document.activeElement?.tagName,selection:e?[e.selectionStart,e.selectionEnd,e.selectionDirection]:null,height:visualViewport?.height});if(m121Events.length>2000)m121Events.shift()};
+  const log=ev=>{const e=document.querySelector('#inlineText');m121Events.push({type:ev.type,target:ev.target?.id||ev.target?.tagName||'viewport',active:document.activeElement?.id||document.activeElement?.tagName,selection:e?[e.selectionStart,e.selectionEnd,e.selectionDirection]:null,readOnly:e?.readOnly,inputMode:e?.inputMode,height:visualViewport?.height});if(m121Events.length>2000)m121Events.shift()};
   for(const type of ['focusin','focusout','selectionchange','pointerdown'])document.addEventListener(type,log,true);
   visualViewport?.addEventListener('resize',ev=>log({type:'visualViewport.resize',target:ev.target}));
  });
@@ -149,5 +149,19 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   const before=await page.evaluate(()=>m121Events.filter(e=>e.type==='focusin'&&e.target==='inlineText').length);
   await page.keyboard.press('Control+Enter');await expect(editor(page)).toBeHidden();await expect(page.locator('[data-mobile-text-selection]')).toHaveCount(0);
   expect(await page.evaluate(()=>m121Events.filter(e=>e.type==='focusin'&&e.target==='inlineText').length)).toBe(before);expect((await element(page)).textRuns).toEqual([{start:3,end:11,style:{fontWeight:'700'}}]);
+ });
+ test('formatting removes native editability until an explicit text tap',async({page})=>{
+  await open(page);await tool(page,'format');await unfocused(page);
+  await expect(editor(page)).toHaveJSProperty('readOnly',true);await expect(editor(page)).toHaveAttribute('inputmode','none');
+  for(const name of ['color','size','spacing','format']){await tool(page,name);await expect(editor(page)).toHaveJSProperty('readOnly',true)}
+  await editor(page).tap({position:{x:5,y:12}});await expect(editor(page)).toBeFocused();await expect(editor(page)).toHaveJSProperty('readOnly',false);await expect(editor(page)).not.toHaveAttribute('inputmode','none');
+  const before=await element(page),point=(await caret(page))[0];await page.keyboard.insertText('Я');expect((await element(page)).text).toBe(before.text.slice(0,point)+'Я'+before.text.slice(point));
+ });
+ test('late native focus and collapsed selection cannot reactivate input or replace the formatting target',async({page})=>{
+  await open(page);await tool(page,'format');const before=await element(page);
+  await editor(page).evaluate(e=>{e.focus();e.setSelectionRange(0,0);e.dispatchEvent(new Event('select'));document.dispatchEvent(new Event('selectionchange'))});
+  await page.locator('[data-mp-format=bold]').tap();const after=await element(page);
+  expect(after.fontWeight).toBe(before.fontWeight);expect(after.textRuns).toEqual([{start:3,end:11,style:{fontWeight:'700'}}]);
+  await unfocused(page);await expect(editor(page)).toHaveJSProperty('readOnly',true);await expect(editor(page)).toHaveAttribute('inputmode','none');
  });
 });

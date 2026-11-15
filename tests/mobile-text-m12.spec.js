@@ -1,7 +1,7 @@
 const {test,expect,openHome,importPayload,records,openLibraryDocument,exportedDocument,exportPNG}=require('./helpers');
 const fixture=require('./fixtures/visual-text.json');
 const tool=(page,name)=>page.locator(`#mobileContext [data-mobile=${name}]`).tap();
-const select=(page,start=0,end=13,direction='backward')=>page.locator('#inlineText').evaluate((e,c)=>{e.focus();e.setSelectionRange(...c);e.dispatchEvent(new Event('select',{bubbles:true}))},[start,end,direction]);
+const select=async(page,start=0,end=13,direction='backward')=>{const input=page.locator('#inlineText');if(await input.evaluate(e=>e.readOnly))await input.tap({position:{x:5,y:12}});await input.evaluate((e,c)=>{e.focus();e.setSelectionRange(...c);e.dispatchEvent(new Event('select',{bubbles:true}))},[start,end,direction])};
 const field=(page,key)=>page.locator(`input[type=number][data-mp-key=${key}]`);
 const element=async page=>(await exportedDocument(page)).elements[0];
 async function open(page,mixed=true){

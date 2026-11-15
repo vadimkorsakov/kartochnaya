@@ -13,7 +13,7 @@ async function open(page,patch={},two=false){
  await page.locator('[data-mobile=layers]:visible').tap();await page.locator('#mobileLayerList .layer-name').filter({hasText:'Routing',exact:true}).tap();await page.locator('#mobileLayersClose').tap();
  await page.locator('#mobileContext [data-mobile=edit]').tap();await expect(page.locator('#inlineText')).toBeFocused();
 }
-async function select(page,start=0,end=6){await page.locator('#inlineText').evaluate((e,{start,end})=>{e.focus();e.setSelectionRange(start,end,'backward');e.dispatchEvent(new Event('select',{bubbles:true}))},{start,end})}
+async function select(page,start=0,end=6){if(await page.locator('#inlineText').evaluate(e=>e.readOnly))await page.locator('#inlineText').tap({position:{x:5,y:12}});await page.locator('#inlineText').evaluate((e,{start,end})=>{e.focus();e.setSelectionRange(start,end,'backward');e.dispatchEvent(new Event('select',{bubbles:true}))},{start,end})}
 for(const viewport of [{width:360,height:640},{width:390,height:844}])test.describe(`mobile range routing ${viewport.width}`,()=>{
  test.use({viewport,hasTouch:true,isMobile:true});
  for(const command of ['bold','italic','underline','color','size'])test(`Justify applies ${command} only to the confirmed range`,async({page})=>{
@@ -82,7 +82,7 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   // Identical final values must not add another undo state.
   await field.fill('28');await field.press('Enter');await page.locator('#inlineText').press('Control+z');expect(await element(page)).toEqual(input);
   await page.locator('#inlineText').press('Control+y');expect(await element(page)).toEqual(formatted);expect(await caret(page)).toEqual([0,6,'backward']);
-  await page.keyboard.insertText('Ёж');const typed=await element(page);await page.keyboard.press('Control+z');expect(await element(page)).toEqual(formatted);await page.keyboard.press('Control+y');expect(await element(page)).toEqual(typed);
+  await select(page);await page.keyboard.insertText('Ёж');const typed=await element(page);await page.keyboard.press('Control+z');expect(await element(page)).toEqual(formatted);await page.keyboard.press('Control+y');expect(await element(page)).toEqual(typed);
   await page.locator('#mobileConfirm').tap();expect(await history(page)).toBe(h+3);await page.locator('#undoBtn').tap();expect(await element(page)).toEqual(formatted);await page.locator('#redoBtn').tap();expect(await element(page)).toEqual(typed);const doc=await exportedDocument(page);await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===doc.id)?.elements).toEqual(doc.elements);
   await page.reload();await openLibraryDocument(page,doc.id);expect((await exportedDocument(page)).elements).toEqual(doc.elements);
  });
@@ -124,7 +124,7 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await page.locator('[data-mp-format=bold]').tap();await expect(page.locator('#toast')).toContainText('заново');expect(await element(page)).toEqual(transformed);
  });
  test('old panel after native text revision refuses command until reopened',async({page})=>{
-  await open(page);await select(page);await panel(page,'format');await page.locator('#inlineText').focus();await page.keyboard.insertText('Новое');const before=await element(page),h=await history(page);
+  await open(page);await select(page);await panel(page,'format');await page.locator('#inlineText').tap({position:{x:5,y:12}});await page.keyboard.insertText('Новое');const before=await element(page),h=await history(page);
   await page.locator('[data-mp-format=bold]').tap();await expect(page.locator('#toast')).toContainText('устарела');expect(await element(page)).toEqual(before);expect(await history(page)).toBe(h);
  });
 });

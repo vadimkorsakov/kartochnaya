@@ -2255,7 +2255,7 @@ $('#canvasHost').addEventListener('keydown',ev=>{if(ev.target.id!=='inlineWysiwy
  if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(true);canvas.focus();}
  if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText();}
 });
-function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){resumeTextInputWithFocus();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;mobileTextSession=mobileV36Small()?{doc:app.doc,element:e,text:e.text,revision:0,caret:null,composing:false,formatting:false}:null;const live=eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),supportsWysiwygProjection);app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&(e.textAlign!=='justify'||live||mobileV36Small())?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(live){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id||mobileTextSession?.formatting)return;
+function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){resumeTextInputWithFocus();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;mobileTextSession=mobileV36Small()?{doc:app.doc,element:e,text:e.text,revision:0,caret:null,composing:false,formatting:false}:null;const live=eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),supportsWysiwygProjection);app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&(e.textAlign!=='justify'||live||mobileV36Small())?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.readOnly=false;editor.removeAttribute('inputmode');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(live){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id||mobileTextSession?.formatting)return;
  // A user or Playwright may already have focused the editor and selected text
  // for replacement. Never collapse that selection in this deferred open frame.
  if(document.activeElement!==editor){editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length)}
@@ -2289,7 +2289,7 @@ function closeInlineText(cancel=false){
  if(app.editingId&&mobileV36Small())mobileV36State.userViewAdjusted=true;
  app.editingId=null;mobileTextSession=null;app.inlineSession=null;app.inlineToolPointer=false;app.editorBefore=null;app.editorRunsBefore=null;app.inlineRichHistory=null;app.inlineInputSelection=null;app.editorFontSizeBefore=null;app.editorTitleBefore=null;app.inlineModelBefore=null;app.inlineCaret=null;
  editor.classList.add('hidden');editor.classList.remove('vertical-wysiwyg');
- editor.blur();v41KeyboardViewport();
+ editor.blur();editor.readOnly=false;editor.removeAttribute('inputmode');v41KeyboardViewport();
  if(cancel||!changed){app.doc.title=titleBefore;updateProjectBadge()}else syncAutoCardTitle();
  if(!cancel&&changed){
   // Publish each settled action through the existing document history only once.
@@ -2459,7 +2459,7 @@ const mobileRangeKeys=new Set(['fontFamily','fontVariant','fontWeight','fontStyl
 function rememberMobileTextTarget(capture=false){
  if(!mobileV36Small()||app.wysiwyg||!mobileTextSession)return;
  const owner=mobileTextSession,e=active(),editor=$('#inlineText');
- if(owner.doc!==app.doc||owner.element!==e||app.editingId!==e?.id||(document.activeElement!==editor&&!(capture===true&&!owner.formatting)))return;
+ if(owner.doc!==app.doc||owner.element!==e||app.editingId!==e?.id||owner.formatting||(document.activeElement!==editor&&capture!==true))return;
  // Only confirmed native input/history may establish a new text revision.
  if(editor.value!==e.text)return;
  if(owner.text!==e.text)return;
@@ -2488,7 +2488,7 @@ function mobileTextTarget(key,allowLocked=false){
   if(owner.text!==e.text||$('#inlineText').value!==e.text)return unsupported('Текст изменился. Откройте редактирование заново.');
   if(owner.composing)return unsupported('Завершите ввод текста перед форматированием.');
  }
- const editor=$('#inlineText'),revision=owner?.revision||0,c=app.editingId&&document.activeElement===editor?{start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:owner?.caret;
+ const editor=$('#inlineText'),revision=owner?.revision||0,c=app.editingId&&!owner?.formatting&&document.activeElement===editor?{start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:owner?.caret;
  if(mobileRangeKeys.has(key)&&app.editingId&&owner.invalidOffsets)return unsupported('Текст изменился. Откройте редактирование заново.');
  if(mobileRangeKeys.has(key)&&app.editingId&&!c)return unsupported('Выделение не подтверждено. Выделите текст заново.');
  if(!mobileRangeKeys.has(key)||!app.editingId||c.start===c.end)return {kind:'layer',elementId:e.id,revision};
@@ -2628,7 +2628,7 @@ function rememberInlineCaret(capture=false){
  const e=$('#inlineText');
  // An explicit handoff/blur can capture without focus. Late native events from
  // an unfocused editor cannot replace the confirmed formatting snapshot.
- if(app.editingId&&(document.activeElement===e||capture===true&&!mobileTextSession?.formatting)){
+ if(app.editingId&&!mobileTextSession?.formatting&&(document.activeElement===e||capture===true)){
   app.inlineCaret={start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection};
   rememberMobileTextTarget(capture);syncInspectorFontFamily();mobileV36SyncTextStyle();
  }
@@ -2636,12 +2636,18 @@ function rememberInlineCaret(capture=false){
 function restoreSelectionWithoutFocus(){
  if(app.wysiwyg||!app.editingId)return;
  const e=$('#inlineText'),c=app.inlineCaret;
- if(c)e.setSelectionRange(Math.min(c.start,e.value.length),Math.min(c.end,e.value.length),c.direction);
+ if(c){const start=Math.min(c.start,e.value.length),end=Math.min(c.end,e.value.length);if(e.selectionStart!==start||e.selectionEnd!==end||e.selectionDirection!==c.direction)e.setSelectionRange(start,end,c.direction);}
+}
+function enableInlineTextInput(){
+ const e=active(),owner=mobileTextSession;
+ if(!app.editingId||e?.id!==app.editingId||isLayerLocked(e)||owner&&(owner.doc!==app.doc||owner.element!==e))return false;
+ if(owner)owner.formatting=false;
+ const editor=$('#inlineText');editor.readOnly=false;editor.removeAttribute('inputmode');return true;
 }
 function resumeTextInputWithFocus(){
  if(!app.editingId)return;
  if(app.wysiwyg){app.wysiwyg.focus();return;}
- if(mobileTextSession)mobileTextSession.formatting=false;
+ if(!enableInlineTextInput())return;
  $('#inlineText').focus({preventScroll:true});restoreSelectionWithoutFocus();
 }
 function restoreInlineCaret(focus=!mobileV36Small()){
@@ -2656,13 +2662,15 @@ function pauseInlineTextInput(){
  if(!mobileTextSession.formatting)rememberInlineCaret(true);
  const owner=mobileTextSession,revision=owner.revision;
  mobileTextSession.formatting=true;
- const e=$('#inlineText');if(document.activeElement===e)e.blur();
+ const e=$('#inlineText');e.inputMode='none';e.readOnly=true;if(document.activeElement===e)e.blur();
  // Some IMEs deliver their final input synchronously inside blur. Its text is
  // confirmed, but the pre-blur offsets are not a selection of that revision.
  if(owner.revision!==revision){owner.caret=null;app.inlineCaret=null;}
  restoreSelectionWithoutFocus();v41KeyboardViewport();
 }
-$('#inlineText').addEventListener('focus',()=>{if(mobileTextSession)mobileTextSession.formatting=false});
+// A browser/IME focus notification is not an explicit request to type. Native
+// input is enabled only before a real text tap or through the Edit command.
+$('#inlineText').addEventListener('pointerdown',()=>{if(mobileTextSession?.formatting)enableInlineTextInput()},true);
 // Keyboard navigation to a real panel field also hands off without refocusing
 // the textarea. Pointer handoff normally happens earlier, before native blur.
 document.addEventListener('focusin',ev=>{if(ev.target.closest(inlineFormattingRoots))pauseInlineTextInput()},true);

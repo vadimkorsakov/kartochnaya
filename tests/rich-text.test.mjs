@@ -188,6 +188,9 @@ test('actual mobile target adapter refuses sessionless, stale, locked and unsupp
  reset();assert.deepEqual(target('bold'),{kind:'range',elementId:'one',revision:1,start:0,end:6,direction:'backward'});
  assert.equal(target('textAlign').kind,'layer');assert.equal(target('opacity').kind,'layer');
  e.textAlign='justify';assert.equal(target('bold').kind,'range');e.textAlign='left';
+ Object.assign(editor,{selectionStart:0,selectionEnd:0,selectionDirection:'none'});context.document.activeElement=editor;
+ vm.runInContext('mobileTextSession.formatting=true;app.inlineCaret={start:0,end:0,direction:"none"}',context);context.rememberMobileTextTarget(true);
+ assert.deepEqual(target('bold'),{kind:'range',elementId:'one',revision:1,start:0,end:6,direction:'backward'});context.document.activeElement=null;reset();
  e.textMode='vertical';assert.equal(target('bold').kind,'unsupported');delete e.textMode;
  for(const key of ['strokeOpacity','strokeStyle'])assert.equal(target(key).kind,'unsupported');
  app.inlineSession=null;for(const key of ['fontFamily','fontVariant','bold','italic','fontSize','textColor','underline','strikethrough','letterSpacing','lineHeight','strokeWidth','stroke'])assert.equal(target(key).kind,'unsupported');

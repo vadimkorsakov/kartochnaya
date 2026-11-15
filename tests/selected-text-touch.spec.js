@@ -7,10 +7,10 @@ test('touch word selection then font, bold, color and Done paint Canvas/PNG',asy
  try{
   await setup(page,true);await touchWord(page);
   await page.locator('#mobileContext [data-mobile=font]').tap();await page.locator('[data-mp-font="Georgia"]').first().tap();
-  await expect(page.locator(editor)).toBeFocused();expect(await range(page)).toEqual([0,6]);
+  await expect(page.locator(editor)).not.toBeFocused();expect(await range(page)).toEqual([0,6]);
   await page.locator('#mobileContext [data-mobile=format]').tap();await page.locator('[data-mp-format=bold]').tap();
   await page.locator('#mobileContext [data-mobile=color]').tap();await page.locator('[data-mp-swatch="#ff0000"]').first().tap();
-  await expect(page.locator(editor)).toBeFocused();expect(await range(page)).toEqual([0,6]);
+  await expect(page.locator(editor)).not.toBeFocused();expect(await range(page)).toEqual([0,6]);
   expect((await model(page)).textRuns).toEqual([{start:0,end:6,style:{fontFamily:'Georgia',fontWeight:'700',textColor:'#ff0000'}}]);
   // Base-style textarea is intentional until the separate WYSIWYG stage.
   await expect(page.locator(editor)).toHaveCSS('color','rgb(0, 0, 0)');
@@ -33,7 +33,7 @@ for(const replay of [false,true])test(`touch numeric Enter restores selection${r
   }
   await field.press('Control+a');await field.pressSequentially('28');await field.press('Enter');
   expect((await model(page)).textRuns).toEqual([{start:0,end:6,style:{fontSize:28}}]);expect((await model(page)).fontSize).toBe(20);
-  await expect(page.locator(editor)).toBeFocused();expect(await range(page)).toEqual([0,6]);
+  await expect(page.locator(editor)).not.toBeFocused();expect(await range(page)).toEqual([0,6]);
   await page.locator('#mobileConfirm').tap();
  }finally{await trace(page,info)}
 });

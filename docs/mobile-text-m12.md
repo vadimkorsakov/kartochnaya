@@ -1,5 +1,9 @@
 # Mobile Text M1.2: Mixed и атомарные жесты
 
+Блокирующие Android Justify/focus-сценарии исправляются в
+[M1.2.1](mobile-text-m121.md). Физическая Android-приёмка остаётся обязательной;
+к M2 до неё не переходим.
+
 База: `2270ec8b6f29d30fb9361033b5402c36d00041db` (M1.1, #152).
 Задача #153; родитель #149. Native textarea и desktop WYSIWYG gate сохранены.
 

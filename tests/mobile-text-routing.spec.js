@@ -16,15 +16,19 @@ async function open(page,patch={},two=false){
 async function select(page,start=0,end=6){await page.locator('#inlineText').evaluate((e,{start,end})=>{e.focus();e.setSelectionRange(start,end,'backward');e.dispatchEvent(new Event('select',{bubbles:true}))},{start,end})}
 for(const viewport of [{width:360,height:640},{width:390,height:844}])test.describe(`mobile range routing ${viewport.width}`,()=>{
  test.use({viewport,hasTouch:true,isMobile:true});
- for(const command of ['bold','italic','underline','color','size'])test(`Justify refuses ${command} without layer fallback`,async({page})=>{
-  await open(page,{textAlign:'justify'});await select(page);const before=await element(page),h=await history(page);
+ for(const command of ['bold','italic','underline','color','size'])test(`Justify applies ${command} only to the confirmed range`,async({page})=>{
+  await open(page,{textAlign:'justify'});await select(page);const before=await element(page);
   if(command==='color'){await panel(page,'color');await page.locator('[data-mp-swatch="#ff0000"]').first().tap()}
   else if(command==='size'){await panel(page,'size');const field=page.locator('input[type=number][data-mp-key=fontSize]');await field.fill('28');await field.press('Enter')}
   else{await panel(page,'format');await page.locator(`[data-mp-format=${command}]`).tap()}
-  expect(await element(page)).toEqual(before);await expect(page.locator('#toast')).toContainText('недоступно');expect(await history(page)).toBe(h);
+  const after=await element(page),styles={bold:{fontWeight:'700'},italic:{fontStyle:'italic'},underline:{underline:true},color:{textColor:'#ff0000'},size:{fontSize:28}};
+  expect(after.textRuns).toEqual([{start:0,end:6,style:styles[command]}]);
+  for(const key of ['text','fontWeight','fontStyle','fontSize','textColor','textAlign'])expect(after[key]).toEqual(before[key]);
+  await expect(page.locator('#toast')).not.toContainText('недоступно');
+  await expect(page.locator('#inlineText')).not.toBeFocused();
   expect(await page.locator('#inlineText').evaluate(e=>[e.selectionStart,e.selectionEnd,e.selectionDirection])).toEqual([0,6,'backward']);
  });
- for(const align of ['left','center','right'])test(`supported ${align}: family size bold color underline, PNG, Done and reload`,async({page})=>{
+ for(const align of ['left','center','right','justify'])test(`supported ${align}: family size bold color underline, PNG, Done and reload`,async({page})=>{
   await open(page,{textAlign:align,textRuns:[{start:7,end:10,style:{fontStyle:'italic'}}]});
   const original=await element(page);const pngBefore=(await exportPNG(page)).image.data;await panel(page,'edit');await expect(page.locator('#inlineText')).toBeFocused();
   await select(page);await panel(page,'font');await page.locator('[data-mp-font="Georgia"]').first().tap();
@@ -44,8 +48,8 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   const doc=await exportedDocument(page);await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===doc.id)?.elements).toEqual(doc.elements);
   await page.reload();await openLibraryDocument(page,doc.id);expect((await exportedDocument(page)).elements).toEqual(doc.elements);expect((await exportPNG(page)).image.data.equals(pngAfter)).toBe(true);
  });
- test('all supported property routes preserve adjacent runs and numeric/slider focus',async({page})=>{
-  await open(page,{textRuns:[{start:7,end:10,style:{fontStyle:'italic'}}]});await select(page);
+ for(const align of ['left','justify'])test(`all supported ${align} property routes preserve adjacent runs and numeric/slider focus`,async({page})=>{
+  await open(page,{textAlign:align,textRuns:[{start:7,end:10,style:{fontStyle:'italic'}}]});await select(page);
   await panel(page,'font');await page.locator('[data-mp-font="Georgia"]').first().tap();
   await page.locator('[data-mp-action=expand]').tap();const variant=page.locator('[data-mp-variant="700:normal"]');await variant.tap();
   await panel(page,'spacing');
@@ -62,8 +66,8 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   let e=await element(page);expect(e.textRuns).toEqual([{start:0,end:6,style:{fontFamily:'Georgia',fontWeight:'700',fontStyle:'italic',letterSpacing:2,lineHeight:1.5,strokeWidth:2,stroke:'#ff0000',strikethrough:true}},{start:7,end:10,style:{fontStyle:'italic'}}]);
   await panel(page,'size');const slider=page.locator('input[type=range][data-mp-key=fontSize]');await slider.focus();await slider.press('ArrowRight');await expect(slider).toBeFocused();expect(await caret(page)).toEqual([0,6,'backward']);const stepped=await element(page);await page.locator('#inlineText').focus();await page.keyboard.press('Control+z');await page.keyboard.press('Control+y');expect(await element(page)).toEqual(stepped);await slider.focus();await slider.press('ArrowRight');expect(await element(page)).not.toEqual(stepped);
  });
- test('Unicode multiline whole graphemes are safe; split ZWJ/surrogate/combining selections refuse',async({page})=>{
-  await open(page,{text:'Привет семья 👨‍👩‍👧‍👦 😀 е\u0301'+('\nЕщё длинный русский текст с переносом строки, кириллицей и emoji 😀.').repeat(12)});
+ for(const align of ['left','justify'])test(`Unicode multiline ${align} whole graphemes are safe; split ZWJ/surrogate/combining selections refuse`,async({page})=>{
+  await open(page,{textAlign:align,text:'Привет семья 👨‍👩‍👧‍👦 😀 е\u0301'+('\nЕщё длинный русский текст с переносом строки, кириллицей и emoji 😀.').repeat(12)});
   const before=await element(page),start=before.text.indexOf('👨'),end=before.text.indexOf('Ещё');
   await select(page,start,end);await panel(page,'format');await page.locator('[data-mp-format=bold]').tap();
   const styled=await element(page);expect(styled.text).toBe(before.text);expect(styled.textRuns).toEqual([{start,end,style:{fontWeight:'700'}}]);
@@ -86,13 +90,15 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await open(page,{textMode:mode,textPathPoints:[{x:0,y:.5},{x:1,y:.5}]});await select(page);const before=await element(page),h=await history(page);
   await panel(page,'format');await page.locator('[data-mp-format=bold]').tap();await expect(page.locator('#toast')).toContainText('недоступно');expect(await element(page)).toEqual(before);expect(await history(page)).toBe(h);
  });
- test('alignment stays layer-only; switching left to Justify cannot enable fallback',async({page})=>{
+ test('alignment stays layer-only; switching left to Justify retains a safe range',async({page})=>{
   await open(page);await select(page);await panel(page,'format');await page.locator('[data-mp-format=justify]').tap();
   const before=await element(page);expect(before.textAlign).toBe('justify');expect(before.textRuns).toBeUndefined();
-  await page.locator('[data-mp-format=bold]').tap();await expect(page.locator('#toast')).toContainText('недоступно');expect(await element(page)).toEqual(before);
+  await page.locator('[data-mp-format=bold]').tap();const after=await element(page);
+  expect(after).toEqual({...before,textRuns:[{start:0,end:6,style:{fontWeight:'700'}}]});
+  await expect(page.locator('#inlineText')).not.toBeFocused();
  });
  test('rejected commands leave PNG and document history unchanged after Done',async({page})=>{
-  await open(page,{textAlign:'justify',textRuns:[{start:7,end:10,style:{fontStyle:'italic'}}]});const png=(await exportPNG(page)).image.data,h=await history(page);
+  await open(page,{textMode:'vertical',textRuns:[{start:7,end:10,style:{fontStyle:'italic'}}]});const png=(await exportPNG(page)).image.data,h=await history(page);
   await panel(page,'edit');await select(page);const before=await element(page);await panel(page,'format');
   for(const key of ['bold','italic','underline'])await page.locator(`[data-mp-format=${key}]`).tap();
   await page.locator('#mobileConfirm').tap();expect(await element(page)).toEqual(before);expect(await history(page)).toBe(h);expect((await exportPNG(page)).image.data.equals(png)).toBe(true);

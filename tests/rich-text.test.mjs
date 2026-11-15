@@ -187,6 +187,8 @@ test('actual mobile target adapter refuses sessionless, stale, locked and unsupp
  const target=key=>JSON.parse(JSON.stringify(context.mobileTextTarget(key)));
  reset();assert.deepEqual(target('bold'),{kind:'range',elementId:'one',revision:1,start:0,end:6,direction:'backward'});
  assert.equal(target('textAlign').kind,'layer');assert.equal(target('opacity').kind,'layer');
+ e.textAlign='justify';assert.equal(target('bold').kind,'range');e.textAlign='left';
+ e.textMode='vertical';assert.equal(target('bold').kind,'unsupported');delete e.textMode;
  for(const key of ['strokeOpacity','strokeStyle'])assert.equal(target(key).kind,'unsupported');
  app.inlineSession=null;for(const key of ['fontFamily','fontVariant','bold','italic','fontSize','textColor','underline','strikethrough','letterSpacing','lineHeight','strokeWidth','stroke'])assert.equal(target(key).kind,'unsupported');
  // The actual generic dispatcher must stop before any of its model/commit paths.

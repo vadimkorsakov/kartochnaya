@@ -1916,3 +1916,10 @@ html,body{background:#1e1f27!important;}
  #mobilePropertyUI .mp-pill:has([data-mp-size-scale]) .mp-stepper input{width:64px}
  #mobilePropertyUI .mp-pill:has([data-mp-size-scale]) .mp-auto-font{flex-basis:100%;justify-content:flex-end;height:22px}
 }
+
+/* A confirmed native range remains identifiable while the Android IME is closed. */
+@media(max-width:760px){
+ #mobilePropertyUI .mp-text-selection{flex:0 0 auto;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c7c2d5;font-size:11px;line-height:18px;margin-bottom:4px}
+ #mobilePropertyUI .mp-pill:has([data-mobile-text-selection]){flex-wrap:wrap;height:auto!important;border-radius:18px;row-gap:0!important}
+ #mobilePropertyUI .mp-pill>[data-mobile-text-selection]{flex-basis:100%}
+}

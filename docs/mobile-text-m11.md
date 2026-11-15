@@ -1,5 +1,8 @@
 # Mobile Text M1.1: безопасная цель форматирования
 
+Текущий mobile Justify и handoff без возврата IME описаны в
+[M1.2.1](mobile-text-m121.md). Ниже сохранён исходный контракт M1.1.
+
 База: `d94f86d226a7d5b98547a1ad8f59938b4bf88c3b`, #151, родитель #149,
 исследование #150 / `mobile-wysiwyg-m0.md`. M1.1 сохраняет native textarea.
 

@@ -2255,7 +2255,7 @@ $('#canvasHost').addEventListener('keydown',ev=>{if(ev.target.id!=='inlineWysiwy
  if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(true);canvas.focus();}
  if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText();}
 });
-function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){if(app.wysiwyg)app.wysiwyg.focus();else restoreInlineCaret();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;mobileTextSession=mobileV36Small()?{doc:app.doc,element:e,text:e.text,revision:0,caret:null,composing:false}:null;const live=eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),supportsWysiwygProjection);app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&(e.textAlign!=='justify'||live)?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(live){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id)return;
+function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){resumeTextInputWithFocus();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;mobileTextSession=mobileV36Small()?{doc:app.doc,element:e,text:e.text,revision:0,caret:null,composing:false,formatting:false}:null;const live=eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),supportsWysiwygProjection);app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&(e.textAlign!=='justify'||live||mobileV36Small())?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(live){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id||mobileTextSession?.formatting)return;
  // A user or Playwright may already have focused the editor and selected text
  // for replacement. Never collapse that selection in this deferred open frame.
  if(document.activeElement!==editor){editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length)}
@@ -2314,7 +2314,8 @@ for(const type of ['compositionstart','compositionend'])$('#inlineText').addEven
 $('#inlineText').addEventListener('beforeinput',ev=>{mobileTextCancelGesture(false);if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
 $('#inlineText').addEventListener('input',ev=>{mobileTextCancelGesture(false);const e=app.doc?.elements.find(x=>x.id===app.editingId);if(e){if(app.inlineRichHistory&&!app.inlineSession?.formatted){const result=editTextWithHistory(e,app.inlineRichHistory,ev.target.value,{selection:app.inlineInputSelection,inputType:ev.inputType});app.inlineRichHistory=result.history;e.text=result.element.text;restoreTextRuns(e,result.element.textRuns)}else setTextValue(e,ev.target.value,app.inlineInputSelection);app.inlineInputSelection=null;confirmMobileTextRevision(e);if(autoFitTextFont(e))positionInlineText();syncAutoCardTitle();rememberInlineCaret();recordInlineSession(ev.inputType);refreshSaveStatus();paint()}});
 $('#inlineText').addEventListener('blur',ev=>{
- rememberInlineCaret();
+ // blur has already moved document.activeElement; capture only while input owns the selection.
+ rememberInlineCaret(true);
  if(app.inlineToolPointer||ev.relatedTarget?.closest(inlineFormattingRoots+',.zoom-control'))return;
  // Android Back may dismiss only the IME. Keep the session and its visible exit.
  if(matchMedia('(max-width:760px)').matches&&(!ev.relatedTarget||ev.relatedTarget.closest('#documentTabsMenu,#documentTabsMenuToggle,#mobileToolbars,#mobilePropertyUI,#stageScroller,#zoomInBtn,#zoomOutBtn,#zoomLabel')))return;
@@ -2419,6 +2420,7 @@ function mobileTextPreviewGesture(key,value,final,target){
 }
 function mobileV36SyncTextStyle(){
  if(mobileTextGesture||!mobileV36Small()||!mobileV36State.tool||active()?.type!=='text')return;
+ mobileV36SyncSelectionLabel();
  for(const input of mobileV36.querySelectorAll('[data-mp-key]')){
   const key=input.dataset.mpKey;if(!mobileRangeKeys.has(key)||input===document.activeElement)continue;
   const state=mobileV36Style(key),value=state.kind==='value'?state.value:'';
@@ -2454,10 +2456,10 @@ function mobileV36StyleAttributes(key){const state=mobileV36Style(key);return `d
 // These references/revisions are transient; never part of a document snapshot.
 let mobileTextSession=null,mobileTextPanelOwner=null;
 const mobileRangeKeys=new Set(['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle']);
-function rememberMobileTextTarget(){
+function rememberMobileTextTarget(capture=false){
  if(!mobileV36Small()||app.wysiwyg||!mobileTextSession)return;
  const owner=mobileTextSession,e=active(),editor=$('#inlineText');
- if(owner.doc!==app.doc||owner.element!==e||app.editingId!==e?.id||document.activeElement!==editor)return;
+ if(owner.doc!==app.doc||owner.element!==e||app.editingId!==e?.id||(document.activeElement!==editor&&!(capture===true&&!owner.formatting)))return;
  // Only confirmed native input/history may establish a new text revision.
  if(editor.value!==e.text)return;
  if(owner.text!==e.text)return;
@@ -2490,7 +2492,7 @@ function mobileTextTarget(key,allowLocked=false){
  if(mobileRangeKeys.has(key)&&app.editingId&&owner.invalidOffsets)return unsupported('Текст изменился. Откройте редактирование заново.');
  if(mobileRangeKeys.has(key)&&app.editingId&&!c)return unsupported('Выделение не подтверждено. Выделите текст заново.');
  if(!mobileRangeKeys.has(key)||!app.editingId||c.start===c.end)return {kind:'layer',elementId:e.id,revision};
- if(!app.inlineSession||!supportsHorizontalTextLayout(e)||e.textAlign==='justify'||e.mobileArcRadius||['strokeOpacity','strokeStyle'].includes(key))return unsupported('Форматирование выделенного диапазона недоступно в текущем режиме. Снимите выделение для изменения всего слоя.');
+ if(!app.inlineSession||!supportsHorizontalTextLayout(e)||e.mobileArcRadius||['strokeOpacity','strokeStyle'].includes(key))return unsupported('Форматирование выделенного диапазона недоступно в текущем режиме. Снимите выделение для изменения всего слоя.');
  if(!Number.isInteger(c.start)||!Number.isInteger(c.end)||c.start<0||c.end>e.text.length||c.end<c.start)return unsupported('Выделение устарело. Выделите текст заново.');
  // Refuse partial graphemes rather than silently extending UTF-16 offsets.
  if(typeof Intl.Segmenter!=='function')return unsupported('Безопасное форматирование выделения недоступно в этом браузере.');
@@ -2564,7 +2566,7 @@ function styleInlineSelection(key,value,final){
   if(target.kind==='range'){app.inlineCaret={start:target.start,end:target.end,direction:target.direction};if(mobileTextGestureKeys.has(key))return mobileTextPreviewGesture(key,value,final,target);}
  }
 
- if(!app.wysiwyg&&app.editingId&&active()?.textAlign==='justify'&&['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key)){
+ if(!app.wysiwyg&&!mobileV36Small()&&app.editingId&&active()?.textAlign==='justify'&&['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key)){
   rememberInlineCaret();const c=app.inlineCaret;
   if(c&&c.end>c.start){toast('Форматирование выделенного диапазона недоступно в текущем режиме. Снимите выделение для изменения всего слоя.');return true;}
  }
@@ -2610,24 +2612,65 @@ function styleInlineSelection(key,value,final){
 }
 // Ownership lasts through the native mouse/focus/click sequence, including
 // touch compatibility events. The next pointer destination releases it.
-document.addEventListener('pointerdown',ev=>{if(!app.editingId)return;app.inlineToolPointer=!!ev.target.closest(inlineFormattingRoots);if(app.inlineToolPointer)rememberInlineCaret()},true);
+document.addEventListener('pointerdown',ev=>{if(!app.editingId)return;app.inlineToolPointer=!!ev.target.closest(inlineFormattingRoots);if(app.inlineToolPointer){rememberInlineCaret();pauseInlineTextInput()}},true);
 document.addEventListener('mousedown',ev=>{
  if(!app.editingId||ev.button!==0||!ev.target.closest(inlineFormattingRoots))return;
  app.inlineToolPointer=true;rememberInlineCaret();
  // Buttons can operate on the focused selection. Inputs/selects must retain
  // native focus, keyboard and text-selection behavior on desktop and Android.
- if((document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
+ if((!mobileV36Small()&&document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
 },true);
 document.addEventListener('keydown',ev=>{if(app.wysiwyg&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&ev.target.closest(inlineFormattingRoots)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&ev.target.id!=='zoomInput'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
 
 // Keep caret ownership when existing buttons operate on the selected text layer.
-function rememberInlineCaret(){if(app.wysiwyg){try{const c=app.wysiwyg.rememberSelection();app.inlineCaret={start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'};}catch{}syncInspectorFontFamily();return;}const e=$('#inlineText');if(app.editingId&&document.activeElement===e){app.inlineCaret={start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection};rememberMobileTextTarget();syncInspectorFontFamily();mobileV36SyncTextStyle()}}
-function restoreInlineCaret(focus=true){if(app.wysiwyg){if(focus)app.wysiwyg.focus();return;}if(!app.editingId)return;const e=$('#inlineText'),c=app.inlineCaret;if(focus)e.focus({preventScroll:true});if(c)e.setSelectionRange(Math.min(c.start,e.value.length),Math.min(c.end,e.value.length),c.direction)}
+function rememberInlineCaret(capture=false){
+ if(app.wysiwyg){try{const c=app.wysiwyg.rememberSelection();app.inlineCaret={start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'};}catch{}syncInspectorFontFamily();return;}
+ const e=$('#inlineText');
+ // An explicit handoff/blur can capture without focus. Late native events from
+ // an unfocused editor cannot replace the confirmed formatting snapshot.
+ if(app.editingId&&(document.activeElement===e||capture===true&&!mobileTextSession?.formatting)){
+  app.inlineCaret={start:e.selectionStart,end:e.selectionEnd,direction:e.selectionDirection};
+  rememberMobileTextTarget(capture);syncInspectorFontFamily();mobileV36SyncTextStyle();
+ }
+}
+function restoreSelectionWithoutFocus(){
+ if(app.wysiwyg||!app.editingId)return;
+ const e=$('#inlineText'),c=app.inlineCaret;
+ if(c)e.setSelectionRange(Math.min(c.start,e.value.length),Math.min(c.end,e.value.length),c.direction);
+}
+function resumeTextInputWithFocus(){
+ if(!app.editingId)return;
+ if(app.wysiwyg){app.wysiwyg.focus();return;}
+ if(mobileTextSession)mobileTextSession.formatting=false;
+ $('#inlineText').focus({preventScroll:true});restoreSelectionWithoutFocus();
+}
+function restoreInlineCaret(focus=!mobileV36Small()){
+ // Existing desktop callers retain their focus policy. Mobile formatting,
+ // including Undo, family/alignment and numeric Enter, never requests the IME.
+ if(focus&&!mobileTextSession?.formatting)resumeTextInputWithFocus();else restoreSelectionWithoutFocus();
+}
+function pauseInlineTextInput(){
+ if(!mobileV36Small()||app.wysiwyg||!app.editingId||!mobileTextSession)return;
+ // Never force an unfinished IME composition to commit just to show a tool.
+ if(mobileTextSession.composing)return;
+ if(!mobileTextSession.formatting)rememberInlineCaret(true);
+ const owner=mobileTextSession,revision=owner.revision;
+ mobileTextSession.formatting=true;
+ const e=$('#inlineText');if(document.activeElement===e)e.blur();
+ // Some IMEs deliver their final input synchronously inside blur. Its text is
+ // confirmed, but the pre-blur offsets are not a selection of that revision.
+ if(owner.revision!==revision){owner.caret=null;app.inlineCaret=null;}
+ restoreSelectionWithoutFocus();v41KeyboardViewport();
+}
+$('#inlineText').addEventListener('focus',()=>{if(mobileTextSession)mobileTextSession.formatting=false});
+// Keyboard navigation to a real panel field also hands off without refocusing
+// the textarea. Pointer handoff normally happens earlier, before native blur.
+document.addEventListener('focusin',ev=>{if(ev.target.closest(inlineFormattingRoots))pauseInlineTextInput()},true);
 for(const type of ['select','keyup','input','pointerup'])$('#inlineText').addEventListener(type,rememberInlineCaret);
 // Android's system handles can report only document selectionchange. Ignore
 // events from panels and delayed select events after textarea blur.
 document.addEventListener('selectionchange',rememberInlineCaret);
-function resumeInlineTextFromButton(){const focus=document.activeElement;if(app.editingId&&(focus===document.body||focus===$('#inlineText')||focus?.matches('button')))restoreInlineCaret()}
+function resumeInlineTextFromButton(){if(mobileV36Small()&&!app.wysiwyg){restoreSelectionWithoutFocus();return}const focus=document.activeElement;if(app.editingId&&(focus===document.body||focus===$('#inlineText')||focus?.matches('button')))restoreInlineCaret()}
 for(const root of [$('#mobileToolbars'),$('#mobilePropertyUI'),$('#zoomInBtn'),$('#zoomOutBtn'),$('#zoomLabel')])root.addEventListener('pointerdown',ev=>{
  if(app.editingId&&document.activeElement===$('#inlineText')&&matchMedia('(max-width:760px)').matches&&ev.target.closest('button')){rememberInlineCaret();ev.preventDefault()}
 },true);
@@ -4759,11 +4802,12 @@ function mobileV36Open(tool,expanded){
  if(tool==='edit'){mobileV36Close();if(active()?.type==='text')openInlineText();else showInspector('settings');return}
  if(tool==='replace'){mobileV36Close();if(active()){app.pendingImage={kind:'fill',id:active().id};$('#imageInput').click()}return}
  if(tool==='crop'){mobileV36Close();openMobileImageModes();return}
+ if(mobileTextSession?.composing){toast('Завершите ввод текста перед форматированием.');return}
  if(mobileV36State.tool===tool&&expanded===undefined){mobileV36Close();return}
  closeMobileOverlays('mobileProperties');closeToolPopovers();
  if(mobileV36State.tool!==tool){mobileV36State.fontTall=false;mobileV36State.fontSearch=false;mobileV36State.userViewAdjusted=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.effectId=null;mobileV36State.tab=tool==='position'?'sort':'solid'}
  mobileV36State.tool=tool;mobileV36State.elementId=app.selected;
- rememberInlineCaret();mobileTextPanelOwner={doc:app.doc,element:active(),session:mobileTextSession,revision:mobileTextSession?.revision||0};
+ rememberInlineCaret();pauseInlineTextInput();mobileTextPanelOwner={doc:app.doc,element:active(),session:mobileTextSession,revision:mobileTextSession?.revision||0};
  mobileV36State.expanded=expanded===undefined?!['font','size','color','opacity'].includes(tool):!!expanded;
  mobileV36Render();
 }
@@ -4891,6 +4935,20 @@ function mobileV36MorePanel(){
  if(!e)return mobileV36Sheet('Ещё',actions+batch);
  return mobileV36Sheet('Ещё',`${actions}${e.type==='text'?a('title',`${e.isTitleLayer?'✓ ':''}Сделать заголовком карточки (H1)`):''}${batch}${e.type==='text'?`<div class="mp-subtitle">Режим текста</div><div class="mp-grid three">${[['horizontal','Горизонт.'],['vertical','Вертикал.']].map(([id,label])=>`<button class="mp-choice ${e.textMode===id?'active':''}" data-mp-textmode="${id}">${label}</button>`).join('')}</div>`:''}<div class="mp-subtitle">Режим наложения</div><div class="mp-grid two">${BLEND_OPTIONS.map(([id,label])=>`<button class="mp-choice ${e.blendMode===id?'active':''}" data-mp-blend="${id}">${mobileV36Escape(label)}</button>`).join('')}</div>${['path','vector'].includes(e.type)?a('saveShape','Сохранить фигуру в библиотеку'):''}`)
 }
+// Native Android may hide its highlight after blur. Describe the confirmed
+// UTF-16 target, never guessed Canvas geometry or a second selection engine.
+function mobileV36SyncSelectionLabel(){
+ let label=mobileV36.querySelector('[data-mobile-text-selection]');
+ if(!app.editingId||app.wysiwyg){label?.remove();return;}
+ const target=mobileTextTarget('bold');
+ if(target.kind!=='range'){label?.remove();return;}
+ const host=mobileV36.querySelector('.mp-body,.mp-pill');if(!host)return;
+ if(!label){label=document.createElement('div');label.dataset.mobileTextSelection='';label.className='mp-text-selection';label.setAttribute('role','status');host.prepend(label);}
+ const text=active().text.slice(target.start,Math.min(target.end,target.start+256)).replace(/\s+/g,' ');
+ const parts=Array.from(new Intl.Segmenter('ru',{granularity:'grapheme'}).segment(text),part=>part.segment);
+ const excerpt=parts.slice(0,40).join('')+(parts.length>40||target.end-target.start>256?'…':'');
+ label.textContent='Выделено: «'+excerpt+'»';
+}
 function mobileV36Render(){
  if(mobileTextGesture)return;
  mobileV36FinishInteraction();
@@ -4919,7 +4977,7 @@ function mobileV36Render(){
  // or a different category (a different list of rows).
  const previousFontList=mobileV36.querySelector('.mp-font-scroll');
  const previousFontScroll=previousFontList?{scope:previousFontList.dataset.mpFontScope,top:previousFontList.scrollTop}:null;
- mobileV36.innerHTML=content;mobileV36.className='mp-open';
+ mobileV36.innerHTML=content;mobileV36.className='mp-open';mobileV36SyncSelectionLabel();
  document.querySelectorAll('#mobileContext button').forEach(b=>b.classList.toggle('mobile-active',b.dataset.mobile===t));
  mobileFontHeight();
  const nextFontList=mobileV36.querySelector('.mp-font-scroll');
@@ -5093,6 +5151,7 @@ mobileV36.addEventListener('keydown',ev=>{
  if(ev.target.matches('[data-mp-size-scale]')&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.key)){ev.preventDefault();const delta=['ArrowRight','ArrowUp'].includes(ev.key)?1:-1,value=clamp(Number(mobileV36StyleValue('fontSize',24))+delta,1,500);ev.target.value=mobileV36SizePosition(value);ev.target.dispatchEvent(new Event('input',{bubbles:true}));ev.target.dispatchEvent(new Event('change',{bubbles:true}));return}
  if(ev.key==='Escape'&&ev.target.matches('[data-mp-key],[data-mp-hex]')){mobileTextCancelGesture();ev.preventDefault();ev.stopPropagation();mobileV36Render();return}
  if(ev.key==='Enter'&&ev.target.matches('[data-mp-hex]')){ev.preventDefault();ev.target.dispatchEvent(new Event('change',{bubbles:true}));ev.target.blur();resumeInlineTextFromButton()}
+ if(ev.key==='Enter'&&ev.target.matches('[data-mp-search]')){ev.preventDefault();ev.target.blur();restoreSelectionWithoutFocus()}
 },true);
 // Numeric property edits use native change-on-blur to finalize their existing
 // inspector/effect/mobile history transaction. Enter also releases focus so

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { normalizeRuns, validateRuns, applyLayerUnderlineStyle, applyTextStyle, removeTextStyle, replaceText, updateText, clearTextFormatting, effectiveTextStyles, effectiveTextStyleAt, splitTextRuns, transformText, createTextEditHistory, editTextWithHistory } from '../src/model/rich-text.mjs';
+import { normalizeRuns, validateRuns, applyLayerUnderlineStyle, applyBaselineShift, applyTextStyle, removeTextStyle, replaceText, updateText, clearTextFormatting, effectiveTextStyles, effectiveTextStyleAt, splitTextRuns, transformText, createTextEditHistory, editTextWithHistory } from '../src/model/rich-text.mjs';
 import { remapCanvasGraph, remapDocumentGraph, selectCanvasGraph } from '../src/model/canvas-graph.mjs';
 import { openDatabase, runStoreRequest } from '../src/storage/indexeddb.mjs';
 import { createBackup, readBackup } from '../src/backup/archive.mjs';
@@ -86,7 +86,7 @@ test('length-changing Unicode transforms retain each original character style',(
   const next=transformText(e,c=>c.toUpperCase());assert.equal(next.text,'ASSЯ');assert.deepEqual(next.textRuns,[run(1,3,{bold:true})]);assert.equal(e.text,'aßя');
 });
 test('JSON, ZIP backup, IndexedDB and document/selection clones preserve sparse fields independently',async()=>{
-  const element=rich(),doc={id:'d',projectId:'p',width:320,height:240,elements:[element]},data={projects:[{id:'p',name:'Rich'}],docs:[doc],fonts:[],settings:[]};
+  const element=applyBaselineShift({...rich(),baselineShift:'super'},'normal',{start:0,end:3}),doc={id:'d',projectId:'p',width:320,height:240,elements:[element]},data={projects:[{id:'p',name:'Rich'}],docs:[doc],fonts:[],settings:[]};
   const json=JSON.parse(JSON.stringify(doc));assert.deepEqual(json,doc);
   const restored=(await readBackup((await createBackup(data)).bytes)).data.docs[0];assert.deepEqual(restored,doc);
   const db=await openDatabase({indexedDB:new IDBFactory()});await runStoreRequest(db,'docs','readwrite',s=>s.put(doc));assert.deepEqual(await runStoreRequest(db,'docs','readonly',s=>s.get('d')),doc);db.close();
@@ -238,4 +238,47 @@ test('a layer underline edit clears one range field and preserves explicit unrel
   assert.deepEqual(next.textRuns,[run(0,2,{underline:false,textColor:'#123456',underlineDetails:{opacity:0}})]);
   assert.deepEqual(e.textRuns[0].style.underlineDetails,{thickness:'auto',opacity:0});
   assert.deepEqual(applyTextStyle(next,0,2,{underlineDetails:null}).textRuns,[run(0,2,{underline:false,textColor:'#123456'})]);
+});
+
+test('indices inherit through gaps and editing, and invalid overrides leave earlier keys intact',()=>{
+  const source={text:'A😀БCD',baselineShift:'super',textRuns:[
+    run(1,5,{baselineShift:'sub',fontSize:30,strokeOpacity:100}),
+    run(2,4,{baselineShift:'normal',underlineDetails:{style:'wavy'},extension:{keep:true}}),
+    run(3,6,{baselineShift:'invalid',strikethrough:true}),
+  ]};
+  const runs=normalizeRuns(source.text,source.textRuns,source);
+  assert.equal(runs[0].style.baselineShift,'normal');
+  assert.deepEqual(runs[0].style.extension,{keep:true});
+  assert.equal(effectiveTextStyleAt(source,3).baselineShift,'normal');
+  assert.equal(effectiveTextStyleAt(source,4).baselineShift,'sub');
+  assert.equal(effectiveTextStyleAt(source,5).baselineShift,'super');
+  assert.equal(effectiveTextStyleAt({text:'A',baselineShift:4},0).baselineShift,'normal');
+  const edited=replaceText(source,3,4,'яю');
+  assert.equal(edited.text,'A😀яюCD');
+  assert.equal(effectiveTextStyleAt(edited,4).baselineShift,'normal');
+  assert.equal(effectiveTextStyleAt(edited,5).baselineShift,'sub');
+  assert.equal(effectiveTextStyleAt(replaceText(edited,1,5,''),1).baselineShift,'sub');
+  assert.deepEqual(clearTextFormatting(source),{text:source.text});
+});
+
+test('range and layer index cycles preserve nominal size, decorations and explicit paint',()=>{
+  const source={text:'H2O',fontSize:32,textRunsBaseFontSize:24,autoFontSize:true,textRuns:[
+    run(1,2,{fontSize:36,stroke:'#112233',strokeOpacity:100,fillOpacity:100,strikethrough:true,underlineDetails:{style:'dotted',offset:6}}),
+  ]};
+  const range={start:1,end:2};
+  for(const target of [range,null]){
+    let result=source;
+    for(const mode of ['super','sub','normal']){
+      result=applyBaselineShift(result,mode,target);
+      assert.equal(applyBaselineShift(result,mode,target),result);
+    }
+    assert.deepEqual(result,source);
+  }
+  const indexed=applyBaselineShift(applyBaselineShift(source,'sub'),'normal',range);
+  assert.equal(indexed.baselineShift,'sub');
+  assert.equal(indexed.textRuns[0].style.baselineShift,'normal');
+  assert.equal(applyBaselineShift(indexed,'bad',range),indexed);
+  assert.equal(applyBaselineShift(indexed,'super',{start:1,end:1}),indexed);
+  const reset=applyBaselineShift(indexed,'sub');
+  assert.deepEqual(reset.textRuns,source.textRuns);
 });

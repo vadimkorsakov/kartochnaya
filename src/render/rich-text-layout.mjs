@@ -1,5 +1,6 @@
 import { textDecorationRects } from './text-decorations.mjs';
-import { normalizeRuns, resolveUnderlineDetails } from '../model/rich-text.mjs';
+import { baselineOffset, glyphFontSize } from './text-baseline-shift.mjs';
+import { isBaselineShift, normalizeRuns, resolveUnderlineDetails } from '../model/rich-text.mjs';
 
 // Ordinary horizontal text always uses one renderer, whether or not styled
 // ranges exist. A formatting operation must not switch the rendering engine.
@@ -24,7 +25,8 @@ export const fontDeclarationSize = size => {
 let quantizedFonts = false;
 export const richTextFont = s => {
   const family = genericFamilies.has(s.fontFamily.toLowerCase()) ? s.fontFamily.toLowerCase() : `"${s.fontFamily.replaceAll('"', '')}"`;
-  return `${s.fontStyle} ${s.fontWeight} ${quantizedFonts?fontDeclarationSize(s.fontSize):s.fontSize}px ${family}`;
+  const size = glyphFontSize(s);
+  return `${s.fontStyle} ${s.fontWeight} ${quantizedFonts?fontDeclarationSize(size):size}px ${family}`;
 };
 
 // Explicit weight/style wins over its boolean alias within the same scope.
@@ -41,6 +43,7 @@ export function resolveRichTextStyle(base, override = {}) {
     fontWeight: String(weight(override) || weight(base) || '400'),
     fontStyle: italic(override) || italic(base) || 'normal',
     fontSize: override.fontSize === undefined ? size : positive(override.fontSize, size / scale) * scale,
+    baselineShift: isBaselineShift(override.baselineShift) ? override.baselineShift : isBaselineShift(base.baselineShift) ? base.baselineShift : 'normal',
     fillOpacity: override.fillOpacity ?? base.fillOpacity ?? 100,
     strokeStyle: override.strokeStyle ?? base.strokeStyle ?? 'solid',
     strokeOpacity: override.strokeOpacity ?? base.strokeOpacity ?? 100,
@@ -108,12 +111,12 @@ export function createRichTextLayoutEngine(context, fontSet) {
     const m = context.measureText(text);
     return boundedSet(metrics, key, {
       width: m.width,
-      ascent: m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent ?? style.fontSize * .8,
-      descent: m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent ?? style.fontSize * .2,
+      ascent: m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent ?? glyphFontSize(style) * .8,
+      descent: m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent ?? glyphFontSize(style) * .2,
       inkLeft: m.actualBoundingBoxLeft ?? 0,
       inkRight: m.actualBoundingBoxRight ?? m.width,
-      inkAscent: m.actualBoundingBoxAscent ?? m.fontBoundingBoxAscent ?? style.fontSize * .8,
-      inkDescent: m.actualBoundingBoxDescent ?? m.fontBoundingBoxDescent ?? style.fontSize * .2,
+      inkAscent: m.actualBoundingBoxAscent ?? m.fontBoundingBoxAscent ?? glyphFontSize(style) * .8,
+      inkDescent: m.actualBoundingBoxDescent ?? m.fontBoundingBoxDescent ?? glyphFontSize(style) * .2,
     }, 4096);
   }
   function layout(e) {
@@ -183,10 +186,15 @@ export function createRichTextLayoutEngine(context, fontSet) {
     function finish(breakCluster, final = false) {
       // Empty rows historically use layer font metrics, including in mixed
       // fontSize documents. Only their LF's leading is a new range property.
-      const blankStyle = {...base, lineHeight:(breakCluster?.style || emptyStyle).lineHeight};
+      const blankStyle = {...base, baselineShift:'normal', lineHeight:(breakCluster?.style || emptyStyle).lineHeight};
       const samples = fragments.length ? fragments : [{ style: blankStyle, metrics: measure('Mg', blankStyle) }];
-      const ascent = Math.max(...samples.map(p => p.metrics.ascent));
-      const descent = Math.max(...samples.map(p => p.metrics.descent));
+      let ascent = -Infinity, descent = -Infinity;
+      for (const part of samples) {
+        const offset = baselineOffset(part.style);
+        const nominal = offset ? measure(part.text, {...part.style, baselineShift:'normal'}) : part.metrics;
+        ascent = Math.max(ascent, nominal.ascent, part.metrics.ascent - offset);
+        descent = Math.max(descent, nominal.descent, part.metrics.descent + offset);
+      }
       // Leading belongs to source fragments, independently of glyph coalescing.
       // Max font metrics keep one baseline safe for mixed families and sizes.
       const rowHeight = Math.max(...samples.map(requiredHeight), ascent + descent);
@@ -253,7 +261,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       let previousGeometry = null, previousShapeWidth = 0;
       row.fragments = row.fragments.map(({ text, style, start, end, geometry, shapeWidth }) => {
         const advance = geometry === previousGeometry ? shapeWidth - previousShapeWidth : shapeWidth;
-        const part = { text, style, start, end, x, y: row.baseline, width: advance };
+        const part = { text, style, start, end, x, y: row.baseline + baselineOffset(style), width: advance };
         x += advance;
         previousGeometry = geometry; previousShapeWidth = shapeWidth;
         return part;

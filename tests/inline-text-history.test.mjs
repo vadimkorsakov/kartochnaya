@@ -139,3 +139,15 @@ test('an underline field gesture publishes one backward-selection history entry'
  assert.deepEqual(moveInlineHistory(history,1).element.textRuns[0].style.underlineDetails,{style:'wavy',opacity:0,offset:0});
  assert.deepEqual(history.states[1].caret,caret);
 });
+
+test('index changes round-trip through history with the backward source selection',()=>{
+ const original={text:'H2O',fontSize:24,autoFontSize:true};
+ const caret={start:1,end:2,direction:'backward'},history=createInlineHistory(original);
+ const sub=applyTextStyle(original,1,2,{baselineShift:'sub'});
+ recordInlineHistory(history,original,caret);
+ recordInlineHistory(history,sub,caret);
+ recordInlineHistory(history,sub,caret);
+ assert.equal(history.states.length,2);
+ assert.deepEqual(moveInlineHistory(history,-1),{element:original,caret});
+ assert.deepEqual(moveInlineHistory(history,1),{element:sub,caret});
+});

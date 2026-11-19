@@ -153,6 +153,14 @@ jobs:
           path: test-results/selection/text-decorations-advanced-*/underline-*
           if-no-files-found: warn
           retention-days: 14
+      - name: Preserve Firefox baseline shift evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: text-baseline-shift-firefox
+          path: test-results/selection/selected-text-baseline-*/baseline-*
+          if-no-files-found: warn
+          retention-days: 14
       - name: Multiline WYSIWYG in Chromium and Firefox
         run: npx playwright test --config=playwright.multiline.config.js
       - name: Text alignment WYSIWYG in Chromium and Firefox
@@ -230,6 +238,14 @@ jobs:
         run: git fetch --no-tags origin cecc9f16aca98471aa90e580a018f3912f27142a
       - name: Full Playwright suite (shard ${{ matrix.shard }}/3)
         run: npm run test:all -- --shard=${{ matrix.shard }}/3
+      - name: Preserve Chromium baseline shift evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: text-baseline-shift-chromium-shard-${{ matrix.shard }}
+          path: test-results/selected-text-baseline-*/baseline-*
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Preserve browser failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

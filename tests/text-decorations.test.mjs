@@ -43,7 +43,7 @@ test('decoration-only splits preserve glyph painting, ligatures, kerning, row me
   for(const row of decorated.rows)for(const rect of row.decorations){assert.ok(rect.start>=row.start&&rect.end<=row.end);assert.ok(rect.width>0);assert.ok(!text.slice(rect.start,rect.end).includes('\n'));}
  }
 });
-test('rectangles follow range color, size and alphabetic baseline, never details extensions',()=>{
+test('rectangles follow range color, size and alphabetic baseline and ignore invalid extension values',()=>{
  assert.deepEqual(textDecorationRects({x:10,y:40,width:50},{fontSize:38,textColor:'#cc2244',underline:true,strikethrough:true,underlineDetails:{color:'blue',thickness:99}}),[
   {kind:'underline',x:10,y:42.8,width:50,height:2,color:'#cc2244'},
   {kind:'strikethrough',x:10,y:27.22,width:50,height:2,color:'#cc2244'},
@@ -64,9 +64,17 @@ test('IndexedDB v3 and backup JSON retain both booleans, false overrides, legacy
  const {IDBFactory}=await import('fake-indexeddb');
  const {openDatabase,runStoreRequest}=await import('../src/storage/indexeddb.mjs');
  const {createBackup,readBackup}=await import('../src/backup/archive.mjs');
- const e={...base,id:'text',mobileUnderline:true,mobileStrike:true,textRuns:[{start:1,end:3,style:{underline:false,strikethrough:true,underlineDetails:{color:'blue'}}}]};
+ const e={...base,id:'text',mobileUnderline:true,mobileStrike:true,underlineDetails:{style:'wavy',thickness:4.5,color:'#123456'},
+  textRuns:[{start:1,end:3,style:{underline:false,strikethrough:true,underlineDetails:{color:'inherit',opacity:0,offset:0,other:{future:1}}}}]};
  const doc={id:'d',projectId:'p',width:320,height:240,elements:[e]},data={projects:[{id:'p',name:'Decorations'}],docs:[doc],fonts:[],settings:[]};
  const restored=(await readBackup((await createBackup(data)).bytes)).data.docs[0];assert.deepEqual(restored,doc);
  const db=await openDatabase({indexedDB:new IDBFactory()});assert.equal(db.version,3);
  try{await runStoreRequest(db,'docs','readwrite',s=>s.put(doc));assert.deepEqual(await runStoreRequest(db,'docs','readonly',s=>s.get('d')),doc)}finally{db.close()}
+});
+
+test('manual underline paint uses baseline offset, independent color and zero opacity',()=>{
+ const details={style:'dotted',thickness:6,offset:0,color:'#11aa33',opacity:0};
+ const [u,s]=textDecorationRects({x:10,y:40,width:50},{fontSize:38,textColor:'#cc2244',fillOpacity:61,underline:true,strikethrough:true,underlineDetails:details});
+ assert.deepEqual(u,{kind:'underline',x:10,y:37,width:50,height:6,color:'#11aa33',style:'dotted',fillOpacity:0,advanced:true});
+ assert.deepEqual(s,{kind:'strikethrough',x:10,y:27.22,width:50,height:2,color:'#cc2244'});
 });

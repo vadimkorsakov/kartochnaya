@@ -126,3 +126,16 @@ test('mobile U/S query is scoped to a range; collapsed caret retains existing wh
  target={kind:'unsupported'};assert.equal(context.textDecorationState('underline'),false);
  small=false;target={kind:'layer'};assert.equal(context.textDecorationState('underline'),'mixed');
 });
+
+test('an underline field gesture publishes one backward-selection history entry',()=>{
+ const element={text:'А👩‍💻 Б',fontSize:32,autoFontSize:true,
+  textRuns:[{start:1,end:6,style:{underline:true,underlineDetails:{style:'wavy',opacity:0}}}]};
+ const history=createInlineHistory(element),caret={start:1,end:6,direction:'backward'};
+ let next;
+ for(let offset=20;offset>=0;offset--)next=applyTextStyle(element,1,6,{underlineDetails:{offset}});
+ recordInlineHistory(history,next,caret);
+ assert.equal(history.states.length,2);
+ assert.deepEqual(moveInlineHistory(history,-1).element,element);
+ assert.deepEqual(moveInlineHistory(history,1).element.textRuns[0].style.underlineDetails,{style:'wavy',opacity:0,offset:0});
+ assert.deepEqual(history.states[1].caret,caret);
+});

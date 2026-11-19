@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { normalizeRuns, validateRuns, applyTextStyle, removeTextStyle, replaceText, updateText, clearTextFormatting, effectiveTextStyles, effectiveTextStyleAt, splitTextRuns, transformText, createTextEditHistory, editTextWithHistory } from '../src/model/rich-text.mjs';
+import { normalizeRuns, validateRuns, applyLayerUnderlineStyle, applyTextStyle, removeTextStyle, replaceText, updateText, clearTextFormatting, effectiveTextStyles, effectiveTextStyleAt, splitTextRuns, transformText, createTextEditHistory, editTextWithHistory } from '../src/model/rich-text.mjs';
 import { remapCanvasGraph, remapDocumentGraph, selectCanvasGraph } from '../src/model/canvas-graph.mjs';
 import { openDatabase, runStoreRequest } from '../src/storage/indexeddb.mjs';
 import { createBackup, readBackup } from '../src/backup/archive.mjs';
@@ -66,7 +66,7 @@ test('invalid saved data repairs predictably, last overlapping key wins; no muta
   assert.deepEqual(normalizeRuns('abc','broken'),[]);assert.deepEqual(normalizeRuns('',runs),[]);
 });
 test('extensions survive and merge structurally, paragraph properties cannot become character overrides',()=>{
-  const style={underline:true,underlineDetails:{color:'red',thickness:2},baselineShift:'super',fontFeatures:{liga:false},future:[1,'a']};
+  const style={underline:true,underlineDetails:{color:'#ff0000',thickness:2,future:{yes:true}},baselineShift:'super',fontFeatures:{liga:false},future:[1,'a']};
   const e=applyTextStyle({text:'ab'},0,2,style);assert.deepEqual(e.textRuns[0].style,style);
   assert.deepEqual(normalizeRuns('ab',[run(0,1,{fontFeatures:{a:1,b:2}}),run(1,2,{fontFeatures:{b:2,a:1}})]),[run(0,2,{fontFeatures:{a:1,b:2}})]);
   const bad=JSON.parse('{"__proto__":{"polluted":true},"constructor":1,"textAlign":"center"}');
@@ -209,4 +209,33 @@ test('actual mobile target adapter refuses sessionless, stale, locked and unsupp
  vm.runInContext('mobileTextSession.caret={start:0,end:0,direction:"none"}',context);assert.equal(target('bold').kind,'layer');
  reset();e.text+='!';editor.value=e.text;context.invalidateMobileTextOffsets(e);assert.equal(target('case').kind,'layer');assert.equal(target('bold').kind,'unsupported');
  e.text+='?';editor.value=e.text;context.confirmMobileTextRevision(e);assert.equal(target('bold').kind,'unsupported');vm.runInContext('mobileTextPanelOwner.revision=mobileTextSession.revision',context);assert.equal(target('bold').kind,'range');
+});
+
+test('underline details merge per field across overlapping ranges and preserve explicit resets',()=>{
+  const base={text:'abcd',mobileUnderline:true,underlineDetails:{color:'#112233',thickness:5,offset:7}};
+  const e={...base,textRuns:[run(0,2,{underlineDetails:{style:'wavy',opacity:0,future:{enabled:true}},future:{x:1}}),
+    run(1,3,{underline:false,underlineDetails:{thickness:'auto',color:'inherit',offset:0},future:{y:2}})]};
+  const next=applyTextStyle(e,1,2,{underlineDetails:{thickness:2,color:'#AbC',offset:Infinity,opacity:-1,style:'dash'}});
+  assert.deepEqual(next.textRuns[1].style,{underline:false,underlineDetails:{style:'wavy',opacity:0,offset:0,color:'#aabbcc',thickness:2,future:{enabled:true}},future:{y:2}});
+  const removed=applyTextStyle(next,1,2,{underlineDetails:{thickness:null}});
+  assert.deepEqual(effectiveTextStyles(removed).map(p=>p.style.underlineDetails),[
+    {color:'#112233',thickness:5,offset:7,style:'wavy',opacity:0,future:{enabled:true}},
+    {color:'#aabbcc',thickness:5,offset:0,style:'wavy',opacity:0,future:{enabled:true}},
+    {color:'inherit',thickness:'auto',offset:0},
+    {color:'#112233',thickness:5,offset:7},
+  ]);
+  assert.deepEqual(updateText(removed,'ab!cd',{start:2,end:2}).textRuns[1].style,removed.textRuns[1].style);
+  assert.equal(clearTextFormatting(removed).textRuns,undefined);
+  assert.deepEqual(clearTextFormatting(removed).underlineDetails,base.underlineDetails);
+});
+
+test('a layer underline edit clears one range field and preserves explicit unrelated overrides',()=>{
+  const e={text:'abcd',underline:false,textColor:'#123456',underlineDetails:{style:'wavy',thickness:4,future:{id:1}},
+    textRuns:[run(0,2,{underline:false,textColor:'#123456',underlineDetails:{thickness:'auto',opacity:0}}),
+      run(2,4,{underlineDetails:{thickness:-1,offset:-900,color:'#xyz',opacity:101,style:'dashed'}})]};
+  const next=applyLayerUnderlineStyle(e,{underlineDetails:{thickness:3.25}});
+  assert.deepEqual(next.underlineDetails,{style:'wavy',thickness:3.25,future:{id:1}});
+  assert.deepEqual(next.textRuns,[run(0,2,{underline:false,textColor:'#123456',underlineDetails:{opacity:0}})]);
+  assert.deepEqual(e.textRuns[0].style.underlineDetails,{thickness:'auto',opacity:0});
+  assert.deepEqual(applyTextStyle(next,0,2,{underlineDetails:null}).textRuns,[run(0,2,{underline:false,textColor:'#123456'})]);
 });

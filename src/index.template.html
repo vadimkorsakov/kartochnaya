@@ -68,6 +68,38 @@
 <div id="fxPopover" class="fx-popover hidden" role="dialog" aria-labelledby="fxPopoverTitle"></div>
 <div id="fxChooser" class="fx-chooser hidden" role="dialog" aria-label="Добавить эффект"></div>
 <div id="fxMenu" class="fx-menu hidden" role="menu" aria-label="Действия с эффектом"></div>
+<div id="underlinePanel" class="fx-popover underline-panel hidden" role="dialog" aria-labelledby="underlinePanelTitle">
+  <div class="fx-popover-head"><strong id="underlinePanelTitle">Подчёркивание</strong><button type="button" data-underline-close aria-label="Закрыть настройки подчёркивания">×</button></div>
+  <div class="fx-details underline-panel-body">
+    <canvas id="underlineSample" role="img" aria-label="Предпросмотр подчёркивания"></canvas>
+    <div class="underline-row">
+      <button type="button" class="linebtn" data-underline-toggle>Подчёркивание</button>
+      <div class="underline-options" role="group" aria-label="Стиль подчёркивания">
+        <button type="button" class="linebtn" data-underline-style="solid" aria-label="Сплошное"><svg viewBox="0 0 24 16" aria-hidden="true"><path d="M2 8h20"/></svg></button>
+        <button type="button" class="linebtn" data-underline-style="dotted" aria-label="Точечное"><svg viewBox="0 0 24 16" aria-hidden="true"><path d="M3 8h18" stroke-dasharray="0 6" stroke-linecap="round"/></svg></button>
+        <button type="button" class="linebtn" data-underline-style="wavy" aria-label="Волнистое"><svg viewBox="0 0 24 16" aria-hidden="true"><path d="M2 8c2-5 5-5 7 0s5 5 7 0 4-5 6 0"/></svg></button>
+      </div>
+    </div>
+    <div class="underline-row underline-measure">
+      <label for="underlineThickness">Толщина</label><button type="button" class="linebtn" data-underline-auto="thickness" aria-label="Толщина Auto">Auto</button>
+      <input type="range" data-underline-range="thickness" aria-label="Толщина, ползунок">
+      <input type="number" id="underlineThickness" data-underline-number="thickness" inputmode="decimal" aria-label="Толщина, px">
+    </div>
+    <div class="underline-row underline-measure">
+      <label for="underlineOffset">Отступ</label><button type="button" class="linebtn" data-underline-auto="offset" aria-label="Отступ Auto">Auto</button>
+      <input type="range" data-underline-range="offset" aria-label="Отступ, ползунок">
+      <input type="number" id="underlineOffset" data-underline-number="offset" inputmode="decimal" aria-label="Отступ, px">
+    </div>
+    <div class="underline-row">
+      <span>Цвет</span><button type="button" class="linebtn" data-underline-inherit="color" aria-label="Наследовать цвет текста">Как у текста</button>
+      <button type="button" class="linebtn underline-color" data-underline-color aria-label="Цвет подчёркивания" aria-haspopup="dialog"><span></span><b></b></button>
+    </div>
+    <div class="underline-row">
+      <span>Прозрачность</span><button type="button" class="linebtn" data-underline-inherit="opacity" aria-label="Наследовать прозрачность текста">Как у текста</button>
+      <button type="button" class="linebtn" data-underline-opacity aria-label="Прозрачность подчёркивания" aria-haspopup="dialog"></button>
+    </div>
+  </div>
+</div>
 <div id="fillPopover" class="fill-popover hidden" role="dialog" aria-label="Настроить заливку"></div>
 <div id="contextMenu" class="context-menu hidden" role="menu" aria-label="Действия со слоем"><button type="button" id="contextSaveShape" class="hidden" data-menu="saveShape">＋ Сохранить в Фигуры</button><div class="context-item hidden" id="contextReplaceImage" data-menu="replaceImage"><span>▧</span>Заменить изображение</div><div class="context-item hidden" id="contextTitleLayer" data-menu="titleLayer"><span>H1</span><span id="contextTitleLayerText" style="width:auto;text-align:left;color:inherit;font-size:13px">Сделать заголовком</span></div>
 <div class="context-item hidden" id="contextCreateMask" data-menu="createMask"><span>◩</span>Создать маску</div>

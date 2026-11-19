@@ -19,6 +19,50 @@ function jsonValue(v, depth = 0) {
     return out;
   }
 }
+export const underlineLimits = {
+  thickness: {min: .5, max: 32, step: .5},
+  offset: {min: -32, max: 64, step: .5},
+  opacity: {min: 0, max: 100, step: 1},
+};
+export const underlineDefaults = {style: 'solid', thickness: 'auto', offset: 'auto', color: 'inherit', opacity: 'inherit'};
+const underlineFields = Object.keys(underlineDefaults);
+
+export function sanitizeUnderlineDetails(value) {
+  if (!record(value)) return {};
+  const details = jsonValue(value);
+  for (const key of underlineFields) {
+    const field = details[key];
+    if (key === 'style') {
+      if (!['solid', 'dotted', 'wavy'].includes(field)) delete details[key];
+    } else if (key === 'color') {
+      if (field === 'inherit') continue;
+      if (typeof field !== 'string' || !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(field)) delete details[key];
+      else details[key] = field.toLowerCase().replace(/^#(.)(.)(.)$/, '#$1$1$2$2$3$3');
+    } else if (field !== underlineDefaults[key]) {
+      const {min,max} = underlineLimits[key];
+      if (!Number.isFinite(field) || field < min || field > max) delete details[key];
+    }
+  }
+  return details;
+}
+function mergeTextStyle(target, source) {
+  if (!source) return target;
+  const {underlineDetails, ...other} = source;
+  Object.assign(target, other);
+  if (underlineDetails) target.underlineDetails = {...target.underlineDetails, ...underlineDetails};
+  return target;
+}
+function patchUnderlineDetails(target, patch) {
+  const details = {...sanitizeUnderlineDetails(target.underlineDetails), ...sanitizeUnderlineDetails(patch)};
+  for (const key of underlineFields) if (patch?.[key] === null) delete details[key];
+  if (Object.keys(details).length) target.underlineDetails = details;
+  else delete target.underlineDetails;
+}
+export function resolveUnderlineDetails(base, override) {
+  const merged = {...sanitizeUnderlineDetails(base), ...sanitizeUnderlineDetails(override)};
+  return Object.fromEntries(underlineFields.filter(key => Object.hasOwn(merged,key)).map(key => [key,merged[key]]));
+}
+
 const stable = value => JSON.stringify(value, (_, v) => record(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v);
 const equal = (a, b) => { try { return stable(a) === stable(b); } catch { return false; } };
 function styleData(value, base = {}) {
@@ -26,6 +70,11 @@ function styleData(value, base = {}) {
   const out = {};
   for (const k of Object.keys(value).sort()) {
     if (blocked.has(k)) continue;
+    if (k === 'underlineDetails') {
+      const details = sanitizeUnderlineDetails(value[k]);
+      if (Object.keys(details).length) out[k] = details;
+      continue;
+    }
     const v = jsonValue(value[k]);
     if (v === undefined || v === null) continue;
     if (['fontFamily', 'fontStyle', 'textColor', 'fontWeight'].includes(k) && typeof v !== 'string') continue;
@@ -80,7 +129,7 @@ export function normalizeRuns(text, runs, base = {}) {
   const points = [...new Set(valid.flatMap(r => [r.start, r.end]))].sort((a, b) => a - b), out = [];
   for (let i = 0; i < points.length - 1; i++) {
     const start = points[i], end = points[i + 1], style = {};
-    for (const r of valid) if (r.start <= start && r.end >= end) Object.assign(style, r.style);
+    for (const r of valid) if (r.start <= start && r.end >= end) mergeTextStyle(style, r.style);
     append(out, start, end, styleData(style, base));
   }
   return out;
@@ -95,8 +144,9 @@ function withRuns(element, text, runs) {
   return result;
 }
 /** null removes one override; omitted keys are unchanged. Empty selection is a no-op. */
-export function applyTextStyle(element, start, end, patch) {
-  const text = element.text, runs = normalizeRuns(text, element.textRuns, element);
+export function applyTextStyle(element, start, end, patch, {preserveOverrides = false} = {}) {
+  const base = preserveOverrides || Object.hasOwn(patch || {}, 'underlineDetails') ? {} : element;
+  const text = element.text, runs = normalizeRuns(text, element.textRuns, base);
   [start, end] = selection(text, start, end);
   const points = [...new Set([0, text.length, start, end, ...runs.flatMap(r => [r.start, r.end])])].sort((a, b) => a - b), out = [];
   const clean = styleData(patch);
@@ -104,12 +154,27 @@ export function applyTextStyle(element, start, end, patch) {
     const a = points[i], b = points[i + 1];
     const style = { ...runs.find(r => r.start <= a && r.end >= b)?.style };
     if (a >= start && b <= end) {
-      Object.assign(style, clean);
+      mergeTextStyle(style, clean);
+      if (record(patch?.underlineDetails)) patchUnderlineDetails(style, patch.underlineDetails);
       for (const k of Object.keys(patch || {})) if (patch[k] === null) delete style[k];
     }
-    append(out, a, b, styleData(style, element));
+    append(out, a, b, styleData(style, base));
   }
   return withRuns(element, text, out);
+}
+/** Layer commands replace only the fields they edit, including run overrides. */
+export function applyLayerUnderlineStyle(element, patch) {
+  const reset = {};
+  if (typeof patch.underline === 'boolean') reset.underline = null;
+  const details = sanitizeUnderlineDetails(patch.underlineDetails);
+  if (Object.keys(details).length) reset.underlineDetails = Object.fromEntries(Object.keys(details).map(key => [key,null]));
+  const next = applyTextStyle(element, 0, element.text.length, reset, {preserveOverrides:true});
+  if (Object.hasOwn(reset, 'underline')) {
+    next.underline = patch.underline;
+    next.mobileUnderline = patch.underline;
+  }
+  if (reset.underlineDetails) patchUnderlineDetails(next, details);
+  return next;
 }
 export function clearTextFormatting(element) {
   const result = withRuns(element, element.text, []);
@@ -126,7 +191,7 @@ export function effectiveTextStyles(element, start = 0, end = element.text.lengt
   const base = styleData(Object.fromEntries(Object.entries(element).filter(([k]) =>
     ['fontFamily','fontWeight','fontStyle','fontVariant','fontSize','lineHeight','textColor','fillOpacity','strokeOpacity','strokeStyle','strokeWidth','stroke','bold','italic','underline','underlineDetails','strikethrough','strikethroughDetails','mobileUnderline','mobileStrike','letterSpacing','baselineShift','fontFeatures','fontVariationSettings'].includes(k) || runs.some(r => Object.hasOwn(r.style,k)))));
   base.strokeStyle ??= 'solid';
-  return points.slice(0, -1).map((a, i) => ({ start: a, end: points[i + 1], style: { ...base, ...runs.find(r => r.start <= a && r.end > a)?.style } }));
+  return points.slice(0, -1).map((a, i) => ({ start: a, end: points[i + 1], style: mergeTextStyle({...base}, runs.find(r => r.start <= a && r.end > a)?.style) }));
 }
 export function effectiveTextStyleAt(element, index) {
   const start = boundary(element.text, index);

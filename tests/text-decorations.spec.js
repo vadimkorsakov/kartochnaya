@@ -1,11 +1,12 @@
 const {test,expect,openHome,importPayload,records,openLibraryDocument,canvasPoint,exportPNG}=require('./helpers');
 const {model}=require('./support/text-interaction');
 const {PNG}=require('pngjs');
+const {writeFile}=require('node:fs/promises');
 const fixture=require('./fixtures/visual-text.json');
 const host='#inlineWysiwyg';
 const text='Привет мир. Длинный русский текст с автоматическими переносами строк и выделением отдельных слов. Здесь подчёркивание и зачёркивание работают вместе.\nЭмодзи 😀 и новая строка сохраняют границы UTF-16.';
 const button=(page,key)=>page.locator(`#inspector [data-text-decoration=${key}]`);
-async function setup(page,patch={},mobile=false){
+async function setup(page,patch={},mobile=false,nativeSize=false){
  await page.addInitScript(()=>{
   window.glyphs=[];window.lines=[];window.exportLines=[];
   const p=CanvasRenderingContext2D.prototype,fill=p.fillText,rect=p.fillRect,clear=p.clearRect;
@@ -21,12 +22,12 @@ async function setup(page,patch={},mobile=false){
  Object.assign(payload.document.elements[0],{id:'decorations',name:'Decorations',x:24,y:20,w:592,h:440,fontFamily:'Arial',fontSize:32,lineHeight:1.25,text,textColor:'#000000',fill:'#000000',fillType:'solid',autoFontSize:false,...patch});
  await importPayload(page,payload);const doc=(await records(page,'docs')).find(d=>d.title==='Visual fixed font (импорт)');await openLibraryDocument(page,doc.id);
  if(mobile){await page.locator('[data-mobile=layers]:visible').click();await page.locator('#mobileLayerList .layer-name').filter({hasText:'Decorations'}).click();await page.locator('#mobileLayersClose').click();await page.locator('#mobileContext [data-mobile=edit]').click();await expect(page.locator('#inlineText')).toBeFocused()}
- else await reopen(page);
+ else await reopen(page,(patch.x??24)+36,(patch.y??20)+20,nativeSize);
  return doc.id;
 }
-async function reopen(page){
- await page.locator('#fitBtn').click();await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
- const p=await canvasPoint(page,60,40,640,480);await page.mouse.dblclick(p.x,p.y);
+async function reopen(page,x=60,y=40,nativeSize=false){
+ await page.locator('#fitBtn').click();if(nativeSize)await actualSize(page);await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ const p=await canvasPoint(page,x,y,640,480);await page.mouse.dblclick(p.x,p.y);
  await expect(page.locator(host)).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();await expect(page.locator('#wysiwygRecovery')).toBeHidden();
 }
 async function selection(page){return page.locator(host).evaluate(el=>{
@@ -169,8 +170,233 @@ test('desktop multi-layer typography buttons format all selected text layers',as
  await setup(page);await close(page);await page.locator('#inspector [data-action=duplicate]').click();
  await page.locator('#layers .layer-name').filter({hasText:/^Decorations$/}).click({modifiers:['Shift']});
  await expect(page.locator('#inspector .ins-object-title')).toContainText('Выбрано 2');
+ await expect(page.locator('[data-underline-open]')).toBeDisabled();
  await button(page,'underline').click();await expect(button(page,'underline')).toHaveAttribute('aria-pressed','true');
  const {exportedDocument}=require('./helpers');const doc=await exportedDocument(page);
  expect(doc.elements).toHaveLength(2);expect(doc.elements.every(e=>e.underline===true)).toBe(true);
  await button(page,'underline').click();const off=await exportedDocument(page);expect(off.elements.every(e=>e.underline===false)).toBe(true);
+});
+
+const settings='[data-underline-open]',panel='#underlinePanel',picker='#fillPopover';
+const ink='[data-text-stroke-overlay]';
+const number=(page,key)=>page.locator(`${panel} [data-underline-number=${key}]`);
+const styleControl=(page,style)=>page.locator(`${panel} [data-underline-style=${style}]`);
+async function setUnderlineNumber(page,key,value){
+ await number(page,key).fill(String(value));await number(page,key).press('Enter');
+}
+async function openUnderlineSettings(page,keyboard=false){
+ const trigger=page.locator(settings);
+ if(keyboard){await trigger.focus();await trigger.press('Space');}else await trigger.click();
+ await expect(page.locator(panel)).toBeVisible();
+}
+async function actualSize(page){
+ for(let i=0;i<60;i++){
+  const zoom=parseInt(await page.locator('#zoomLabel').textContent());
+  if(zoom===100)break;
+  await page.locator(zoom>100?'#zoomOutBtn':'#zoomInBtn').click();
+ }
+ await expect(page.locator('#zoomLabel')).toHaveText('100%');
+}
+function pixelDiff(a,b,width){
+ expect(a.length).toBe(b.length);
+ let max=0,above2=0;const bounds=[Infinity,Infinity,-1,-1];
+ for(let i=0;i<a.length;i+=4){
+  const d=Math.max(...[0,1,2,3].map(k=>Math.abs(a[i+k]-b[i+k])));
+  max=Math.max(max,d);
+  if(d>2){
+   above2++;
+   if(width){
+    const x=i/4%width,y=Math.floor(i/4/width);
+    bounds[0]=Math.min(bounds[0],x);bounds[1]=Math.min(bounds[1],y);
+    bounds[2]=Math.max(bounds[2],x);bounds[3]=Math.max(bounds[3],y);
+   }
+  }
+ }
+ return {max,above2,...(width&&above2?{bounds}:{})};
+}
+const decodeCanvas=url=>PNG.sync.read(Buffer.from(url.split(',')[1],'base64')).data;
+async function liveUnderlinePixels(page){
+ return decodeCanvas(await page.locator(ink).evaluate((overlay,background)=>{
+  const image=document.createElement('canvas');image.width=overlay.width;image.height=overlay.height;
+  const c=image.getContext('2d');c.fillStyle=background;c.fillRect(0,0,image.width,image.height);
+  c.drawImage(overlay,0,0);return image.toDataURL('image/png');
+ },fixture.document.background));
+}
+async function underlineEvidence(info,name,body,contentType){
+ const path=info.outputPath(name);
+ await writeFile(path,body);
+ await info.attach(name,{path,contentType});
+}
+
+test('advanced range: backward selection, Mixed, slider and color gestures, save and reopen',async({page},info)=>{
+ test.setTimeout(90000);
+ const source='AV fi Первое 👩‍💻 е\u0301 слово  на первой строке\nВторая строка в рамке';
+ const id=await setup(page,{text:source,w:340,textAlign:'justify',verticalAlign:'middle',autoFontSize:true,fillOpacity:82,
+  textRuns:[{start:3,end:5,style:{fontSize:38,fontFamily:'Georgia',textColor:'#114477',underlineDetails:{offset:-2},strikethrough:true}}]});
+ const before=await model(page),glyphs=await geometry(page);
+ const end=source.indexOf(' слово'),anchor=end,focus=0;
+ await select(page,anchor,focus);
+ await openUnderlineSettings(page,true);
+ await expect(number(page,'offset')).toHaveAttribute('placeholder','Mixed');
+ await styleControl(page,'dotted').press('Space');
+ await expect(page.locator(host)).toBeVisible();
+ await expect(page.locator(ink)).toBeVisible();
+ expect(await geometry(page)).toEqual(glyphs);
+ const dotted=await model(page);
+ expect(dotted.textRuns.every(r=>r.style.underlineDetails?.style==='dotted')).toBe(true);
+
+ const slider=page.locator(`${panel} [data-underline-range=thickness]`),box=await slider.boundingBox();
+ await page.mouse.move(box.x+box.width*.25,box.y+box.height/2);await page.mouse.down();
+ await page.mouse.move(box.x+box.width*.62,box.y+box.height/2,{steps:12});
+ await expect(number(page,'thickness')).not.toHaveValue('');
+ expect(await model(page)).toEqual(dotted);
+ expect((await records(page,'docs')).find(d=>d.id===id).elements[0]).toEqual(before);
+ await page.mouse.up();
+ const dragged=await model(page);
+ expect(dragged.textRuns[0].style.underlineDetails.thickness).toBeGreaterThan(2);
+ await slider.press('Control+z');expect(await model(page)).toEqual(dotted);
+ await slider.press('Control+Shift+z');expect(await model(page)).toEqual(dragged);
+
+ await setUnderlineNumber(page,'thickness',4.5);
+ await setUnderlineNumber(page,'offset',0);
+ await page.locator(`${panel} [data-underline-color]`).click();
+ await expect(page.locator(picker)).toBeVisible();
+ await expect(page.locator(`${picker} [data-fill-mode]`)).toHaveCount(0);
+ const hex=page.locator(`${picker} [data-cp-part="0"]`);
+ await hex.fill('#ae1538');await hex.press('Enter');
+ await underlineEvidence(info,'underline-palette.png',await page.screenshot(),'image/png');
+ const alpha=page.locator('#cpAlphaInput');await alpha.fill('0');await alpha.press('Enter');
+ const transparent=await model(page);
+ expect(transparent.fillOpacity).toBe(82);expect(transparent.textColor).toBe(before.textColor);
+ expect(transparent.textRuns.find(r=>r.start===3).style).toEqual({
+  fontFamily:'Georgia',fontSize:38,strikethrough:true,textColor:'#114477',underline:true,
+  underlineDetails:{color:'#ae1538',offset:0,opacity:0,style:'dotted',thickness:4.5},
+ });
+ const square=page.locator('#cpSquare'),sq=await square.boundingBox();
+ await page.mouse.move(sq.x+sq.width*.3,sq.y+sq.height*.2);await page.mouse.down();
+ await page.mouse.move(sq.x+sq.width*.8,sq.y+sq.height*.4,{steps:12});
+ expect(await model(page)).toEqual(transparent);await page.mouse.up();
+ const colored=await model(page);expect(colored).not.toEqual(transparent);
+ await alpha.press('Control+z');expect(await model(page)).toEqual(transparent);
+ await alpha.press('Control+Shift+z');expect(await model(page)).toEqual(colored);
+
+ await alpha.fill('74');
+ expect(await model(page)).toEqual(colored);
+ await alpha.press('Escape');await expect(page.locator(picker)).toBeHidden();expect(await model(page)).toEqual(colored);
+ await page.locator(`${panel} [data-underline-toggle]`).click();
+ await expect(page.locator(`${panel} [data-underline-toggle]`)).toHaveAttribute('aria-pressed','false');
+ await page.locator(`${panel} [data-underline-toggle]`).click();expect(await model(page)).toEqual(colored);
+ await underlineEvidence(info,'underline-panel.png',await page.screenshot(),'image/png');
+ await page.locator(`${panel} [data-underline-close]`).click();
+ await page.locator(host).focus();expect(await selection(page)).toEqual({anchor,focus});
+ expect(await page.locator(host).textContent()).toBe(source);
+ expect(await geometry(page)).toEqual(glyphs);
+ await close(page);
+ const {exportedDocument}=require('./helpers');expect((await exportedDocument(page)).elements[0]).toEqual(colored);
+ await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===id)?.elements[0]).toEqual(colored);
+ await page.reload();await openLibraryDocument(page,id);await reopen(page);expect(await model(page)).toEqual(colored);
+});
+
+for(const [textAlign,verticalAlign,kind] of [
+ ['left','top','solid'],['center','middle','dotted'],['right','bottom','wavy'],['justify','middle','wavy'],
+])test(`advanced ${kind}: live, Canvas and PNG parity for ${textAlign}/${verticalAlign}`,async({page},info)=>{
+ test.setTimeout(75000);
+ const source='AV fi  Привет раз ещё  AV fi AV привет 👩‍💻\nе\u0301 конец';
+ const justify=textAlign==='justify';
+ await setup(page,{text:source,x:48,y:40,w:justify?400:530,h:360,textAlign,verticalAlign,strikethrough:justify,
+  ...(justify?{textRuns:[{start:3,end:10,style:{fontSize:39,fontFamily:'Georgia',textColor:'#114477',fillOpacity:70}}]}:{})},false,true);
+ await select(page,0,0);await openUnderlineSettings(page);
+ await styleControl(page,kind).click();
+ await setUnderlineNumber(page,'thickness',6);await setUnderlineNumber(page,'offset',16);
+ await page.locator(`${panel} [data-underline-color]`).click();
+ const hex=page.locator(`${picker} [data-cp-part="0"]`);
+ await hex.fill('#cf184a');await hex.press('Enter');
+ const alpha=page.locator('#cpAlphaInput');await alpha.fill('84');await alpha.press('Enter');
+ await page.locator(`${picker} [data-fill-close]`).click();
+ await page.locator(`${panel} [data-underline-close]`).click();
+ await select(page,0,0);
+ await expect(page.locator(ink)).toBeVisible();
+ const live=await liveUnderlinePixels(page);
+ const bounds=await page.locator('#canvas').boundingBox();
+ // The outer 12 px include selection handles and the editing frame.
+ const clip={x:Math.ceil(bounds.x+60),y:Math.ceil(bounds.y+52),width:justify?376:506,height:336};
+ const visible=await page.screenshot({clip});
+ await close(page);
+ const outside=await canvasPoint(page,620,458,640,480);await page.mouse.click(outside.x,outside.y);
+ const screen=decodeCanvas(await page.locator('#canvas').evaluate(c=>c.toDataURL('image/png')));
+ const exported=await exportPNG(page,640,480);
+ const closed=await page.screenshot({clip});
+ const display=pixelDiff(PNG.sync.read(visible).data,PNG.sync.read(closed).data,clip.width);
+ const canvas=pixelDiff(screen,exported.image.data),projection=pixelDiff(live,exported.image.data);
+
+ // Isolate opaque core underline ink from glyphs, highlights, and strikethrough.
+ const bands=[];
+ for(let y=0;y<480;y++){
+  const ink=[];
+  for(let x=0;x<640;x++){
+   const p=(y*640+x)*4,[r,g,b]=exported.image.data.subarray(p,p+3);
+   if(r>190&&g<80&&b<120)ink.push(x);
+  }
+  if(!ink.length)continue;
+  if(bands.at(-1)?.end!==y-1)bands.push({end:y,columns:new Map()});
+  const band=bands.at(-1);band.end=y;
+  for(const x of ink)if(!band.columns.has(x))band.columns.set(x,y);
+ }
+ // The final LF row isolates the line from legitimate overlap by glyphs on
+ // the next row (for example the color emoji in the preceding wrapped row).
+ const columns=bands.at(-1)?.columns;
+ expect(columns?.size).toBeGreaterThan(20);
+ const positions=[...columns.keys()],width=Math.max(...positions)-Math.min(...positions)+1;
+ expect(width).toBeGreaterThan(75);
+ const gaps=width-columns.size,heights=new Set(columns.values()).size;
+ await underlineEvidence(info,'underline-live.png',visible,'image/png');
+ await underlineEvidence(info,'underline-canvas.png',closed,'image/png');
+ await underlineEvidence(info,'underline-export.png',exported.bytes,'image/png');
+ await underlineEvidence(info,'underline-parity.json',JSON.stringify({canvas,projection,display,gaps,heights}), 'application/json');
+ expect(canvas.max).toBeLessThanOrEqual(1);expect(projection.max).toBeLessThanOrEqual(2);expect(projection.above2).toBe(0);
+ expect(display.max).toBeLessThanOrEqual(2);
+ if(kind==='solid'){expect(gaps).toBe(0);expect(heights).toBe(1);}
+ if(kind==='dotted'){expect(gaps).toBeGreaterThan(45);expect(heights).toBeGreaterThanOrEqual(2);}
+ if(kind==='wavy'){expect(heights).toBeGreaterThanOrEqual(7);if(!justify)expect(gaps).toBe(0);}
+});
+
+test('advanced layer command clears one override and keeps stored details through a fill transition',async({page})=>{
+ test.setTimeout(75000);
+ const before={style:'dotted',thickness:4,opacity:0};
+ await setup(page,{underline:true,underlineDetails:{style:'wavy',color:'#235487'},
+  textRuns:[{start:0,end:6,style:{underlineDetails:before,strikethrough:true}}]});
+ await close(page);
+ await openUnderlineSettings(page);
+ await expect(styleControl(page,'solid')).toHaveAttribute('aria-pressed','mixed');
+ await setUnderlineNumber(page,'thickness',7);
+ const e=await model(page);
+ expect(e.underlineDetails).toEqual({style:'wavy',color:'#235487',thickness:7});
+ expect(e.textRuns[0].style).toEqual({underlineDetails:{style:'dotted',opacity:0},strikethrough:true});
+ await page.locator(`${panel} [data-underline-close]`).click();
+ await page.locator('#inspector [data-fill-open=fill]').click();
+ await page.locator(`${picker} [data-fill-mode=gradient]`).click();
+ await expect(page.locator(settings)).toBeDisabled();
+ expect((await model(page)).underlineDetails).toEqual(e.underlineDetails);
+ await page.locator(`${picker} [data-fill-mode=solid]`).click();
+ await expect(page.locator(settings)).toBeEnabled();
+ expect((await model(page)).textRuns).toEqual(e.textRuns);
+ await page.locator(`${picker} [data-fill-close]`).click();
+ await reopen(page);await expect(page.locator(ink)).toBeVisible();
+});
+
+test('advanced underline reaches mobile Canvas and PNG while native text entry stays available',async({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ await setup(page,{underline:true,underlineDetails:{style:'dotted',color:'#ab184f',thickness:6,offset:12}},true);
+ const input=page.locator('#inlineText');
+ await expect(input).toBeFocused();await expect(page.locator('[data-underline-open]')).toHaveCount(0);
+ await page.keyboard.press('Control+Enter');await expect(input).toBeHidden();
+ const visible=decodeCanvas(await page.locator('#canvas').evaluate(c=>c.toDataURL('image/png')));
+ expect(visible.some((r,i)=>i%4===0&&r===171&&visible[i+1]===24&&visible[i+2]===79)).toBe(true);
+ const png=await exportPNG(page,640,480);
+ let colored=0;
+ for(let i=0;i<png.image.data.length;i+=4){
+  const [r,g,b]=png.image.data.subarray(i,i+3);
+  if(r===171&&g===24&&b===79)colored++;
+ }
+ expect(colored).toBeGreaterThan(150);
 });

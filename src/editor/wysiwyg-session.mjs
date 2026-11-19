@@ -4,7 +4,7 @@ import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-histo
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from '../render/text-stroke.mjs';
 
 const ctx = document.createElement('canvas').getContext('2d');
-const needsCanvasInk = projection => hasHorizontalTextStroke(projection)||projection.rows.some(row=>row.fragments.some(p=>p.style.fillOpacity!==100));
+const needsCanvasInk = projection => hasHorizontalTextStroke(projection)||projection.rows.some(row=>row.decorations.some(d=>d.advanced)||row.fragments.some(p=>p.style.fillOpacity!==100));
 function lineHeight(style) {
  ctx.font=richTextFont(style);const m=ctx.measureText('Mg');
  if(!Number.isFinite(m.fontBoundingBoxAscent)||!Number.isFinite(m.fontBoundingBoxDescent)||!(m.width>0))throw Error('Font metrics unavailable');
@@ -62,12 +62,30 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  const overlay=document.createElement('canvas');overlay.dataset.textStrokeOverlay='';overlay.setAttribute('aria-hidden','true');
  Object.assign(overlay.style,{position:'absolute',pointerEvents:'none',transformOrigin:'0 0',zIndex:'7',display:'none'});
  host.after(overlay);
- let density=1,overlayKey=null;
+ let density=1,overlayKey=null,decorationProjection=null;
+ function decorationBackgrounds(node,row,canvasInk){
+  Object.assign(node.style,{
+   backgroundImage:canvasInk?'':row.decorations.map(r=>`linear-gradient(${r.color}, ${r.color})`).join(','),
+   backgroundPosition:row.decorations.map(r=>`${r.x}px ${r.y-row.y}px`).join(','),
+   backgroundSize:row.decorations.map(r=>`${r.width}px ${r.height}px`).join(','),backgroundRepeat:'no-repeat',
+  });
+ }
+ function syncDecorationProjection(){
+  const value=preview?.draft||layer;
+  if(decorationProjection?.value!==value)decorationProjection={value,layout:layout(value)};
+  const projection=decorationProjection.layout;
+  if(!needsCanvasInk(projection)){
+   [...host.querySelectorAll('[data-wysiwyg-row]')].forEach((node,i)=>decorationBackgrounds(node,projection.rows[i],false));
+   confirmedHTML=host.innerHTML;
+  }
+  syncOverlay();
+ }
  function releaseOverlay(){overlay.remove();overlay.width=overlay.height=1;host.classList.remove('wysiwyg-canvas-ink');}
  function syncOverlay(nextDensity=density){
   density=nextDensity;
   if(inactive||fallback||composing){overlay.style.display='none';host.classList.remove('wysiwyg-canvas-ink');return;}
-  const projection=layout(layer),active=needsCanvasInk(projection);
+  const inkLayer=preview?.draft||layer;
+  const projection=decorationProjection?.value===inkLayer?decorationProjection.layout:layout(inkLayer),active=needsCanvasInk(projection);
   host.classList.toggle('wysiwyg-canvas-ink',active);overlay.style.display=active?'block':'none';
   if(!active)return;
   const frame=viewport();
@@ -79,11 +97,11 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   overlay.style.transform='none';
   const width=Number.isFinite(frame.width)?frame.width:layer.w,height=Number.isFinite(frame.height)?frame.height:layer.h;
   overlay.style.width=width*matrix.a+'px';overlay.style.height=height*matrix.d+'px';
-  const key=JSON.stringify([layer,density,width,height]);if(key===overlayKey)return;overlayKey=key;
+  const key=JSON.stringify([inkLayer,density,width,height]);if(key===overlayKey)return;overlayKey=key;
   overlay.width=Math.max(1,Math.round(width*density));overlay.height=Math.max(1,Math.round(height*density));
   const c=overlay.getContext('2d');c.setTransform(density,0,0,density,0,0);
   c.translate((layer.x||0)+layer.w/2,(layer.y||0)+layer.h/2);c.translate(-layer.w/2,-layer.h/2);
-  paintHorizontalTextPass(c,layer,projection,'fill');paintHorizontalTextPass(c,layer,projection,'stroke');
+  paintHorizontalTextPass(c,inkLayer,projection,'fill');paintHorizontalTextPass(c,inkLayer,projection,'stroke');
  }
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
  function stop(reason){clearPointerGesture();pasteText=null;fallback=reason;safe.phase='recovery-required';syncOverlay();if(!inactive)onRecovery(reason);}
@@ -111,10 +129,8 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    Object.assign(rowNode.style,{position:'absolute',display:'inline-block',left:'0px',top:row.y+'px',height:row.height+'px',whiteSpace:'pre',fontSize:'0px',lineHeight:'0px'});
    // CSS backgrounds contain no DOM nodes or characters, so native Selection,
    // UTF-16 indexing and confirmedHTML validation keep their existing contract.
-   Object.assign(rowNode.style, {width:value.w+'px',
-    backgroundImage:canvasInk?'':row.decorations.map(r=>`linear-gradient(${r.color}, ${r.color})`).join(','),
-    backgroundPosition:row.decorations.map(r=>`${r.x}px ${r.y-row.y}px`).join(','),
-    backgroundSize:row.decorations.map(r=>`${r.width}px ${r.height}px`).join(','),backgroundRepeat:'no-repeat'});
+   rowNode.style.width=value.w+'px';
+   decorationBackgrounds(rowNode,row,canvasInk);
    nodes.push(rowNode);let advance=0;
    const parts=row.fragments.length?row.fragments:[{text:'',style:row.emptyStyle||base,x:row.x}];
    for(let i=0;i<parts.length;i++){
@@ -134,6 +150,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    }
   }
   const next=structuredClone(value);
+  decorationProjection=null;
   // The browser can blur contenteditable while replaceChildren invalidates
   // its current Range, particularly when a trailing LF gains a caret sentinel.
   // Capture ownership BEFORE the DOM change and restore it only for a session
@@ -177,13 +194,46 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   let selection;try{selection=rememberSelection();}catch{stop('Не удалось сохранить выделение');return false;}
   onFallback(selection,reason);return true;
  }
+ function cancelUnderlinePreview(){
+  if(!preview?.draft)return;
+  preview=null;decorationProjection=null;
+  if(clean())syncDecorationProjection();
+ }
  function finishPreview(){
   if(!preview)return;
+  if(preview.draft){cancelUnderlinePreview();return;}
   const previousIndex=history.index;
   recordInlineHistory(history,layer,caret(preview.selection));
   // Only a completed, non-no-op style preview becomes a separate action.
   if(history.index!==previousIndex)history.states[history.index].action='style';
   preview=null;onChange();
+ }
+ function applyUnderlineStyle(next,{key,selection,final}){
+  if(!clean()||inactive||safe.phase!=='confirmed')return false;
+  let current;
+  try{current=rememberSelection();}catch{return false;}
+  if(current.anchor!==selection.anchor||current.focus!==selection.focus)return false;
+  if(preview&&(preview.key!==key||!preview.draft))finishPreview();
+  if(JSON.stringify(next)===JSON.stringify(layer)){cancelUnderlinePreview();return true;}
+  const projection=JSON.stringify(next)===JSON.stringify(preview?.draft)?decorationProjection?.layout:layout(next);
+  if(!projection?.rows) return false;
+  if(!final){
+   preview={draft:next,key,selection};
+   decorationProjection={value:next,layout:projection};
+   syncDecorationProjection();
+   return true;
+  }
+  preview=null;
+  recordInlineHistory(history,layer,caret(selection));
+  Object.assign(layer,next);
+  if(!next.textRuns)delete layer.textRuns;
+  if(!next.underlineDetails)delete layer.underlineDetails;
+  const previousIndex=history.index;
+  recordInlineHistory(history,layer,caret(selection));
+  if(history.index!==previousIndex)history.states[history.index].action='style';
+  decorationProjection={value:layer,layout:projection};
+  syncDecorationProjection();onChange();
+  return true;
  }
  function applyStyle(patch,{key,final=false,range=true}={}){
   if(!clean()||safe.phase!=='confirmed'||inactive){stop('Нужно восстановить подтверждённый ввод');return true;}
@@ -475,7 +525,7 @@ listen('input',()=>{
 
  host.contentEditable='plaintext-only';host.classList.remove('hidden');
  const initial={anchor:layer.text.length,focus:layer.text.length};project(structuredClone(layer),initial);recordInlineHistory(history,layer,caret(initial));
- return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection(...args){clearPointerGesture();return setSelection(...args);},requestFallback,clean,applyRangeStyle,applyLayerStyle,finishPreview,syncOverlay,
+ return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection(...args){clearPointerGesture();return setSelection(...args);},requestFallback,clean,applyRangeStyle,applyLayerStyle,applyUnderlineStyle,cancelUnderlinePreview,finishPreview,syncOverlay,
   preserve(){pointerEpoch++;clearPointerGesture();inactive=true;releaseOverlay();if(!composing)host.contentEditable='false';},
   focus(){host.focus({preventScroll:true});},
   recover(){if(composing)return false;fallback=null;safe.deferred=false;safe.phase='confirmed';project(structuredClone(layer),{anchor:layer.text.length,focus:layer.text.length});onChange();return true;},

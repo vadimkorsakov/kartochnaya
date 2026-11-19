@@ -145,6 +145,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
       - run: npm run test:selection:firefox
+      - name: Preserve advanced underline screenshots and measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: advanced-underline-evidence
+          path: test-results/selection/text-decorations-advanced-*/underline-*
+          if-no-files-found: warn
+          retention-days: 14
       - name: Multiline WYSIWYG in Chromium and Firefox
         run: npx playwright test --config=playwright.multiline.config.js
       - name: Text alignment WYSIWYG in Chromium and Firefox

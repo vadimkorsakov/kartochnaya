@@ -1,5 +1,5 @@
 import { textDecorationRects } from './text-decorations.mjs';
-import { normalizeRuns } from '../model/rich-text.mjs';
+import { normalizeRuns, resolveUnderlineDetails } from '../model/rich-text.mjs';
 
 // Ordinary horizontal text always uses one renderer, whether or not styled
 // ranges exist. A formatting operation must not switch the rendering engine.
@@ -34,6 +34,8 @@ export function resolveRichTextStyle(base, override = {}) {
   const italic = s => s.fontStyle || (s.italic === undefined ? undefined : s.italic ? 'italic' : 'normal');
   const size = positive(base.fontSize, 24);
   const scale = size / positive(base.textRunsBaseFontSize, size);
+  const underlineDetails = (base.fillType || 'solid') === 'solid' ?
+    resolveUnderlineDetails(base.underlineDetails, override.underlineDetails) : {};
   return {
     fontFamily: String(override.fontFamily || base.fontFamily || 'Arial'),
     fontWeight: String(weight(override) || weight(base) || '400'),
@@ -46,6 +48,7 @@ export function resolveRichTextStyle(base, override = {}) {
     letterSpacing: spacing(override.letterSpacing ?? base.letterSpacing),
     lineHeight: positive(override.lineHeight, positive(base.lineHeight, 1.15)),
     underline: override.underline ?? base.underline ?? base.mobileUnderline ?? false,
+    ...(Object.keys(underlineDetails).length ? {underlineDetails} : {}),
     strikethrough: override.strikethrough ?? base.strikethrough ?? base.mobileStrike ?? false,
     strokeWidth: Math.max(0, spacing(override.strokeWidth ?? base.strokeWidth)),
     stroke: String(override.stroke || base.stroke || '#000000').toLowerCase().replace(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/, '#$1$1$2$2$3$3'),
@@ -130,21 +133,26 @@ export function createRichTextLayoutEngine(context, fontSet) {
     }
     // Use the same whole-grapheme ownership as glyph painting. A saved run
     // boundary inside a combining/ZWJ cluster cannot paint a partial glyph line.
-    const decorationSpans = [];
-    for (const cluster of clusters) {
-      if (cluster.text === '\n') continue;
-      // Leading moves the shared baseline, but cannot split an otherwise
-      // continuous decoration (fractional rect edges could leave a seam).
-      const { lineHeight, strokeWidth, stroke, strokeOpacity, strokeStyle, ...decorationStyle } = cluster.style;
-      if (!solid) delete decorationStyle.fillOpacity;
-      const last = decorationSpans.at(-1), id = JSON.stringify(decorationStyle);
-      if (last?.id === id && last.end === cluster.start) last.end = cluster.end;
-      else decorationSpans.push({...cluster, id});
+    const advancedUnderline = spans.some(({style}) => style.underline && style.underlineDetails);
+    function collectDecorationSpans(withDetails) {
+      const result = [];
+      for (const cluster of clusters) {
+        if (cluster.text === '\n') continue;
+        const {lineHeight, strokeWidth, stroke, strokeOpacity, strokeStyle, underlineDetails, ...style} = cluster.style;
+        if (withDetails && style.underline) style.underlineDetails = underlineDetails;
+        if (!solid) delete style.fillOpacity;
+        const last = result.at(-1), id = JSON.stringify(style);
+        if (last?.id === id && last.end === cluster.start) last.end = cluster.end;
+        else result.push({...cluster, style, id});
+      }
+      return result;
     }
+    const legacySpans = collectDecorationSpans(false);
+    const underlineSpans = advancedUnderline ? collectDecorationSpans(true) : [];
     const rows = []; let fragments = [], rowWidth = 0, rowStart = 0, emptyStyle = base;
     let previousDescent = 0, edgeLeading = 0;
     // Decoration and leading boundaries never split glyph painting (including ligatures).
-    const styleKey = ({ underline, strikethrough, lineHeight, ...paint }) => {
+    const styleKey = ({ underline, underlineDetails, strikethrough, lineHeight, ...paint }) => {
       if (!solid) delete paint.fillOpacity;
       if (!paint.strokeWidth) { delete paint.strokeOpacity; delete paint.strokeStyle; }
       return JSON.stringify(paint);
@@ -152,7 +160,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
     // Paint colors must not alter shaping or move subsequent glyphs. A color
     // split preserves the advance of the full contiguous font/spacing sequence,
     // while keeping separate fragments for per-range drawing and ink bounds.
-    const geometryKey = ({ textColor, fillOpacity, strokeWidth, stroke, strokeOpacity, strokeStyle, underline, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
+    const geometryKey = ({ textColor, fillOpacity, strokeWidth, stroke, strokeOpacity, strokeStyle, underline, underlineDetails, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
     const requiredHeight = part => part.requiredHeight ?? part.style.fontSize * part.style.lineHeight;
     function append(parts, cluster) {
       const last = parts.at(-1), id = styleKey(cluster.style);
@@ -268,13 +276,20 @@ export function createRichTextLayoutEngine(context, fontSet) {
       // Decorations use source intervals and the same contextual advances as
       // glyphs. They never contribute to metrics, shaping, wrapping or auto-fit.
       row.decorations = [];
-      for (const part of row.fragments) for (const span of decorationSpans) {
-        const start = Math.max(part.start, span.start), end = Math.min(part.end, span.end);
-        if (start >= end || (!span.style.underline && !span.style.strikethrough)) continue;
-        const prefix = offset => offset === part.end ? part.width : measure(text.slice(part.start, offset).replaceAll('\r', ''), part.style).width;
-        const left = prefix(start), right = prefix(end);
-        row.decorations.push(...textDecorationRects({x:(part.logicalX??part.x) + left, y:part.y, width:right-left}, span.style)
-          .map(rect => ({...rect, start, end, fillOpacity:span.style.fillOpacity})));
+      function addDecorations(part, spans, kind) {
+        for (const span of spans) {
+          const start = Math.max(part.start, span.start), end = Math.min(part.end, span.end);
+          if (start >= end || (!span.style.underline && !span.style.strikethrough)) continue;
+          const prefix = offset => offset === part.end ? part.width : measure(text.slice(part.start, offset).replaceAll('\r', ''), part.style).width;
+          const left = prefix(start), right = prefix(end);
+          const rects = textDecorationRects({x:(part.logicalX??part.x) + left, y:part.y, width:right-left}, span.style, kind);
+          for (const rect of rects)
+            row.decorations.push({...rect, start, end, fillOpacity:rect.fillOpacity ?? span.style.fillOpacity});
+        }
+      }
+      for (const part of row.fragments) {
+        addDecorations(part, legacySpans, advancedUnderline ? 'strikethrough' : null);
+        if (advancedUnderline) addDecorations(part, underlineSpans, 'underline');
       }
     }
     let inkOverflow=0;

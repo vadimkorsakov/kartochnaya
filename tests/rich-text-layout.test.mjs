@@ -384,3 +384,47 @@ test('justify preserves contextual glyph origins and separate logical advances a
  assert.equal(natural.fragments[1].x,8);assert.equal(natural.fragments[1].logicalX,12);
  assert.deepEqual(justified.fragments.map(p=>[p.text,p.x,p.logicalX]),natural.fragments.map(p=>[p.text,p.x,p.logicalX]));
 });
+
+test('advanced decoration leaves Justify glyphs, wraps, baselines and carets unchanged',()=>{
+ const engine=createRichTextLayoutEngine({measureText(text){
+   const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);
+   return {width:text.length*size/2-(text.includes('AV')?2:0),fontBoundingBoxAscent:size*.8,fontBoundingBoxDescent:size*.2};
+ }});
+ const source={...base,text:'AV fi  и ещё 👩‍💻\nе\u0301 конец',w:85,h:210,textAlign:'justify',verticalAlign:'bottom',autoFontSize:true,textRunsBaseFontSize:40,
+  textRuns:[{start:3,end:5,style:{fontSize:30,textColor:'#765432'}}]};
+ const advanced={...source,underline:true,underlineDetails:{style:'wavy',offset:0,thickness:4,color:'#f60',opacity:73},
+  textRuns:[...source.textRuns,{start:1,end:8,style:{underlineDetails:{style:'dotted',color:'inherit',opacity:0}}}]};
+ const geometry=layout=>({width:layout.width,height:layout.height,rows:layout.rows.map(({decorations,fragments,...row})=>({...row,
+  fragments:fragments.map(({style:{underline,underlineDetails,...style},...part})=>({...part,style}))}))});
+ const layout=engine.layoutJustified(advanced);
+ assert.deepEqual(geometry(layout),geometry(engine.layoutJustified(source)));
+ assert.ok(layout.rows.some(row=>row.justification.extraPerSpace>0));
+ const decorations=layout.rows.flatMap(r=>r.decorations);
+ assert.ok(decorations.some(d=>d.style==='dotted'&&d.fillOpacity===0&&d.color===base.textColor));
+ assert.ok(decorations.some(d=>d.style==='wavy'&&d.height===4&&d.color==='#ff6600'));
+ for(const row of layout.rows)for(const d of row.decorations)assert.equal(d.y,row.baseline-2);
+});
+
+test('manual underline survives auto-fit scale, and inherited paint follows effective range style',()=>{
+ const engine=createRichTextLayoutEngine({measureText(text){
+  const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);
+  return {width:text.length*size/2,fontBoundingBoxAscent:size*.8,fontBoundingBoxDescent:size*.2};
+ }});
+ const e={text:'abcd',w:100,h:70,fontSize:20,textRunsBaseFontSize:40,autoFontSize:true,
+  textColor:'#123456',fillOpacity:84,underline:true,strikethrough:true,underlineDetails:{style:'dotted',offset:0,thickness:6,color:'#da2'},
+  textRuns:[{start:2,end:4,style:{fontSize:32,textColor:'#335577',fillOpacity:50,
+   underlineDetails:{thickness:'auto',offset:'auto',color:'inherit'}}}]};
+ for(const fontSize of [20,40]){
+  const l=engine.layout({...e,fontSize}), u=l.rows.flatMap(r=>r.decorations).filter(d=>d.kind==='underline');
+  assert.equal(u[0].height,6);assert.equal(u[0].y,l.rows[0].baseline-3);assert.equal(u[0].color,'#ddaa22');assert.equal(u[0].fillOpacity,84);
+  const size=fontSize/40*32,t=Math.max(1,size/19);
+  assert.equal(u[1].height,t);assert.equal(u[1].y,l.rows[0].baseline+size*.1-t/2);
+  assert.equal(u[1].color,'#335577');assert.equal(u[1].fillOpacity,50);
+ }
+ const gradient=engine.layout({...e,fillType:'gradient'});
+ assert.ok(gradient.rows[0].decorations.every(d=>!d.advanced));
+ const simple={...e,textRuns:[]};
+ const changed={...simple,textRuns:[{start:1,end:2,style:{underlineDetails:{style:'wavy',thickness:8}}}]};
+ const strikes=doc=>engine.layout(doc).rows.flatMap(r=>r.decorations).filter(d=>d.kind==='strikethrough');
+ assert.deepEqual(strikes(simple),strikes(changed));
+});

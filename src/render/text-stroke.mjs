@@ -1,3 +1,4 @@
+import {paintTextDecorations} from './text-decorations.mjs';
 import {richTextFont} from './rich-text-layout.mjs';
 
 export const hasHorizontalTextStroke = layout => layout.rows.some(row=>row.fragments.some(p=>p.style.strokeWidth>0));
@@ -35,11 +36,7 @@ export function paintHorizontalTextPass(c,e,layout,method='fill') {
    }
    c.restore();
   }
-  if(method==='fill')for(const rect of row.decorations){
-   c.save();
-   if(solid){c.fillStyle=rect.color;c.globalAlpha*=Math.max(0,Math.min(1,(rect.fillOpacity??e.fillOpacity??100)/100));}
-   c.fillRect(rect.x,rect.y,rect.width,rect.height);c.restore();
-  }
+  if(method==='fill')paintTextDecorations(c,row.decorations,solid,e.fillOpacity,-pad,e.w+pad);
  }
  c.restore();
 }

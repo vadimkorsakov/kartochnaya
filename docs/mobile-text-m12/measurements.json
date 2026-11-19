@@ -1,0 +1,90 @@
+[
+  {
+    "version": "before",
+    "width": 360,
+    "previewInputs": 32,
+    "previewIDBPuts": 1,
+    "savedDuringPreviewRuns": [
+      {
+        "start": 0,
+        "end": 13,
+        "style": {
+          "fontSize": 360
+        }
+      }
+    ],
+    "finishUndoSteps": 1,
+    "undoRestoresRuns": null,
+    "finalRuns": [
+      {
+        "start": 0,
+        "end": 13,
+        "style": {
+          "fontSize": 360
+        }
+      }
+    ]
+  },
+  {
+    "version": "before",
+    "width": 390,
+    "previewInputs": 32,
+    "previewIDBPuts": 1,
+    "savedDuringPreviewRuns": [
+      {
+        "start": 0,
+        "end": 13,
+        "style": {
+          "fontSize": 344
+        }
+      }
+    ],
+    "finishUndoSteps": 1,
+    "undoRestoresRuns": null,
+    "finalRuns": [
+      {
+        "start": 0,
+        "end": 13,
+        "style": {
+          "fontSize": 344
+        }
+      }
+    ]
+  },
+  {
+    "version": "after",
+    "width": 360,
+    "previewInputs": 31,
+    "previewIDBPuts": 0,
+    "savedDuringPreviewRuns": null,
+    "finishUndoSteps": 1,
+    "undoRestoresRuns": null,
+    "finalRuns": [
+      {
+        "start": 0,
+        "end": 13,
+        "style": {
+          "fontSize": 84
+        }
+      }
+    ]
+  },
+  {
+    "version": "after",
+    "width": 390,
+    "previewInputs": 32,
+    "previewIDBPuts": 0,
+    "savedDuringPreviewRuns": null,
+    "finishUndoSteps": 1,
+    "undoRestoresRuns": null,
+    "finalRuns": [
+      {
+        "start": 0,
+        "end": 13,
+        "style": {
+          "fontSize": 83
+        }
+      }
+    ]
+  }
+]

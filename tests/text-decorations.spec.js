@@ -131,7 +131,7 @@ test('mobile U/S uses textarea selection and legacy whole-layer behavior',async(
  expect((await model(page)).textRuns).toEqual([{start:0,end:6,style:{underline:false}}]);
  await s.click();expect((await model(page)).textRuns).toEqual([{start:0,end:6,style:{strikethrough:false,underline:false}}]);
  expect(await input.evaluate(el=>[el.selectionStart,el.selectionEnd,el.selectionDirection])).toEqual([0,6,'backward']);
- await input.evaluate(el=>{el.focus();el.setSelectionRange(10,10)});await input.dispatchEvent('select');await u.click();
+ await input.click({position:{x:5,y:12}});await input.evaluate(el=>{el.focus();el.setSelectionRange(10,10)});await input.dispatchEvent('select');await u.click();
  const layer=await model(page);expect(layer.underline).toBe(true);expect(layer.mobileUnderline).toBe(true);
  await page.keyboard.press('Control+Enter');await expect(input).toBeHidden();
  const png=await exportPNG(page,640,480);expect(png.image.data.length).toBe(640*480*4);

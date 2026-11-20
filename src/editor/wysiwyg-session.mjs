@@ -1,5 +1,6 @@
 import {richTextSpans, resolveRichTextStyle, richTextFont, retainRichTextSizeBase} from '../render/rich-text-layout.mjs';
-import {replaceText, applyTextStyle, applyBaselineShift} from '../model/rich-text.mjs';
+import {replaceText, applyTextStyle, applyBaselineShift, applyTextCase} from '../model/rich-text.mjs';
+import {displayToSource, sourceToDisplay, textCaseIntervalAt, textGraphemes} from '../model/text-case.mjs';
 import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-history.mjs';
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from '../render/text-stroke.mjs';
 
@@ -53,12 +54,12 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=
 // Canonical layer + the editor's existing session history own all confirmed data.
 // Unknown DOM remains on screen until explicit recovery; it is never persisted.
 export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, compatible=()=>false, layout=()=>null, fit=()=>false, viewport=()=>({width:Infinity,height:Infinity})}) {
- let layer=element, composing=false, fallback=null, pasteText=null, confirmedHTML, inactive=false;
+ let layer=element, composing=false, fallback=null, pasteText=null, confirmedHTML, confirmedSource, caseProjection=null, inactive=false;
  const safe={phase:'confirmed', deferred:false};
  let savedSelection=null, savedAffinity=null, projectedRows=null, preview=null, verticalX=null;
  const abort=new AbortController(), listen=(name,fn)=>host.addEventListener(name,fn,{signal:abort.signal});
  const baselineOffsets=new Map();
- let shiftedBoundaries=new WeakMap();
+ let nativeBoundaries=new WeakMap();
  for(const type of ['loadingdone','loadingerror'])document.fonts.addEventListener(type,()=>baselineOffsets.clear(),{signal:abort.signal});
  const overlay=document.createElement('canvas');overlay.dataset.textStrokeOverlay='';overlay.setAttribute('aria-hidden','true');
  Object.assign(overlay.style,{position:'absolute',pointerEvents:'none',transformOrigin:'0 0',zIndex:'7',display:'none'});
@@ -106,7 +107,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  }
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
  function stop(reason){clearPointerGesture();pasteText=null;fallback=reason;safe.phase='recovery-required';syncOverlay();if(!inactive)onRecovery(reason);}
- function project(value,selection,affinity=null){pointerEpoch++;clearPointerGesture();
+ function project(value,selection,affinity=null){pointerEpoch++;clearPointerGesture();selectingWithPointer=false;
   verticalX=null;
   // Probe measurements also attach temporary DOM nodes. Capture the owner
   // before any measurement, not just before replaceChildren: the browser can
@@ -119,12 +120,15 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   for(const style of styles)if(!available(style.fontFamily)||!document.fonts.check(richTextFont(style)))throw Error('Font unavailable');
   const heights=styles.map(style=>lineHeight(style));
   // Canvas owns wrapping, per-row ascent/descent and fragment advances.
-  // Position source spans at those coordinates; CSS must never reflow them.
-  // Soft wraps add no characters. Only source LF occupies a UTF-16 offset.
+  // Position editable display spans at those coordinates; CSS never reflows
+  // them. Soft wraps add no characters. A hard LF lives in its preceding row.
   const projection=layout(value);
   if(!projection?.rows?.length)throw Error('Text layout unavailable');
   const canvasInk=needsCanvasInk(projection);
   const nodes=[],boundaries=new WeakMap();
+  const display=projection.caseProjection;
+  const expansions=display?.intervals.filter(p=>p.displayEnd-p.displayStart!==p.sourceEnd-p.sourceStart) || [];
+  let sourceEnd=0, expansion=0;
   for(const [rowIndex,row] of projection.rows.entries()){
    const rowNode=document.createElement('span');rowNode.dataset.wysiwygRow='';
    Object.assign(rowNode.style,{position:'absolute',display:'inline-block',left:'0px',top:row.y+'px',height:row.height+'px',whiteSpace:'pre',fontSize:'0px',lineHeight:'0px'});
@@ -137,11 +141,22 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    for(let i=0;i<parts.length;i++){
     const part=parts[i],span=document.createElement('span');span.dataset.wysiwygFragment='';
     const before=i>0&&parts[i-1].y!==part.y,after=i+1<parts.length&&parts[i+1].y!==part.y;
-    if(before||after)boundaries.set(span,{part,rowIndex,before,after});
+    const start=part.start??row.start,end=part.end??row.start;
+    const displayStart=display?sourceToDisplay(display,start):start;
+    const expandedGraphemes=[];
+    if(display){
+     if(start!==sourceEnd||end<start||display.text.slice(displayStart,sourceToDisplay(display,end))!==part.text)throw Error('Invalid case projection coverage');
+     sourceEnd=end;
+     while(expansions[expansion]?.sourceStart<end)expandedGraphemes.push(expansions[expansion++]);
+    }
+    if(before||after||expandedGraphemes.length)boundaries.set(span,{part,rowIndex,before,after,displayStart,expandedGraphemes});
     const offset=unifiedDOMOffset(part.style,{height:row.height,baseline:(part.y??row.baseline)-row.y},part.text,baselineOffsets);
     span.append(document.createTextNode(part.text));
     // Source newlines live with their preceding row, including empty rows.
-    if(i===parts.length-1&&row.nextStart>row.end)span.firstChild.data+=value.text.slice(row.end,row.nextStart);
+    if(i===parts.length-1&&row.nextStart>row.end){
+     span.firstChild.data+=value.text.slice(row.end,row.nextStart);
+     sourceEnd=row.nextStart;
+    }
     Object.assign(span.style,{position:'relative',display:'inline-block',verticalAlign:'top',marginLeft:part.x-advance+'px',top:offset+'px',height:row.height+'px',
      font:richTextFont(part.style),fontKerning:'normal',lineHeight:row.height+'px',letterSpacing:part.style.letterSpacing+'px',
      color:part.style.textColor,whiteSpace:'pre',overflowWrap:'normal'});
@@ -152,6 +167,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
     advance=part.x+(expanded?part.width:naturalWidth);
    }
   }
+  if(display&&sourceEnd!==value.text.length)throw Error('Incomplete case projection coverage');
   const next=structuredClone(value);
   decorationProjection=null;
   // The browser can blur contenteditable while replaceChildren invalidates
@@ -160,11 +176,24 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // that already owned focus. Inspector/color fields must keep their focus.
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
   Object.assign(host.style,{font:richTextFont(base),fontKerning:'normal',lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
-  projectedRows=projection.rows;shiftedBoundaries=boundaries;
+  projectedRows=projection.rows;nativeBoundaries=boundaries;
   host.replaceChildren(...nodes);
   if(!host.childNodes.length)host.append(document.createTextNode(''));
   if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';nodes.at(-1).lastChild.append(br);}
-  confirmedHTML=host.innerHTML;
+  if(display){
+   // Inline boxes preserve native caret affinity. Correct subpixel
+   // accumulation across the independently rounded margins of long rows.
+   const positions=nodes.flatMap((node,i)=>{
+    const box=node.getBoundingClientRect(), scale=box.width/value.w;
+    if(!(scale>0))return [];
+    return Array.from(node.children,(span,j)=>{
+     const actual=(span.getBoundingClientRect().left-box.left)/scale;
+     return {span,offset:(projection.rows[i].fragments[j]?.x??projection.rows[i].x)-actual};
+    });
+   });
+   for(const {span,offset} of positions)if(Math.abs(offset)>=1/64)span.style.left=offset+'px';
+  }
+  confirmedSource=layer.text;caseProjection=display||null;confirmedHTML=host.innerHTML;
   syncOverlay();
   // setBaseAndExtent focuses contenteditable in Chromium and would blur a
   // numeric/HEX input (emitting change in the middle of its input callback).
@@ -175,7 +204,8 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    restoreSavedSelection();
   }
  }
- function clean(){try{return !composing&&!fallback&&!safe.deferred&&host.innerHTML===confirmedHTML&&readText()===layer.text;}catch{return false;}}
+ function matchesProjection(){return layer.text===confirmedSource&&host.innerHTML===confirmedHTML&&readText()===(caseProjection?.text??confirmedSource);}
+ function clean(){try{return !composing&&!fallback&&!safe.deferred&&matchesProjection();}catch{return false;}}
  const caret=c=>({start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'});
  function commit(value,before,after){
   // Fit the next snapshot before history and DOM are committed: all renderers
@@ -267,14 +297,14 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
 // and shared visual rows; native Selection still paints and owns the caret.
 const applyRangeStyle=(patch,options)=>applyStyle(patch,options);
 const applyLayerStyle=(patch,options)=>applyStyle(patch,{...options,range:false});
-const graphemes=new Intl.Segmenter(undefined,{granularity:'grapheme'});
-function changeBaselineShift(value){
+const graphemes=textGraphemes;
+function changeGraphemeStyle(apply,value){
  if(!clean()||safe.phase!=='confirmed'||inactive||!compatible(layer))return false;
  let selection;try{selection=rememberSelection();}catch{return false;}
  const range=caret(selection);
  const clusters=graphemes.segment(layer.text);
  if([range.start,range.end].some(i=>i!==layer.text.length&&clusters.containing(i)?.index!==i))return false;
- const next=applyBaselineShift(layer,value,range.start===range.end?null:range);
+ const next=apply(layer,value,range.start===range.end?null:range);
  if(next===layer)return false;
  if(next.autoFontSize)fit(next,{preserveSizeBase:true});
  if(!compatible(next))return false;
@@ -288,7 +318,7 @@ function changeBaselineShift(value){
 }
 // Correct native clicks at expanded spaces and shared offsets between glyphs
 // on different baselines. The editable nodes and native Selection own the caret.
-let pointerEpoch=0,pointerGesture=null;
+let pointerEpoch=0,pointerGesture=null,selectingWithPointer=false;
 const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.task!==undefined)clearTimeout(p.task);};
 // Register for the session lifetime. Each projection invalidates pending clicks.
 {
@@ -315,10 +345,20 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
  }
  function pointerHit(x,y,target){
   const space=stretchedHit(x,y);if(space)return space;
-  const span=target.closest('[data-wysiwyg-fragment]'),boundary=shiftedBoundaries.get(span);
+  const span=target.closest('[data-wysiwyg-fragment]'),boundary=nativeBoundaries.get(span);
   if(!boundary||inactive||safe.phase!=='confirmed'||!clean())return null;
   const {part}=boundary,node=span.firstChild;
-  const range=doc.createRange();range.setStart(node,0);range.setEnd(node,part.text.length);
+  const range=doc.createRange();
+  for(const interval of boundary.expandedGraphemes){
+   range.setStart(node,interval.displayStart-boundary.displayStart);range.setEnd(node,interval.displayEnd-boundary.displayStart);
+   const rect=range.getBoundingClientRect();
+   if(x>rect.left&&x<rect.right&&y>=rect.top&&y<=rect.bottom){
+    return {...boundary,node,start:interval.sourceStart,key:interval,interval,
+     target:x<=(rect.left+rect.right)/2?interval.sourceStart:interval.sourceEnd};
+   }
+  }
+  if(!boundary.before&&!boundary.after)return null;
+  range.setStart(node,0);range.setEnd(node,part.text.length);
   const rect=range.getBoundingClientRect();
   if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return null;
   return {...boundary,node,start:part.start,key:node};
@@ -326,6 +366,7 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
  listen('pointerdown',event=>{
   clearPointerGesture();
   if(!event.isTrusted||event.pointerType!=='mouse'||!event.isPrimary||event.button!==0||event.altKey||event.ctrlKey||event.metaKey)return;
+  selectingWithPointer=!!caseProjection;
   const hit=pointerHit(event.clientX,event.clientY,event.target);if(!hit)return;
   let anchor=null,anchorNode=null,anchorOffset=null;
   if(event.shiftKey){try{if(document.activeElement!==host||!selectionInside())return;anchor=readSelection().anchor;anchorNode=getSelection().anchorNode;anchorOffset=getSelection().anchorOffset}catch{return}}
@@ -334,14 +375,18 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
  watch(doc,'pointerdown',event=>{if(!host.contains(event.target))clearPointerGesture()},true);
  watch(doc,'pointermove',event=>{const p=pointerGesture;if(p&&!p.clicked&&p.id===event.pointerId&&(event.clientX!==p.x||event.clientY!==p.y))clearPointerGesture()},true);
  watch(doc,'pointerup',event=>{
+  if(selectingWithPointer){
+   selectingWithPointer=false;
+   if(!pointerGesture)queueMicrotask(normalizeNativeSelection);
+  }
   const p=pointerGesture;if(!p||p.id!==event.pointerId)return;
   if(!host.contains(event.target)||event.clientX!==p.x||event.clientY!==p.y){clearPointerGesture();return}
   p.up=true;
  },true);
- watch(doc,'pointercancel',clearPointerGesture,true);
+ watch(doc,'pointercancel',()=>{selectingWithPointer=false;clearPointerGesture();normalizeNativeSelection()},true);
  listen('dragstart',clearPointerGesture);
- listen('focusout',clearPointerGesture);
- watch(window,'blur',clearPointerGesture);
+ listen('focusout',()=>{selectingWithPointer=false;clearPointerGesture()});
+ watch(window,'blur',()=>{selectingWithPointer=false;clearPointerGesture()});
  listen('compositionstart',clearPointerGesture);
  function flushBeforeInput(event){
   if(event.isComposing||event.keyCode===229||composing){clearPointerGesture();return}
@@ -349,7 +394,14 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
  }
  listen('keydown',flushBeforeInput);
  listen('beforeinput',flushBeforeInput);
- watch(doc,'selectionchange',event=>{if(event.isTrusted&&pointerGesture?.clicked)applyClick()});
+ watch(doc,'selectionchange',event=>{
+  if(event.isTrusted&&pointerGesture?.clicked)applyClick();
+  if(!selectingWithPointer&&!pointerGesture)normalizeNativeSelection();
+ });
+ function normalizeNativeSelection(){
+  if(!caseProjection||document.activeElement!==host||!selectionInside()||!clean())return;
+  try{readSelection(true)}catch{}
+ }
  function applyClick(){
   const p=pointerGesture;if(!p?.clicked)return;
   pointerGesture=null;if(p.task!==undefined)clearTimeout(p.task);
@@ -358,10 +410,17 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
   let native;try{native=readSelection()}catch{return}
   if(!p.shift&&native.anchor!==native.focus){return}
   if(p.shift&&!host.contains(p.anchorNode)){return}
+  if(hit.interval){
+   const {interval,node,displayStart}=hit;
+   const target=p.shift?(p.anchor>=interval.sourceEnd?interval.sourceStart:interval.sourceEnd):hit.target;
+   const offset=sourceToDisplay(caseProjection,target)-displayStart;
+   getSelection().setBaseAndExtent(p.shift?p.anchorNode:node,p.shift?p.anchorOffset:offset,node,offset);
+   saveNativeSelection();return;
+  }
   if(hit.node){
    // Chromium can pick the correct UTF-16 offset inside the clicked fragment
    // while placing its native caret in the adjacent fragment at that offset.
-   const {part,node}=hit,selection=getSelection(),offset=native.focus-part.start;
+   const {part,node,displayStart}=hit,selection=getSelection(),offset=(caseProjection?sourceToDisplay(caseProjection,native.focus):native.focus)-displayStart;
    if(!(hit.before&&native.focus===part.start||hit.after&&native.focus===part.end))return;
    if(selection.focusNode!==node||selection.focusOffset!==offset){
     selection.setBaseAndExtent(p.shift?p.anchorNode:node,p.shift?p.anchorOffset:offset,node,offset);
@@ -407,7 +466,8 @@ listen('keydown',event=>{
    const x=part.logicalX??part.x;
    if(offset>=part.end)return x+part.width;
    ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';ctx.fontKerning='normal';
-   return x+ctx.measureText(layer.text.slice(part.start,offset)).width;
+   const text=caseProjection?caseProjection.text.slice(sourceToDisplay(caseProjection,part.start),sourceToDisplay(caseProjection,offset)):layer.text.slice(part.start,offset);
+   return x+ctx.measureText(text).width;
   };
   if(verticalX===null)verticalX=xAt(row,c.focus);
   targetRow=Math.max(0,Math.min(rows.length-1,rowIndex+(key==='ArrowUp'?-1:1)));
@@ -457,14 +517,14 @@ function index(){
  visit(host);return {text,points,leaves};
 }
 const readText=()=>index().text;
-function domPointToOffset(node,offset){
- const map=index();
+function domPointToDisplay(map,node,offset){
  if(node.nodeType===3){const leaf=map.leaves.find(p=>p.node===node);if(leaf&&offset>=0&&offset<=node.length)return leaf.start+offset;}
  else {const offsets=map.points.get(node);if(offsets&&offset>=0&&offset<offsets.length)return offsets[offset];}
  throw Error('Point outside candidate surface');
 }
-function offsetToDomPoint(offset,rowIndex=null){
- const map=index();if(!Number.isInteger(offset)||offset<0||offset>map.text.length)throw Error('Invalid UTF-16 offset');
+function offsetToDomPoint(offset,rowIndex=null,map=index()){
+ if(!Number.isInteger(offset)||offset<0||offset>layer.text.length)throw Error('Invalid UTF-16 offset');
+ if(caseProjection)offset=sourceToDisplay(caseProjection,offset);
  // Keep the selection anchored in a live text node whenever possible.
  // The host-level point before a trailing <br> can be normalised by Chromium
  // to the start of contenteditable after a controlled Enter, losing the caret.
@@ -481,9 +541,27 @@ function validSelection(c,text=layer.text){
  const split=i=>i>0&&i<text.length&&/[\uD800-\uDBFF]/.test(text[i-1])&&/[\uDC00-\uDFFF]/.test(text[i]);
  return c&&[c.anchor,c.focus].every(i=>Number.isInteger(i)&&i>=0&&i<=text.length&&!split(i));
 }
-function readSelection(){const s=getSelection();const c={anchor:domPointToOffset(s.anchorNode,s.anchorOffset),focus:domPointToOffset(s.focusNode,s.focusOffset)};if(!validSelection(c,index().text))throw Error('Invalid selection');return c;}
+function readSelection(normalize=false){
+ const s=getSelection(),map=index();
+ let anchor=domPointToDisplay(map,s.anchorNode,s.anchorOffset),focus=domPointToDisplay(map,s.focusNode,s.focusOffset);
+ if(caseProjection){
+  const displayAnchor=anchor,displayFocus=focus;
+  const interval=s.isCollapsed?textCaseIntervalAt(caseProjection.intervals,focus,'displayEnd'):null;
+  const nearestEnd=interval&&focus-interval.displayStart>interval.displayEnd-focus;
+  anchor=displayToSource(caseProjection,anchor,s.isCollapsed?nearestEnd:anchor>focus);
+  focus=displayToSource(caseProjection,focus,s.isCollapsed?nearestEnd:displayFocus>displayAnchor);
+  if(normalize){
+   const rows=[...host.children];
+   const point=(node,offset,source,display)=>sourceToDisplay(caseProjection,source)===display?
+    {node,offset}:offsetToDomPoint(source,rows.indexOf((node.nodeType===3?node.parentElement:node).closest('[data-wysiwyg-row]')),map);
+   const a=point(s.anchorNode,s.anchorOffset,anchor,displayAnchor),f=point(s.focusNode,s.focusOffset,focus,displayFocus);
+   if(a.node!==s.anchorNode||a.offset!==s.anchorOffset||f.node!==s.focusNode||f.offset!==s.focusOffset)s.setBaseAndExtent(a.node,a.offset,f.node,f.offset);
+  }
+ }
+ const c={anchor,focus};if(!validSelection(c))throw Error('Invalid selection');return c;
+}
 function saveNativeSelection(){
- savedSelection=readSelection();
+ savedSelection=readSelection(!selectingWithPointer&&!pointerGesture);
  const selection=getSelection(),nodes=[...host.children];
  const upstream=(node,offset)=>{
   const index=nodes.indexOf(node.parentElement.closest('[data-wysiwyg-row]'));
@@ -501,6 +579,12 @@ function rememberSelection(){
 }
 function setSelection(anchor,focus=anchor,rowIndex=null,anchorRow=anchor===focus?rowIndex:null){
  const c={anchor,focus};if(!validSelection(c))throw Error('Invalid selection');
+ if(caseProjection){
+  const backward=anchor>focus,collapsed=anchor===focus;
+  c.anchor=displayToSource(caseProjection,sourceToDisplay(caseProjection,anchor,backward||collapsed));
+  c.focus=displayToSource(caseProjection,sourceToDisplay(caseProjection,focus,!backward));
+  ({anchor,focus}=c);
+ }
  const a=offsetToDomPoint(anchor,anchorRow),f=offsetToDomPoint(focus,rowIndex);
  getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);savedSelection=c;savedAffinity=null;
 }
@@ -537,7 +621,7 @@ listen('beforeinput',e=>{
  if(!selectionInside()){stop('selection outside host');return;}
  if(layer.text.includes('\r')){stop('legacy CR requires fallback');return;}
  let selection;
- try{if(readText()!==layer.text||host.innerHTML!==confirmedHTML){stop('DOM differs from canonical state');return;}selection=readSelection();}
+ try{if(!matchesProjection()){stop('DOM differs from confirmed projection');return;}selection=readSelection(true);}
  catch{stop('unsupported DOM');return;}
  let start=Math.min(selection.anchor,selection.focus),end=Math.max(selection.anchor,selection.focus);
  // replaceText expands surrogate boundaries; refuse a split-pair caret rather
@@ -583,13 +667,15 @@ listen('input',()=>{
  if(inactive||composing||safe.deferred)return;
  // Canceled controlled intents may still be followed by a redundant input.
  // Any actual DOM mutation without a confirmed intent remains recoverable.
- try{if(readText()!==layer.text||host.innerHTML!==confirmedHTML)stop('input without beforeinput context');}
+ try{if(!matchesProjection())stop('input without beforeinput context');}
  catch{stop('unsupported native DOM');}
 });
 
  host.contentEditable='plaintext-only';host.classList.remove('hidden');
  const initial={anchor:layer.text.length,focus:layer.text.length};project(structuredClone(layer),initial);recordInlineHistory(history,layer,caret(initial));
- return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection(...args){clearPointerGesture();return setSelection(...args);},requestFallback,clean,applyRangeStyle,applyLayerStyle,changeBaselineShift,applyUnderlineStyle,cancelUnderlinePreview,finishPreview,syncOverlay,
+ return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection(...args){clearPointerGesture();return setSelection(...args);},requestFallback,clean,applyRangeStyle,applyLayerStyle,
+  changeBaselineShift:value=>changeGraphemeStyle(applyBaselineShift,value),changeTextCase:value=>changeGraphemeStyle(applyTextCase,value),applyUnderlineStyle,cancelUnderlinePreview,finishPreview,syncOverlay,
+  owns:value=>!inactive&&layer===value,
   preserve(){pointerEpoch++;clearPointerGesture();inactive=true;releaseOverlay();if(!composing)host.contentEditable='false';},
   focus(){host.focus({preventScroll:true});},
   recover(){if(composing)return false;fallback=null;safe.deferred=false;safe.phase='confirmed';project(structuredClone(layer),{anchor:layer.text.length,focus:layer.text.length});onChange();return true;},

@@ -493,3 +493,27 @@ test('shifted ascent and descent can both exceed the nominal font bounds',()=>{
  assert.ok(Math.abs(row.height-42)<1e-8);
  assert.ok(Math.abs(result.inkOverflow-(row.fragments[1].y+26*.19-e.h))<1e-8);
 });
+
+test('case expansion wraps atomically and maps source carets and T1/T2 decorations through justify',()=>{
+ const context={measureText(text){return {width:[...text].length*10,fontBoundingBoxAscent:16,fontBoundingBoxDescent:4}}};
+ const engine=createRichTextLayoutEngine(context);
+ const e={text:'av ß  i\u0307 long\r\nﬃ\n',w:98,h:400,fontSize:20,textCase:'upper',textRuns:[
+  {start:1,end:2,style:{textCase:'original'}},
+  {start:3,end:4,style:{underline:true,underlineDetails:{style:'wavy'},baselineShift:'super'}},
+ ]};
+ const natural=engine.layout(e), justified=engine.layoutJustified(e);
+ assert.equal(natural.rows[0].fragments[0].text,'Av '); // Case metadata did not split the fragment.
+ const first=justified.rows[0], expansion=first.fragments.find(f=>f.text==='SS');
+ assert.deepEqual([expansion.start,expansion.end,expansion.style.baselineShift],[3,4,'super']);
+ assert.equal(first.carets.find(p=>p.offset===4).x-first.carets.find(p=>p.offset===3).x,20);
+ const wavy=first.decorations.find(d=>d.style==='wavy');
+ assert.deepEqual([wavy.start,wavy.end,wavy.x,wavy.width],[3,4,expansion.x,20]);
+ assert.ok(first.justification.spaces.includes(2));
+ const all=justified.rows.flatMap(row=>row.carets.map(c=>c.offset));
+ assert.ok(!all.includes(e.text.indexOf('\u0307'))&&!all.includes(e.text.indexOf('\n')));
+ const narrow=engine.layout({...e,text:'ßﬃ',textRuns:[],w:15});
+ assert.deepEqual(narrow.rows.map(row=>[row.start,row.end,row.fragments[0].text]),[[0,1,'SS'],[1,2,'FFI']]);
+ assert.equal(engine.layout({...e,textMode:'vertical'}).caseProjection,undefined);
+ assert.equal(engine.layout({...e,textCase:'invalid',textRuns:[]}).caseProjection,undefined);
+ assert.strictEqual(engine.layout(e),natural);
+});

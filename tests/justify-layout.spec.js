@@ -7,7 +7,7 @@ test.use({serviceWorkers:'block'});
 async function setup(page){
  await page.route('**/__shipping/**',async route=>{
   const name=new URL(route.request().url()).pathname.slice('/__shipping/'.length);
-  if(!['render/rich-text-layout.mjs','render/text-baseline-shift.mjs','render/text-decorations.mjs','model/rich-text.mjs'].includes(name))return route.abort();
+  if(!['render/rich-text-layout.mjs','render/text-baseline-shift.mjs','render/text-decorations.mjs','model/rich-text.mjs','model/text-case.mjs'].includes(name))return route.abort();
   await route.fulfill({body:await fs.readFile(path.join(__dirname,'../src',name)),contentType:'text/javascript'});
  });
  await openHome(page);

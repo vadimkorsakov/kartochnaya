@@ -1,5 +1,7 @@
 // Sparse UTF-16 overrides. The only text is element.text; textAlign remains
 // a layer property. lineHeight is a positive, dimensionless character override.
+import {isTextCase, resolveTextCase, textGraphemes} from './text-case.mjs';
+
 const blocked = new Set(['__proto__', 'constructor', 'prototype', 'textAlign']);
 const record = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 function jsonValue(v, depth = 0) {
@@ -74,6 +76,10 @@ function styleData(value, base = {}) {
     if (blocked.has(k)) continue;
     if (k === 'baselineShift') {
       if (isBaselineShift(value[k])) out[k] = value[k];
+      continue;
+    }
+    if (k === 'textCase') {
+      if (isTextCase(value[k])) out[k] = value[k];
       continue;
     }
     if (k === 'underlineDetails') {
@@ -198,9 +204,49 @@ export function applyBaselineShift(element, value, range = null) {
   else next.baselineShift = value;
   return next;
 }
+export function effectiveTextCase(element, range = null) {
+  const inherited = resolveTextCase(element.textCase);
+  const {text} = element;
+  const {start, end} = range || {start:0, end:text.length};
+  const runs = normalizeRuns(text, element.textRuns).filter(run => run.style.textCase !== undefined);
+  if (!runs.length || start === end) return inherited;
+  const graphemes = textGraphemes.segment(text);
+  const modes = new Set();
+  function add(a, b, mode) {
+    const left = Math.max(a, start), right = Math.min(b, end);
+    if (left >= right) return;
+    const owner = graphemes.containing(left);
+    if (owner.index === left || owner.index + owner.segment.length < right) modes.add(mode);
+  }
+  let offset = 0;
+  for (const run of runs) {
+    add(offset, run.start, inherited);
+    add(run.start, run.end, run.style.textCase);
+    offset = run.end;
+  }
+  add(offset, text.length, inherited);
+  return modes.size > 1 ? 'mixed' : modes.values().next().value ?? inherited;
+}
+/** A case command changes only presentation, in canonical UTF-16 coordinates. */
+export function applyTextCase(element, value, range = null) {
+  if (!isTextCase(value)) return element;
+  const {text} = element;
+  if (range) {
+    const {start, end} = range, graphemes = textGraphemes.segment(text);
+    if (start >= end || ![start,end].every(i => Number.isInteger(i) && (i === text.length || graphemes.containing(i)?.index === i))) return element;
+  }
+  if (effectiveTextCase(element, range) === value) return element;
+  if (range) return applyTextStyle(element, range.start, range.end,
+    {textCase:value === resolveTextCase(element.textCase) ? null : value}, {preserveOverrides:true});
+  const next = applyTextStyle(element, 0, text.length, {textCase:null}, {preserveOverrides:true});
+  if (value === 'original') delete next.textCase;
+  else next.textCase = value;
+  return next;
+}
 export function clearTextFormatting(element) {
   const result = withRuns(element, element.text, []);
   delete result.baselineShift;
+  delete result.textCase;
   delete result.textRunsBaseFontSize;
   delete result.textLayoutMode;
   delete result.mobileRawTextRuns; delete result.mobileListRawTextRuns;
@@ -215,6 +261,7 @@ export function effectiveTextStyles(element, start = 0, end = element.text.lengt
     ['fontFamily','fontWeight','fontStyle','fontVariant','fontSize','lineHeight','textColor','fillOpacity','strokeOpacity','strokeStyle','strokeWidth','stroke','bold','italic','underline','underlineDetails','strikethrough','strikethroughDetails','mobileUnderline','mobileStrike','letterSpacing','baselineShift','fontFeatures','fontVariationSettings'].includes(k) || runs.some(r => Object.hasOwn(r.style,k)))));
   base.strokeStyle ??= 'solid';
   base.baselineShift ??= 'normal';
+  base.textCase = resolveTextCase(element.textCase);
   return points.slice(0, -1).map((a, i) => ({ start: a, end: points[i + 1], style: mergeTextStyle({...base}, runs.find(r => r.start <= a && r.end > a)?.style) }));
 }
 export function effectiveTextStyleAt(element, index) {

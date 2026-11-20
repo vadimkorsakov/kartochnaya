@@ -1,9 +1,11 @@
 import {resolveUnderlineDetails} from '../model/rich-text.mjs';
+import {glyphFontSize} from './text-baseline-shift.mjs';
 
 // Decoration intervals are in document space. Pattern geometry is painted
 // downstream, after Justify has expanded the source spaces.
 export function textDecorationRects(part, style, kind) {
-  const thickness = Math.max(1, style.fontSize / 19);
+  const size = glyphFontSize(style);
+  const thickness = Math.max(1, size / 19);
   if (!(part.width > 0)) return [];
   const rect = (kind, offset, height, color) => ({
     kind, x:part.x, y:part.y + offset - height / 2, width:part.width, height, color,
@@ -13,14 +15,14 @@ export function textDecorationRects(part, style, kind) {
     const details = resolveUnderlineDetails(style.underlineDetails);
     const advanced = Object.keys(details).length > 0;
     const underline = rect('underline',
-      typeof details.offset === 'number' ? details.offset : style.fontSize * .1,
+      typeof details.offset === 'number' ? details.offset : size * .1,
       typeof details.thickness === 'number' ? details.thickness : thickness,
       details.color && details.color !== 'inherit' ? details.color : style.textColor);
     if (advanced) Object.assign(underline, {advanced, style:details.style ?? 'solid',
       fillOpacity:typeof details.opacity === 'number' ? details.opacity : style.fillOpacity});
     result.push(underline);
   }
-  if (style.strikethrough && kind !== 'underline') result.push(rect('strikethrough', -style.fontSize * .31, thickness, style.textColor));
+  if (style.strikethrough && kind !== 'underline') result.push(rect('strikethrough', -size * .31, thickness, style.textColor));
   return result;
 }
 

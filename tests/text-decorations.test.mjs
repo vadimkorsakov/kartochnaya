@@ -78,3 +78,22 @@ test('manual underline paint uses baseline offset, independent color and zero op
  assert.deepEqual(u,{kind:'underline',x:10,y:37,width:50,height:6,color:'#11aa33',style:'dotted',fillOpacity:0,advanced:true});
  assert.deepEqual(s,{kind:'strikethrough',x:10,y:27.22,width:50,height:2,color:'#cc2244'});
 });
+
+test('index decoration sizes use glyph size and manual offsets use the shifted baseline',()=>{
+ const context={measureText(text){return {width:text.length*12,fontBoundingBoxAscent:40,fontBoundingBoxDescent:10}}};
+ const e={text:'X2X2',fontSize:40,w:200,h:200,underline:true,strikethrough:true,textRuns:[
+  {start:1,end:2,style:{baselineShift:'super',underlineDetails:{style:'wavy',color:'#f00',offset:6,thickness:3,opacity:42}}},
+  {start:3,end:4,style:{baselineShift:'sub'}},
+ ]};
+ const [row]=createRichTextLayoutEngine(context).layout(e).rows;
+ const byRange=(start,kind)=>row.decorations.find(d=>d.start===start&&d.kind===kind);
+ const sub=row.fragments[3],sup=row.fragments[1];
+ const underline=byRange(3,'underline'),strike=byRange(3,'strikethrough'),manual=byRange(1,'underline');
+ assert.equal(underline.height,26/19);
+ assert.equal(underline.y,sub.y+2.6-underline.height/2);
+ assert.equal(strike.y,sub.y-26*.31-strike.height/2);
+ assert.equal(manual.y,sup.y+6-1.5);
+ assert.equal(manual.height,3);
+ assert.equal(manual.fillOpacity,42);
+ assert.equal(manual.color,'#ff0000');
+});

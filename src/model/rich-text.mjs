@@ -27,6 +27,8 @@ export const underlineLimits = {
 export const underlineDefaults = {style: 'solid', thickness: 'auto', offset: 'auto', color: 'inherit', opacity: 'inherit'};
 const underlineFields = Object.keys(underlineDefaults);
 
+export const isBaselineShift = value => value === 'normal' || value === 'sub' || value === 'super';
+
 export function sanitizeUnderlineDetails(value) {
   if (!record(value)) return {};
   const details = jsonValue(value);
@@ -70,6 +72,10 @@ function styleData(value, base = {}) {
   const out = {};
   for (const k of Object.keys(value).sort()) {
     if (blocked.has(k)) continue;
+    if (k === 'baselineShift') {
+      if (isBaselineShift(value[k])) out[k] = value[k];
+      continue;
+    }
     if (k === 'underlineDetails') {
       const details = sanitizeUnderlineDetails(value[k]);
       if (Object.keys(details).length) out[k] = details;
@@ -176,8 +182,25 @@ export function applyLayerUnderlineStyle(element, patch) {
   if (reset.underlineDetails) patchUnderlineDetails(next, details);
   return next;
 }
+/** A single baseline command preserves all unrelated explicit overrides. */
+export function applyBaselineShift(element, value, range = null) {
+  if (!isBaselineShift(value)) return element;
+  const inherited = isBaselineShift(element.baselineShift) ? element.baselineShift : 'normal';
+  if (range) {
+    const [start, end] = selection(element.text, range.start, range.end);
+    if (start === end || effectiveTextStyles(element, start, end).every(s => s.style.baselineShift === value)) return element;
+    return applyTextStyle(element, start, end, {baselineShift: value === inherited ? null : value}, {preserveOverrides:true});
+  }
+  const runs = normalizeRuns(element.text, element.textRuns);
+  if (inherited === value && !runs.some(r => Object.hasOwn(r.style, 'baselineShift') && r.style.baselineShift !== value)) return element;
+  const next = applyTextStyle(element, 0, element.text.length, {baselineShift:null}, {preserveOverrides:true});
+  if (value === 'normal') delete next.baselineShift;
+  else next.baselineShift = value;
+  return next;
+}
 export function clearTextFormatting(element) {
   const result = withRuns(element, element.text, []);
+  delete result.baselineShift;
   delete result.textRunsBaseFontSize;
   delete result.textLayoutMode;
   delete result.mobileRawTextRuns; delete result.mobileListRawTextRuns;
@@ -191,6 +214,7 @@ export function effectiveTextStyles(element, start = 0, end = element.text.lengt
   const base = styleData(Object.fromEntries(Object.entries(element).filter(([k]) =>
     ['fontFamily','fontWeight','fontStyle','fontVariant','fontSize','lineHeight','textColor','fillOpacity','strokeOpacity','strokeStyle','strokeWidth','stroke','bold','italic','underline','underlineDetails','strikethrough','strikethroughDetails','mobileUnderline','mobileStrike','letterSpacing','baselineShift','fontFeatures','fontVariationSettings'].includes(k) || runs.some(r => Object.hasOwn(r.style,k)))));
   base.strokeStyle ??= 'solid';
+  base.baselineShift ??= 'normal';
   return points.slice(0, -1).map((a, i) => ({ start: a, end: points[i + 1], style: mergeTextStyle({...base}, runs.find(r => r.start <= a && r.end > a)?.style) }));
 }
 export function effectiveTextStyleAt(element, index) {

@@ -113,14 +113,20 @@ test('width/height changes, clipping and vertical alignment use the current mixe
  await property(page,'h',180);const taller=await frame(page);expect(taller[0].y).toBeGreaterThan(narrow[0].y);
 });
 
-test('auto fit scales all sizes without rewriting runs, stays stable and survives save/reopen',async({page})=>{
+test('auto fit scales nominal and index glyph sizes without rewriting runs, stays stable and survives save/reopen',async({page})=>{
  const runs=[{start:2,end:4,style:{fontSize:60,textColor:'#0000ff',underline:true,baselineShift:'super',fontFeatures:{liga:0}}}];
  const doc=await seed(page,{text:'aaBB cc dd',fontSize:20,w:140,h:55,textRuns:runs});
  await select(page);await page.locator('#inspector [data-text-auto-font]').check();
  const small=await layer(page);expect(small.textRuns).toEqual(runs);expect(small.textRunsBaseFontSize).toBe(20);
- const checkRatio=async()=>{const d=await frame(page);const sizes=d.map(d=>parseFloat(d.font.match(/([\d.]+)px/)[1]));expect(Math.max(...sizes)/Math.min(...sizes)).toBeCloseTo(3,3)};
- await checkRatio();await property(page,'h',150);const large=await layer(page);expect(large.fontSize).toBeGreaterThan(small.fontSize);await checkRatio();
- await property(page,'h',55);expect((await layer(page)).fontSize).toBe(small.fontSize);await checkRatio();
+ const checkSizes=async fitted=>{
+  const draws=await frame(page),size=d=>parseFloat(d.font.match(/([\d.]+)px/)[1]);
+  const ordinary=draws.find(d=>d.color==='#ff0000'),index=draws.find(d=>d.color==='#0000ff');
+  expect(size(ordinary)).toBeCloseTo(fitted.fontSize,3);
+  // A saved superscript now paints at 65% of its fitted nominal run size.
+  expect(size(index)).toBeCloseTo(fitted.fontSize*(60/20)*.65,3);
+ };
+ await checkSizes(small);await property(page,'h',150);const large=await layer(page);expect(large.fontSize).toBeGreaterThan(small.fontSize);await checkSizes(large);
+ await property(page,'h',55);expect((await layer(page)).fontSize).toBe(small.fontSize);await checkSizes(small);
  const before=(await exportPNG(page)).image.data;
  await expect.poll(async()=>((await records(page,'docs')).find(d=>d.id===doc.id)).elements[0].textRunsBaseFontSize).toBe(20);
  await page.reload();await expect(page.locator('#homeScreen')).toBeVisible();await openLibraryDocument(page,doc.id);

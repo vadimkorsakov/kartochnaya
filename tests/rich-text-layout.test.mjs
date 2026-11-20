@@ -11,15 +11,15 @@ test('explicit keys win within a scope, run aliases override the base, missing k
  assert.equal(resolveRichTextStyle(base,{italic:false,fontStyle:'italic'}).fontStyle,'italic');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontWeight,'500');
  assert.equal(resolveRichTextStyle({...base,bold:true,italic:true}).fontStyle,'oblique');
- assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,fillOpacity:100,strokeOpacity:100,strokeStyle:'solid',textColor:'red',letterSpacing:2,lineHeight:1.15,underline:false,strikethrough:false,strokeWidth:0,stroke:'#000000'});
+ assert.deepEqual(resolveRichTextStyle(base,{textColor:'red'}),{fontFamily:'Arial',fontWeight:'500',fontStyle:'oblique',fontSize:20,baselineShift:'normal',fillOpacity:100,strokeOpacity:100,strokeStyle:'solid',textColor:'red',letterSpacing:2,lineHeight:1.15,underline:false,strikethrough:false,strokeWidth:0,stroke:'#000000'});
 });
 test('render projection repairs UTF-16 ranges without mutating source or unknown properties',()=>{
  const e={...base,textRuns:[{start:2,end:3,style:{fontSize:40,underline:true,baselineShift:'super',fontFeatures:{liga:0}}}]};
  const before=structuredClone(e),spans=richTextSpans(e);
  assert.equal(spans.map(s=>s.text).join(''),e.text);
  assert.equal(spans[1].text,'😀');assert.equal(spans[1].style.fontSize,40);
- // U/S now project as paint styles; unknown extensions remain source-only.
- assert.equal(spans[1].style.underline,true);assert.equal(spans[1].style.baselineShift,undefined);assert.deepEqual(e,before);
+ // The previously reserved baselineShift now changes geometry. Other extensions stay source-only.
+ assert.equal(spans[1].style.underline,true);assert.equal(spans[1].style.baselineShift,'super');assert.match(richTextFont(spans[1].style), /26px/);assert.deepEqual(e,before);
  retainRichTextSizeBase(e);assert.equal(e.textRunsBaseFontSize,20);
  e.fontSize=10;assert.equal(richTextSpans(e)[1].style.fontSize,20);
  assert.deepEqual(e.textRuns,before.textRuns);
@@ -427,4 +427,69 @@ test('manual underline survives auto-fit scale, and inherited paint follows effe
  const changed={...simple,textRuns:[{start:1,end:2,style:{underlineDetails:{style:'wavy',thickness:8}}}]};
  const strikes=doc=>engine.layout(doc).rows.flatMap(r=>r.decorations).filter(d=>d.kind==='strikethrough');
  assert.deepEqual(strikes(simple),strikes(changed));
+});
+
+test('indices measure reduced advances and reserve nominal metrics on mixed and index-only rows',()=>{
+ const context={measureText(text){
+  const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);
+  return {width:text.length*size/2,fontBoundingBoxAscent:size*.8,fontBoundingBoxDescent:size*.2};
+ }};
+ const engine=createRichTextLayoutEngine(context);
+ const e={text:'X2X2\n22\n',fontSize:40,lineHeight:1.2,w:200,h:200,textRuns:[
+  {start:1,end:2,style:{baselineShift:'sub'}},{start:3,end:4,style:{baselineShift:'super'}},
+  {start:5,end:8,style:{baselineShift:'super'}},
+ ]};
+ const [first,second,blank]=engine.layout(e).rows;
+ assert.deepEqual(first.fragments.map(p=>p.width),[20,13,20,13]);
+ assert.deepEqual(first.fragments.map(p=>p.x),[0,20,33,53]);
+ assert.deepEqual(first.fragments.map(p=>p.style.fontSize),[40,40,40,40]);
+ for(const [i,dy] of [0,7.2,0,-14].entries())assert.ok(Math.abs(first.fragments[i].y-first.baseline-dy)<1e-8);
+ assert.equal(second.baseline-first.baseline,48);
+ assert.ok(Math.abs(blank.baseline-second.baseline-48)<1e-8);
+ assert.equal(blank.fragments.length,0);
+ assert.equal(blank.emptyStyle.baselineShift,'normal');
+ const indexed=engine.layout({...e,text:'2',textRuns:undefined,baselineShift:'super'});
+ assert.equal(indexed.height,48);
+ assert.equal(indexed.rows[0].fragments[0].width,13);
+});
+
+test('Justify retains signed baselines, source intervals and repeated spaces after natural index shaping',()=>{
+ const ctx={measureText(text){
+  const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);
+  return {width:text.length*size/2,fontBoundingBoxAscent:size*.8,fontBoundingBoxDescent:size*.2};
+ }};
+ const engine=createRichTextLayoutEngine(ctx),text='H2  x2  word\r\n\nH2\n';
+ const e={text,w:160,h:260,fontSize:40,underline:true,textRunsBaseFontSize:32,textRuns:[
+  {start:1,end:2,style:{baselineShift:'sub',fontSize:32}},
+  {start:5,end:6,style:{baselineShift:'super',fontSize:32}},
+ ]};
+ const natural=engine.layout(e),justified=engine.layoutJustified(e),[first,...last]=justified.rows;
+ assert.equal(first.softWrap,true);
+ assert.deepEqual(first.justification.spaces,[2,3]);
+ assert.equal(first.justification.contentWidth,e.w);
+ assert.deepEqual(first.fragments.filter(p=>p.text==='2').map(p=>p.width),[13,13]);
+ assert.deepEqual(first.fragments.filter(p=>p.text==='2').map(p=>p.y),natural.rows[0].fragments.filter(p=>p.text==='2').map(p=>p.y));
+ const x=offset=>first.carets.find(p=>p.offset===offset).x;
+ assert.equal(x(6),e.w);
+ assert.equal(x(2),33);
+ assert.equal(x(5),e.w-13);
+ assert.equal(first.decorations.find(d=>d.start===5).x,x(5));
+ assert.equal(last.at(-1).start,text.length);
+ assert.equal(last.at(-1).fragments.length,0);
+ assert.ok(last.every(row=>row.justification.extraPerSpace===0));
+});
+
+test('shifted ascent and descent can both exceed the nominal font bounds',()=>{
+ const ctx={measureText(text){
+  const size=parseFloat(this.font.match(/([\d.]+)px/)[1]);
+  return {width:text.length*size/2,fontBoundingBoxAscent:size*.6,fontBoundingBoxDescent:size*.2,
+   actualBoundingBoxAscent:size*.58,actualBoundingBoxDescent:size*.19};
+ }};
+ const engine=createRichTextLayoutEngine(ctx),e={text:'xy',fontSize:40,lineHeight:.6,w:100,h:30,textRuns:[
+  {start:0,end:1,style:{baselineShift:'super'}},{start:1,end:2,style:{baselineShift:'sub'}},
+ ]};
+ const result=engine.layout(e),[row]=result.rows;
+ assert.ok(Math.abs(row.baseline-29.6)<1e-8);
+ assert.ok(Math.abs(row.height-42)<1e-8);
+ assert.ok(Math.abs(result.inkOverflow-(row.fragments[1].y+26*.19-e.h))<1e-8);
 });

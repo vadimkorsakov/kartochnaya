@@ -20,10 +20,15 @@
 
 /* Range typography toggles share the existing compact inspector buttons. */
 .text-decoration-btn { min-width:36px; }
-[data-text-decoration][aria-pressed="true"] { background:var(--accent); color:#fff; }
+[data-text-decoration][aria-pressed="true"], [data-baseline-shift][aria-pressed="true"] { background:var(--accent); color:#fff; }
 [data-text-decoration][aria-pressed="mixed"] { border-style:dashed; }
 .decoration-mixed { font-size:10px; margin-left:4px; }
-[data-text-decoration]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+[data-text-decoration]:focus-visible, [data-baseline-shift]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+.baseline-shift-controls { align-items:center; }
+.baseline-shift-controls button { min-width:36px; font-weight:600; }
+.baseline-shift-controls button:disabled { opacity:.5; }
+[data-baseline-shift-mixed] { font-size:10px; }
 
 /* Exact zoom editor occupies the percentage button without moving the toolbar. */
 .zoom-control{position:relative;display:inline-flex}

@@ -1,5 +1,5 @@
 import {richTextSpans, resolveRichTextStyle, richTextFont, retainRichTextSizeBase} from '../render/rich-text-layout.mjs';
-import {replaceText, applyTextStyle} from '../model/rich-text.mjs';
+import {replaceText, applyTextStyle, applyBaselineShift} from '../model/rich-text.mjs';
 import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-history.mjs';
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from '../render/text-stroke.mjs';
 
@@ -55,9 +55,10 @@ export function eligibleWysiwyg(e, locked=false, available=()=>true, compatible=
 export function createWysiwygSession({host, element, history, onChange, onFallback, onRecovery, available=()=>true, compatible=()=>false, layout=()=>null, fit=()=>false, viewport=()=>({width:Infinity,height:Infinity})}) {
  let layer=element, composing=false, fallback=null, pasteText=null, confirmedHTML, inactive=false;
  const safe={phase:'confirmed', deferred:false};
- let savedSelection=null, preview=null, verticalX=null;
+ let savedSelection=null, savedAffinity=null, projectedRows=null, preview=null, verticalX=null;
  const abort=new AbortController(), listen=(name,fn)=>host.addEventListener(name,fn,{signal:abort.signal});
  const baselineOffsets=new Map();
+ let shiftedBoundaries=new WeakMap();
  for(const type of ['loadingdone','loadingerror'])document.fonts.addEventListener(type,()=>baselineOffsets.clear(),{signal:abort.signal});
  const overlay=document.createElement('canvas');overlay.dataset.textStrokeOverlay='';overlay.setAttribute('aria-hidden','true');
  Object.assign(overlay.style,{position:'absolute',pointerEvents:'none',transformOrigin:'0 0',zIndex:'7',display:'none'});
@@ -105,7 +106,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  }
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
  function stop(reason){clearPointerGesture();pasteText=null;fallback=reason;safe.phase='recovery-required';syncOverlay();if(!inactive)onRecovery(reason);}
- function project(value,selection){pointerEpoch++;clearPointerGesture();
+ function project(value,selection,affinity=null){pointerEpoch++;clearPointerGesture();
   verticalX=null;
   // Probe measurements also attach temporary DOM nodes. Capture the owner
   // before any measurement, not just before replaceChildren: the browser can
@@ -123,8 +124,8 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const projection=layout(value);
   if(!projection?.rows?.length)throw Error('Text layout unavailable');
   const canvasInk=needsCanvasInk(projection);
-  const nodes=[];
-  for(const row of projection.rows){
+  const nodes=[],boundaries=new WeakMap();
+  for(const [rowIndex,row] of projection.rows.entries()){
    const rowNode=document.createElement('span');rowNode.dataset.wysiwygRow='';
    Object.assign(rowNode.style,{position:'absolute',display:'inline-block',left:'0px',top:row.y+'px',height:row.height+'px',whiteSpace:'pre',fontSize:'0px',lineHeight:'0px'});
    // CSS backgrounds contain no DOM nodes or characters, so native Selection,
@@ -135,7 +136,9 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    const parts=row.fragments.length?row.fragments:[{text:'',style:row.emptyStyle||base,x:row.x}];
    for(let i=0;i<parts.length;i++){
     const part=parts[i],span=document.createElement('span');span.dataset.wysiwygFragment='';
-    const offset=unifiedDOMOffset(part.style,{height:row.height,baseline:row.baseline-row.y},part.text,baselineOffsets);
+    const before=i>0&&parts[i-1].y!==part.y,after=i+1<parts.length&&parts[i+1].y!==part.y;
+    if(before||after)boundaries.set(span,{part,rowIndex,before,after});
+    const offset=unifiedDOMOffset(part.style,{height:row.height,baseline:(part.y??row.baseline)-row.y},part.text,baselineOffsets);
     span.append(document.createTextNode(part.text));
     // Source newlines live with their preceding row, including empty rows.
     if(i===parts.length-1&&row.nextStart>row.end)span.firstChild.data+=value.text.slice(row.end,row.nextStart);
@@ -157,6 +160,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // that already owned focus. Inspector/color fields must keep their focus.
   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
   Object.assign(host.style,{font:richTextFont(base),fontKerning:'normal',lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
+  projectedRows=projection.rows;shiftedBoundaries=boundaries;
   host.replaceChildren(...nodes);
   if(!host.childNodes.length)host.append(document.createTextNode(''));
   if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';nodes.at(-1).lastChild.append(br);}
@@ -165,10 +169,10 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   // setBaseAndExtent focuses contenteditable in Chromium and would blur a
   // numeric/HEX input (emitting change in the middle of its input callback).
   // Keep the range in UTF-16 while a panel owns focus; restore on host focus.
-  savedSelection={...selection};
+  savedSelection={...selection};savedAffinity=affinity;
   if(hadFocus){
    if(document.activeElement!==host)host.focus({preventScroll:true});
-   setSelection(selection.anchor,selection.focus);
+   restoreSavedSelection();
   }
  }
  function clean(){try{return !composing&&!fallback&&!safe.deferred&&host.innerHTML===confirmedHTML&&readText()===layer.text;}catch{return false;}}
@@ -264,12 +268,29 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
 const applyRangeStyle=(patch,options)=>applyStyle(patch,options);
 const applyLayerStyle=(patch,options)=>applyStyle(patch,{...options,range:false});
 const graphemes=new Intl.Segmenter(undefined,{granularity:'grapheme'});
-// Expanded source spaces alone need a bounded post-native click correction.
-// No independent text positions, document flags or replacement Selection model.
+function changeBaselineShift(value){
+ if(!clean()||safe.phase!=='confirmed'||inactive||!compatible(layer))return false;
+ let selection;try{selection=rememberSelection();}catch{return false;}
+ const range=caret(selection);
+ const clusters=graphemes.segment(layer.text);
+ if([range.start,range.end].some(i=>i!==layer.text.length&&clusters.containing(i)?.index!==i))return false;
+ const next=applyBaselineShift(layer,value,range.start===range.end?null:range);
+ if(next===layer)return false;
+ if(next.autoFontSize)fit(next,{preserveSizeBase:true});
+ if(!compatible(next))return false;
+ finishPreview();
+ const previous=structuredClone(layer);
+ try{project(next,selection,savedAffinity);}catch{return false;}
+ recordInlineHistory(history,previous,range);
+ recordInlineHistory(history,next,range);
+ history.states[history.index].action='style';
+ onChange();return true;
+}
+// Correct native clicks at expanded spaces and shared offsets between glyphs
+// on different baselines. The editable nodes and native Selection own the caret.
 let pointerEpoch=0,pointerGesture=null;
 const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.task!==undefined)clearTimeout(p.task);};
-// Register for the session lifetime; stretchedHit gates correction on the
-// current alignment and expanded source spaces. project invalidates tokens.
+// Register for the session lifetime. Each projection invalidates pending clicks.
 {
  const doc=host.ownerDocument;
  const watch=(target,type,handler,capture=false)=>target.addEventListener(type,handler,{capture,signal:abort.signal});
@@ -292,10 +313,20 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
   }
   return null;
  }
+ function pointerHit(x,y,target){
+  const space=stretchedHit(x,y);if(space)return space;
+  const span=target.closest('[data-wysiwyg-fragment]'),boundary=shiftedBoundaries.get(span);
+  if(!boundary||inactive||safe.phase!=='confirmed'||!clean())return null;
+  const {part}=boundary,node=span.firstChild;
+  const range=doc.createRange();range.setStart(node,0);range.setEnd(node,part.text.length);
+  const rect=range.getBoundingClientRect();
+  if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return null;
+  return {...boundary,node,start:part.start,key:node};
+ }
  listen('pointerdown',event=>{
   clearPointerGesture();
   if(!event.isTrusted||event.pointerType!=='mouse'||!event.isPrimary||event.button!==0||event.altKey||event.ctrlKey||event.metaKey)return;
-  const hit=stretchedHit(event.clientX,event.clientY);if(!hit)return;
+  const hit=pointerHit(event.clientX,event.clientY,event.target);if(!hit)return;
   let anchor=null,anchorNode=null,anchorOffset=null;
   if(event.shiftKey){try{if(document.activeElement!==host||!selectionInside())return;anchor=readSelection().anchor;anchorNode=getSelection().anchorNode;anchorOffset=getSelection().anchorOffset}catch{return}}
   pointerGesture={id:event.pointerId,x:event.clientX,y:event.clientY,epoch:pointerEpoch,key:hit.key,start:hit.start,rowIndex:hit.rowIndex,anchor,anchorNode,anchorOffset,shift:event.shiftKey,up:false};
@@ -322,11 +353,22 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
  function applyClick(){
   const p=pointerGesture;if(!p?.clicked)return;
   pointerGesture=null;if(p.task!==undefined)clearTimeout(p.task);
-  const hit=stretchedHit(p.cx,p.cy);
+  const hit=pointerHit(p.cx,p.cy,p.target);
   if(document.activeElement!==host||!hit||p.epoch!==pointerEpoch||p.key!==hit.key||p.start!==hit.start||p.rowIndex!==hit.rowIndex){return}
   let native;try{native=readSelection()}catch{return}
   if(!p.shift&&native.anchor!==native.focus){return}
   if(p.shift&&!host.contains(p.anchorNode)){return}
+  if(hit.node){
+   // Chromium can pick the correct UTF-16 offset inside the clicked fragment
+   // while placing its native caret in the adjacent fragment at that offset.
+   const {part,node}=hit,selection=getSelection(),offset=native.focus-part.start;
+   if(!(hit.before&&native.focus===part.start||hit.after&&native.focus===part.end))return;
+   if(selection.focusNode!==node||selection.focusOffset!==offset){
+    selection.setBaseAndExtent(p.shift?p.anchorNode:node,p.shift?p.anchorOffset:offset,node,offset);
+    saveNativeSelection();
+   }
+   return;
+  }
   const anchor=p.shift?p.anchor:hit.target;
   const sameAnchor=!p.shift||(getSelection().anchorNode===p.anchorNode&&getSelection().anchorOffset===p.anchorOffset);
   if(native.anchor===anchor&&native.focus===hit.target&&sameAnchor){return}
@@ -337,9 +379,9 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
   const p=pointerGesture;
   if(!p)return;
   if(!p.up||!event.isTrusted||event.button!==0||event.detail!==1||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey!==p.shift||document.activeElement!==host){clearPointerGesture();return}
-  const hit=stretchedHit(event.clientX,event.clientY);
+  const hit=pointerHit(event.clientX,event.clientY,event.target);
   if(!hit||p.epoch!==pointerEpoch||p.key!==hit.key||p.start!==hit.start||p.rowIndex!==hit.rowIndex){clearPointerGesture();return}
-  p.clicked=true;p.cx=event.clientX;p.cy=event.clientY;
+  p.clicked=true;p.cx=event.clientX;p.cy=event.clientY;p.target=event.target;
   // A native Selectionchange may run first. Input guards consume the same
   // token if the browser prioritizes keyboard/beforeinput over the timer task.
   p.task=setTimeout(()=>{if(pointerGesture===p)applyClick()});
@@ -362,8 +404,10 @@ listen('keydown',event=>{
   const xAt=(row,offset)=>{
    const shared=row.carets?.find(p=>p.offset===offset);if(shared)return shared.x;
    const part=row.fragments.findLast(p=>p.start<=offset)||row.fragments[0];if(!part)return row.x;
+   const x=part.logicalX??part.x;
+   if(offset>=part.end)return x+part.width;
    ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';ctx.fontKerning='normal';
-   return part.x+ctx.measureText(layer.text.slice(part.start,Math.min(offset,part.end))).width;
+   return x+ctx.measureText(layer.text.slice(part.start,offset)).width;
   };
   if(verticalX===null)verticalX=xAt(row,c.focus);
   targetRow=Math.max(0,Math.min(rows.length-1,rowIndex+(key==='ArrowUp'?-1:1)));
@@ -438,16 +482,36 @@ function validSelection(c,text=layer.text){
  return c&&[c.anchor,c.focus].every(i=>Number.isInteger(i)&&i>=0&&i<=text.length&&!split(i));
 }
 function readSelection(){const s=getSelection();const c={anchor:domPointToOffset(s.anchorNode,s.anchorOffset),focus:domPointToOffset(s.focusNode,s.focusOffset)};if(!validSelection(c,index().text))throw Error('Invalid selection');return c;}
+function saveNativeSelection(){
+ savedSelection=readSelection();
+ const selection=getSelection(),nodes=[...host.children];
+ const upstream=(node,offset)=>{
+  const index=nodes.indexOf(node.parentElement.closest('[data-wysiwyg-row]'));
+  return !!projectedRows[index]?.softWrap&&projectedRows[index].end===offset;
+ };
+ const anchor=upstream(selection.anchorNode,savedSelection.anchor),focus=upstream(selection.focusNode,savedSelection.focus);
+ savedAffinity=anchor||focus?{anchor,focus}:null;
+}
 function rememberSelection(){
  // Only this host may update its saved UTF-16 selection. Never inspect panel
  // input selection, even if the browser retains a DOM range in the host.
- if(document.activeElement===host&&clean())savedSelection=readSelection();
+ if(document.activeElement===host&&clean())saveNativeSelection();
  if(!validSelection(savedSelection))throw Error('No confirmed selection');
  return {...savedSelection};
 }
-function setSelection(anchor,focus=anchor,rowIndex=null){const c={anchor,focus};if(!validSelection(c))throw Error('Invalid selection');const a=offsetToDomPoint(anchor,anchor===focus?rowIndex:null),f=offsetToDomPoint(focus,rowIndex);getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);savedSelection=c;}
-listen('focusout',()=>{if(selectionInside()&&clean()){try{savedSelection=readSelection();}catch{}}});
-listen('focus',()=>{if(validSelection(savedSelection)&&clean())setSelection(savedSelection.anchor,savedSelection.focus);});
+function setSelection(anchor,focus=anchor,rowIndex=null,anchorRow=anchor===focus?rowIndex:null){
+ const c={anchor,focus};if(!validSelection(c))throw Error('Invalid selection');
+ const a=offsetToDomPoint(anchor,anchorRow),f=offsetToDomPoint(focus,rowIndex);
+ getSelection().setBaseAndExtent(a.node,a.offset,f.node,f.offset);savedSelection=c;savedAffinity=null;
+}
+function restoreSavedSelection(){
+ const {anchor,focus}=savedSelection;
+ const upstream=(offset,preferred)=>preferred?projectedRows.findIndex(row=>row.softWrap&&row.end===offset):-1;
+ const a=upstream(anchor,savedAffinity?.anchor),f=upstream(focus,savedAffinity?.focus);
+ setSelection(anchor,focus,f<0?null:f,a<0?null:a);
+}
+listen('focusout',()=>{if(selectionInside()&&clean()){try{saveNativeSelection();}catch{}}});
+listen('focus',()=>{if(validSelection(savedSelection)&&clean())restoreSavedSelection();});
 listen('beforeinput',e=>{
  finishPreview();
  if(inactive){if(e.cancelable&&!composing&&!e.isComposing)e.preventDefault();return;}
@@ -525,7 +589,7 @@ listen('input',()=>{
 
  host.contentEditable='plaintext-only';host.classList.remove('hidden');
  const initial={anchor:layer.text.length,focus:layer.text.length};project(structuredClone(layer),initial);recordInlineHistory(history,layer,caret(initial));
- return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection(...args){clearPointerGesture();return setSelection(...args);},requestFallback,clean,applyRangeStyle,applyLayerStyle,applyUnderlineStyle,cancelUnderlinePreview,finishPreview,syncOverlay,
+ return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection(...args){clearPointerGesture();return setSelection(...args);},requestFallback,clean,applyRangeStyle,applyLayerStyle,changeBaselineShift,applyUnderlineStyle,cancelUnderlinePreview,finishPreview,syncOverlay,
   preserve(){pointerEpoch++;clearPointerGesture();inactive=true;releaseOverlay();if(!composing)host.contentEditable='false';},
   focus(){host.focus({preventScroll:true});},
   recover(){if(composing)return false;fallback=null;safe.deferred=false;safe.phase='confirmed';project(structuredClone(layer),{anchor:layer.text.length,focus:layer.text.length});onChange();return true;},

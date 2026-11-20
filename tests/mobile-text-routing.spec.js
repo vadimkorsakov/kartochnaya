@@ -118,10 +118,17 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await page.evaluate(()=>window.oldMobileCommand.click());expect((await exportedDocument(page)).elements).toEqual(before.elements);
   expect((await records(page,'docs')).find(d=>d.id===first.id).elements).toEqual(first.elements);
  });
- test('layer text transformation cannot silently reconfirm saved UTF-16 offsets',async({page})=>{
-  await open(page,{text:'Привет ß семья 😀'});await select(page);await panel(page,'format');await page.locator('[data-mp-format=case]').tap();
-  expect((await element(page)).text).toBe('ПРИВЕТ SS СЕМЬЯ 😀');await page.locator('[data-mp-format=case]').tap();const transformed=await element(page);expect(transformed.text).toBe('привет ß семья 😀');
-  await page.locator('[data-mp-format=bold]').tap();await expect(page.locator('#toast')).toContainText('заново');expect(await element(page)).toEqual(transformed);
+ test('case projection preserves the current native selection for the next range command',async({page})=>{
+  const text='Привет ß семья 😀';
+  await open(page,{text});await select(page);await panel(page,'format');
+  for(const mode of ['upper','lower']){
+   await page.locator('[data-mp-format=case]').tap();
+   expect(await element(page)).toMatchObject({text,textCase:mode});
+   await expect(page.locator('#inlineText')).toHaveValue(text);
+   expect(await caret(page)).toEqual([0,6,'backward']);
+  }
+  await page.locator('[data-mp-format=bold]').tap();
+  expect(await element(page)).toMatchObject({text,textCase:'lower',textRuns:[{start:0,end:6,style:{fontWeight:'700'}}]});
  });
  test('old panel after native text revision refuses command until reopened',async({page})=>{
   await open(page);await select(page);await panel(page,'format');await page.locator('#inlineText').tap({position:{x:5,y:12}});await page.keyboard.insertText('Новое');const before=await element(page),h=await history(page);

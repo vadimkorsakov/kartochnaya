@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { normalizeRuns, validateRuns, applyLayerUnderlineStyle, applyBaselineShift, applyTextStyle, removeTextStyle, replaceText, updateText, clearTextFormatting, effectiveTextStyles, effectiveTextStyleAt, splitTextRuns, transformText, createTextEditHistory, editTextWithHistory } from '../src/model/rich-text.mjs';
+import { normalizeRuns, validateRuns, applyLayerUnderlineStyle, applyBaselineShift, applyTextCase, effectiveTextCase, applyTextStyle, removeTextStyle, replaceText, updateText, clearTextFormatting, effectiveTextStyles, effectiveTextStyleAt, splitTextRuns, transformText, createTextEditHistory, editTextWithHistory } from '../src/model/rich-text.mjs';
 import { remapCanvasGraph, remapDocumentGraph, selectCanvasGraph } from '../src/model/canvas-graph.mjs';
 import { openDatabase, runStoreRequest } from '../src/storage/indexeddb.mjs';
 import { createBackup, readBackup } from '../src/backup/archive.mjs';
+import { projectTextCase, textCaseValues } from '../src/model/text-case.mjs';
+import { richTextSpans, supportsHorizontalTextLayout } from '../src/render/rich-text-layout.mjs';
 const run = (start,end,style) => ({start,end,style});
 const plain = () => ({id:'text',type:'text',text:'Привет 😀\nмир',fontFamily:'Arial',fontSize:24,textColor:'#000'});
 const rich = () => applyTextStyle(plain(),0,6,{fontWeight:'700'});
@@ -86,7 +88,7 @@ test('length-changing Unicode transforms retain each original character style',(
   const next=transformText(e,c=>c.toUpperCase());assert.equal(next.text,'ASSЯ');assert.deepEqual(next.textRuns,[run(1,3,{bold:true})]);assert.equal(e.text,'aßя');
 });
 test('JSON, ZIP backup, IndexedDB and document/selection clones preserve sparse fields independently',async()=>{
-  const element=applyBaselineShift({...rich(),baselineShift:'super'},'normal',{start:0,end:3}),doc={id:'d',projectId:'p',width:320,height:240,elements:[element]},data={projects:[{id:'p',name:'Rich'}],docs:[doc],fonts:[],settings:[]};
+  const element=applyTextCase(applyBaselineShift({...rich(),baselineShift:'super',textCase:'upper'},'normal',{start:0,end:3}),'original',{start:1,end:3}),doc={id:'d',projectId:'p',width:320,height:240,elements:[element]},data={projects:[{id:'p',name:'Rich'}],docs:[doc],fonts:[],settings:[]};
   const json=JSON.parse(JSON.stringify(doc));assert.deepEqual(json,doc);
   const restored=(await readBackup((await createBackup(data)).bytes)).data.docs[0];assert.deepEqual(restored,doc);
   const db=await openDatabase({indexedDB:new IDBFactory()});await runStoreRequest(db,'docs','readwrite',s=>s.put(doc));assert.deepEqual(await runStoreRequest(db,'docs','readonly',s=>s.get('d')),doc);db.close();
@@ -105,30 +107,73 @@ test('deterministic edit sequence always stays bounded, normalized and serializa
   }
 });
 
-test('actual mobile case/list commands keep legacy text output and rich ranges on round trips',async()=>{
+test('actual mobile case uses the saved canonical text and the five nondestructive states',async()=>{
+  const e={type:'text',text:'aß я\nhello. мир ΣΟΣ',mobileCase:1,mobileRawText:'stale',
+    mobileRawTextRuns:[run(0,3,{underline:true})],textRuns:[run(1,2,{bold:true}),run(5,10,{italic:true})]};
+  const {format,notices}=await mobileFormatCommand(e);
+  const raw=e.text,runs=structuredClone(e.textRuns);
+  const expected=['ASS Я\nHELLO. МИР ΣΟΣ','aß я\nhello. мир σος','Aß Я\nHello. Мир Σος','Aß я\nHello. Мир σος',raw];
+  for(const [i,value] of expected.entries()){
+    format('case');assert.equal(e.text,raw);assert.deepEqual(e.textRuns,runs);
+    assert.equal(effectiveTextCase(e),textCaseValues[(i+1)%5]);assert.equal(projectTextCase(e.text,richTextSpans(e)).text,value);
+    assert.equal(e.mobileRawText,'stale');canonical(e);
+  }
+  format('case');
+  Object.assign(e,replaceText(e,e.text.length,e.text.length,' Hello'));
+  for(let i=0;i<4;i++)format('case');
+  assert.equal(e.text,raw+' Hello');assert.equal(e.textCase,undefined);assert.equal(notices.length,0);
+});
+test('actual mobile list commands round trip safe formatting and reject stale snapshots',async()=>{
+  for(const textRuns of [undefined,[run(1,2,{bold:true,textCase:'lower'}),run(5,10,{italic:true})]]){
+    const e={type:'text',text:'aß я\nhello. мир ΣΟΣ',textRuns};
+    const source=e.text;
+    const {format,notices}=await mobileFormatCommand(e);
+    format('bullet');assert.equal(e.text,'• '+source.replaceAll('\n','\n• '));canonical(e);
+    format('number');assert.equal(e.text,source.split('\n').map((line,i)=>`${i+1}. ${line}`).join('\n'));canonical(e);
+    format('number');assert.equal(e.text,source);assert.deepEqual(e.textRuns,textRuns);
+    format('bullet');
+    Object.assign(e,applyTextCase(e,'upper',{start:2,end:3}));
+    let before=structuredClone(e);format('number');assert.deepEqual(e,before);
+    Object.assign(e,replaceText(e,e.text.length,e.text.length,'!'));
+    before=structuredClone(e);format('bullet');assert.deepEqual(e,before);
+    assert.equal(notices.length,2);
+  }
+});
+async function mobileFormatCommand(e){
   const {readFile}=await import('node:fs/promises'),vm=await import('node:vm');
   const source=await readFile(new URL('../src/editor.js',import.meta.url),'utf8');
   const body=source.slice(source.indexOf('function mobileV36Format(key)'),source.indexOf('function mobileV36ApplyEffect(type)'));
-  for(const formatted of [false,true]){
-    const e={text:'aß я\nhello. мир ΣΟΣ',...(formatted?{textRuns:[run(1,2,{bold:true}),run(5,10,{italic:true})]}:{})};
-    const raw=e.text,rawRuns=structuredClone(e.textRuns);
-    const context={active:()=>e,rejectMobileTextTarget:()=>false,invalidateMobileTextOffsets(){},clone:structuredClone,transformText,replaceText,
-      setTextValue:(e,value)=>{const next=updateText(e,value);e.text=next.text;if(next.textRuns)e.textRuns=next.textRuns;else delete e.textRuns},
-      restoreTextRuns:(e,runs)=>{if(runs===undefined)delete e.textRuns;else e.textRuns=structuredClone(runs)},mobileV36Commit(){},mobileV36Render(){}};
-    vm.createContext(context);vm.runInContext(body,context);
-    context.mobileV36Format('case');assert.equal(e.text,raw.toLocaleUpperCase('ru-RU'));canonical(e);
-    if(formatted)assert.deepEqual(e.textRuns[0],run(1,3,{bold:true}));
-    context.mobileV36Format('case');assert.equal(e.text,raw.toLocaleLowerCase('ru-RU'));canonical(e);
-    if(formatted)assert.deepEqual(e.textRuns,rawRuns);
-    context.mobileV36Format('case');assert.equal(e.text,raw.toLocaleLowerCase('ru-RU').replace(/(^|[.!?]\s*|\n)([а-яёa-z])/g,(_,a,b)=>a+b.toLocaleUpperCase('ru-RU')));canonical(e);
-    const before=e.text,beforeRuns=structuredClone(e.textRuns);
-    context.mobileV36Format('bullet');assert.equal(e.text,'• '+before.replaceAll('\n','\n• '));canonical(e);
-    context.mobileV36Format('number');assert.equal(e.text,before.split('\n').map((l,i)=>`${i+1}. ${l}`).join('\n'));canonical(e);
-    context.mobileV36Format('number');assert.equal(e.text,before);assert.deepEqual(e.textRuns,beforeRuns);
-    if(!formatted)assert.equal(e.textRuns,undefined);
-  }
+  const notices=[];
+  const restoreTextRuns=(layer,runs)=>{if(runs===undefined)delete layer.textRuns;else layer.textRuns=structuredClone(runs)};
+  const context={app:{},active:()=>e,rejectMobileTextTarget:()=>false,invalidateMobileTextOffsets(){},clone:structuredClone,replaceText,normalizeRuns,
+    restoreTextRuns,applyTextCase,effectiveTextCase,textCaseValues,supportsHorizontalTextLayout,toast:value=>notices.push(value),
+    mobileTextFinishGesture(){},recordInlineSession(){},restoreInlineElement(layer,value){Object.assign(layer,value);restoreTextRuns(layer,value.textRuns);if(!value.textCase)delete layer.textCase},
+    mobileV36Commit(){},mobileV36Render(){}};
+  vm.createContext(context);vm.runInContext(body,context);
+  return {format:context.mobileV36Format,notices};
+}
+test('case changes only effective case overrides, preserving gaps, overlap and unrelated fields',()=>{
+  const text='aß👩‍💻İz',base={text,textCase:'upper',fontSize:32,metadata:{keep:true},textRuns:[
+    run(0,2,{textCase:'title',fontSize:20,underlineDetails:{style:'wavy'},extension:{id:8}}),
+    run(1,2,{textCase:'INVALID',baselineShift:'super'}),run(2,7,{textCase:'lower'}),run(7,8,{textCase:'lower'}),
+  ]};
+  assert.equal(effectiveTextCase(base),'mixed');
+  assert.equal(effectiveTextCase(base,{start:0,end:2}),'title');
+  assert.equal(effectiveTextCase(base,{start:2,end:8}),'lower');
+  assert.equal(effectiveTextCase(base,{start:8,end:9}),'upper');
+  assert.equal(applyTextCase(base,'invalid'),base);
+  assert.equal(applyTextCase(base,'title',{start:0,end:2}),base);
+  assert.equal(applyTextCase(base,'original',{start:3,end:7}),base);
+  const range=applyTextCase(base,'original',{start:1,end:2});
+  assert.deepEqual(range.textRuns[1].style,{textCase:'original',fontSize:20,underlineDetails:{style:'wavy'},extension:{id:8},baselineShift:'super'});
+  const edited=replaceText(range,2,2,'κ');
+  assert.equal(effectiveTextCase(edited,{start:1,end:3}),'original');
+  const next=applyTextCase(range,'sentence');
+  assert.deepEqual(next.textRuns,range.textRuns.slice(0,2).map(({style,...r})=>{const {textCase,...rest}=style;return {...r,style:rest}}));
+  assert.equal(next.text,text);assert.equal(next.fontSize,base.fontSize);assert.deepEqual(next.metadata,base.metadata);
+  assert.equal(applyTextCase(next,'sentence'),next);
+  assert.equal(clearTextFormatting(next).textCase,undefined);assert.equal(clearTextFormatting(next).text,text);
 });
-
 
 test('native textarea undo/redo restores deleted formatting, grouped edits and branching',()=>{
   const initial=rich();let element=initial,history=createTextEditHistory(element);

@@ -20,9 +20,9 @@ on:
       - '.node-version'
       - '.npmrc'
 
-# New commits supersede old PR checks. Main-branch runs are never cancelled.
+# Group PR runs together. Give each non-PR run its own group so queued runs are retained.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -93,8 +93,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  diagnostics:
-    name: firefox-and-wysiwyg-diagnostics
+  diagnostics-selection:
+    name: diagnostics-selection
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
@@ -114,7 +114,7 @@ jobs:
           curl --fail --show-error --location --retry 3 "https://storage.googleapis.com/chrome-for-testing-public/${chromium_version}/linux64/chrome-linux64.zip" -o "$RUNNER_TEMP/chromium.zip"
           unzip -q "$RUNNER_TEMP/chromium.zip" -d "$GITHUB_WORKSPACE/.cache"
           "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" --version
-      - name: Install Firefox for selection regressions
+      - name: Install Playwright Firefox
         run: npx playwright install --with-deps firefox
       - name: Fetch fixed WYSIWYG profiling comparisons
         run: git fetch --no-tags origin a07c1a60cca9d53a1a199c1572000f4395b86942 cecc9f16aca98471aa90e580a018f3912f27142a
@@ -128,20 +128,6 @@ jobs:
           path: |
             test-results/wysiwyg-ux/
             test-results/wysiwyg-ux-results.json
-          if-no-files-found: warn
-          retention-days: 14
-      - run: npm run test:spike
-      - name: Report diagnostic execution separately from Gate 0A / Gate 0
-        if: always()
-        run: node scripts/spike-summary.cjs
-      - name: Preserve plaintext-only feasibility measurements
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: plaintext-spike-measurements
-          path: |
-            test-results/spike-results.json
-            test-results/spike-gates.json
           if-no-files-found: warn
           retention-days: 14
       - run: npm run test:selection:firefox
@@ -169,10 +155,102 @@ jobs:
           path: test-results/selection/selected-text-case-*/case-*
           if-no-files-found: warn
           retention-days: 14
-      - name: Multiline WYSIWYG in Chromium and Firefox
-        run: npx playwright test --config=playwright.multiline.config.js
+      - name: Preserve selection browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefox-failure-diagnostics-selection
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
+
+  diagnostics-alignment:
+    name: diagnostics-alignment
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: ${{ github.workspace }}/.cache/chrome-linux64/chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install-deps chromium
+      - name: Install recorded Chromium version
+        run: |
+          chromium_version=$(node -p "require('./tests/baselines/environment.json').chromium")
+          curl --fail --show-error --location --retry 3 "https://storage.googleapis.com/chrome-for-testing-public/${chromium_version}/linux64/chrome-linux64.zip" -o "$RUNNER_TEMP/chromium.zip"
+          unzip -q "$RUNNER_TEMP/chromium.zip" -d "$GITHUB_WORKSPACE/.cache"
+          "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" --version
+      - name: Install Playwright Firefox
+        run: npx playwright install --with-deps firefox
       - name: Text alignment WYSIWYG in Chromium and Firefox
         run: npx playwright test --config=playwright.alignment.config.js
+      - name: Preserve text alignment measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: text-alignment-measurements
+          path: |
+            test-results/alignment
+            test-results/alignment-results.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Preserve alignment browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefox-failure-diagnostics-alignment
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
+
+  diagnostics-render:
+    name: diagnostics-render
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: ${{ github.workspace }}/.cache/chrome-linux64/chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install-deps chromium
+      - name: Install recorded Chromium version
+        run: |
+          chromium_version=$(node -p "require('./tests/baselines/environment.json').chromium")
+          curl --fail --show-error --location --retry 3 "https://storage.googleapis.com/chrome-for-testing-public/${chromium_version}/linux64/chrome-linux64.zip" -o "$RUNNER_TEMP/chromium.zip"
+          unzip -q "$RUNNER_TEMP/chromium.zip" -d "$GITHUB_WORKSPACE/.cache"
+          "$PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH" --version
+      - name: Install Playwright Firefox
+        run: npx playwright install --with-deps firefox
+      - run: npm run test:spike
+      - name: Report diagnostic execution separately from Gate 0A / Gate 0
+        if: always()
+        run: node scripts/spike-summary.cjs
+      - name: Preserve plaintext-only feasibility measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plaintext-spike-measurements
+          path: |
+            test-results/spike-results.json
+            test-results/spike-gates.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Multiline WYSIWYG in Chromium and Firefox
+        run: npx playwright test --config=playwright.multiline.config.js
       - name: Shared justify Canvas and PNG in Chromium and Firefox
         run: npx playwright test --config=playwright.justify.config.js
       - name: Preserve justify measurements
@@ -183,16 +261,6 @@ jobs:
           path: |
             test-results/justify
             test-results/justify-results.json
-          if-no-files-found: warn
-          retention-days: 14
-      - name: Preserve text alignment measurements
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: text-alignment-measurements
-          path: |
-            test-results/alignment
-            test-results/alignment-results.json
           if-no-files-found: warn
           retention-days: 14
       - name: Range stroke WYSIWYG and PNG in Firefox
@@ -289,19 +357,22 @@ jobs:
   build:
     name: build
     if: ${{ always() }}
-    needs: [quick, netlify, diagnostics, browser]
+    needs: [quick, netlify, browser, diagnostics-selection, diagnostics-alignment, diagnostics-render]
     runs-on: ubuntu-latest
     steps:
       - name: Require every CI lane to pass
         env:
           QUICK_RESULT: ${{ needs.quick.result }}
           NETLIFY_RESULT: ${{ needs.netlify.result }}
-          DIAGNOSTICS_RESULT: ${{ needs.diagnostics.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
+          SELECTION_RESULT: ${{ needs.diagnostics-selection.result }}
+          ALIGNMENT_RESULT: ${{ needs.diagnostics-alignment.result }}
+          RENDER_RESULT: ${{ needs.diagnostics-render.result }}
         run: |
-          for result in "$QUICK_RESULT" "$NETLIFY_RESULT" "$DIAGNOSTICS_RESULT" "$BROWSER_RESULT"; do
+          for result in "$QUICK_RESULT" "$NETLIFY_RESULT" "$BROWSER_RESULT" \
+            "$SELECTION_RESULT" "$ALIGNMENT_RESULT" "$RENDER_RESULT"; do
             if [[ "$result" != "success" ]]; then
-              echo "::error::Full CI did not pass: quick=$QUICK_RESULT netlify=$NETLIFY_RESULT diagnostics=$DIAGNOSTICS_RESULT browser=$BROWSER_RESULT"
+              echo "::error::Full CI did not pass: quick=$QUICK_RESULT netlify=$NETLIFY_RESULT browser=$BROWSER_RESULT diagnostics-selection=$SELECTION_RESULT diagnostics-alignment=$ALIGNMENT_RESULT diagnostics-render=$RENDER_RESULT"
               exit 1
             fi
           done

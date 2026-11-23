@@ -155,12 +155,9 @@ test('marker clicks and drags, Home, Enter, Backspace and ordered renumbering us
  expect((await model(page)).text).toBe('Alpha\nBeta\nGam\nma\n');
  expect((await numbers()).map(p=>p.text)).toEqual(['9.','10.','11.','12.']);
  await press(page,'Control+z','Control+z','Control+z','Control+Home','Shift+End');
- const copied=await host(page).evaluate(el=>{
-  const clipboardData=new DataTransfer();
-  el.dispatchEvent(new ClipboardEvent('copy',{clipboardData,bubbles:true,cancelable:true}));
-  return clipboardData.getData('text/plain');
- });
- expect(copied).toBe('Alpha');
+ expect(await selection(page)).toEqual([0,5]);
+ await press(page,'Control+c','Control+End','Control+v');
+ expect((await model(page)).text).toBe(text+'Alpha');
 });
 
 const img=url=>PNG.sync.read(Buffer.from(url.split(',')[1],'base64')).data;

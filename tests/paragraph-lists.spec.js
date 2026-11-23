@@ -253,6 +253,46 @@ test('switching the layer or document discards an unconfirmed spacing gesture',a
  await tab.click();expect((await exportedDocument(page)).elements).toEqual(before);
 });
 
+test('list settings stay open across real caret clicks and retarget only existing list paragraphs',async({page})=>{
+ const text='Title\nAlpha\nPlain\nBeta';
+ const alpha=text.indexOf('Alpha'),beta=text.indexOf('Beta');
+ const original=[run(alpha,{listKind:'bullet'}),run(beta,{listKind:'bullet'})];
+ await seed(page,{text,paragraphRuns:original});
+ await edit(page);await press(page,'Control+Home','ArrowDown','Home');
+ await configure(page).click();
+ await expect(panel(page)).toBeVisible();
+
+ const clickRow=async index=>{
+  const rect=await host(page).locator('[data-wysiwyg-row]').nth(index)
+   .locator('[data-wysiwyg-fragment]').first().boundingBox();
+  await page.mouse.click(rect.x+Math.min(12,rect.width/2),rect.y+rect.height/2);
+ };
+ await clickRow(3);
+ await expect(panel(page)).toBeVisible();
+ const [anchor,focus]=await selection(page);
+ expect(anchor).toBe(focus);
+ expect(anchor).toBeGreaterThanOrEqual(beta);
+ await preset(page,'◆').click();
+ expect((await model(page)).paragraphRuns).toEqual([
+  run(alpha,{listKind:'bullet'}),run(beta,{listKind:'bullet',listMarker:'◆'}),
+ ]);
+ await clickRow(2);
+ await expect(panel(page)).toBeVisible();
+ await expect(panel(page).locator('[data-list-target-note]')).toBeVisible();
+ await expect(preset(page,'◇')).toBeDisabled();
+ expect((await model(page)).paragraphRuns).toEqual([
+  run(alpha,{listKind:'bullet'}),run(beta,{listKind:'bullet',listMarker:'◆'}),
+ ]);
+ await clickRow(1);
+ await expect(panel(page).locator('[data-list-target-note]')).toBeHidden();
+ await preset(page,'◇').click();
+ expect((await model(page)).paragraphRuns).toEqual([
+  run(alpha,{listKind:'bullet',listMarker:'◇'}),run(beta,{listKind:'bullet',listMarker:'◆'}),
+ ]);
+ await press(page,'Escape');
+ await expect(panel(page)).toBeHidden();
+});
+
 test('settings retain the backward WYSIWYG range and isolate mixed list kinds and plain paragraphs',async({page})=>{
  const text='Title\nFirst\nPlain\nSecond\nNine\nTen\nEnd';
  const first=text.indexOf('First'),second=text.indexOf('Second'),nine=text.indexOf('Nine'),ten=text.indexOf('Ten');
@@ -272,9 +312,11 @@ test('settings retain the backward WYSIWYG range and isolate mixed list kinds an
  await expect(field(page,'listIndent')).not.toHaveValue('0');
  await host(page).focus();await press(page,'Control+End');
  await page.mouse.up();
- await expect(panel(page)).toBeHidden();
+ await expect(panel(page)).toBeVisible();
+ await expect(panel(page).locator('[data-list-target-note]')).toBeVisible();
  expect((await model(page)).paragraphRuns).toEqual(original);
  await press(page,'Control+Shift+Home');expect(await selection(page)).toEqual([text.length,0]);
+ await expect(panel(page).locator('[data-list-target-note]')).toBeHidden();
  const mode=key=>panel(page).locator(`[data-list-mode=${key}]`);
  await configure(page).click();await expect(mode('bullet')).toBeFocused();
  await expect(field(page,'listItemSpacing')).toHaveAttribute('placeholder','Mixed');
@@ -542,7 +584,7 @@ test('list panel keeps its owner, scroll and focus through sizing, palette and m
  await done(page);
  await expect.poll(async()=>(await records(page,'docs')).find(doc=>doc.id===id)?.elements[0]).toEqual(formatted);
 });
-test('list settings reject stale, composing and locked targets, and discard canceled gestures',async({page})=>{
+test('list settings survive caret moves but reject composing and locked targets and cancel gestures',async({page})=>{
  const original=[autoRun(0,{listKind:'bullet'})];
  await seed(page,{paragraphRuns:original});
  await edit(page);await press(page,'Control+Home');
@@ -558,7 +600,9 @@ test('list settings reject stale, composing and locked targets, and discard canc
  expect((await model(page)).paragraphRuns).toEqual(original);
  await host(page).focus();
  await press(page,'Control+End');
- await expect(panel(page)).toBeHidden();
+ await expect(panel(page)).toBeVisible();
+ await expect(panel(page).locator('[data-list-target-note]')).toBeVisible();
+ await expect(preset(page,'◆')).toBeDisabled();
  await preset(page,'◆').dispatchEvent('click');
  expect((await model(page)).paragraphRuns).toEqual(original);
  await kind(page,'bullet').click();

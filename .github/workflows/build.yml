@@ -340,6 +340,7 @@ jobs:
             test-results/paragraph-lists-*/list-bullet-panel.png
             test-results/paragraph-lists-*/list-numbering-panel.png
             test-results/paragraph-lists-*/list-marker-examples.png
+            test-results/paragraph-lists-*/list-custom-markers.png
           if-no-files-found: ignore
           retention-days: 14
       - name: Preserve browser failure diagnostics

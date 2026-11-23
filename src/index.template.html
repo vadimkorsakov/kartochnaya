@@ -107,7 +107,29 @@
     <button type="button" data-list-mode="ordered" class="linebtn">Нумерация</button>
   </div>
   <div class="fx-details list-style-body">
-    <div data-list-presets></div>
+    <div data-list-bullets>
+      <section class="list-style-options" aria-labelledby="listCustomMarkerTitle">
+        <strong id="listCustomMarkerTitle">Свой маркер</strong>
+        <div class="list-custom-entry">
+          <textarea rows="1" data-list-marker-input aria-label="Вставьте символ или эмодзи" aria-describedby="listCustomMarkerMessage"
+            placeholder="Вставьте символ или эмодзи" dir="auto" spellcheck="false" autocomplete="off"></textarea>
+          <output class="list-custom-preview" data-list-marker-preview aria-label="Предпросмотр маркера" dir="auto"></output>
+        </div>
+        <p id="listCustomMarkerMessage" class="list-custom-message" data-list-marker-message aria-live="polite" hidden></p>
+        <div class="list-custom-actions">
+          <button type="button" class="linebtn" data-list-marker-add disabled>Добавить</button>
+          <button type="button" class="linebtn" data-list-marker-apply disabled>Применить</button>
+        </div>
+      </section>
+      <section class="list-style-options list-style-divider" aria-labelledby="listMarkerLibraryTitle">
+        <strong id="listMarkerLibraryTitle">Мои маркеры</strong>
+        <p class="list-custom-message" data-list-library-empty>Пока нет сохранённых маркеров.</p>
+        <div class="list-marker-grid list-personal-grid" data-list-grid data-list-library hidden></div>
+        <p class="list-custom-message" data-list-unsaved-marker hidden>Текущий маркер <bdi></bdi> отсутствует в галерее.</p>
+        <p class="list-custom-message" data-list-library-status role="status" hidden></p>
+      </section>
+      <div class="list-style-divider" data-list-presets></div>
+    </div>
     <section data-list-ordered class="list-style-options" hidden>
       <div data-list-counters class="list-counter-grid" role="group" aria-label="Стиль нумерации"></div>
       <label>Начать с<input type="number" data-list-field="listStart" inputmode="numeric"></label>

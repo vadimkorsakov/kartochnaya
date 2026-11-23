@@ -1,3 +1,5 @@
+import { textGraphemes } from './text-case.mjs';
+
 export const listMarkerGroups = [
   { label: 'Основные', markers: [['•', 'Маркер', 100], ['∙', 'Точка', 100], ['●', 'Круг', 72], ['○', 'Контур круга', 80], ['◦', 'Малый круг', 100], ['⁃', 'Дефис', 100]] },
   { label: 'Декоративные', markers: [['◆', 'Ромб', 72], ['◇', 'Контур ромба', 76], ['★', 'Звезда', 72], ['☆', 'Контур звезды', 76], ['✦', 'Четырёхлучевая звезда', 76], ['✧', 'Контур четырёхлучевой звезды', 80]] },
@@ -7,12 +9,29 @@ export const listMarkerGroups = [
 ];
 
 const markerScales = new Map(listMarkerGroups.flatMap(({markers}) => markers.map(([glyph,,scale]) => [glyph, scale])));
+export const isBuiltinListMarker = glyph => markerScales.has(glyph);
+export const listMarkerMaxLength = 32; // UTF-16 units
+
+const invalidMarkerCharacters = /[\p{White_Space}\p{Cc}\p{Cs}\p{Bidi_Control}\p{Noncharacter_Code_Point}]/u;
+const otherFormatting = /(?![\u200c\u200d])\p{Cf}/u;
+const emojiTagFlag = /^\u{1f3f4}[\u{e0061}-\u{e007a}]+\u{e007f}$/u;
+const visibleMarkerBase = /[^\p{Default_Ignorable_Code_Point}\p{Mark}\p{Emoji_Modifier}]/u;
+
+export function validateListMarker(glyph) {
+  if (typeof glyph !== 'string' || !glyph.length || glyph.length > listMarkerMaxLength) return false;
+  if (isBuiltinListMarker(glyph)) return true;
+  if (invalidMarkerCharacters.test(glyph) || !visibleMarkerBase.test(glyph) ||
+      (otherFormatting.test(glyph) && !emojiTagFlag.test(glyph))) return false;
+  return textGraphemes.segment(glyph).containing(0).segment === glyph;
+}
+
+const emojiPresentation = /\p{Emoji_Presentation}(?!\uFE0E)|\p{Emoji}\uFE0F|[#*0-9]\u20E3/u;
+const emojiJoin = /\p{Extended_Pictographic}[\p{Grapheme_Extend}\p{Emoji_Modifier}]*\u200D\p{Extended_Pictographic}/u;
 // U+2611 can also fall back to a color-emoji font in its default presentation.
-const emojiMarkers = new Set(['☑', ...listMarkerGroups.filter(group => group.emoji)
-  .flatMap(({markers}) => markers.map(([glyph]) => glyph))]);
-export const isEmojiListMarker = glyph => emojiMarkers.has(glyph);
+export const isEmojiListMarker = glyph => typeof glyph === 'string' &&
+  (glyph === '☑' || emojiPresentation.test(glyph) || emojiJoin.test(glyph));
 export const listMarkerPercent = ({listMarkerScale, listKind, listMarker}) => listMarkerScale === 'auto'
-  ? (listKind === 'bullet' ? markerScales.get(listMarker) ?? 100 : 100)
+  ? (listKind === 'bullet' ? markerScales.get(listMarker) ?? (isEmojiListMarker(listMarker) ? 70 : 100) : 100)
   : listMarkerScale ?? 100;
 
 export const listCounterStyles = [

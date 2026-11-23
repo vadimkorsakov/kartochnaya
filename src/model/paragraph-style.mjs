@@ -1,4 +1,4 @@
-import { formatListCounter, listCounterStyles, listMarkerGroups } from './list-presets.mjs';
+import { formatListCounter, listCounterStyles, validateListMarker } from './list-presets.mjs';
 
 export const paragraphListDefaults = {
   listKind: 'none', listMarker: '•', listCounterStyle: 'decimal-dot', listStart: null, listIndent: 0, listGap: 8,
@@ -8,7 +8,6 @@ export const paragraphListDefaults = {
 export const paragraphListLimits = {listStart: 999999, listIndent: 1000, listGap: 1000, listItemSpacing: 1000, listMarkerScale: 200, listMarkerOpacity: 100};
 export const paragraphListMinimums = {listStart: 1, listMarkerScale: 30};
 
-const markers = new Set(listMarkerGroups.flatMap(group => group.markers.map(([marker]) => marker)));
 const counters = new Set(listCounterStyles.map(([style]) => style));
 const kinds = new Set(['none', 'bullet', 'ordered']);
 const keys = Object.keys(paragraphListDefaults);
@@ -18,7 +17,7 @@ function cleanStyle(style = {}) {
   for (const key of keys) {
     const value = style?.[key];
     if (value == null || value === paragraphListDefaults[key]) continue;
-    if (key === 'listKind' && kinds.has(value) || key === 'listMarker' && markers.has(value) ||
+    if (key === 'listKind' && kinds.has(value) || key === 'listMarker' && validateListMarker(value) ||
         key === 'listCounterStyle' && counters.has(value)) result[key] = value;
     if (key === 'listMarkerScale' && value === 'auto') result[key] = value;
     if (key === 'listMarkerColor' && typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) result[key] = value.toLowerCase();
@@ -49,6 +48,26 @@ export function normalizeParagraphRuns(text, runs) {
     const style = cleanStyle(styles.get(start));
     return Object.keys(style).length ? [{start, style}] : [];
   });
+}
+
+/** Sanitize only marker values on a newly imported document copy. */
+export function cleanImportedListMarkers(document) {
+  let removed = 0;
+  const slides = Array.isArray(document.slides) ? document.slides : [];
+  for (const canvas of [document, ...slides]) {
+    if (!Array.isArray(canvas?.elements)) continue;
+    for (const layer of canvas.elements) {
+      if (layer?.type !== 'text' || !Array.isArray(layer.paragraphRuns)) continue;
+      for (const run of layer.paragraphRuns) {
+        const style = run?.style;
+        if (style && Object.hasOwn(style, 'listMarker') && !validateListMarker(style.listMarker)) {
+          delete style.listMarker;
+          removed++;
+        }
+      }
+    }
+  }
+  return removed;
 }
 
 export function paragraphRangeForSelection(text, selection) {
@@ -88,6 +107,7 @@ export function withParagraphRuns(element, runs) {
 }
 
 export function applyParagraphListStyle(element, patch, selection = null, {useAutoMarkerScale = false, onlyKind} = {}) {
+  if (Object.hasOwn(patch, 'listMarker') && !validateListMarker(patch.listMarker)) return element;
   const current = normalizeParagraphRuns(element.text, element.paragraphRuns);
   const runs = new Map(current.map(run => [run.start, run.style]));
   let previousCounter;

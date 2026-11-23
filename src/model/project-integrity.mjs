@@ -1,4 +1,6 @@
 // JSON records only. This module inspects copies and never repairs source data.
+import { cleanImportedListMarkers } from './paragraph-style.mjs';
+
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const identity = value => typeof value === 'string' && value.length > 0;
 const copy = value => JSON.parse(JSON.stringify(value));
@@ -101,7 +103,13 @@ export function prepareProjectImport(items, { generateId, now, existingProjectId
   for (const item of items) {
     const project = { ...copy(item.project), id: fresh(), name: String(item.project.name || 'Проект').slice(0, 90) + ' (импорт)', createdAt: now, updatedAt: now, exportCounters: {} };
     projects.push(project);
-    for (const original of item.documents) documents.push({ ...copy(original), id: fresh(), projectId: project.id, createdAt: original.createdAt || now, updatedAt: now });
+    for (const original of item.documents) {
+      const document = { ...copy(original), id: fresh(), projectId: project.id, createdAt: original.createdAt || now, updatedAt: now };
+      if (cleanImportedListMarkers(document)) {
+        diagnostics.warnings.push({code:'invalid-list-marker', path:`documents:${document.id}`});
+      }
+      documents.push(document);
+    }
   }
   return { projects, documents, diagnostics };
 }

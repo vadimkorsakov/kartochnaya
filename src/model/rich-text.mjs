@@ -1,5 +1,6 @@
 // Sparse UTF-16 overrides. The only text is element.text; textAlign remains
 // a layer property. lineHeight is a positive, dimensionless character override.
+import {normalizeParagraphRuns, remapParagraphRuns, withParagraphRuns} from './paragraph-style.mjs';
 import {isTextCase, resolveTextCase, textGraphemes} from './text-case.mjs';
 
 const blocked = new Set(['__proto__', 'constructor', 'prototype', 'textAlign']);
@@ -280,14 +281,15 @@ export function replaceText(element, start, end, inserted = '') {
   for (const r of runs) if (r.start < start) append(out, r.start, Math.min(r.end, start), r.style);
   append(out, start, start + inserted.length, inherited);
   for (const r of runs) if (r.end > end) append(out, Math.max(r.start, end) + delta, r.end + delta, r.style);
-  return withRuns(element, text, normalizeRuns(text, out, element));
+  const next = withRuns(element, text, normalizeRuns(text, out, element));
+  return element.paragraphRuns && text !== old ? withParagraphRuns(next, remapParagraphRuns(element, text, start, end, inserted)) : next;
 }
 /** Reconcile textarea/IME/autocorrect values. A pre-input selection disambiguates
  * repeated text; fallback is the smallest single replacement, safe for UTF-16. */
 export function updateText(element, text, hint) {
   const old = element.text;
   if (text === old) return element;
-  if (!element.textRuns) return { ...element, text }; // Legacy plain text stays plain.
+  if (!element.textRuns && !element.paragraphRuns) return { ...element, text }; // Legacy plain text stays plain.
   let start = 0, end = old.length, newEnd = text.length;
   if (hint && Number.isInteger(hint.start) && Number.isInteger(hint.end) && hint.start >= 0 && hint.end >= hint.start && hint.end <= old.length) {
     const n = text.length - (old.length - hint.end);
@@ -331,7 +333,8 @@ export function removeTextStyle(element, start, end, keys) {
 
 // Session-only snapshots accompany the browser's native (possibly grouped) undo.
 // They are never another persisted source of text and are released on editor close.
-const editSnapshot = element => ({ text: element.text, textRuns: normalizeRuns(element.text, element.textRuns, element) });
+const editSnapshot = element => ({text:element.text, textRuns:normalizeRuns(element.text, element.textRuns, element),
+  paragraphRuns:normalizeParagraphRuns(element.text, element.paragraphRuns)});
 export function createTextEditHistory(element) {
   return { states: [editSnapshot(element)], index: 0 };
 }
@@ -340,10 +343,12 @@ export function editTextWithHistory(element, history, text, { selection: hint, i
   if (direction) {
     for (let i = history.index + direction; i >= 0 && i < history.states.length; i += direction) {
       const state = history.states[i];
-      if (state.text === text) return {
-        element: withRuns(element, text, normalizeRuns(text, state.textRuns, element)),
-        history: { states: history.states, index: i },
-      };
+      if (state.text === text) {
+        const restored = withRuns(element, text, normalizeRuns(text, state.textRuns, element));
+        if (state.paragraphRuns.length) restored.paragraphRuns = state.paragraphRuns;
+        else delete restored.paragraphRuns;
+        return {element:restored, history:{states:history.states, index:i}};
+      }
     }
   }
   const next = updateText(element, text, hint);

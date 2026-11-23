@@ -1,0 +1,145 @@
+import { formatListCounter, listCounterStyles, listMarkerGroups } from './list-presets.mjs';
+
+export const paragraphListDefaults = {
+  listKind: 'none', listMarker: '•', listCounterStyle: 'decimal-dot', listStart: null, listIndent: 0, listGap: 8,
+};
+export const paragraphListLimits = {listStart: 999999, listIndent: 1000, listGap: 1000};
+
+const markers = new Set(listMarkerGroups.flatMap(group => group.markers.map(([marker]) => marker)));
+const counters = new Set(listCounterStyles.map(([style]) => style));
+const kinds = new Set(['none', 'bullet', 'ordered']);
+const keys = Object.keys(paragraphListDefaults);
+
+function cleanStyle(style = {}) {
+  const result = {};
+  for (const key of keys) {
+    const value = style?.[key];
+    if (value == null || value === paragraphListDefaults[key]) continue;
+    if (key === 'listKind' && kinds.has(value) || key === 'listMarker' && markers.has(value) ||
+        key === 'listCounterStyle' && counters.has(value)) result[key] = value;
+    if (Object.hasOwn(paragraphListLimits, key) && Number.isFinite(value) &&
+        value >= (key === 'listStart' ? 1 : 0) && value <= paragraphListLimits[key] &&
+        (key !== 'listStart' || Number.isInteger(value))) result[key] = value;
+  }
+  if (result.listKind !== 'ordered') delete result.listStart;
+  return result;
+}
+
+export function textParagraphs(text) {
+  const paragraphs = [];
+  let start = 0;
+  for (let lf = text.indexOf('\n'); lf !== -1; lf = text.indexOf('\n', start)) {
+    paragraphs.push({start, end:lf > start && text[lf - 1] === '\r' ? lf - 1 : lf, nextStart:lf + 1});
+    start = lf + 1;
+  }
+  paragraphs.push({start, end:text.length, nextStart:text.length});
+  return paragraphs;
+}
+
+/** One sparse record per source paragraph, including an empty final paragraph. */
+export function normalizeParagraphRuns(text, runs) {
+  if (!Array.isArray(runs) || !runs.length) return [];
+  const styles = new Map(runs.filter(run => run && Number.isInteger(run.start)).map(run => [run.start, run.style]));
+  return textParagraphs(text).flatMap(({start}) => {
+    const style = cleanStyle(styles.get(start));
+    return Object.keys(style).length ? [{start, style}] : [];
+  });
+}
+
+export function paragraphRangeForSelection(text, selection) {
+  const paragraphs = textParagraphs(text);
+  if (!selection) return paragraphs;
+  const clamp = offset => Math.max(0, Math.min(text.length, offset));
+  const start = clamp(Math.min(selection.start, selection.end));
+  const end = clamp(Math.max(selection.start, selection.end));
+  const first = paragraphs.findLastIndex(p => p.start <= start);
+  const last = start === end ? first : paragraphs.findLastIndex(p => p.start < end);
+  return paragraphs.slice(first, last + 1);
+}
+
+export function effectiveParagraphStyleAt(element, offset) {
+  const [paragraph] = paragraphRangeForSelection(element.text, {start:offset, end:offset});
+  const runs = normalizeParagraphRuns(element.text, element.paragraphRuns);
+  return {...paragraphListDefaults, ...runs.find(run => run.start === paragraph.start)?.style};
+}
+
+export function paragraphListState(element, selection) {
+  const runs = new Map(normalizeParagraphRuns(element.text, element.paragraphRuns).map(run => [run.start, run.style]));
+  const styles = paragraphRangeForSelection(element.text, selection).map(p => ({...paragraphListDefaults, ...runs.get(p.start)}));
+  return Object.fromEntries(keys.map(key => {
+    const first = styles[0][key];
+    return [key, styles.every(style => style[key] === first) ? first : 'mixed'];
+  }));
+}
+
+export function withParagraphRuns(element, runs) {
+  const next = {...element};
+  if (runs.length) next.paragraphRuns = runs;
+  else delete next.paragraphRuns;
+  return next;
+}
+
+export function applyParagraphListStyle(element, patch, selection = null) {
+  const current = normalizeParagraphRuns(element.text, element.paragraphRuns);
+  const runs = new Map(current.map(run => [run.start, run.style]));
+  let previousCounter;
+  for (const {start} of paragraphRangeForSelection(element.text, selection)) {
+    const style = {...runs.get(start), ...patch};
+    const counter = style.listKind === 'ordered' ? style.listCounterStyle ?? paragraphListDefaults.listCounterStyle : undefined;
+    // A single Start edit sets the head of each selected compatible sequence.
+    if (Object.hasOwn(patch, 'listStart') && counter === previousCounter) delete style.listStart;
+    previousCounter = counter;
+    runs.set(start, style);
+  }
+  const next = normalizeParagraphRuns(element.text, [...runs].map(([start, style]) => ({start, style})));
+  return JSON.stringify(current) === JSON.stringify(next) ? element : withParagraphRuns(element, next);
+}
+
+export const clearParagraphFormatting = (element, selection) => applyParagraphListStyle(element, {
+  listKind: null, listMarker: null, listCounterStyle: null, listStart: null, listIndent: null, listGap: null,
+}, selection);
+
+/** Called only for a confirmed replacement at source offsets. Newly split
+ * paragraphs inherit preferences, but a restart stays with the original item. */
+export function remapParagraphRuns(element, text, start, end, inserted) {
+  if (!element.paragraphRuns?.length) return [];
+  const original = textParagraphs(element.text);
+  const originalStarts = new Set(original.map(p => p.start));
+  const styles = new Map(normalizeParagraphRuns(element.text, element.paragraphRuns).map(run => [run.start, run.style]));
+  const owner = original.findLast(p => p.start <= start).start;
+  const inherited = styles.get(owner);
+  const delta = inserted.length - (end - start), suffix = start + inserted.length;
+  const next = textParagraphs(text).flatMap(p => {
+    let style;
+    if (p.start < owner) style = styles.get(p.start);
+    else if (p.start >= suffix && p.start - delta > owner && originalStarts.has(p.start - delta)) {
+      style = styles.get(p.start - delta);
+    } else if (p.start === owner) {
+      style = start === owner && !inserted && end > owner && originalStarts.has(end) ? styles.get(end) : inherited;
+    }
+    else if (p.start <= suffix && inherited) {
+      style = {...inherited};
+      delete style.listStart;
+    }
+    return style ? [{start:p.start, style}] : [];
+  });
+  return next;
+}
+
+export function projectParagraphLists(text, runs) {
+  const styles = new Map(normalizeParagraphRuns(text, runs).map(run => [run.start, run.style]));
+  let counterStyle, number, sequenceStart;
+  return textParagraphs(text).map(paragraph => {
+    const style = {...paragraphListDefaults, ...styles.get(paragraph.start)};
+    if (style.listKind === 'ordered') {
+      if (counterStyle !== style.listCounterStyle || style.listStart !== null) {
+        number = style.listStart ?? 1;
+        sequenceStart = paragraph.start;
+      } else number++;
+      counterStyle = style.listCounterStyle;
+      return {...paragraph, style, number, sequenceStart, marker:formatListCounter(number, counterStyle)};
+    }
+    counterStyle = undefined;
+    return {...paragraph, style, marker:style.listKind === 'bullet' ? style.listMarker : ''};
+  });
+}

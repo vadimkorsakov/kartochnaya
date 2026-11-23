@@ -123,29 +123,13 @@ test('actual mobile case uses the saved canonical text and the five nondestructi
   for(let i=0;i<4;i++)format('case');
   assert.equal(e.text,raw+' Hello');assert.equal(e.textCase,undefined);assert.equal(notices.length,0);
 });
-test('actual mobile list commands round trip safe formatting and reject stale snapshots',async()=>{
-  for(const textRuns of [undefined,[run(1,2,{bold:true,textCase:'lower'}),run(5,10,{italic:true})]]){
-    const e={type:'text',text:'aß я\nhello. мир ΣΟΣ',textRuns};
-    const source=e.text;
-    const {format,notices}=await mobileFormatCommand(e);
-    format('bullet');assert.equal(e.text,'• '+source.replaceAll('\n','\n• '));canonical(e);
-    format('number');assert.equal(e.text,source.split('\n').map((line,i)=>`${i+1}. ${line}`).join('\n'));canonical(e);
-    format('number');assert.equal(e.text,source);assert.deepEqual(e.textRuns,textRuns);
-    format('bullet');
-    Object.assign(e,applyTextCase(e,'upper',{start:2,end:3}));
-    let before=structuredClone(e);format('number');assert.deepEqual(e,before);
-    Object.assign(e,replaceText(e,e.text.length,e.text.length,'!'));
-    before=structuredClone(e);format('bullet');assert.deepEqual(e,before);
-    assert.equal(notices.length,2);
-  }
-});
 async function mobileFormatCommand(e){
   const {readFile}=await import('node:fs/promises'),vm=await import('node:vm');
   const source=await readFile(new URL('../src/editor.js',import.meta.url),'utf8');
   const body=source.slice(source.indexOf('function mobileV36Format(key)'),source.indexOf('function mobileV36ApplyEffect(type)'));
   const notices=[];
   const restoreTextRuns=(layer,runs)=>{if(runs===undefined)delete layer.textRuns;else layer.textRuns=structuredClone(runs)};
-  const context={app:{},active:()=>e,rejectMobileTextTarget:()=>false,invalidateMobileTextOffsets(){},clone:structuredClone,replaceText,normalizeRuns,
+  const context={app:{},active:()=>e,rejectMobileTextTarget:()=>false,
     restoreTextRuns,applyTextCase,effectiveTextCase,textCaseValues,supportsHorizontalTextLayout,toast:value=>notices.push(value),
     mobileTextFinishGesture(){},recordInlineSession(){},restoreInlineElement(layer,value){Object.assign(layer,value);restoreTextRuns(layer,value.textRuns);if(!value.textCase)delete layer.textCase},
     mobileV36Commit(){},mobileV36Render(){}};
@@ -226,7 +210,9 @@ test('actual mobile target adapter refuses sessionless, stale, locked and unsupp
  const e={id:'one',text:'Привет 👨‍👩‍👧‍👦',type:'text',textAlign:'left',fontWeight:'400'};
  const editor={value:e.text},doc={id:'doc',elements:[e]},app={doc,editingId:e.id,inlineSession:{}};
  let selected=e,notices=[];
- const context={app,document:{activeElement:null},active:()=>selected,$:()=>editor,mobileV36Small:()=>true,isLayerLocked:e=>e.locked,supportsHorizontalTextLayout:e=>!e.textMode||e.textMode==='horizontal',Intl,toast:message=>notices.push(message)};
+ const horizontal=e=>!e.textMode||e.textMode==='horizontal';
+ const context={app,document:{activeElement:null},active:()=>selected,$:()=>editor,mobileV36Small:()=>true,isLayerLocked:e=>e.locked,
+  supportsHorizontalTextLayout:horizontal,supportsParagraphLists:horizontal,Intl,toast:message=>notices.push(message)};
  vm.createContext(context);vm.runInContext(adapter,context);
  const reset=()=>vm.runInContext(`mobileTextSession={doc:app.doc,element:active(),text:active().text,revision:1,caret:{start:0,end:6,direction:'backward'}};mobileTextPanelOwner={doc:app.doc,element:active(),session:mobileTextSession,revision:1}`,context);
  const target=key=>JSON.parse(JSON.stringify(context.mobileTextTarget(key)));
@@ -252,7 +238,8 @@ test('actual mobile target adapter refuses sessionless, stale, locked and unsupp
  vm.runInContext('mobileTextSession.composing=true',context);assert.equal(target('bold').kind,'unsupported');reset();
  vm.runInContext('mobileTextSession.caret={start:7,end:9,direction:"backward"}',context);assert.equal(target('bold').kind,'unsupported');
  vm.runInContext('mobileTextSession.caret={start:0,end:0,direction:"none"}',context);assert.equal(target('bold').kind,'layer');
- reset();e.text+='!';editor.value=e.text;context.invalidateMobileTextOffsets(e);assert.equal(target('case').kind,'layer');assert.equal(target('bold').kind,'unsupported');
+ assert.deepEqual(target('bullet'),{kind:'paragraph',elementId:'one',revision:1,start:0,end:0,direction:'none'});
+ reset();e.text+='!';editor.value=e.text;assert.equal(target('number').kind,'unsupported');
  e.text+='?';editor.value=e.text;context.confirmMobileTextRevision(e);assert.equal(target('bold').kind,'unsupported');vm.runInContext('mobileTextPanelOwner.revision=mobileTextSession.revision',context);assert.equal(target('bold').kind,'range');
 });
 

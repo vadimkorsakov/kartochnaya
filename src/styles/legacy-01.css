@@ -1948,3 +1948,13 @@ html,body{background:#1e1f27!important;}
 .underline-color span{width:15px;height:15px;border:1px solid #999;border-radius:3px;background:repeating-conic-gradient(#999 0 25%,#555 0 50%) 0 / 8px 8px}
 .underline-color b{font-weight:400}
 .fill-popover.underline-color-popover{z-index:36}
+
+.paragraph-list-controls [data-list-mixed]:empty{display:none}
+.paragraph-list-controls [data-list-gallery]{margin:8px 0}
+.paragraph-list-controls summary{cursor:pointer;padding:4px 0}
+.paragraph-list-controls fieldset{min-width:0;margin:6px 0;padding:4px;border:0}
+.paragraph-list-controls legend{padding:0 2px}
+.paragraph-list-controls .list-marker-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+.paragraph-list-controls .list-marker-grid button{min-width:0;padding:4px;font-size:16px}
+.paragraph-list-controls [aria-pressed="true"]{outline:1px solid currentColor;outline-offset:-2px}
+.paragraph-list-controls :focus-visible{outline:2px solid currentColor;outline-offset:1px}

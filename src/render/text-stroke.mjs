@@ -1,8 +1,10 @@
 import {paintTextDecorations} from './text-decorations.mjs';
 import {richTextFont} from './rich-text-layout.mjs';
 
-export const hasHorizontalTextStroke = layout => layout.rows.some(row=>row.fragments.some(p=>p.style.strokeWidth>0));
-export const textStrokePadding = layout => Math.ceil(Math.max(0,...layout.rows.flatMap(row=>row.fragments.map(p=>p.style.strokeWidth)))+(layout.inkOverflow||0))+2;
+const inkParts = row => row.marker ? [row.marker, ...row.fragments] : row.fragments;
+
+export const hasHorizontalTextStroke = layout => layout.rows.some(row=>inkParts(row).some(p=>p.style.strokeWidth>0));
+export const textStrokePadding = layout => Math.ceil(Math.max(0,...layout.rows.flatMap(row=>inkParts(row).map(p=>p.style.strokeWidth)))+(layout.inkOverflow||0))+2;
 
 // Shared horizontal glyph painter: Canvas, export and the editable projection
 // must issue the same whole-fragment calls for BOTH fill and stroke. Formatting
@@ -15,7 +17,7 @@ export function paintHorizontalTextPass(c,e,layout,method='fill') {
  c.beginPath();c.rect(-pad,-pad,e.w+pad*2,e.h+pad*2);c.clip();
  for(const row of layout.rows){
   if(row.y>e.h)break;
-  for(const part of row.fragments){
+  for(const part of inkParts(row)){
    const s=part.style;
    if(method==='stroke'&&!(s.strokeWidth>0))continue;
    // Assign text state inside its saved scope. Chromium's save() can clear

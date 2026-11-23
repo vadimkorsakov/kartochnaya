@@ -1,3 +1,4 @@
+import {applyParagraphListStyle} from '../model/paragraph-style.mjs';
 import {richTextSpans, resolveRichTextStyle, richTextFont, retainRichTextSizeBase} from '../render/rich-text-layout.mjs';
 import {replaceText, applyTextStyle, applyBaselineShift, applyTextCase} from '../model/rich-text.mjs';
 import {displayToSource, sourceToDisplay, textCaseIntervalAt, textGraphemes} from '../model/text-case.mjs';
@@ -5,7 +6,7 @@ import {recordInlineHistory, moveInlineHistory} from '../model/inline-text-histo
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from '../render/text-stroke.mjs';
 
 const ctx = document.createElement('canvas').getContext('2d');
-const needsCanvasInk = projection => hasHorizontalTextStroke(projection)||projection.rows.some(row=>row.decorations.some(d=>d.advanced)||row.fragments.some(p=>p.style.fillOpacity!==100));
+const needsCanvasInk = projection => hasHorizontalTextStroke(projection)||projection.rows.some(row=>row.marker||row.decorations.some(d=>d.advanced)||row.fragments.some(p=>p.style.fillOpacity!==100));
 function lineHeight(style) {
  ctx.font=richTextFont(style);const m=ctx.measureText('Mg');
  if(!Number.isFinite(m.fontBoundingBoxAscent)||!Number.isFinite(m.fontBoundingBoxDescent)||!(m.width>0))throw Error('Font metrics unavailable');
@@ -180,7 +181,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   host.replaceChildren(...nodes);
   if(!host.childNodes.length)host.append(document.createTextNode(''));
   if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';nodes.at(-1).lastChild.append(br);}
-  if(display){
+  if(display||projection.paragraphs){
    // Inline boxes preserve native caret affinity. Correct subpixel
    // accumulation across the independently rounded margins of long rows.
    const positions=nodes.flatMap((node,i)=>{
@@ -207,7 +208,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  function matchesProjection(){return layer.text===confirmedSource&&host.innerHTML===confirmedHTML&&readText()===(caseProjection?.text??confirmedSource);}
  function clean(){try{return !composing&&!fallback&&!safe.deferred&&matchesProjection();}catch{return false;}}
  const caret=c=>({start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'});
- function commit(value,before,after){
+ function commit(value,before,after,action='input'){
   // Fit the next snapshot before history and DOM are committed: all renderers
   // and Undo/Redo must use the same canonical fontSize.
   if(value.autoFontSize)fit(value);
@@ -218,7 +219,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   recordInlineHistory(history,value,caret(after));
   // A confirmed input is distinct while editing, but adjacent inputs can be
   // grouped into one document-history step when the session closes.
-  if(history.index!==previousIndex)history.states[history.index].action='input';
+  if(history.index!==previousIndex)history.states[history.index].action=action;
   onChange();
  }
  function travel(direction){finishPreview();if(!clean()){stop('История недоступна до восстановления ввода');return;}const previousIndex=history.index,state=moveInlineHistory(history,direction);if(state){try{project(state.element,state.caret);onChange();}catch{history.index=previousIndex;stop('Шрифт или проекция недоступны для истории');}}}
@@ -316,10 +317,27 @@ function changeGraphemeStyle(apply,value){
  history.states[history.index].action='style';
  onChange();return true;
 }
+function changeParagraphStyle(patch) {
+ if(!clean()||inactive||safe.phase!=='confirmed')return false;
+ let selection;try{selection=rememberSelection();}catch{return false;}
+ finishPreview();
+ const next=applyParagraphListStyle(layer,patch,caret(selection));
+ if(next===layer)return false;
+ if(next.autoFontSize)fit(next,{preserveSizeBase:true});
+ if(!compatible(next))return false;
+ const previous=structuredClone(layer),range=caret(selection);
+ try{project(next,selection,savedAffinity);}catch{return false;}
+ recordInlineHistory(history,previous,range);
+ recordInlineHistory(history,next,range);
+ history.states[history.index].action='style';
+ onChange();
+ return true;
+}
+
 // Correct native clicks at expanded spaces and shared offsets between glyphs
 // on different baselines. The editable nodes and native Selection own the caret.
-let pointerEpoch=0,pointerGesture=null,selectingWithPointer=false;
-const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.task!==undefined)clearTimeout(p.task);};
+let pointerEpoch=0,pointerGesture=null,markerDrag=null,selectingWithPointer=false;
+const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;markerDrag=null;if(p?.task!==undefined)clearTimeout(p.task);};
 // Register for the session lifetime. Each projection invalidates pending clicks.
 {
  const doc=host.ownerDocument;
@@ -363,9 +381,45 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
   if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return null;
   return {...boundary,node,start:part.start,key:node};
  }
+ function markerHit(clientX,clientY){
+  const nodes=host.children;
+  for(const [i,row] of projectedRows.entries()){
+   if(!row.marker)continue;
+   const box=nodes[i].getBoundingClientRect();
+   if(clientY<box.top||clientY>=box.bottom)continue;
+   const x=(clientX-box.left)*layer.w/box.width;
+   if(x>=row.marker.columnX&&x<row.x)return {row,index:i};
+  }
+  return null;
+ }
+ function dragFromMarker(event){
+  const drag=markerDrag;
+  if(!drag||event.pointerId!==drag.id)return;
+  const hit=markerHit(event.clientX,event.clientY);
+  if(hit){setSelection(drag.anchor,hit.row.start,hit.index,drag.rowIndex);return;}
+  const native=doc.caretPositionFromPoint?.(event.clientX,event.clientY) ?? doc.caretRangeFromPoint?.(event.clientX,event.clientY);
+  const node=native?.offsetNode ?? native?.startContainer;
+  if(!node||!host.contains(node))return;
+  try{
+   const offset=domPointToDisplay(index(),node,native.offset ?? native.startOffset);
+   const source=caseProjection?displayToSource(caseProjection,offset,offset>sourceToDisplay(caseProjection,drag.anchor)):offset;
+   const focus=source===layer.text.length?source:graphemes.segment(layer.text).containing(source)?.index??source;
+   const row=Array.prototype.indexOf.call(host.children,node.parentElement.closest('[data-wysiwyg-row]'));
+   setSelection(drag.anchor,focus,row<0?null:row,drag.rowIndex);
+  }catch{}
+ }
  listen('pointerdown',event=>{
   clearPointerGesture();
   if(!event.isTrusted||event.pointerType!=='mouse'||!event.isPrimary||event.button!==0||event.altKey||event.ctrlKey||event.metaKey)return;
+  const marker=clean()&&markerHit(event.clientX,event.clientY);
+  if(marker){
+   const anchor=event.shiftKey&&selectionInside()?readSelection().anchor:marker.row.start;
+   event.preventDefault();
+   host.focus({preventScroll:true});
+   setSelection(anchor,marker.row.start,marker.index,anchor===marker.row.start?marker.index:null);
+   markerDrag={id:event.pointerId,anchor,rowIndex:anchor===marker.row.start?marker.index:null};
+   return;
+  }
   selectingWithPointer=!!caseProjection;
   const hit=pointerHit(event.clientX,event.clientY,event.target);if(!hit)return;
   let anchor=null,anchorNode=null,anchorOffset=null;
@@ -373,8 +427,9 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;if(p?.
   pointerGesture={id:event.pointerId,x:event.clientX,y:event.clientY,epoch:pointerEpoch,key:hit.key,start:hit.start,rowIndex:hit.rowIndex,anchor,anchorNode,anchorOffset,shift:event.shiftKey,up:false};
  });
  watch(doc,'pointerdown',event=>{if(!host.contains(event.target))clearPointerGesture()},true);
- watch(doc,'pointermove',event=>{const p=pointerGesture;if(p&&!p.clicked&&p.id===event.pointerId&&(event.clientX!==p.x||event.clientY!==p.y))clearPointerGesture()},true);
+ watch(doc,'pointermove',event=>{dragFromMarker(event);const p=pointerGesture;if(p&&!p.clicked&&p.id===event.pointerId&&(event.clientX!==p.x||event.clientY!==p.y))clearPointerGesture()},true);
  watch(doc,'pointerup',event=>{
+  if(markerDrag?.id===event.pointerId){dragFromMarker(event);markerDrag=null;}
   if(selectingWithPointer){
    selectingWithPointer=false;
    if(!pointerGesture)queueMicrotask(normalizeNativeSelection);
@@ -476,8 +531,8 @@ listen('keydown',event=>{
  }else{
   verticalX=null;
   if(key==='Home'||key==='End'){
-   next=modified?(key==='Home'?0:layer.text.length):(key==='Home'?row.start:row.end);
-   targetRow=modified?(key==='Home'?0:rows.length-1):rowIndex;
+   next=modified?(key==='Home'?0:layer.text.length):(key==='Home'?row.paragraph?.start??row.start:row.end);
+   targetRow=modified?(key==='Home'?0:rows.length-1):key==='Home'?row.paragraph?.firstRow??rowIndex:rowIndex;
   }else if(!event.shiftKey&&c.anchor!==c.focus)next=key==='ArrowLeft'?Math.min(c.anchor,c.focus):Math.max(c.anchor,c.focus);
   else next=key==='ArrowLeft'?(boundaries.findLast(i=>i<c.focus)??0):(boundaries.find(i=>i>c.focus)??layer.text.length);
  }
@@ -494,7 +549,10 @@ for(const type of ['copy','cut'])listen(type,event=>{
  event.clipboardData.setData('text/plain',layer.text.slice(start,end));event.preventDefault();
  if(type==='cut'){
   finishPreview();
-  try{commit(replaceText(layer,start,end,''),selection,{anchor:start,focus:start});}
+  try{
+   const action=layer.paragraphRuns?.length&&layer.text.slice(start,end).includes('\n')?'paragraph':'input';
+   commit(replaceText(layer,start,end,''),selection,{anchor:start,focus:start},action);
+  }
   catch{stop('Text projection unavailable');}
  }
 });
@@ -602,7 +660,7 @@ listen('beforeinput',e=>{
  {
   if(safe.phase==='recovery-required'){if(e.cancelable&&!composing&&!e.isComposing)e.preventDefault();return;}
   if(composing||e.isComposing){safe.deferred=true;safe.phase='composing';return;}
-  if(!['insertLineBreak','insertText','insertFromPaste','deleteContentBackward','deleteContentForward','historyUndo','historyRedo'].includes(e.inputType)){
+  if(!['insertLineBreak','insertParagraph','insertText','insertFromPaste','deleteContentBackward','deleteContentForward','historyUndo','historyRedo'].includes(e.inputType)){
    if(e.cancelable){e.preventDefault();requestFallback('canceled unsupported intent');}
    else stop('noncancelable unsupported intent');
    return;
@@ -628,10 +686,17 @@ listen('beforeinput',e=>{
  // than restoring an offset inconsistent with the required min(anchor,focus)+1.
  const split=i=>i>0&&i<layer.text.length&&/[\uD800-\uDBFF]/.test(layer.text[i-1])&&/[\uDC00-\uDFFF]/.test(layer.text[i]);
  if(split(start)||split(end)){stop('selection splits surrogate pair');return;}
- if(e.inputType==='insertLineBreak'){
+ const paragraph=layer.paragraphRuns?.length?projectedRows.findLast(row=>row.start<=start)?.paragraph:null;
+ const beginning=paragraph?.start===start&&start===end;
+ if(e.inputType==='insertLineBreak'||e.inputType==='insertParagraph'){
   e.preventDefault();
-  const next=replaceText(layer,start,end,'\n');
-  commit(next,selection,{anchor:start+1,focus:start+1});
+  try{
+   if(beginning&&paragraph.end===start){
+    commit(applyParagraphListStyle(layer,{listKind:'none'},{start,end}),selection,selection,'style');
+   }else{
+    commit(replaceText(layer,start,end,'\n'),selection,{anchor:start+1,focus:start+1},paragraph?'paragraph':'input');
+   }
+  }catch{stop('Text projection unavailable');return;}
 
   safe.phase='confirmed';
   if(!compatible(layer))requestFallback('Текст вышел за пределы поддерживаемых строк');
@@ -650,6 +715,11 @@ listen('beforeinput',e=>{
  // Confirm supported intents before replacing DOM; never infer canonical rich
  // text from browser-generated markup or persist an unconfirmed composition.
  e.preventDefault();
+ if(beginning&&e.inputType==='deleteContentBackward'){
+  try{commit(applyParagraphListStyle(layer,{listKind:'none'},{start,end}),selection,selection,'style');}
+  catch{stop('Text projection unavailable');}
+  return;
+ }
  if(e.inputType.startsWith('delete')&&start===end){
   const points=[...graphemes.segment(layer.text)].map(p=>p.index).concat(layer.text.length);
   if(e.inputType==='deleteContentBackward')start=points.findLast(i=>i<start)??0;
@@ -659,7 +729,10 @@ listen('beforeinput',e=>{
  const inserted=e.inputType.startsWith('delete')?'':typeof data==='string'?data.replace(/\r\n?/g,'\n'):data;
  if(typeof inserted!=='string'){stop('input without plaintext context');return;}
  try{
-  commit(replaceText(layer,start,end,inserted),selection,{anchor:start+inserted.length,focus:start+inserted.length});
+  const next=replaceText(layer,start,end,inserted);
+  const structural=(layer.paragraphRuns?.length||next.paragraphRuns?.length)&&
+   (inserted.includes('\n')||layer.text.slice(start,end).includes('\n'));
+  commit(next,selection,{anchor:start+inserted.length,focus:start+inserted.length},structural?'paragraph':'input');
   safe.phase='confirmed';
  }catch{stop('Text projection unavailable');}
 });
@@ -674,7 +747,7 @@ listen('input',()=>{
  host.contentEditable='plaintext-only';host.classList.remove('hidden');
  const initial={anchor:layer.text.length,focus:layer.text.length};project(structuredClone(layer),initial);recordInlineHistory(history,layer,caret(initial));
  return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection(...args){clearPointerGesture();return setSelection(...args);},requestFallback,clean,applyRangeStyle,applyLayerStyle,
-  changeBaselineShift:value=>changeGraphemeStyle(applyBaselineShift,value),changeTextCase:value=>changeGraphemeStyle(applyTextCase,value),applyUnderlineStyle,cancelUnderlinePreview,finishPreview,syncOverlay,
+  changeBaselineShift:value=>changeGraphemeStyle(applyBaselineShift,value),changeTextCase:value=>changeGraphemeStyle(applyTextCase,value),changeParagraphStyle,applyUnderlineStyle,cancelUnderlinePreview,finishPreview,syncOverlay,
   owns:value=>!inactive&&layer===value,
   preserve(){pointerEpoch++;clearPointerGesture();inactive=true;releaseOverlay();if(!composing)host.contentEditable='false';},
   focus(){host.focus({preventScroll:true});},

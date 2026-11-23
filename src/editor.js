@@ -3,7 +3,9 @@ import { nextZoom, parseZoomPercent } from './core/zoom.mjs';
 import {eligibleWysiwyg, justifyWysiwygEnabled, createWysiwygSession} from './editor/wysiwyg-session.mjs';
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from './render/text-stroke.mjs';
 import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
-import { applyTextStyle, applyBaselineShift, applyTextCase, applyLayerUnderlineStyle, effectiveTextCase, isBaselineShift, normalizeRuns, underlineDefaults, underlineLimits, updateText, replaceText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
+import { applyTextStyle, applyBaselineShift, applyTextCase, applyLayerUnderlineStyle, effectiveTextCase, isBaselineShift, underlineDefaults, underlineLimits, updateText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
+import {applyParagraphListStyle, paragraphListState, paragraphListDefaults, paragraphListLimits} from './model/paragraph-style.mjs';
+import {listMarkerGroups, listCounterStyles} from './model/list-presets.mjs';
 import { isTextCase, textCaseValues } from './model/text-case.mjs';
 import { supportsHorizontalTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine } from './render/rich-text-layout.mjs';
 import { createReplacementSession } from './backup/replace.mjs';
@@ -346,7 +348,7 @@ function fontSelectControl(e){const family=inspectorFontFamily(e);return `<div c
 // callback is applying that exact value to selected text.
 let inspectorEditingControl=null;
 function syncInspectorFontFamily(){
- syncTextDecorationButtons();syncBaselineShiftControls();syncTextCaseControls();
+ syncTextDecorationButtons();syncBaselineShiftControls();syncTextCaseControls();syncParagraphListControls();
  const label=$('#inspector [data-font-current]'),e=active();
  if(!label||e?.type!=='text')return;
  const strokeInput=$('#inspector [data-key="strokeWidth"]');
@@ -897,6 +899,7 @@ function refreshInspector(){
  if(e.type==='vector')s+=propertySection('Библиотека фигур','<button class="linebtn wide" data-action="saveShape">＋ Сохранить в Фигуры</button>','more');
  if(e.type==='text'){
   s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${fontVariantField(e)}${fontSizeField(e)}</div><div class="cols2">${lineHeightField(e)}${letterSpacingField(e)}</div>${textDecorationControls()}${baselineShiftControls(e)}${textCaseControls(e)}${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
+  if(underlineDesktop())s+=propertySection('Списки',paragraphListControls(e),'align');
   s+=propertySection('Заливка',fillRow('Заливка текста','fill',e.fillType==='solid'?e.textColor:e.fill,e.fillType||'solid'),'fill');
  }else{
   s+=propertySection('Заливка',fillRow('Заливка','fill',e.fill,e.fillType||'solid')+`${e.fillType==='image'?imageModeControls(e):''}`,'fill');
@@ -1877,7 +1880,7 @@ function tf43Backdrop(e,f,d,raw){
   c.textBaseline='alphabetic';c.fontKerning='normal';
   for(const row of mixedTextLayout(e).rows){
    if(row.y>=e.h)break;
-   const parts=row.fragments.filter(p=>p.text.trim());if(!parts.length)continue;
+   const parts=row.fragments.filter(p=>p.text.trim());if(row.marker)parts.unshift(row.marker);if(!parts.length)continue;
    let top=Infinity,bottom=-Infinity;
    for(const part of parts){c.font=richTextFont(part.style);c.letterSpacing=part.style.letterSpacing+'px';const m=c.measureText(part.text);top=Math.min(top,part.y-m.actualBoundingBoxAscent);bottom=Math.max(bottom,part.y+m.actualBoundingBoxDescent)}
    rows.push({l:parts[0].x-pad,r:parts.at(-1).x+parts.at(-1).width+pad,t:top-pad,b:Math.min(e.h,bottom)+pad});
@@ -2200,7 +2203,7 @@ function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if
  bubble.style.left=x+'px';bubble.style.top=y+'px';mobileNudgeAvoidBubble(bubble);
 }
 // Keep the shared desktop/Android textarea and sparse formatting in one model.
-function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=next.text;if(next.textRuns)e.textRuns=next.textRuns;else delete e.textRuns}
+function setTextValue(e,value,hint){const next=updateText(e,value,hint);e.text=next.text;if(next.textRuns)e.textRuns=next.textRuns;else delete e.textRuns;if(next.paragraphRuns)e.paragraphRuns=next.paragraphRuns;else delete e.paragraphRuns}
 function restoreTextRuns(e,runs){if(runs!==undefined)e.textRuns=clone(runs);else delete e.textRuns}
 function startInlineWysiwyg(e){
  const host=$('#inlineWysiwyg');app.inlineSession.wysiwyg=true;app.inlineSession.formatted=true;
@@ -2214,7 +2217,7 @@ function startInlineWysiwyg(e){
    if(underlinePanel&&underlineOwnerValid())syncUnderlinePanel();
   },
   onFallback(selection,reason){finishWysiwygFallback(selection,reason);},
-  onRecovery(){ closeUnderlinePanel();syncBaselineShiftControls();syncTextCaseControls();$('#wysiwygRecovery').classList.remove('hidden');$('#wysiwygRecoveryMessage').textContent='Ввод не подтверждён и не сохранён. При использовании IME завершите композицию. Скопируйте нужный текст перед восстановлением.';}
+  onRecovery(){ closeUnderlinePanel();syncBaselineShiftControls();syncTextCaseControls();syncParagraphListControls();$('#wysiwygRecovery').classList.remove('hidden');$('#wysiwygRecoveryMessage').textContent='Ввод не подтверждён и не сохранён. При использовании IME завершите композицию. Скопируйте нужный текст перед восстановлением.';}
  });
  // project() already owns the initial end caret. A delayed initialization must
  // never overwrite a selection the user established before the next frame.
@@ -2248,7 +2251,7 @@ $('#wysiwygRecover').onclick=()=>{if(app.wysiwyg?.recover())$('#wysiwygRecovery'
 // Controls outside changeProperty still hand off before mutating the layer.
 function routeWysiwygPanelAction(ev){
  if(!app.wysiwyg||!ev.target.closest(inlineFormattingRoots+',#fxPopover,#fxMenu,#fxChooser'))return;
- if(ev.target.closest('[data-baseline-shift],[data-text-case],[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]'))return;
+ if(ev.target.closest('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]'))return;
  // Capture-phase synchronization must not rewrite a newly edited input/select
  // before its own bubble-phase changeProperty handler reads the new value.
  // The selection was already preserved at pointerdown/focusout; the formatting
@@ -2270,7 +2273,7 @@ $('#canvasHost').addEventListener('keydown',ev=>{if(ev.target.id!=='inlineWysiwy
  if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(true);canvas.focus();}
  if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText();}
 });
-function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){resumeTextInputWithFocus();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.inlineRichHistory=e.textRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;mobileTextSession=mobileV36Small()?{doc:app.doc,element:e,text:e.text,revision:0,caret:null,composing:false,formatting:false}:null;const live=eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),supportsWysiwygProjection);app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&(e.textAlign!=='justify'||live||mobileV36Small())?createInlineHistory(e):null;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.readOnly=false;editor.removeAttribute('inputmode');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(live){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}syncUnderlineTrigger();editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id||mobileTextSession?.formatting)return;
+function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked(e))return;if(app.editingId===e.id){resumeTextInputWithFocus();return;}if(app.editingId)closeInlineText();hideInspector();if(app.mobileLayersOpen)toggleMobileLayers(false);app.editingId=e.id;app.editorBefore=e.text;app.editorRunsBefore=e.textRuns===undefined?undefined:clone(e.textRuns);app.editorParagraphRunsBefore=e.paragraphRuns===undefined?undefined:clone(e.paragraphRuns);app.inlineRichHistory=e.textRuns||e.paragraphRuns?createTextEditHistory(e):null;app.inlineInputSelection=null;app.editorFontSizeBefore=e.fontSize;app.inlineModelBefore=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups});app.inlineCaret=null;mobileTextSession=mobileV36Small()?{doc:app.doc,element:e,text:e.text,revision:0,caret:null,composing:false,formatting:false}:null;const live=eligibleWysiwyg(e,isLayerLocked(e),family=>!v41FontUnavailable(family),supportsWysiwygProjection);app.inlineSession=(!e.textMode||e.textMode==='horizontal')&&!e.mobileArcRadius&&(e.textAlign!=='justify'||live||mobileV36Small())?createInlineHistory(e):null;if(app.inlineSession&&e.paragraphRuns?.length)app.inlineSession.formatted=true;app.editorTitleBefore=app.doc.title;const editor=$('#inlineText');editor.readOnly=false;editor.removeAttribute('inputmode');editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');editor.value=e.text;if(live){startInlineWysiwyg(e);positionInlineText();paint();updateQuickBubble();return;}syncUnderlineTrigger();editor.classList.remove('hidden');positionInlineText();requestAnimationFrame(positionInlineText);paint();updateQuickBubble();requestAnimationFrame(()=>{if(app.editingId!==e.id||mobileTextSession?.formatting)return;
  // A user or Playwright may already have focused the editor and selected text
  // for replacement. Never collapse that selection in this deferred open frame.
  if(document.activeElement!==editor){editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length)}
@@ -2299,11 +2302,11 @@ function closeInlineText(cancel=false){
  const editor=$('#inlineText'),e=app.doc?.elements.find(x=>x.id===app.editingId),before=app.editorBefore,titleBefore=app.editorTitleBefore;
  const wysiwyg=app.wysiwyg;const session=app.inlineSession;if(session&&!wysiwyg)recordInlineSession();
  if(wysiwyg){wysiwyg.finishPreview();app.wysiwyg=null;if(!wysiwyg.clean())preserveWysiwygRecovery(wysiwyg);else wysiwyg.dispose();$('#wysiwygRecovery').classList.add('hidden');}
- if(e){if(cancel&&session){restoreInlineElement(e,session.states[0].element)}else if(cancel){e.text=before;restoreTextRuns(e,app.editorRunsBefore)}else if(!wysiwyg&&editor.value!==String(e.text).replace(/\r\n?/g,'\n'))setTextValue(e,editor.value);if(cancel&&Number.isFinite(app.editorFontSizeBefore))e.fontSize=app.editorFontSizeBefore;}
+ if(e){if(cancel&&session){restoreInlineElement(e,session.states[0].element)}else if(cancel){e.text=before;restoreTextRuns(e,app.editorRunsBefore);if(app.editorParagraphRunsBefore)e.paragraphRuns=app.editorParagraphRunsBefore;else delete e.paragraphRuns}else if(!wysiwyg&&editor.value!==String(e.text).replace(/\r\n?/g,'\n'))setTextValue(e,editor.value);if(cancel&&Number.isFinite(app.editorFontSizeBefore))e.fontSize=app.editorFontSizeBefore;}
  const changed=JSON.stringify({elements:app.doc.elements,groups:app.doc.groups})!==app.inlineModelBefore;
  // Release ownership before hiding/blurring: every exit path may safely call us again.
  if(app.editingId&&mobileV36Small())mobileV36State.userViewAdjusted=true;
- app.editingId=null;mobileTextSession=null;app.inlineSession=null;app.inlineToolPointer=false;app.editorBefore=null;app.editorRunsBefore=null;app.inlineRichHistory=null;app.inlineInputSelection=null;app.editorFontSizeBefore=null;app.editorTitleBefore=null;app.inlineModelBefore=null;app.inlineCaret=null;
+ app.editingId=null;mobileTextSession=null;app.inlineSession=null;app.inlineToolPointer=false;app.editorBefore=null;app.editorRunsBefore=null;app.editorParagraphRunsBefore=null;app.inlineRichHistory=null;app.inlineInputSelection=null;app.editorFontSizeBefore=null;app.editorTitleBefore=null;app.inlineModelBefore=null;app.inlineCaret=null;
  editor.classList.add('hidden');editor.classList.remove('vertical-wysiwyg');
  editor.blur();editor.readOnly=false;editor.removeAttribute('inputmode');v41KeyboardViewport();
  if(cancel||!changed){app.doc.title=titleBefore;updateProjectBadge()}else syncAutoCardTitle();
@@ -2328,7 +2331,7 @@ function closeInlineText(cancel=false){
 }
 for(const type of ['compositionstart','compositionend'])$('#inlineText').addEventListener(type,()=>{if(type==='compositionstart')mobileTextCancelGesture(false);if(mobileTextSession)mobileTextSession.composing=type==='compositionstart'});
 $('#inlineText').addEventListener('beforeinput',ev=>{mobileTextCancelGesture(false);if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
-$('#inlineText').addEventListener('input',ev=>{mobileTextCancelGesture(false);const e=app.doc?.elements.find(x=>x.id===app.editingId);if(e){if(app.inlineRichHistory&&!app.inlineSession?.formatted){const result=editTextWithHistory(e,app.inlineRichHistory,ev.target.value,{selection:app.inlineInputSelection,inputType:ev.inputType});app.inlineRichHistory=result.history;e.text=result.element.text;restoreTextRuns(e,result.element.textRuns)}else setTextValue(e,ev.target.value,app.inlineInputSelection);app.inlineInputSelection=null;confirmMobileTextRevision(e);if(autoFitTextFont(e))positionInlineText();syncAutoCardTitle();rememberInlineCaret();recordInlineSession(ev.inputType);refreshSaveStatus();paint()}});
+$('#inlineText').addEventListener('input',ev=>{mobileTextCancelGesture(false);const e=app.doc?.elements.find(x=>x.id===app.editingId);if(e){if(app.inlineRichHistory&&!app.inlineSession?.formatted){const result=editTextWithHistory(e,app.inlineRichHistory,ev.target.value,{selection:app.inlineInputSelection,inputType:ev.inputType});app.inlineRichHistory=result.history;e.text=result.element.text;restoreTextRuns(e,result.element.textRuns);if(result.element.paragraphRuns)e.paragraphRuns=result.element.paragraphRuns;else delete e.paragraphRuns}else setTextValue(e,ev.target.value,app.inlineInputSelection);app.inlineInputSelection=null;confirmMobileTextRevision(e);if(autoFitTextFont(e))positionInlineText();syncAutoCardTitle();rememberInlineCaret();recordInlineSession(ev.inputType);refreshSaveStatus();paint()}});
 $('#inlineText').addEventListener('blur',ev=>{
  // blur has already moved document.activeElement; capture only while input owns the selection.
  rememberInlineCaret(true);
@@ -2464,6 +2467,12 @@ function mobileV36SyncTextStyle(){
    button.classList.toggle('active',pressed===true);button.classList.toggle('mixed',pressed==='mixed');button.disabled=disabled;
    continue;
   }
+  if(key==='bullet'||key==='number'){
+   const {pressed,disabled,label}=mobileListControl(active(),key);
+   button.setAttribute('aria-pressed',String(pressed));button.setAttribute('aria-label',label);button.title=label;
+   button.classList.toggle('active',pressed===true);button.classList.toggle('mixed',pressed==='mixed');button.disabled=disabled;
+   continue;
+  }
   if(!['bold','italic','underline','strikethrough'].includes(key))continue;
   const state=mobileV36Style(key),pressed=['underline','strikethrough'].includes(key)?textDecorationState(key):state.kind==='mixed'?'mixed':state.kind==='value'&&state.value===true;
   button.setAttribute('aria-pressed',String(pressed));button.classList.toggle('active',pressed===true);button.classList.toggle('mixed',pressed==='mixed');
@@ -2490,21 +2499,14 @@ function rememberMobileTextTarget(capture=false){
 }
 function confirmMobileTextRevision(e){
  const owner=mobileTextSession;
- if(owner&&owner.doc===app.doc&&owner.element===e&&owner.text!==e.text){owner.text=e.text;owner.revision++;owner.invalidOffsets=false}
-}
-function invalidateMobileTextOffsets(e){
- const owner=mobileTextSession;
- if(!owner||owner.doc!==app.doc||owner.element!==e||owner.text===e.text)return;
- confirmMobileTextRevision(e);owner.invalidOffsets=true;
- // The list command may continue acting on this same layer, but
- // must never certify the old range after changing UTF-16 text lengths.
- if(mobileTextPanelOwner?.session===owner)mobileTextPanelOwner.revision=owner.revision;
+ if(owner&&owner.doc===app.doc&&owner.element===e&&owner.text!==e.text){owner.text=e.text;owner.revision++}
 }
 function mobileTextTarget(key,allowLocked=false){
- const e=active(),owner=mobileTextSession;
+ const e=active(),owner=mobileTextSession,list=key==='bullet'||key==='number';
  const unsupported=reason=>({kind:'unsupported',reason});
  if(!e)return unsupported('Слой больше не выбран. Откройте панель заново.');
  if(!allowLocked&&isLayerLocked(e))return unsupported('Слой заблокирован.');
+ if(list&&!supportsParagraphLists(e))return unsupported('Списки доступны для горизонтального текста.');
  if(key==='case'&&(e.type!=='text'||!supportsHorizontalTextLayout(e)))return unsupported('Регистр доступен для горизонтального текста.');
  if(mobileTextPanelOwner&&(mobileTextPanelOwner.doc!==app.doc||mobileTextPanelOwner.element!==e||mobileTextPanelOwner.session!==owner||mobileTextPanelOwner.revision!==(owner?.revision||0)))return unsupported('Цель форматирования устарела. Откройте панель заново.');
  if(app.editingId){
@@ -2513,7 +2515,10 @@ function mobileTextTarget(key,allowLocked=false){
   if(owner.composing)return unsupported('Завершите ввод текста перед форматированием.');
  }
  const editor=$('#inlineText'),revision=owner?.revision||0,c=app.editingId&&!owner?.formatting&&document.activeElement===editor?{start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:owner?.caret;
- if(mobileRangeKeys.has(key)&&app.editingId&&owner.invalidOffsets)return unsupported('Текст изменился. Откройте редактирование заново.');
+ if(list&&app.editingId){
+  if(!app.inlineSession||!c||!Number.isInteger(c.start)||!Number.isInteger(c.end)||c.start<0||c.end>e.text.length||c.end<c.start)return unsupported('Выделение устарело. Выделите текст заново.');
+  return {kind:'paragraph',elementId:e.id,revision,...c};
+ }
  if(mobileRangeKeys.has(key)&&app.editingId&&!c)return unsupported('Выделение не подтверждено. Выделите текст заново.');
  if(!mobileRangeKeys.has(key)||!app.editingId||c.start===c.end)return {kind:'layer',elementId:e.id,revision};
  if(!app.inlineSession||!supportsHorizontalTextLayout(e)||e.mobileArcRadius||['strokeOpacity','strokeStyle'].includes(key))return unsupported('Форматирование выделенного диапазона недоступно в текущем режиме. Снимите выделение для изменения всего слоя.');
@@ -2885,6 +2890,101 @@ function changeTextCase(value){
  restoreInlineElement(e,next);commit('Регистр текста');syncInspectorFontFamily();
 }
 
+const paragraphListKinds = [['none','Без списка'],['bullet','Маркеры'],['ordered','Нумерация']];
+function supportsParagraphLists(e){
+ return e?.type==='text'&&supportsHorizontalTextLayout(e)&&!e.textPathId;
+}
+function paragraphListInspectorState(e){
+ if(!supportsParagraphLists(e)||app.selectedIds.length!==1||isLayerLocked(e))return null;
+ if(app.editingId&&(!app.wysiwyg?.owns(e)||!app.wysiwyg.clean()))return null;
+ return paragraphListState(e,app.editingId?app.inlineCaret:null);
+}
+function paragraphListControls(e){
+ const state=paragraphListInspectorState(e),disabled=state?'':'disabled';
+ const field=(key,label,min,step)=>{
+  const value=state?state[key]:paragraphListDefaults[key];
+  return `<label>${label}<input type="number" data-list-field="${key}" min="${min}" max="${paragraphListLimits[key]}" step="${step}" value="${value==='mixed'||value===null?'':value}" placeholder="${value==='mixed'?'Mixed':key==='listStart'?'Авто':''}" ${disabled}></label>`;
+ };
+ return `<div class="paragraph-list-controls">
+  <div class="action-row" role="group" aria-label="Тип списка">
+   ${paragraphListKinds.map(([kind,label])=>`<button type="button" class="linebtn" data-list-kind="${kind}" aria-pressed="${state?.listKind===kind}" ${disabled}>${label}</button>`).join('')}
+   <span data-list-mixed role="status">${state?.listKind==='mixed'?'Mixed':''}</span>
+  </div>
+  <details data-list-gallery ${state?.listKind==='bullet'?'':'hidden'}>
+   <summary aria-label="Галерея маркеров">Маркер <span data-list-current>${state?.listMarker==='mixed'?'Mixed':state?.listMarker??''}</span></summary>
+   ${listMarkerGroups.map(({label,markers})=>`<fieldset><legend>${label}</legend><div class="list-marker-grid">
+    ${markers.map(([marker,name])=>`<button type="button" class="linebtn" data-list-marker="${marker}" aria-label="${name}" title="${name}" aria-pressed="${state?.listMarker===marker}">${marker}</button>`).join('')}
+   </div></fieldset>`).join('')}
+  </details>
+  <div data-list-ordered ${state?.listKind==='ordered'?'':'hidden'}>
+   <label>Стиль нумерации<select data-list-field="listCounterStyle" ${disabled}>
+    <option value="" disabled ${state?.listCounterStyle==='mixed'?'selected':''}>Mixed</option>
+    ${listCounterStyles.map(([style,label])=>`<option value="${style}" ${state?.listCounterStyle===style?'selected':''}>${label}</option>`).join('')}
+   </select></label>
+   ${field('listStart','Начать с',1,1)}
+  </div>
+  <div class="cols2">${field('listIndent','Отступ, px',0,'any')}${field('listGap','Интервал, px',0,'any')}</div>
+ </div>`;
+}
+function syncParagraphListControls(force=null){
+ const root=$('#inspector .paragraph-list-controls');if(!root)return;
+ const state=paragraphListInspectorState(active());
+ for(const button of root.querySelectorAll('[data-list-kind],[data-list-marker]')){
+  button.disabled=!state;
+  const selected=button.dataset.listKind?button.dataset.listKind===state?.listKind:button.dataset.listMarker===state?.listMarker;
+  button.setAttribute('aria-pressed',String(selected));
+ }
+ const mixed=root.querySelector('[data-list-mixed]'),label=state?.listKind==='mixed'?'Mixed':'';
+ if(mixed.textContent!==label)mixed.textContent=label;
+ const gallery=root.querySelector('[data-list-gallery]');
+ gallery.hidden=state?.listKind!=='bullet';
+ if(gallery.hidden)gallery.open=false;
+ const current=gallery.querySelector('[data-list-current]'),marker=state?.listMarker==='mixed'?'Mixed':state?.listMarker??'';
+ if(current.textContent!==marker)current.textContent=marker;
+ root.querySelector('[data-list-ordered]').hidden=state?.listKind!=='ordered';
+ for(const input of root.querySelectorAll('[data-list-field]')){
+  input.disabled=!state;
+  if(document.activeElement===input&&input!==force)continue;
+  const key=input.dataset.listField,value=state?state[key]:paragraphListDefaults[key];
+  input.value=value==='mixed'||value===null?'':value;
+  if(input.type==='number')input.placeholder=value==='mixed'?'Mixed':key==='listStart'?'Авто':'';
+ }
+}
+function changeParagraphList(patch){
+ const e=active();
+ if(!paragraphListInspectorState(e))return false;
+ closeUnderlinePanel();
+ if(app.editingId)return app.wysiwyg.changeParagraphStyle(patch);
+ const next=applyParagraphListStyle(e,patch);
+ if(next===e)return false;
+ if(next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
+ restoreInlineElement(e,next);commit('Форматирование списка');syncInspectorFontFamily();
+ return true;
+}
+$('#inspector').addEventListener('click',ev=>{
+ const kind=ev.target.closest('[data-list-kind]');
+ if(kind){if(changeParagraphList({listKind:kind.dataset.listKind}))app.wysiwyg?.focus();return;}
+ const preset=ev.target.closest('[data-list-marker]');
+ if(!preset)return;
+ const gallery=preset.closest('details');
+ const changed=changeParagraphList({listMarker:preset.dataset.listMarker});
+ gallery.open=false;
+ if(changed&&app.wysiwyg)app.wysiwyg.focus();
+ else gallery.querySelector('summary').focus();
+});
+$('#inspector').addEventListener('keydown',ev=>{
+ if(ev.key!=='Enter'||!ev.target.matches('input[data-list-field]'))return;
+ ev.preventDefault();ev.target.blur();app.wysiwyg?.focus();
+});
+$('#inspector').addEventListener('change',ev=>{
+ const input=ev.target,key=input.dataset.listField;
+ if(!key)return;
+ if(input.checkValidity()&&(input.value!==''||key==='listStart')){
+  changeParagraphList({[key]:input.value===''?null:input.type==='number'?input.valueAsNumber:input.value});
+ }
+ syncParagraphListControls(input);
+});
+
 function syncTextDecorationButtons(){
  for(const button of $$('[data-text-decoration]')){
   const state=textDecorationState(button.dataset.textDecoration);
@@ -2981,7 +3081,12 @@ document.addEventListener('mousedown',ev=>{
  app.inlineToolPointer=true;rememberInlineCaret();
  // Buttons can operate on the focused selection. Inputs/selects must retain
  // native focus, keyboard and text-selection behavior on desktop and Android.
- if((!mobileV36Small()&&document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-baseline-shift],[data-text-case],[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
+ if((!mobileV36Small()&&document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-baseline-shift],[data-text-case],[data-list-kind],[data-list-marker],[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
+},true);
+document.addEventListener('keydown',ev=>{
+ if(ev.key!=='Escape')return;
+ const gallery=ev.target.closest('[data-list-gallery][open]');if(!gallery)return;
+ ev.preventDefault();ev.stopImmediatePropagation();gallery.open=false;gallery.querySelector('summary').focus();
 },true);
 document.addEventListener('keydown',ev=>{if(app.editingId&&!ev.isComposing&&!mobileTextSession?.composing&&(ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'&&(ev.target.closest(inlineFormattingRoots)||mobileTextSession?.formatting&&ev.target===document.body)){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText();return;}if(app.inlineSession&&ev.key==='Escape'&&ev.target.id!=='zoomInput'&&!mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation();closeInlineText(true)}},true);
 
@@ -4145,7 +4250,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&regionEffectsRequest()){e.preventDefault();cancelRegionEffects();if(matchMedia('(max-width:760px)').matches)mobileV36Close();refreshInspector();return}
  if(input)return;
  if(e.key==='Escape'&&app.inkDraft){e.preventDefault();inkCancel();return}
- if(e.target.closest?.('[data-baseline-shift],[data-text-case],[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]'))return;
+ if(e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]'))return;
  if(e.code==='Space'){e.preventDefault();closeToolPopovers();app.spaceDown=true;$('#stageScroller').classList.add('hand-mode');toolDockState();return}
  if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.repeat){
   if(e.code==='KeyV'){e.preventDefault();activateMove();return}
@@ -4173,7 +4278,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&app.pixelSelection){e.preventDefault();clearPixelSelection();return}if(e.key==='Escape'&&app.penDraft){e.preventDefault();app.penDraft=null;app.drag=null;updateHistoryButtons();paint();return}if(e.key==='Escape'&&app.penTool){e.preventDefault();setPenMode(false);return}if(e.key==='Escape'){hideContextMenu();if(app.cropMode)exitCrop(false);else if(app.groupIsolation){const el=app.doc.elements.find(x=>x.id===app.groupIsolation);setSelected(el?.groupId?groupMembers(el.groupId).map(x=>x.id):[])}else {closeDialogs();hideInspector();setSelected([])}return}
  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)&&picked().length){e.preventDefault();const st=e.shiftKey?10:1;for(const el of picked().filter(v=>!isLayerLocked(v))){if(e.key==='ArrowLeft')el.x-=st;if(e.key==='ArrowRight')el.x+=st;if(e.key==='ArrowUp')el.y-=st;if(e.key==='ArrowDown')el.y+=st}commit();refreshInspector()}
 });
-window.addEventListener('keyup',e=>{if(e.key==='Alt'){app.altDown=false;document.body.classList.remove('alt-held');paint()}if(e.code==='Space'&&!e.target.closest?.('[data-baseline-shift],[data-text-case],[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]')){e.preventDefault();app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()}});
+window.addEventListener('keyup',e=>{if(e.key==='Alt'){app.altDown=false;document.body.classList.remove('alt-held');paint()}if(e.code==='Space'&&!e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]')){e.preventDefault();app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()}});
 window.addEventListener('blur',()=>{document.body.classList.remove('alt-held');app.altDown=false;app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()});
 window.addEventListener('resize',()=>{if(!matchMedia('(max-width:760px)').matches&&!app.editingId&&!app.drag&&!homeVisible())fitCanvas()});
 window.addEventListener('beforeunload',()=>{if(app.wysiwyg)closeInlineText();if(app.doc)flushSave()});
@@ -5310,6 +5415,15 @@ function mobileTextCaseControl(e){
  const target=mobileTextTarget('case'),mode=effectiveTextCase(e),[icon,name]=textCaseOptions[mode]||['Aa','Mixed'];
  return {icon,label:target.reason||'Регистр · Весь слой · '+name,pressed:mode==='mixed'?'mixed':mode!=='original',disabled:target.kind==='unsupported'};
 }
+function mobileListControl(e,key){
+ const target=mobileTextTarget(key);
+ const name=key==='bullet'?'Маркированный список':'Нумерованный список';
+ if(target.kind==='unsupported')return {pressed:false,disabled:true,label:name+' · '+target.reason};
+ const range=target.kind==='paragraph'?target:null;
+ const kind=paragraphListState(e,range).listKind;
+ return {pressed:kind==='mixed'?'mixed':kind===(key==='bullet'?'bullet':'ordered'),disabled:false,
+  label:name+' · '+(range?'Абзацы':'Весь слой')};
+}
 function mobileV36FormatPanel(){const e=active();
  const btn=(key,content,on,description,disabled=false)=>`<button class="mp-choice mp-format-btn ${on===true?'active':''} ${on==='mixed'?'mixed':''}" aria-pressed="${on}" data-mp-format="${key}" title="${description}" aria-label="${description}" ${disabled?'disabled':''}>${content}</button>`;
  const textCase=mobileTextCaseControl(e);
@@ -5326,8 +5440,10 @@ function mobileV36FormatPanel(){const e=active();
  ${align('right','По правому краю',e.textAlign==='right')}
  ${align('justify','По ширине',e.textAlign==='justify')}
  </div><div class="mp-grid two mp-format-lists">
- ${btn('bullet','<span aria-hidden="true">•≡</span>',e.mobileList==='bullet','Маркированный список · Весь слой')}
- ${btn('number','<span aria-hidden="true">1≡</span>',e.mobileList==='number','Нумерованный список · Весь слой')}
+ ${['bullet','number'].map(key=>{
+  const {pressed,disabled,label}=mobileListControl(e,key);
+  return btn(key,key==='bullet'?'<span aria-hidden="true">•≡</span>':'<span aria-hidden="true">1≡</span>',pressed,label,disabled);
+ }).join('')}
  </div></div>`)
 }
 function mobileV36SpacingPanel(){const e=active();const row=(label,k,min,max,step)=>`<label class="mp-field">${label}<div class="mp-line">${mobileV36Slider(k,mobileV36StyleValue(k),min,max,step)}<input type="number" data-mp-key="${k}" value="${mobileV36StyleValue(k)}" ${mobileV36StyleAttributes(k)} min="${min}" max="${max}" step="${step}" inputmode="decimal"></div></label>`;
@@ -5419,28 +5535,23 @@ function mobileV36Format(key){const e=active();if(!e||rejectMobileTextTarget(key
  }
  if(['left','right','center','justify'].includes(key))e.textAlign=key;
  if(key==='bullet'||key==='number'){
-  const list=e.mobileList===key?'':key,src=e.mobileListRawText??e.text;
-  const saved=e.mobileListRawText!==undefined,runs=saved?e.mobileListRawTextRuns:e.textRuns;
-  const withMarkers=mode=>{
-   let next={...e,text:src};restoreTextRuns(next,runs);
-   if(mode){
-    const lines=src.split('\n');let offset=src.length;
-    for(let i=lines.length-1;i>=0;i--){offset-=lines[i].length;next=replaceText(next,offset,offset,mode==='bullet'?'• ':`${i+1}. `);offset--}
-   }
-   return next;
-  };
-  if(saved){
-   const expected=withMarkers(e.mobileList);
-   if(expected.text!==e.text||JSON.stringify(normalizeRuns(e.text,expected.textRuns))!==JSON.stringify(normalizeRuns(e.text,e.textRuns))){
-    toast('Текст или оформление списка изменились. Для сохранения изменений используйте текущий список.');return;
-   }
+  mobileTextFinishGesture();
+  const target=mobileTextTarget(key);
+  if(target.kind==='unsupported')return;
+  const range=target.kind==='paragraph'?target:null;
+  const kind=key==='bullet'?'bullet':'ordered';
+  const next=applyParagraphListStyle(e,{listKind:paragraphListState(e,range).listKind===kind?'none':kind},range);
+  if(next!==e){
+   recordInlineSession();
+   if(next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
+   restoreInlineElement(e,next);
+   if(app.inlineSession){app.inlineSession.formatted=true;saveSoon();}
+   mobileV36Commit();
   }
-  const next=withMarkers(list);
-  if(!saved&&runs)e.mobileListRawTextRuns=clone(runs);
-  e.text=next.text;restoreTextRuns(e,next.textRuns);
-  e.mobileList=list;e.mobileListRawText=list?src:undefined;if(!list)delete e.mobileListRawTextRuns;
+  mobileV36Render();
+  return;
  }
- mobileV36Commit();if(['bullet','number'].includes(key))invalidateMobileTextOffsets(e);mobileV36Render()
+ mobileV36Commit();mobileV36Render();
 }
 function mobileV36ApplyEffect(type){
  if(regionEffectsRequest()){if(!FX_TYPES[type])return;fxAdd(type);mobileV36Open('effects',true);mobileV36State.effectId=type;mobileV36Render();return}

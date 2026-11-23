@@ -411,7 +411,7 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;marker
  listen('pointerdown',event=>{
   clearPointerGesture();
   if(!event.isTrusted||event.pointerType!=='mouse'||!event.isPrimary||event.button!==0||event.altKey||event.ctrlKey||event.metaKey)return;
-  const marker=clean()&&markerHit(event.clientX,event.clientY);
+  const marker=layer.paragraphRuns?.length&&clean()&&markerHit(event.clientX,event.clientY);
   if(marker){
    const anchor=event.shiftKey&&selectionInside()?readSelection().anchor:marker.row.start;
    event.preventDefault();

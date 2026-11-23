@@ -66,7 +66,14 @@ async function markerPoint(page,marker){
 }
 test('Inspector gallery, Mixed, numeric controls, no-op, history, Done, reload and Escape',async({page})=>{
  const text='Alpha\nBeta\nGamma',id=await seed(page,{text});
+ await page.locator('#layers .layer-name').filter({hasText:'List sample'}).click();
+ const section=page.locator('[data-ins-section="Списки"]');
+ await section.click();
+ await expect(section).toHaveAttribute('aria-expanded','false');
  await edit(page);
+ await section.click();
+ await expect(host(page)).toBeVisible();
+ await host(page).focus();
  await press(page,'Control+Home','ArrowRight','Shift+ArrowRight');
  await kind(page,'bullet').click();
  await expect(kind(page,'bullet')).toHaveAttribute('aria-pressed','true');

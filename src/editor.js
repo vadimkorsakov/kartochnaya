@@ -2251,7 +2251,7 @@ $('#wysiwygRecover').onclick=()=>{if(app.wysiwyg?.recover())$('#wysiwygRecovery'
 // Controls outside changeProperty still hand off before mutating the layer.
 function routeWysiwygPanelAction(ev){
  if(!app.wysiwyg||!ev.target.closest(inlineFormattingRoots+',#fxPopover,#fxMenu,#fxChooser'))return;
- if(ev.target.closest('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]'))return;
+ if(ev.target.closest('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-ins-section="Списки"],[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]'))return;
  // Capture-phase synchronization must not rewrite a newly edited input/select
  // before its own bubble-phase changeProperty handler reads the new value.
  // The selection was already preserved at pointerdown/focusout; the formatting

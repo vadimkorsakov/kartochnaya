@@ -5,7 +5,7 @@ import {createBackup, readBackup} from '../src/backup/archive.mjs';
 import {openDatabase, runStoreRequest} from '../src/storage/indexeddb.mjs';
 import {applyParagraphListStyle as apply, clearParagraphFormatting, effectiveParagraphStyleAt, normalizeParagraphRuns,
   paragraphListState, paragraphRangeForSelection, projectParagraphLists} from '../src/model/paragraph-style.mjs';
-import {formatListCounter, listMarkerGroups} from '../src/model/list-presets.mjs';
+import {formatListCounter, listMarkerGroups, listMarkerPercent} from '../src/model/list-presets.mjs';
 import {replaceText, updateText} from '../src/model/rich-text.mjs';
 import {createRichTextLayoutEngine} from '../src/render/rich-text-layout.mjs';
 
@@ -53,6 +53,72 @@ test('kind, marker and counter are independent preferences with Mixed and semant
  assert.deepEqual(markers(apply(plain,{listKind:'ordered'},range(0))),['1)','','']);
  assert.equal(ordered.text,source.text);assert.equal(ordered.textRuns,source.textRuns);
  assert.deepEqual(clearParagraphFormatting(ordered),source);
+});
+
+test('marker preferences are sparse, individually mixed, and retained through type changes and text edits',()=>{
+ const source={text:'ab\ncd',textColor:'#123456',fillOpacity:72};
+ const legacy=apply(source,{listKind:'bullet',listMarker:'🔴'});
+ const options={useAutoMarkerScale:true};
+ assert.equal(apply(legacy,{listKind:'bullet',listMarker:'🔴'},null,options),legacy);
+ assert.equal(paragraphListState(legacy).listMarkerScale,null);
+ assert.equal(listMarkerPercent(effectiveParagraphStyleAt(legacy,0)),100);
+ const auto=apply(legacy,{listMarker:'🔶'},range(0),options);
+ assert.equal(paragraphListState(auto).listMarkerScale,'mixed');
+ assert.equal(listMarkerPercent(effectiveParagraphStyleAt(auto,0)),60);
+ const newBullet=apply(source,{listKind:'bullet'},null,options);
+ assert.equal(paragraphListState(newBullet).listMarkerScale,'auto');
+ assert.equal(listMarkerPercent(effectiveParagraphStyleAt(newBullet,0)),100);
+ const manual=apply(auto,{listMarkerScale:68,listMarkerColor:'#AA0022',listMarkerOpacity:0},range(0));
+ const state=paragraphListState(manual);
+ for(const key of ['listMarkerScale','listMarkerColor','listMarkerOpacity'])assert.equal(state[key],'mixed');
+ const edited=replaceText(manual,1,1,'\nN');
+ const changed=apply(edited,{listKind:'ordered',listCounterStyle:'decimal-paren'},range(2),options);
+ const style=effectiveParagraphStyleAt(changed,2);
+ assert.equal(style.listMarkerScale,68);
+ assert.equal(style.listMarkerColor,'#aa0022');
+ assert.equal(style.listMarkerOpacity,0);
+ assert.equal(changed.textColor,source.textColor);
+ assert.equal(changed.fillOpacity,source.fillOpacity);
+ assert.equal(apply(changed,{listMarkerColor:'#AA0022',listMarkerOpacity:0},range(2)),changed);
+ const reset=apply(changed,{listMarkerColor:'inherit',listMarkerOpacity:'inherit'},range(2));
+ assert.equal(effectiveParagraphStyleAt(reset,2).listMarkerOpacity,'inherit');
+ assert.deepEqual(clearParagraphFormatting(manual),source);
+ for(const value of [undefined,Infinity,NaN,-1,29,201,'60','AUTO']){
+  const invalid=apply(source,{listMarkerScale:value,listMarkerOpacity:101,listMarkerColor:'#123'});
+  assert.equal(invalid,source);
+ }
+});
+
+test('marker scale changes layout while independent paint keeps marker and caret geometry',()=>{
+ const base={text:'Long list item wraps on a narrow frame\nBeta',fontSize:30,w:155,h:350,fillOpacity:78,
+  textColor:'#193754',strokeOpacity:50,strokeWidth:1};
+ const legacy=apply(base,{listKind:'bullet',listMarker:'🔴'});
+ const auto=apply(legacy,{listMarkerScale:'auto'});
+ const manual=apply(legacy,{listMarkerScale:170});
+ const oldMarker=engine.layout(legacy).rows[0].marker,autoMarker=engine.layout(auto).rows[0].marker;
+ assert.equal(oldMarker.style.fontSize,30);
+ assert.equal(autoMarker.style.fontSize,18);
+ assert.ok(autoMarker.width<oldMarker.width);
+ assert.equal(engine.layout(manual).rows[0].marker.style.fontSize,51);
+ const emoji=apply(auto,{listMarkerColor:'#cc0000',listMarkerOpacity:0});
+ const paintedEmoji=engine.layout(emoji).rows[0].marker;
+ assert.equal(paintedEmoji.style.textColor,base.textColor);
+ assert.equal(paintedEmoji.style.fillOpacity,0);
+ assert.equal(paintedEmoji.style.strokeOpacity,0);
+ const number=apply(base,{listKind:'ordered',listStart:9,listMarkerScale:135});
+ const red=apply(number,{listMarkerColor:'#cc0000',listMarkerOpacity:0},range(0));
+ const before=engine.layout(number),after=engine.layout(red);
+ const rows=layout=>layout.rows.map(({x,y,start,end,marker,fragments})=>({x,y,start,end,marker:marker&&{
+  text:marker.text,x:marker.x,y:marker.y,width:marker.width,columnX:marker.columnX,
+ },fragments}));
+ assert.deepEqual(rows(after),rows(before));
+ assert.equal(after.inkOverflow,before.inkOverflow);
+ assert.equal(after.rows[0].marker.style.textColor,'#cc0000');
+ assert.equal(after.rows[0].fragments[0].style.textColor,base.textColor);
+ const ten=after.rows.find(row=>row.marker?.text==='10.');
+ assert.ok(ten.marker.width>after.rows[0].marker.width);
+ assert.equal(ten.x,after.rows[0].x);
+ assert.equal(engine.layout({...red,fillType:'gradient'}).rows[0].marker.style.fillOpacity,78);
 });
 
 test('counter formats, compatible runs, manual restart, and renumber after source replacement',()=>{
@@ -112,7 +178,8 @@ test('JSON, ZIP and IndexedDB v3 keep formatted records, canonical text and lega
  const before={id:'layer',type:'text',text:'• Keep 😀\nCurrent!',mobileList:'bullet',
   mobileListRawText:'Stale',mobileListRawTextRuns:[{start:0,end:1,style:{bold:true}}],
   textRuns:[{start:7,end:9,style:{baselineShift:'sub',textCase:'upper',underline:true}}]};
- const after=apply(before,{listKind:'bullet',listMarker:'🟠'},range(10));
+ const after=apply(before,{listKind:'bullet',listMarker:'🟠',listMarkerScale:'auto',
+  listMarkerColor:'#2676ba',listMarkerOpacity:0},range(10));
  assert.deepEqual({...after,paragraphRuns:undefined},{...before,paragraphRuns:undefined});
  assert.deepEqual(markers(before),['','']);
  const doc={id:'doc',projectId:'project',width:300,height:200,elements:[after]};

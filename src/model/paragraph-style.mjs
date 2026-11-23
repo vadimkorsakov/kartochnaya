@@ -2,8 +2,10 @@ import { formatListCounter, listCounterStyles, listMarkerGroups } from './list-p
 
 export const paragraphListDefaults = {
   listKind: 'none', listMarker: '•', listCounterStyle: 'decimal-dot', listStart: null, listIndent: 0, listGap: 8,
+  listMarkerScale: null, listMarkerColor: 'inherit', listMarkerOpacity: 'inherit',
 };
-export const paragraphListLimits = {listStart: 999999, listIndent: 1000, listGap: 1000};
+export const paragraphListLimits = {listStart: 999999, listIndent: 1000, listGap: 1000, listMarkerScale: 200, listMarkerOpacity: 100};
+export const paragraphListMinimums = {listStart: 1, listMarkerScale: 30};
 
 const markers = new Set(listMarkerGroups.flatMap(group => group.markers.map(([marker]) => marker)));
 const counters = new Set(listCounterStyles.map(([style]) => style));
@@ -17,8 +19,10 @@ function cleanStyle(style = {}) {
     if (value == null || value === paragraphListDefaults[key]) continue;
     if (key === 'listKind' && kinds.has(value) || key === 'listMarker' && markers.has(value) ||
         key === 'listCounterStyle' && counters.has(value)) result[key] = value;
+    if (key === 'listMarkerScale' && value === 'auto') result[key] = value;
+    if (key === 'listMarkerColor' && typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) result[key] = value.toLowerCase();
     if (Object.hasOwn(paragraphListLimits, key) && Number.isFinite(value) &&
-        value >= (key === 'listStart' ? 1 : 0) && value <= paragraphListLimits[key] &&
+        value >= (paragraphListMinimums[key] ?? 0) && value <= paragraphListLimits[key] &&
         (key !== 'listStart' || Number.isInteger(value))) result[key] = value;
   }
   if (result.listKind !== 'ordered') delete result.listStart;
@@ -79,12 +83,21 @@ export function withParagraphRuns(element, runs) {
   return next;
 }
 
-export function applyParagraphListStyle(element, patch, selection = null) {
+export function applyParagraphListStyle(element, patch, selection = null, {useAutoMarkerScale = false} = {}) {
   const current = normalizeParagraphRuns(element.text, element.paragraphRuns);
   const runs = new Map(current.map(run => [run.start, run.style]));
   let previousCounter;
   for (const {start} of paragraphRangeForSelection(element.text, selection)) {
-    const style = {...runs.get(start), ...patch};
+    const before = runs.get(start) ?? {};
+    const style = {...before, ...patch};
+    if (useAutoMarkerScale && style.listMarkerScale == null &&
+        (style.listKind === 'bullet' || style.listKind === 'ordered')) {
+      const preset = style.listKind === 'bullet' ? 'listMarker' : 'listCounterStyle';
+      if (style.listKind !== before.listKind ||
+          (style[preset] ?? paragraphListDefaults[preset]) !== (before[preset] ?? paragraphListDefaults[preset])) {
+        style.listMarkerScale = 'auto';
+      }
+    }
     const counter = style.listKind === 'ordered' ? style.listCounterStyle ?? paragraphListDefaults.listCounterStyle : undefined;
     // A single Start edit sets the head of each selected compatible sequence.
     if (Object.hasOwn(patch, 'listStart') && counter === previousCounter) delete style.listStart;
@@ -95,9 +108,8 @@ export function applyParagraphListStyle(element, patch, selection = null) {
   return JSON.stringify(current) === JSON.stringify(next) ? element : withParagraphRuns(element, next);
 }
 
-export const clearParagraphFormatting = (element, selection) => applyParagraphListStyle(element, {
-  listKind: null, listMarker: null, listCounterStyle: null, listStart: null, listIndent: null, listGap: null,
-}, selection);
+export const clearParagraphFormatting = (element, selection) =>
+  applyParagraphListStyle(element, paragraphListDefaults, selection);
 
 /** Called only for a confirmed replacement at source offsets. Newly split
  * paragraphs inherit preferences, but a restart stays with the original item. */

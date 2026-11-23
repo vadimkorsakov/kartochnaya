@@ -108,7 +108,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
  }
  function selectionInside(){const s=getSelection();return host.contains(s.anchorNode)&&host.contains(s.focusNode);}
  function stop(reason){clearPointerGesture();pasteText=null;fallback=reason;safe.phase='recovery-required';syncOverlay();if(!inactive)onRecovery(reason);}
- function project(value,selection,affinity=null){pointerEpoch++;clearPointerGesture();selectingWithPointer=false;
+ function project(value,selection,affinity=null,{draft=false}={}){pointerEpoch++;clearPointerGesture();selectingWithPointer=false;
   verticalX=null;
   // Probe measurements also attach temporary DOM nodes. Capture the owner
   // before any measurement, not just before replaceChildren: the browser can
@@ -169,13 +169,15 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    }
   }
   if(display&&sourceEnd!==value.text.length)throw Error('Incomplete case projection coverage');
-  const next=structuredClone(value);
   decorationProjection=null;
   // The browser can blur contenteditable while replaceChildren invalidates
   // its current Range, particularly when a trailing LF gains a caret sentinel.
   // Capture ownership BEFORE the DOM change and restore it only for a session
   // that already owned focus. Inspector/color fields must keep their focus.
-  for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
+  if(!draft){
+   const next=structuredClone(value);
+   for(const key of Object.keys(element))delete element[key];Object.assign(element,next);layer=element;
+  }
   Object.assign(host.style,{font:richTextFont(base),fontKerning:'normal',lineHeight:heights[0],letterSpacing:base.letterSpacing+'px'});
   projectedRows=projection.rows;nativeBoundaries=boundaries;
   host.replaceChildren(...nodes);
@@ -229,14 +231,19 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   let selection;try{selection=rememberSelection();}catch{stop('Не удалось сохранить выделение');return false;}
   onFallback(selection,reason);return true;
  }
- function cancelUnderlinePreview(){
+ function cancelStyleDraft(){
   if(!preview?.draft)return;
+  const previous=preview;
   preview=null;decorationProjection=null;
+  if(previous.paragraphGeometry&&clean()){
+   project(layer,rememberSelection(),savedAffinity);
+   return;
+  }
   if(clean())syncDecorationProjection();
  }
  function finishPreview(){
   if(!preview)return;
-  if(preview.draft){cancelUnderlinePreview();return;}
+  if(preview.draft){cancelStyleDraft();return;}
   const previousIndex=history.index;
   recordInlineHistory(history,layer,caret(preview.selection));
   // Only a completed, non-no-op style preview becomes a separate action.
@@ -249,7 +256,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   try{current=rememberSelection();}catch{return false;}
   if(current.anchor!==selection.anchor||current.focus!==selection.focus)return false;
   if(preview&&(preview.key!==key||!preview.draft))finishPreview();
-  if(JSON.stringify(next)===JSON.stringify(layer)){cancelUnderlinePreview();return true;}
+  if(JSON.stringify(next)===JSON.stringify(layer)){cancelStyleDraft();return true;}
   const projection=JSON.stringify(next)===JSON.stringify(preview?.draft)?decorationProjection?.layout:layout(next);
   if(!projection?.rows) return false;
   if(!final){
@@ -269,6 +276,38 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   decorationProjection={value:layer,layout:projection};
   syncDecorationProjection();onChange();
   return true;
+ }
+ function applyParagraphProjection(next,{key,selection,final,geometry}){
+  if(!clean()||inactive||safe.phase!=='confirmed')return false;
+  let current;
+  try{current=rememberSelection();}catch{return false;}
+  if(current.anchor!==selection.anchor||current.focus!==selection.focus)return false;
+  if(preview&&(preview.key!==key||!preview.draft))finishPreview();
+  if(!compatible(next))return false;
+  const pending=preview;
+  if(!final){
+   preview={draft:next,key,selection,paragraph:true,paragraphGeometry:geometry};
+   try{
+    if(geometry)project(next,selection,savedAffinity,{draft:true});
+    else syncDecorationProjection();
+   }catch{preview=pending;return false;}
+   return true;
+  }
+  const previous=structuredClone(layer),range=caret(selection);
+  preview=null;
+  if(geometry){
+   try{project(next,selection,savedAffinity);}catch{preview=pending;return false;}
+  }else{
+   // The editable HTML contains text only. Paint changes update its overlay.
+   if(next.paragraphRuns)layer.paragraphRuns=next.paragraphRuns;
+   else delete layer.paragraphRuns;
+   decorationProjection=null;
+   syncDecorationProjection();
+  }
+  recordInlineHistory(history,previous,range);
+  recordInlineHistory(history,layer,range);
+  history.states[history.index].action='style';
+  onChange();return true;
  }
  function applyStyle(patch,{key,final=false,range=true}={}){
   if(!clean()||safe.phase!=='confirmed'||inactive){stop('Нужно восстановить подтверждённый ввод');return true;}
@@ -316,22 +355,6 @@ function changeGraphemeStyle(apply,value){
  recordInlineHistory(history,next,range);
  history.states[history.index].action='style';
  onChange();return true;
-}
-function changeParagraphStyle(patch) {
- if(!clean()||inactive||safe.phase!=='confirmed')return false;
- let selection;try{selection=rememberSelection();}catch{return false;}
- finishPreview();
- const next=applyParagraphListStyle(layer,patch,caret(selection));
- if(next===layer)return false;
- if(next.autoFontSize)fit(next,{preserveSizeBase:true});
- if(!compatible(next))return false;
- const previous=structuredClone(layer),range=caret(selection);
- try{project(next,selection,savedAffinity);}catch{return false;}
- recordInlineHistory(history,previous,range);
- recordInlineHistory(history,next,range);
- history.states[history.index].action='style';
- onChange();
- return true;
 }
 
 // Correct native clicks at expanded spaces and shared offsets between glyphs
@@ -747,7 +770,8 @@ listen('input',()=>{
  host.contentEditable='plaintext-only';host.classList.remove('hidden');
  const initial={anchor:layer.text.length,focus:layer.text.length};project(structuredClone(layer),initial);recordInlineHistory(history,layer,caret(initial));
  return {get composing(){return composing;},travel,readSelection,rememberSelection,setSelection(...args){clearPointerGesture();return setSelection(...args);},requestFallback,clean,applyRangeStyle,applyLayerStyle,
-  changeBaselineShift:value=>changeGraphemeStyle(applyBaselineShift,value),changeTextCase:value=>changeGraphemeStyle(applyTextCase,value),changeParagraphStyle,applyUnderlineStyle,cancelUnderlinePreview,finishPreview,syncOverlay,
+  changeBaselineShift:value=>changeGraphemeStyle(applyBaselineShift,value),changeTextCase:value=>changeGraphemeStyle(applyTextCase,value),applyUnderlineStyle,cancelUnderlinePreview:cancelStyleDraft,finishPreview,syncOverlay,
+  applyParagraphProjection,cancelParagraphPreview(){if(preview?.paragraph)cancelStyleDraft();},
   owns:value=>!inactive&&layer===value,
   preserve(){pointerEpoch++;clearPointerGesture();inactive=true;releaseOverlay();if(!composing)host.contentEditable='false';},
   focus(){host.focus({preventScroll:true});},

@@ -1947,14 +1947,43 @@ html,body{background:#1e1f27!important;}
 .underline-color{display:inline-flex;align-items:center;gap:5px}
 .underline-color span{width:15px;height:15px;border:1px solid #999;border-radius:3px;background:repeating-conic-gradient(#999 0 25%,#555 0 50%) 0 / 8px 8px}
 .underline-color b{font-weight:400}
-.fill-popover.underline-color-popover{z-index:36}
+.fill-popover.scoped-color-popover{z-index:36}
 
+.paragraph-list-controls{display:flex;align-items:center;gap:5px}
+.paragraph-list-controls .list-kind-button{flex:none;display:grid;place-items:center;width:36px;height:30px;padding:4px;border-radius:8px}
+.list-kind-button svg{display:block;width:22px;height:19px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.list-kind-button circle{fill:currentColor;stroke:none}
+.paragraph-list-controls [data-list-mixed]{margin-left:4px;font-size:11px}
 .paragraph-list-controls [data-list-mixed]:empty{display:none}
-.paragraph-list-controls [data-list-gallery]{margin:8px 0}
-.paragraph-list-controls summary{cursor:pointer;padding:4px 0}
-.paragraph-list-controls fieldset{min-width:0;margin:6px 0;padding:4px;border:0}
-.paragraph-list-controls legend{padding:0 2px}
-.paragraph-list-controls .list-marker-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
-.paragraph-list-controls .list-marker-grid button{min-width:0;padding:4px;font-size:16px}
-.paragraph-list-controls [aria-pressed="true"]{outline:1px solid currentColor;outline-offset:-2px}
-.paragraph-list-controls :focus-visible{outline:2px solid currentColor;outline-offset:1px}
+.paragraph-list-controls .linebtn[aria-pressed=true]{border-color:var(--accent);background:var(--tint);color:var(--ink)}
+.paragraph-list-controls .linebtn[aria-pressed=mixed]{border-style:dashed}
+.paragraph-list-controls .linebtn:disabled,.list-style-panel .linebtn:disabled{opacity:.48;cursor:default}
+.paragraph-list-controls :focus-visible,.list-style-panel :focus-visible{outline:2px solid #b4a8e4;outline-offset:-2px}
+
+.list-style-panel{width:308px;max-width:calc(100vw - 24px)}
+.list-style-panel .list-style-body{display:block;overscroll-behavior:contain;scrollbar-width:thin}
+.list-style-panel [hidden]{display:none!important}
+.list-style-panel .linebtn{min-height:30px;padding:4px 7px;color:inherit;background:#383740;border:1px solid #514d5b;border-radius:7px;cursor:pointer;font-size:12px}
+.list-style-panel .linebtn:hover:not(:disabled){background:#514a5b}
+.list-style-panel .linebtn[aria-pressed=true]{background:#4a3b62;border-color:#b4a8e4}
+.list-style-panel .linebtn[aria-pressed=mixed]{border-style:dashed}
+.list-style-modes,.list-counter-grid,.list-style-options.list-style-spacing{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.list-style-modes{padding:0 12px 10px;flex:none}
+.list-style-panel fieldset{min-width:0;padding:0;border:0;margin:0 0 10px}
+.list-style-panel legend{font-size:12px;color:#d3cfde;margin-bottom:5px;padding:0}
+.list-marker-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+.list-marker-grid .linebtn{aspect-ratio:1;min-width:0;padding:0;font-size:17px}
+.list-style-options{display:grid;gap:8px;font-size:12px}
+.list-style-divider{padding-top:10px;margin-top:10px;border-top:1px solid #514b56}
+.list-style-row{display:flex;align-items:center;justify-content:space-between;gap:5px}
+.list-style-row>:first-child{flex:1}
+.list-style-row label[for]{font-size:12px;color:inherit}
+.list-style-panel input{width:100%;min-width:0;margin:0;accent-color:#b4a8e4}
+.list-style-panel input:not([type=range]){background:#24232a;color:inherit;border:1px solid #51505b;border-radius:5px;padding:5px}
+.list-style-panel .list-style-unit{display:flex;align-items:center;gap:3px}
+.list-style-unit input[type=number]{width:54px}
+.list-style-unit input[type=text]{width:77px}
+.list-color-swatch{display:flex;align-items:center;justify-content:center;gap:6px}
+.list-color-swatch span{width:15px;height:15px;flex:none;border:1px solid #928b9d;border-radius:3px;background:repeating-conic-gradient(#999 0 25%,#555 0 50%) 0 / 8px 8px}
+.list-color-swatch span[style*="background-color"]{background-image:none}
+.list-style-panel [data-list-color-hint]{margin:0;color:#d3cfde;font-size:11px;line-height:1.4}

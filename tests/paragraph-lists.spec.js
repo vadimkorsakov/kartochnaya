@@ -274,20 +274,20 @@ test('list settings stay open across real caret clicks and retarget only existin
  expect(anchor).toBeGreaterThanOrEqual(beta);
  await preset(page,'◆').click();
  expect((await model(page)).paragraphRuns).toEqual([
-  run(alpha,{listKind:'bullet'}),run(beta,{listKind:'bullet',listMarker:'◆'}),
+  run(alpha,{listKind:'bullet'}),autoRun(beta,{listKind:'bullet',listMarker:'◆'}),
  ]);
  await clickRow(2);
  await expect(panel(page)).toBeVisible();
  await expect(panel(page).locator('[data-list-target-note]')).toBeVisible();
  await expect(preset(page,'◇')).toBeDisabled();
  expect((await model(page)).paragraphRuns).toEqual([
-  run(alpha,{listKind:'bullet'}),run(beta,{listKind:'bullet',listMarker:'◆'}),
+  run(alpha,{listKind:'bullet'}),autoRun(beta,{listKind:'bullet',listMarker:'◆'}),
  ]);
  await clickRow(1);
  await expect(panel(page).locator('[data-list-target-note]')).toBeHidden();
  await preset(page,'◇').click();
  expect((await model(page)).paragraphRuns).toEqual([
-  run(alpha,{listKind:'bullet',listMarker:'◇'}),run(beta,{listKind:'bullet',listMarker:'◆'}),
+  autoRun(alpha,{listKind:'bullet',listMarker:'◇'}),autoRun(beta,{listKind:'bullet',listMarker:'◆'}),
  ]);
  await press(page,'Escape');
  await expect(panel(page)).toBeHidden();

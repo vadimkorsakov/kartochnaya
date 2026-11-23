@@ -2752,21 +2752,30 @@ function underlineNumeric(key,field,final){
  const {min,max}=underlineLimits[key];
  changeUnderline(key,clamp(field.valueAsNumber,min,max),final);
 }
-function previewSliderEvents(root,selector,owner,cancelPreview){
- let pointer=null,field=null,blocked=null;
+function previewSliderEvents(root,selector,owner,cancelPreview,commitDeferredChange){
+ let pointer=null,field=null,blocked=null,deferredChange=false;
  const cancel=()=>{if(pointer!==null){blocked=field;pointer=null;}};
  root.addEventListener('pointerdown',ev=>{
   if(!ev.target.matches(selector)||ev.button!==0)return;
-  blocked=null;pointer=ev.pointerId;field=ev.target;
+  blocked=null;deferredChange=false;pointer=ev.pointerId;field=ev.target;
   const panel=owner();if(panel)panel.cancelSlider=cancel;
  });
  root.addEventListener('keydown',ev=>{if(ev.target.matches(selector))blocked=null;});
- document.addEventListener('pointerup',ev=>{if(ev.pointerId===pointer)pointer=null;},true);
+ document.addEventListener('pointerup',ev=>{
+  if(ev.pointerId!==pointer)return;
+  pointer=null;
+  if(deferredChange)commitDeferredChange(field);
+ },true);
  for(const type of ['pointercancel','lostpointercapture'])root.addEventListener(type,ev=>{
   if(ev.pointerId!==pointer)return;
   cancel();cancelPreview();
  });
- return field=>blocked===field;
+ return (input,final=false)=>{
+  if(blocked===input)return true;
+  // A native range can emit change on blur before its pointer is released.
+  if(commitDeferredChange&&final&&pointer!==null&&input===field){deferredChange=true;return true;}
+  return false;
+ };
 }
 const underlineSliderCanceled=previewSliderEvents(underlinePanelNode,'[data-underline-range]',()=>underlinePanel,cancelUnderlineGesture);
 underlinePanelNode.addEventListener('input',ev=>{
@@ -2898,7 +2907,8 @@ const paragraphListKinds = [
  ['ordered','Нумерация','<path d="m3 3 2-1v4M3 9c0-2 4-2 3 0l-3 3h3m-3 2h3l-2 2c3-1 3 3-1 2m7-14h11m-11 6h11m-11 6h11"/>'],
 ];
 const listPanelNode=$('#listStylePanel'),listPanelBody=listPanelNode.querySelector('.list-style-body');
-const listPanelTrigger=kind=>$('#inspector [data-list-kind="'+kind+'"]');
+const listSettingsLabel='Настроить существующий список';
+const listPanelTrigger=owner=>$(owner.existingModes?'#inspector [data-list-settings]':'#inspector [data-list-kind="'+owner.mode+'"]');
 const listPanelControls={};
 let listPanel=null;
 
@@ -2918,8 +2928,12 @@ function paragraphListControls(e){
  return `<div class="paragraph-list-controls" role="group" aria-label="Тип списка">
   ${paragraphListKinds.map(([kind,label,icon])=>`<button type="button" class="linebtn list-kind-button"
    data-list-kind="${kind}" aria-label="${label}" title="${label}" aria-pressed="${state?.listKind==='mixed'?'mixed':state?.listKind===kind}"
-   ${kind==='none'?'':`aria-haspopup="dialog" aria-controls="listStylePanel" aria-expanded="${listPanel?.mode===kind}"`}
+   ${kind==='none'?'':`aria-haspopup="dialog" aria-controls="listStylePanel" aria-expanded="${!listPanel?.existingModes&&listPanel?.mode===kind}"`}
    ${state?'':'disabled'}><svg viewBox="0 0 24 20" aria-hidden="true" focusable="false">${icon}</svg></button>`).join('')}
+  <button type="button" class="linebtn list-kind-button" data-list-settings aria-label="${listSettingsLabel}" title="${listSettingsLabel}"
+   aria-haspopup="dialog" aria-controls="listStylePanel" aria-expanded="${!!listPanel?.existingModes}"
+   ${state&&state.listKind!=='none'?'':'disabled'}><svg viewBox="0 0 24 20" aria-hidden="true" focusable="false">
+   <path d="M4 5h4m4 0h8M4 10h9m4 0h3M4 15h4m4 0h8"/><circle cx="10" cy="5" r="2"/><circle cx="15" cy="10" r="2"/><circle cx="10" cy="15" r="2"/></svg></button>
   <span data-list-mixed role="status">${state?.listKind==='mixed'?'Mixed':''}</span>
  </div>`;
 }
@@ -2931,8 +2945,11 @@ function syncParagraphListControls(){
   const kind=button.dataset.listKind;
   button.disabled=!state;
   button.setAttribute('aria-pressed',state?.listKind==='mixed'?'mixed':String(state?.listKind===kind));
-  if(kind!=='none')button.setAttribute('aria-expanded',String(listPanel?.mode===kind));
+  if(kind!=='none')button.setAttribute('aria-expanded',String(!listPanel?.existingModes&&listPanel?.mode===kind));
  }
+ const settings=root.querySelector('[data-list-settings]');
+ settings.disabled=!state||state.listKind==='none';
+ settings.setAttribute('aria-expanded',String(!!listPanel?.existingModes));
  const mixed=root.querySelector('[data-list-mixed]'),label=state?.listKind==='mixed'?'Mixed':'';
  if(mixed.textContent!==label)mixed.textContent=label;
 }
@@ -2967,14 +2984,20 @@ for(const field of listPanelNode.querySelectorAll('[data-list-field]')){
 }
 const listScaleSlider=listPanelNode.querySelector('[data-list-scale-range]');
 Object.assign(listScaleSlider,{min:paragraphListMinimums.listMarkerScale,max:paragraphListLimits.listMarkerScale,step:1});
+const listSpacingSliders=listPanelNode.querySelectorAll('[data-list-spacing-range]');
+for(const slider of listSpacingSliders){
+ const key=slider.dataset.listSpacingRange;
+ Object.assign(slider,{min:paragraphListMinimums[key]??0,max:Math.min(120,paragraphListLimits[key]),step:1});
+}
 const listColorButton=listPanelNode.querySelector('[data-list-color]');
 function listPanelState(owner=listPanel){
  if(!owner)return null;
- const element=owner.draft||owner.element,state=paragraphListState(element,owner.range),base=resolveRichTextStyle(element);
+ const onlyKind=owner.existingModes?owner.mode:undefined;
+ const element=owner.draft||owner.element,state=paragraphListState(element,owner.range,{onlyKind}),base=resolveRichTextStyle(element);
  const solid=(element.fillType||'solid')==='solid';
  const starts=new Set(paragraphRangeForSelection(element.text,owner.range).map(p=>p.start));
  const emoji=owner.mode==='bullet'&&normalizeParagraphRuns(element.text,element.paragraphRuns).some(({start,style})=>
-  starts.has(start)&&isEmojiListMarker(style.listMarker));
+  starts.has(start)&&(!onlyKind||style.listKind===onlyKind)&&isEmojiListMarker(style.listMarker));
  return {...state,solid,emoji,
   color:state.listMarkerColor==='inherit'?base.textColor:state.listMarkerColor,
   opacity:state.listMarkerOpacity==='inherit'?base.fillOpacity:state.listMarkerOpacity};
@@ -2988,7 +3011,10 @@ function syncListStylePanel(force=null){
  listPanelNode.querySelector('[data-list-ordered]').hidden=bullet;
  for(const button of listPanelNode.querySelectorAll('[data-list-mode],[data-list-marker],[data-list-counter],[data-list-reset]')){
   const {listMode,listMarker,listCounter,listReset}=button.dataset;
-  if(listMode)pressed(button,listMode===listPanel.mode);
+  if(listMode){
+   pressed(button,listMode===listPanel.mode);
+   button.disabled=!!listPanel.existingModes&&!listPanel.existingModes.includes(listMode);
+  }
   if(listMarker)pressed(button,match(state.listMarker,listMarker));
   if(listCounter)pressed(button,match(state.listCounterStyle,listCounter));
   if(listReset){
@@ -3007,6 +3033,11 @@ function syncListStylePanel(force=null){
  if(document.activeElement!==listScaleSlider||force===listScaleSlider)listScaleSlider.value=state.listMarkerScale==='mixed'?100:listMarkerPercent(state);
  listScaleSlider.setAttribute('aria-valuetext',state.listMarkerScale==='mixed'?'Mixed':state.listMarkerScale==='auto'?
   `Auto · ${state.listMarker==='mixed'&&bullet?'Mixed':listMarkerPercent(state)+'%'}`:`${listMarkerPercent(state)}%`);
+ for(const slider of listSpacingSliders){
+  const key=slider.dataset.listSpacingRange,value=state[key];
+  if(document.activeElement!==slider||force===slider)slider.value=value==='mixed'?paragraphListDefaults[key]:value;
+  slider.setAttribute('aria-valuetext',value==='mixed'?'Mixed':`${value} px`);
+ }
  listPanelNode.querySelector('[data-list-size-label]').textContent=bullet?'Размер маркера':'Размер номера';
  listPanelNode.querySelector('[data-list-color-label]').textContent=bullet?'Цвет маркера':'Цвет номера';
  listColorButton.disabled=!state.solid||state.emoji;
@@ -3018,7 +3049,7 @@ function syncListStylePanel(force=null){
 }
 function positionListStylePanel(){
  if(!listPanel)return;
- const trigger=listPanelTrigger(listPanel.mode);
+ const trigger=listPanelTrigger(listPanel);
  if(!trigger)return;
  const bounds=$('#rightPanel').getBoundingClientRect(),anchor=trigger.getBoundingClientRect();
  const stage=$('#stageScroller').getBoundingClientRect();
@@ -3045,7 +3076,7 @@ function closeListStylePanel(restoreFocus=false){
  cancelListPreview();
  listPanel=null;listPanelNode.classList.add('hidden');
  syncParagraphListControls();
- if(restoreFocus)listPanelTrigger(owner.mode)?.focus({preventScroll:true});
+ if(restoreFocus)listPanelTrigger(owner)?.focus({preventScroll:true});
 }
 function changeParagraphList(owner,patch,final=true){
  if(!listOwnerValid(owner)){closeListStylePanel();return false;}
@@ -3055,10 +3086,14 @@ function changeParagraphList(owner,patch,final=true){
   const state=listPanelState(owner);
   if(!state.solid||key==='listMarkerColor'&&state.emoji)return false;
  }
+ const onlyKind=owner.existingModes?owner.mode:undefined;
+ const next=applyParagraphListStyle(element,patch,owner.range,{useAutoMarkerScale:true,onlyKind});
+ if(next===element){
+  if(owner.key===key)cancelListPreview(false);
+  return true;
+ }
  if(owner.draft&&owner.key!==key)cancelListPreview();
- const next=applyParagraphListStyle(element,patch,owner.range,{useAutoMarkerScale:true});
- if(next!==element&&geometry&&next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
- if(next===element){cancelListPreview(false);return true;}
+ if(geometry&&next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
  owner.draft=final?null:next;owner.key=final?null:key;
  owner.applying=true;
  try{
@@ -3080,12 +3115,20 @@ function openListMode(mode,fromInspector){
  if(owner&&!listOwnerValid(owner)){closeListStylePanel();return;}
  if(!owner)owner=captureListOwner();
  if(!owner)return;
+ let existingModes=owner.existingModes;
+ if(mode==='settings'){
+  existingModes=['bullet','ordered'].filter(onlyKind=>paragraphListState(owner.element,owner.range,{onlyKind}));
+  if(!existingModes.length)return;
+  mode=existingModes.includes(owner.mode)?owner.mode:existingModes[0];
+ }else if(fromInspector)existingModes=null;
+ else if(existingModes&&!existingModes.includes(mode))return;
  closeUnderlinePanel();
  if(owner===listPanel){
   if(currentPickerKey()==='_listMarker')closeFillPopover();
   cancelListPreview();
  }
- if(!changeParagraphList(owner,{listKind:mode}))return;
+ owner.existingModes=existingModes;
+ if(!existingModes&&!changeParagraphList(owner,{listKind:mode}))return;
  if(mode==='none'){closeListStylePanel();return;}
  const switching=owner.mode!==mode;
  if(!listPanel){
@@ -3103,8 +3146,8 @@ function openListMode(mode,fromInspector){
  if(fromInspector)listPanelNode.querySelector('[data-list-mode="'+mode+'"]').focus({preventScroll:true});
 }
 $('#inspector').addEventListener('click',ev=>{
- const button=ev.target.closest('[data-list-kind]');
- if(button&&!button.disabled)openListMode(button.dataset.listKind,true);
+ const button=ev.target.closest('[data-list-kind],[data-list-settings]');
+ if(button&&!button.disabled)openListMode(button.dataset.listKind??'settings',true);
 });
 listPanelNode.addEventListener('click',ev=>{
  const button=ev.target.closest('button');if(!button||!listPanel)return;
@@ -3123,16 +3166,26 @@ listPanelNode.addEventListener('click',ev=>{
  }
 });
 function listFieldChange(input,final){
- const key=input.dataset.listField||(input===listScaleSlider?'listMarkerScale':null);
- if(!key||!listPanel||input.disabled||listSliderCanceled(input))return;
+ const key=input.dataset.listField??input.dataset.listSpacingRange??(input===listScaleSlider?'listMarkerScale':null);
+ if(!key||!listPanel||input.disabled)return;
+ // Some native range controls continue moving the thumb after capture is lost.
+ if(listSliderBlocked(input)){syncListStylePanel(input);return;}
+ if(final&&listSliderBlocked(input,true))return;
  let value=input.type==='number'||input.type==='range'?input.valueAsNumber:null;
  if(key==='listMarkerColor')value=/^#[0-9a-f]{6}$/i.test(input.value.trim())?input.value.trim():null;
  if(input.checkValidity()&&(Number.isFinite(value)||typeof value==='string'||key==='listStart'&&input.value==='')){
   changeParagraphList(listPanel,{[key]:value},final);
- }else if(final)cancelListPreview();
+ }else if(final&&listPanel.key===key)cancelListPreview();
  if(final)syncListStylePanel(input);
 }
-const listSliderCanceled=previewSliderEvents(listPanelNode,'[data-list-scale-range]',()=>listPanel,cancelListPreview);
+const listSliderSelector='[data-list-scale-range],[data-list-spacing-range]';
+listPanelNode.addEventListener('pointerdown',ev=>{
+ // A native range can emit input before the preceding field emits change on blur.
+ if(ev.button===0&&ev.target.matches(listSliderSelector)&&document.activeElement?.matches('[data-list-field]')){
+  ev.target.focus({preventScroll:true});
+ }
+},true);
+const listSliderBlocked=previewSliderEvents(listPanelNode,listSliderSelector,()=>listPanel,cancelListPreview,input=>listFieldChange(input,true));
 listPanelNode.addEventListener('input',ev=>listFieldChange(ev.target,false));
 listPanelNode.addEventListener('change',ev=>listFieldChange(ev.target,true));
 listPanelNode.addEventListener('keydown',ev=>{
@@ -3153,7 +3206,7 @@ window.addEventListener('resize',()=>{
 });
 document.addEventListener('compositionstart',ev=>{if(ev.target.id==='inlineWysiwyg')closeListStylePanel();},true);
 document.addEventListener('pointerdown',ev=>{
- if(listPanel&&!ev.target.closest('#listStylePanel,[data-list-kind],#fillPopover[data-key=_listMarker]'))closeListStylePanel();
+ if(listPanel&&!ev.target.closest('#listStylePanel,[data-list-kind],[data-list-settings],#fillPopover[data-key=_listMarker]'))closeListStylePanel();
 },true);
 window.addEventListener('keydown',ev=>{
  if(!listPanel||ev.key!=='Escape'||ev.isComposing)return;
@@ -3259,7 +3312,7 @@ document.addEventListener('mousedown',ev=>{
  app.inlineToolPointer=true;rememberInlineCaret();
  // Buttons can operate on the focused selection. Inputs/selects must retain
  // native focus, keyboard and text-selection behavior on desktop and Android.
- if((!mobileV36Small()&&document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-baseline-shift],[data-text-case],[data-list-kind],[data-list-marker],[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
+ if((!mobileV36Small()&&document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-baseline-shift],[data-text-case],[data-list-kind],[data-list-settings],[data-list-marker],[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
 },true);
 document.addEventListener('keydown',ev=>{
  if(ev.key!=='Escape')return;
@@ -4965,7 +5018,7 @@ const documentTabSession={activeId:'home',lastDocumentId:null,tabs:[]};
 const DOCUMENT_TAB_FIELDS=['selected','selectedIds','selectedGroupIds','focusGroupId','groupIsolation','zoom','lastZoom','renderScale','history','historyNames','historyIndex','historyBase','historyPreviewOriginal','pixelSelection','pixelDraft','polyDraft','selectionTargetId','guides','showRulers','handTool','penTool','penDraft','penEditId','penNode','marqueeTool','marqueeKind','magicTolerance','insertTool','insertShape','inkTool','inkSettings','maskEditId','maskPaintColor','textToolMode','textDraft','textPathDraft','cropMode','cropBefore','multiMode','panelOpen','mobilePane','mobileLayersOpen','resourceFolderId','filter'];
 function liveDocumentTab(){return documentTabSession.tabs.find(t=>t.id===documentTabSession.activeId)||null}
 // These surfaces belong to the current editor visit, not a saved document view.
-function closeEditorTransientUI(){mobileNudgeClearMeasurements();$('#mobileNudge')?.classList.add('hidden');fxCloseMenu();fxClosePopover();cancelRegionEffects();
+function closeEditorTransientUI(){mobileNudgeClearMeasurements();$('#mobileNudge')?.classList.add('hidden');fxCloseMenu();fxClosePopover();cancelRegionEffects();closeListStylePanel();
  mobileV36Close(); // F-06 settles actual changes and releases owned pointers/timers.
  closeMobileOverlays('mobileProperties');closeToolPopovers();closeMobileLayerMenu();
  if(!$('#fillPopover').classList.contains('hidden')||app.pipetteArmed)closeFillPopover();

@@ -134,8 +134,21 @@
       </div>
     </section>
     <section class="list-style-options list-style-divider list-style-spacing">
-      <label>Отступ, px<input type="number" data-list-field="listIndent" inputmode="decimal"></label>
-      <label>Интервал, px<input type="number" data-list-field="listGap" inputmode="decimal"></label>
+      <div class="list-style-row">
+        <label for="listIndent">Отступ слева</label>
+        <span class="list-style-unit"><input id="listIndent" type="number" data-list-field="listIndent" inputmode="decimal" aria-label="Отступ слева, px"><span aria-hidden="true">px</span></span>
+      </div>
+      <input type="range" data-list-spacing-range="listIndent" aria-label="Отступ слева, ползунок">
+      <div class="list-style-row">
+        <label for="listGap">Маркер → текст</label>
+        <span class="list-style-unit"><input id="listGap" type="number" data-list-field="listGap" inputmode="decimal" aria-label="Маркер → текст, px"><span aria-hidden="true">px</span></span>
+      </div>
+      <input type="range" data-list-spacing-range="listGap" aria-label="Маркер → текст, ползунок">
+      <div class="list-style-row">
+        <label for="listItemSpacing">Между пунктами</label>
+        <span class="list-style-unit"><input id="listItemSpacing" type="number" data-list-field="listItemSpacing" inputmode="decimal" aria-label="Между пунктами, px"><span aria-hidden="true">px</span></span>
+      </div>
+      <input type="range" data-list-spacing-range="listItemSpacing" aria-label="Между пунктами, ползунок">
     </section>
   </div>
 </div>

@@ -1967,7 +1967,7 @@ html,body{background:#1e1f27!important;}
 .list-style-panel .linebtn:hover:not(:disabled){background:#514a5b}
 .list-style-panel .linebtn[aria-pressed=true]{background:#4a3b62;border-color:#b4a8e4}
 .list-style-panel .linebtn[aria-pressed=mixed]{border-style:dashed}
-.list-style-modes,.list-counter-grid,.list-style-options.list-style-spacing{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.list-style-modes,.list-counter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .list-style-modes{padding:0 12px 10px;flex:none}
 .list-style-panel fieldset{min-width:0;padding:0;border:0;margin:0 0 10px}
 .list-style-panel legend{font-size:12px;color:#d3cfde;margin-bottom:5px;padding:0}
@@ -1983,6 +1983,7 @@ html,body{background:#1e1f27!important;}
 .list-style-panel .list-style-unit{display:flex;align-items:center;gap:3px}
 .list-style-unit input[type=number]{width:54px}
 .list-style-unit input[type=text]{width:77px}
+.list-style-spacing .k-num-wrap{flex:0 0 96px;width:96px}
 .list-color-swatch{display:flex;align-items:center;justify-content:center;gap:6px}
 .list-color-swatch span{width:15px;height:15px;flex:none;border:1px solid #928b9d;border-radius:3px;background:repeating-conic-gradient(#999 0 25%,#555 0 50%) 0 / 8px 8px}
 .list-color-swatch span[style*="background-color"]{background-image:none}

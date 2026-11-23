@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import {createBackup, readBackup} from '../src/backup/archive.mjs';
 import {openDatabase, runStoreRequest} from '../src/storage/indexeddb.mjs';
 import {applyParagraphListStyle as apply, clearParagraphFormatting, effectiveParagraphStyleAt, normalizeParagraphRuns,
-  paragraphListState, paragraphRangeForSelection, projectParagraphLists} from '../src/model/paragraph-style.mjs';
+  paragraphListDefaults, paragraphListState, paragraphRangeForSelection, projectParagraphLists} from '../src/model/paragraph-style.mjs';
 import {formatListCounter, listMarkerGroups, listMarkerPercent} from '../src/model/list-presets.mjs';
 import {replaceText, updateText} from '../src/model/rich-text.mjs';
 import {createRichTextLayoutEngine} from '../src/render/rich-text-layout.mjs';
@@ -87,6 +87,38 @@ test('marker preferences are sparse, individually mixed, and retained through ty
   const invalid=apply(source,{listMarkerScale:value,listMarkerOpacity:101,listMarkerColor:'#123'});
   assert.equal(invalid,source);
  }
+});
+
+test('item spacing is sparse and finite, and a kind filter edits only matching paragraphs in one result',()=>{
+ const text='Title\nOne\nPlain\nTwo\nFive\nEnd';
+ const source={text};
+ const one=text.indexOf('One'),two=text.indexOf('Two'),five=text.indexOf('Five');
+ const bullet={onlyKind:'bullet'},ordered={onlyKind:'ordered'};
+ const listed=apply(apply(apply(source,{listKind:'bullet'},range(one)),{listKind:'bullet',listItemSpacing:19.5},range(two)),
+  {listKind:'ordered',listItemSpacing:26},range(five));
+ assert.equal(paragraphListDefaults.listItemSpacing,0);
+ assert.equal(effectiveParagraphStyleAt(listed,one).listItemSpacing,0);
+ assert.equal(paragraphListState(listed,null,bullet).listItemSpacing,'mixed');
+ assert.equal(paragraphListState(listed,null,ordered).listItemSpacing,26);
+ assert.equal(paragraphListState(listed,range(0),bullet),null);
+ assert.equal(apply(listed,{listItemSpacing:5},range(0),bullet),listed);
+ for(const listItemSpacing of [0,undefined,Infinity,-Infinity,NaN,-.5,1000.01,'20']){
+  assert.equal(apply(listed,{listItemSpacing},range(one)),listed);
+ }
+ const changed=apply(listed,{listItemSpacing:1000,listGap:17},range(text.length,1),bullet);
+ assert.deepEqual(changed.paragraphRuns,[
+  {start:one,style:{listKind:'bullet',listGap:17,listItemSpacing:1000}},
+  {start:two,style:{listKind:'bullet',listGap:17,listItemSpacing:1000}},
+  listed.paragraphRuns[2],
+ ]);
+ assert.equal(changed.text,text);
+ assert.equal(apply(changed,{listItemSpacing:1000,listGap:17},null,bullet),changed);
+ const restart=apply(apply(changed,{listKind:'ordered'},range(one)),{listStart:9},null,ordered);
+ assert.deepEqual(projectParagraphLists(text,restart.paragraphRuns).map(p=>p.marker),['','9.','','•','9.','']);
+ const split=replaceText(changed,one+1,one+1,'\n');
+ assert.equal(effectiveParagraphStyleAt(split,one+2).listItemSpacing,1000);
+ assert.deepEqual(replaceText(split,one+1,one+2,''),changed);
+ assert.deepEqual(clearParagraphFormatting(changed),source);
 });
 
 test('marker scale changes layout while independent paint keeps marker and caret geometry',()=>{
@@ -179,7 +211,7 @@ test('JSON, ZIP and IndexedDB v3 keep formatted records, canonical text and lega
   mobileListRawText:'Stale',mobileListRawTextRuns:[{start:0,end:1,style:{bold:true}}],
   textRuns:[{start:7,end:9,style:{baselineShift:'sub',textCase:'upper',underline:true}}]};
  const after=apply(before,{listKind:'bullet',listMarker:'🟠',listMarkerScale:'auto',
-  listMarkerColor:'#2676ba',listMarkerOpacity:0},range(10));
+  listMarkerColor:'#2676ba',listMarkerOpacity:0,listItemSpacing:35.5},range(10));
  assert.deepEqual({...after,paragraphRuns:undefined},{...before,paragraphRuns:undefined});
  assert.deepEqual(markers(before),['','']);
  const doc={id:'doc',projectId:'project',width:300,height:200,elements:[after]};

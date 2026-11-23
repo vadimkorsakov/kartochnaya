@@ -277,8 +277,9 @@ export function createRichTextLayoutEngine(context, fontSet) {
       // A large preceding descent must also clear the current ascent; leading
       // from the preceding row must never increase this interval.
       if (!previous) edgeLeading = (rowHeight - ascent - descent) / 2;
-      const y = previous ? previous.y + previous.height : 0;
-      const baseline = previous ? previous.baseline + Math.max(rowHeight, previousDescent + ascent) : ascent + edgeLeading;
+      const spacingBefore = rowStart === paragraph?.start ? paragraph.spacingBefore ?? 0 : 0;
+      const y = previous ? previous.y + previous.height + spacingBefore : 0;
+      const baseline = previous ? previous.baseline + Math.max(rowHeight, previousDescent + ascent) + spacingBefore : ascent + edgeLeading;
       // Layout ignores obsolete textLayoutMode; no old-baseline branch remains.
       // Source intervals are UTF-16, independent of rendered geometry. Hard
       // breaks are excluded from end and owned by [end, nextStart). A trailing
@@ -287,7 +288,8 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const nextStart = breakCluster?.end ?? end;
       rows.push({ start: rowStart, end, nextStart, softWrap: !breakCluster && !final,
         fragments, emptyStyle: fragments.length ? undefined : {...blankStyle, underline:false, strikethrough:false}, width: rowWidth,
-        y, height: baseline + descent - y, baseline, ...(paragraph?.marker ? {paragraph} : {}) });
+        y, height: baseline + descent - y, baseline, ...(paragraph?.marker ? {paragraph} : {}),
+        ...(spacingBefore ? {spacingBefore} : {}) });
       previousDescent = descent;
       if (breakCluster) { emptyStyle = breakCluster.style; paragraphIndex++; }
       rowStart = nextStart;
@@ -321,10 +323,10 @@ export function createRichTextLayoutEngine(context, fontSet) {
       i = end;
     }
     finish(undefined, true);
-    // Contiguous row boxes end at their glyph bounds, except for the terminal
-    // block padding. Uniform typography retains its old baselines/block height.
+    // Row boxes end at their glyph bounds, except for the terminal block
+    // padding. Item spacing lies outside the two adjoining line boxes.
     rows.at(-1).height += edgeLeading;
-    const blockHeight = rows.reduce((sum, row) => sum + row.height, 0);
+    const blockHeight = rows.reduce((sum, row) => sum + (row.spacingBefore ?? 0) + row.height, 0);
     const y = e.verticalAlign === 'middle' ? Math.max(0, (height - blockHeight) / 2) :
       e.verticalAlign === 'bottom' ? Math.max(0, height - blockHeight) : 0;
     // Align the whole item (and the ordered column) as a block, so continuation

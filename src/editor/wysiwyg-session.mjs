@@ -236,7 +236,9 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const previous=preview;
   preview=null;decorationProjection=null;
   if(previous.paragraphGeometry&&clean()){
-   project(layer,rememberSelection(),savedAffinity);
+   let selection=previous.selection;
+   try{selection=rememberSelection();}catch{}
+   try{project(layer,selection,savedAffinity);}catch{stop('Не удалось восстановить подтверждённый текст');}
    return;
   }
   if(clean())syncDecorationProjection();
@@ -359,8 +361,8 @@ function changeGraphemeStyle(apply,value){
 
 // Correct native clicks at expanded spaces and shared offsets between glyphs
 // on different baselines. The editable nodes and native Selection own the caret.
-let pointerEpoch=0,pointerGesture=null,markerDrag=null,selectingWithPointer=false;
-const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;markerDrag=null;if(p?.task!==undefined)clearTimeout(p.task);};
+let pointerEpoch=0,pointerGesture=null,listDrag=null,selectingWithPointer=false;
+const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;listDrag=null;if(p?.task!==undefined)clearTimeout(p.task);};
 // Register for the session lifetime. Each projection invalidates pending clicks.
 {
  const doc=host.ownerDocument;
@@ -404,22 +406,28 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;marker
   if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom)return null;
   return {...boundary,node,start:part.start,key:node};
  }
- function markerHit(clientX,clientY){
+ function listHit(clientX,clientY){
   const nodes=host.children;
   for(const [i,row] of projectedRows.entries()){
    if(!row.marker)continue;
    const box=nodes[i].getBoundingClientRect();
+   if(row.spacingBefore&&clientX>=box.left&&clientX<box.right){
+    const gap=row.spacingBefore*box.height/row.height;
+    if(clientY>=box.top-gap&&clientY<box.top){
+     return clientY<box.top-gap/2?{offset:projectedRows[i-1].end,index:i-1}:{offset:row.start,index:i};
+    }
+   }
    if(clientY<box.top||clientY>=box.bottom)continue;
    const x=(clientX-box.left)*layer.w/box.width;
-   if(x>=row.marker.columnX&&x<row.x)return {row,index:i};
+   if(x>=row.marker.columnX&&x<row.x)return {offset:row.start,index:i};
   }
   return null;
  }
- function dragFromMarker(event){
-  const drag=markerDrag;
+ function dragFromList(event){
+  const drag=listDrag;
   if(!drag||event.pointerId!==drag.id)return;
-  const hit=markerHit(event.clientX,event.clientY);
-  if(hit){setSelection(drag.anchor,hit.row.start,hit.index,drag.rowIndex);return;}
+  const hit=listHit(event.clientX,event.clientY);
+  if(hit){setSelection(drag.anchor,hit.offset,hit.index,drag.rowIndex);return;}
   const native=doc.caretPositionFromPoint?.(event.clientX,event.clientY) ?? doc.caretRangeFromPoint?.(event.clientX,event.clientY);
   const node=native?.offsetNode ?? native?.startContainer;
   if(!node||!host.contains(node))return;
@@ -434,13 +442,14 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;marker
  listen('pointerdown',event=>{
   clearPointerGesture();
   if(!event.isTrusted||event.pointerType!=='mouse'||!event.isPrimary||event.button!==0||event.altKey||event.ctrlKey||event.metaKey)return;
-  const marker=layer.paragraphRuns?.length&&clean()&&markerHit(event.clientX,event.clientY);
-  if(marker){
-   const anchor=event.shiftKey&&selectionInside()?readSelection().anchor:marker.row.start;
+  const list=layer.paragraphRuns?.length&&clean()&&listHit(event.clientX,event.clientY);
+  if(list){
+   const anchor=event.shiftKey&&selectionInside()?readSelection().anchor:list.offset;
    event.preventDefault();
    host.focus({preventScroll:true});
-   setSelection(anchor,marker.row.start,marker.index,anchor===marker.row.start?marker.index:null);
-   markerDrag={id:event.pointerId,anchor,rowIndex:anchor===marker.row.start?marker.index:null};
+   const anchorRow=anchor===list.offset?list.index:null;
+   setSelection(anchor,list.offset,list.index,anchorRow);
+   listDrag={id:event.pointerId,anchor,rowIndex:anchorRow};
    return;
   }
   selectingWithPointer=!!caseProjection;
@@ -450,9 +459,9 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;marker
   pointerGesture={id:event.pointerId,x:event.clientX,y:event.clientY,epoch:pointerEpoch,key:hit.key,start:hit.start,rowIndex:hit.rowIndex,anchor,anchorNode,anchorOffset,shift:event.shiftKey,up:false};
  });
  watch(doc,'pointerdown',event=>{if(!host.contains(event.target))clearPointerGesture()},true);
- watch(doc,'pointermove',event=>{dragFromMarker(event);const p=pointerGesture;if(p&&!p.clicked&&p.id===event.pointerId&&(event.clientX!==p.x||event.clientY!==p.y))clearPointerGesture()},true);
+ watch(doc,'pointermove',event=>{dragFromList(event);const p=pointerGesture;if(p&&!p.clicked&&p.id===event.pointerId&&(event.clientX!==p.x||event.clientY!==p.y))clearPointerGesture()},true);
  watch(doc,'pointerup',event=>{
-  if(markerDrag?.id===event.pointerId){dragFromMarker(event);markerDrag=null;}
+  if(listDrag?.id===event.pointerId){dragFromList(event);listDrag=null;}
   if(selectingWithPointer){
    selectingWithPointer=false;
    if(!pointerGesture)queueMicrotask(normalizeNativeSelection);

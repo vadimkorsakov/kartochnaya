@@ -82,3 +82,62 @@ test('saved justify layers use shared Canvas/PNG and default WYSIWYG',async({pag
  const point=await canvasPoint(page,50,30);await page.mouse.dblclick(point.x,point.y);
  await expect(page.locator('#inlineWysiwyg')).toBeFocused();await expect(page.locator('#inlineText')).toBeHidden();
 });
+
+test('spacing shifts complete list items and block alignment with real font metrics',async({page})=>{
+ await setup(page);
+ const measurements=await page.evaluate(async()=>{
+  const {createRichTextLayoutEngine}=await import('/__shipping/render/rich-text-layout.mjs');
+  const engine=createRichTextLayoutEngine(document.createElement('canvas').getContext('2d'),document.fonts);
+  const lines=['Title','Straße alpha beta gamma delta','','Last','Plain','Nine','Ten','Restart','Latin','Next','Bullet',''];
+  const text=lines.join('\n'),starts=lines.map((_,i)=>i?lines.slice(0,i).join('\n').length+1:0);
+  const styles=[null,{listKind:'bullet',listIndent:6}, {listKind:'bullet'}, {listKind:'bullet'}, null,
+   {listKind:'ordered',listStart:9}, {listKind:'ordered'}, {listKind:'ordered',listStart:60},
+   {listKind:'ordered',listCounterStyle:'latin-lower-dot'}, {listKind:'ordered',listCounterStyle:'latin-lower-dot'},
+   {listKind:'bullet'}, {listKind:'bullet'}];
+  const spacings=[0,17.5,31,80,0,9.25,18,55,6,65,22,99];
+  const runs=withSpacing=>styles.flatMap((style,i)=>style?[{start:starts[i],style:{...style,...withSpacing(i)}}]:[]);
+  const sample={text,w:155,h:850,fontSize:20,fontFamily:'Arial',lineHeight:1.25,
+   textRuns:[{start:starts[1],end:starts[1]+6,style:{textCase:'upper',baselineShift:'super',underline:true,underlineDetails:{style:'wavy'}}},
+    {start:starts[1]+7,end:starts[1]+12,style:{baselineShift:'sub',lineHeight:1.8}}]};
+  const summarize=layout=>({height:layout.height,width:layout.width,inkOverflow:layout.inkOverflow,
+   rows:layout.rows.map(r=>({y:r.y,baseline:r.baseline,height:r.height,x:r.x,width:r.width,start:r.start,end:r.end,nextStart:r.nextStart,
+    gap:r.spacingBefore??0,softWrap:r.softWrap,marker:r.marker,extra:r.justification?.extraPerSpace,
+    decorations:r.decorations,fragments:r.fragments.map(p=>({text:p.text,x:p.x,y:p.y,width:p.width}))}))});
+  return ['left','center','right','justify'].flatMap(textAlign=>['top','middle','bottom'].map(verticalAlign=>{
+   const layout=runs=>engine[textAlign==='justify'?'layoutJustified':'layout']({...sample,textAlign,verticalAlign,paragraphRuns:runs});
+   const before=layout(runs(()=>({}))),zero=layout(runs(()=>({listItemSpacing:0}))),
+    after=layout(runs(i=>({listItemSpacing:spacings[i]})));
+   return {textAlign,verticalAlign,starts,zero:summarize(zero),before:summarize(before),after:summarize(after)};
+  }));
+ });
+ const total=85.75;
+ for(const {textAlign,verticalAlign,starts,zero,before,after} of measurements){
+  expect(zero).toEqual(before);
+  expect(after.width).toBe(before.width);
+  expect(after.inkOverflow).toBeCloseTo(before.inkOverflow,7);
+  expect(after.height-before.height).toBeCloseTo(total,7);
+  expect(after.rows.map(row=>[row.start,row.end,row.nextStart,row.softWrap])).toEqual(before.rows.map(row=>[row.start,row.end,row.nextStart,row.softWrap]));
+  expect(after.rows.filter(row=>row.start>=starts[1]&&row.start<starts[2])).toHaveLength(3);
+  expect(after.rows.filter(row=>row.gap).map(row=>[row.start,row.gap])).toEqual([[starts[2],17.5],[starts[3],31],[starts[6],9.25],[starts[9],6],[starts[11],22]]);
+  expect(after.rows.flatMap(row=>row.marker?.text??[])).toEqual(['•','•','•','9.','10.','60.','a.','b.','•','•']);
+  expect(after.rows.at(-1).start).toBe(after.rows.at(-1).end);
+  expect(after.rows.find(row=>row.start===starts[2]).fragments).toEqual([]);
+  if(textAlign==='justify')expect(after.rows.some(row=>row.softWrap&&row.extra>0)).toBe(true);
+  let shift=-total*({top:0,middle:.5,bottom:1}[verticalAlign]);
+  for(const [i,row] of after.rows.entries()){
+   shift+=row.gap;
+   const previous=after.rows[i-1],original=before.rows[i];
+   expect(row.height).toBeCloseTo(original.height,7);
+   expect(row.y-original.y).toBeCloseTo(shift,7);
+   expect(row.baseline-original.baseline).toBeCloseTo(shift,7);
+   if(previous)expect(row.y-previous.y-previous.height).toBeCloseTo(row.gap,7);
+   expect([row.x,row.width,row.extra]).toEqual([original.x,original.width,original.extra]);
+   if(row.marker){
+    expect(row.marker.columnX).toBe(original.marker.columnX);
+    expect(row.marker.y-original.marker.y).toBeCloseTo(shift,7);
+   }
+   for(const [j,part] of row.fragments.entries())expect(part.y-original.fragments[j].y).toBeCloseTo(shift,7);
+   for(const [j,decoration] of row.decorations.entries())expect(decoration.y-original.decorations[j].y).toBeCloseTo(shift,7);
+  }
+ }
+});

@@ -2969,7 +2969,21 @@ function listOwnerValid(owner){
  if(!owner.session)return !app.editingId;
  try{
   const {anchor,focus}=owner.session.rememberSelection();
-  return anchor===owner.selection.anchor&&focus===owner.selection.focus;
+  if(anchor!==owner.selection.anchor||focus!==owner.selection.focus){
+   // Moving the caret inside this confirmed editor is not a reason to dismiss
+   // its settings. Rebind the panel to the new paragraphs, never to an old range.
+   if(owner!==listPanel)return false;
+   if(owner.draft)cancelListPreview();
+   owner.selection={anchor,focus};
+   owner.range={start:Math.min(anchor,focus),end:Math.max(anchor,focus)};
+   // After a caret move this is a settings-only panel. Plain paragraphs must
+   // not acquire a list because a previously opened gallery is still visible.
+   owner.existingModes=['bullet','ordered'].filter(kind=>
+    paragraphListState(owner.element,owner.range,{onlyKind:kind}));
+   if(owner.existingModes.length&&!owner.existingModes.includes(owner.mode))
+    owner.mode=owner.existingModes[0];
+  }
+  return true;
  }catch{return false;}
 }
 const listPresets=listPanelNode.querySelector('[data-list-presets]');
@@ -3084,12 +3098,13 @@ const listColorButton=listPanelNode.querySelector('[data-list-color]');
 function listPanelState(owner=listPanel){
  if(!owner)return null;
  const onlyKind=owner.existingModes?owner.mode:undefined;
- const element=owner.draft||owner.element,state=paragraphListState(element,owner.range,{onlyKind}),base=resolveRichTextStyle(element);
+ const element=owner.draft||owner.element,selected=paragraphListState(element,owner.range,{onlyKind});
+ const state=selected||paragraphListDefaults,base=resolveRichTextStyle(element);
  const solid=(element.fillType||'solid')==='solid';
  const starts=new Set(paragraphRangeForSelection(element.text,owner.range).map(p=>p.start));
  const emoji=owner.mode==='bullet'&&normalizeParagraphRuns(element.text,element.paragraphRuns).some(({start,style})=>
   starts.has(start)&&(!onlyKind||style.listKind===onlyKind)&&isEmojiListMarker(style.listMarker));
- return {...state,solid,emoji,
+ return {...state,hasTarget:!!selected,solid,emoji,
   color:state.listMarkerColor==='inherit'?base.textColor:state.listMarkerColor,
   opacity:state.listMarkerOpacity==='inherit'?base.fillOpacity:state.listMarkerOpacity};
 }
@@ -3113,15 +3128,15 @@ function syncListStylePanel(force=null){
    pressed(button,listMode===listPanel.mode);
    button.disabled=!!listPanel.existingModes&&!listPanel.existingModes.includes(listMode);
   }
-  if(listMarker)pressed(button,match(state.listMarker,listMarker));
-  if(listCounter)pressed(button,match(state.listCounterStyle,listCounter));
+  if(listMarker){pressed(button,match(state.listMarker,listMarker));button.disabled=!state.hasTarget;}
+  if(listCounter){pressed(button,match(state.listCounterStyle,listCounter));button.disabled=!state.hasTarget;}
   if(listReset){
    pressed(button,match(state[listReset],listReset==='listMarkerScale'?'auto':'inherit'));
-   button.disabled=listReset==='listMarkerColor'?!state.solid||state.emoji:listReset==='listMarkerOpacity'&&!state.solid;
+   button.disabled=!state.hasTarget||(listReset==='listMarkerColor'?!state.solid||state.emoji:listReset==='listMarkerOpacity'&&!state.solid);
   }
  }
  for(const [key,input] of Object.entries(listPanelControls)){
-  input.disabled=key==='listMarkerColor'?!state.solid||state.emoji:key==='listMarkerOpacity'&&!state.solid;
+  input.disabled=!state.hasTarget||(key==='listMarkerColor'?!state.solid||state.emoji:key==='listMarkerOpacity'&&!state.solid);
   if(document.activeElement===input&&input!==force)continue;
   const value=state[key],scale=key==='listMarkerScale',color=key==='listMarkerColor',opacity=key==='listMarkerOpacity';
   const effective=scale?(value===null?100:value):color?state.color:opacity?state.opacity:value;
@@ -3136,9 +3151,13 @@ function syncListStylePanel(force=null){
   if(document.activeElement!==slider||force===slider)slider.value=value==='mixed'?paragraphListDefaults[key]:value;
   slider.setAttribute('aria-valuetext',value==='mixed'?'Mixed':`${value} px`);
  }
+ listScaleSlider.disabled=!state.hasTarget;
+ for(const slider of listSpacingSliders)slider.disabled=!state.hasTarget;
+ listMarkerApply.disabled ||= !state.hasTarget;
+ listPanelNode.querySelector('[data-list-target-note]').hidden=state.hasTarget;
  listPanelNode.querySelector('[data-list-size-label]').textContent=bullet?'Размер маркера':'Размер номера';
  listPanelNode.querySelector('[data-list-color-label]').textContent=bullet?'Цвет маркера':'Цвет номера';
- listColorButton.disabled=!state.solid||state.emoji;
+ listColorButton.disabled=!state.hasTarget||!state.solid||state.emoji;
  listColorButton.querySelector('span').style.backgroundColor=listColorButton.disabled||state.color==='mixed'?'':state.color;
  const hint=listPanelNode.querySelector('[data-list-color-hint]');
  hint.hidden=state.solid&&!state.emoji;
@@ -3179,6 +3198,7 @@ function closeListStylePanel(restoreFocus=false){
 function changeParagraphList(owner,patch,final=true){
  if(!listOwnerValid(owner)){closeListStylePanel();return false;}
  const key=Object.keys(patch)[0],element=owner.element;
+ if(owner.existingModes&&!paragraphListState(element,owner.range,{onlyKind:owner.mode}))return false;
  const geometry=!['listMarkerColor','listMarkerOpacity'].includes(key);
  if(!geometry){
   const state=listPanelState(owner);
@@ -3322,8 +3342,12 @@ window.addEventListener('resize',()=>{
  else positionListStylePanel();
 });
 document.addEventListener('compositionstart',ev=>{if(ev.target.id==='inlineWysiwyg')closeListStylePanel();},true);
-document.addEventListener('pointerdown',ev=>{
- if(listPanel&&!ev.target.closest('#listStylePanel,[data-list-kind],[data-list-settings],#fillPopover[data-key=_listMarker]'))closeListStylePanel();
+// Dismiss only through the explicit close button or Escape. A click in the
+// editor must be able to move the caret without closing list settings.
+document.addEventListener('selectionchange',()=>{
+ if(!listPanel||document.activeElement!==$('#inlineWysiwyg')||listPanel.applying)return;
+ if(!listOwnerValid(listPanel)){closeListStylePanel();return;}
+ syncParagraphListControls();syncListStylePanel();
 },true);
 window.addEventListener('keydown',ev=>{
  if(!listPanel||ev.key!=='Escape'||ev.isComposing)return;

@@ -4,8 +4,8 @@ import {eligibleWysiwyg, justifyWysiwygEnabled, createWysiwygSession} from './ed
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from './render/text-stroke.mjs';
 import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
 import { applyTextStyle, applyBaselineShift, applyTextCase, applyLayerUnderlineStyle, effectiveTextCase, isBaselineShift, underlineDefaults, underlineLimits, updateText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
-import {applyParagraphListStyle, paragraphListState, paragraphListDefaults, paragraphListLimits} from './model/paragraph-style.mjs';
-import {listMarkerGroups, listCounterStyles} from './model/list-presets.mjs';
+import {applyParagraphListStyle, paragraphListState, paragraphListDefaults, paragraphListLimits, paragraphListMinimums, paragraphRangeForSelection, normalizeParagraphRuns} from './model/paragraph-style.mjs';
+import {listMarkerGroups, listCounterStyles, isEmojiListMarker, listMarkerPercent} from './model/list-presets.mjs';
 import { isTextCase, textCaseValues } from './model/text-case.mjs';
 import { supportsHorizontalTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine } from './render/rich-text-layout.mjs';
 import { createReplacementSession } from './backup/replace.mjs';
@@ -711,8 +711,8 @@ function describeChange(before,after){try{const a=JSON.parse(before),b=JSON.pars
 function resetHistory(){if(!app.doc)return;const initial=snapshot();app.historyBase=initial;app.historyPreviewOriginal=false;app.history=[initial];app.historyNames=['Исходное состояние'];app.historyIndex=0;updateHistoryButtons()}
 // Existing property controls join the active inline session; its finalizer releases ownership before committing.
 function commit(label){if(!app.doc)return;if(app.editingId&&(app.inlineSession||matchMedia('(max-width:760px)').matches)){recordInlineSession();const e=app.doc.elements.find(x=>x.id===app.editingId),edit=$('#inlineText');if(e&&edit.value!==e.text){edit.value=e.text;restoreInlineCaret(false)}positionInlineText();paint();return;}boundarySyncDoc(app.doc);syncCurrentSlide();syncAutoCardTitle();const state=snapshot(),previous=app.history[app.historyIndex];if(previous!==state){app.history=app.history.slice(0,app.historyIndex+1);app.historyNames=(app.historyNames||[]).slice(0,app.historyIndex+1);app.history.push(state);app.historyNames.push(typeof label==='string'?label:describeChange(previous,state));if(app.history.length>51){const n=app.history.length-51;app.history.splice(1,n);app.historyNames.splice(1,n);}app.historyIndex=app.history.length-1;app.historyPreviewOriginal=false}updateHistoryButtons();const save=saveState(app.doc.id),key=JSON.stringify(app.doc);if(key!==save.saved&&key!==save.pending?.key)app.doc.updatedAt=Date.now();saveSoon();paint();renderSlideStrip()}
-function historyGo(index){closeUnderlinePanel();inkCancel();if(app.editingId)closeInlineText();if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;app.historyIndex=index;const state=JSON.parse(app.history[index]);const storedSelection=state.selection,storedLayers=state.layerSelection;delete state.selection;delete state.layerSelection;Object.assign(app.doc,state);boundaryRememberDoc(app.doc);ensureGroupData(app.doc);if(app.doc.type==='card')ensureCardSlides(app.doc);app.selectedGroupIds=[];app.focusGroupId=null;app.selectedIds=[];app.selected=null;app.guides=app.doc.rulers||[];restoreSelectionFromHistory(storedSelection);restoreLayerSelection(storedLayers);if(oldSlide!==app.doc.activeSlideIndex){$('#sizeLabel').textContent=`${app.doc.width} × ${app.doc.height} px`;applyZoom()}updateHistoryButtons();updateProjectBadge();refreshLayers();refreshInspector();refreshMobileTools();paint();renderSlideStrip();app.historyPreviewOriginal=index===0&&app.history.length>1;if(app.historyPreviewOriginal){clearTimeout(app.saveTimer);app.saveTimer=null;$('#saveStatus').textContent='Исходное состояние · предпросмотр';}else saveSoon()}
-function undo(dir){cancelUnderlineGesture();mobileTextFinishGesture();if(app.wysiwyg){app.wysiwyg.travel(dir);return}if(app.inlineSession?.formatted){inlineHistoryGo(dir);return}if(app.editingId)closeInlineText();if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
+function historyGo(index){closeListStylePanel();closeUnderlinePanel();inkCancel();if(app.editingId)closeInlineText();if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;app.historyIndex=index;const state=JSON.parse(app.history[index]);const storedSelection=state.selection,storedLayers=state.layerSelection;delete state.selection;delete state.layerSelection;Object.assign(app.doc,state);boundaryRememberDoc(app.doc);ensureGroupData(app.doc);if(app.doc.type==='card')ensureCardSlides(app.doc);app.selectedGroupIds=[];app.focusGroupId=null;app.selectedIds=[];app.selected=null;app.guides=app.doc.rulers||[];restoreSelectionFromHistory(storedSelection);restoreLayerSelection(storedLayers);if(oldSlide!==app.doc.activeSlideIndex){$('#sizeLabel').textContent=`${app.doc.width} × ${app.doc.height} px`;applyZoom()}updateHistoryButtons();updateProjectBadge();refreshLayers();refreshInspector();refreshMobileTools();paint();renderSlideStrip();app.historyPreviewOriginal=index===0&&app.history.length>1;if(app.historyPreviewOriginal){clearTimeout(app.saveTimer);app.saveTimer=null;$('#saveStatus').textContent='Исходное состояние · предпросмотр';}else saveSoon()}
+function undo(dir){closeListStylePanel(true);cancelUnderlineGesture();mobileTextFinishGesture();if(app.wysiwyg){app.wysiwyg.travel(dir);return}if(app.inlineSession?.formatted){inlineHistoryGo(dir);return}if(app.editingId)closeInlineText();if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
 function renderHistoryList(){const root=$('#historyEntries');if(!root)return;root.innerHTML=(app.history||[]).map((_,i)=>`<button type="button" class="history-entry ${i===app.historyIndex?'active':''}" data-history-index="${i}" ${i===app.historyIndex?'aria-current="step"':''}><span class="history-step">${i===0?'●':i}</span><span>${html(app.historyNames?.[i]||'Изменение макета')}</span></button>`).join('');const current=root.querySelector('.history-entry.active');if(current&&!$('#historyPopover').classList.contains('hidden'))current.scrollIntoView({block:'nearest'})}
 function updateHistoryButtons(){if(app.inlineSession?.formatted){$('#undoBtn').disabled=app.inlineSession.index===0;$('#redoBtn').disabled=app.inlineSession.index===app.inlineSession.states.length-1;return}const draft=app.penDraft;$('#undoBtn').disabled=draft?!draft.undoStack?.length:app.historyIndex===0;$('#redoBtn').disabled=draft?!draft.redoStack?.length:app.historyIndex===app.history.length-1;renderHistoryList()}
 // Revisions describe edits; snapshots describe writes; app.docs contains confirmed records.
@@ -880,6 +880,7 @@ function syncInspectorTransformDuringDrag(){
  }
 }
 function refreshInspector(){
+ if(listPanel&&!listPanel.applying&&!listOwnerValid(listPanel))closeListStylePanel();
  if(underlinePanel&&!underlineOwnerValid())closeUnderlinePanel();
  if(app.maskEditId&&app.doc?.elements.find(e=>e.id===app.maskEditId)){const el=app.doc.elements.find(e=>e.id===app.maskEditId);$('#inspector').innerHTML=`<div class="ins-object-title">◩ Маска · ${html(el.name)}</div><section class="ins-section"><p class="layer-mask-edit-note">Режим маски: кисть рисует только по непрозрачности слоя. Чёрный скрывает, белый проявляет. X переключает цвет независимо от раскладки.</p><div class="layer-mask-btns"><button class="linebtn" data-mask-fill="black">Залить чёрным</button><button class="linebtn" data-mask-fill="white">Залить белым</button></div><button class="linebtn wide" data-mask-exit="1">Редактировать изображение</button></section>`;return}
 
@@ -941,7 +942,7 @@ function relocateMobileHistory(){
 }
 
 function showInspector(mode='settings'){if(matchMedia('(max-width:760px)').matches&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(matchMedia('(max-width:760px)').matches){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
-function hideInspector(){closeUnderlinePanel();cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
+function hideInspector(){closeListStylePanel();closeUnderlinePanel();cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
 function changeProperty(key,val,final=false){if(rejectMobileTextTarget(key))return;if(styleInlineSelection(key,val,final)||styleInlineLayer(key,val,final))return;if(app.wysiwyg&&!fallbackInlineWysiwyg('Форматирование'))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity','strokeWidth','stroke','strokeStyle','strokeOpacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='strokeWidth')n=Math.max(0,n);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(e.type==='text'&&['strokeWidth','stroke'].includes(key))restoreTextRuns(e,applyTextStyle(e,0,e.text.length,{[key]:null}).textRuns);if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(['strokeWidth','stroke'].includes(key))restoreTextRuns(other,applyTextStyle(other,0,other.text.length,{[key]:null}).textRuns);if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
 function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;if(['fontSize','letterSpacing','lineHeight','strokeWidth'].includes(t.dataset.key)&&String(t.value).trim()==='')return;const editedValue=t.value;inspectorEditingControl=t;try{changeProperty(t.dataset.key,editedValue,final)}finally{inspectorEditingControl=null}if(final&&['lineHeight','strokeWidth','strokeStyle'].includes(t.dataset.key))syncInspectorFontFamily();if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
 $('#inspector').addEventListener('change',e=>{if(e.target.dataset.clipCheckbox){const elem=app.doc.elements.find(x=>x.id===e.target.dataset.clipCheckbox);if(elem){elem.clipped=!e.target.checked;toggleClip(elem.id)}refreshInspector()}});
@@ -2131,8 +2132,9 @@ $('#selectionMenu').addEventListener('click',ev=>{const b=ev.target.closest('[da
 $('#maskFromSelection').onclick=applySelectionMask;$('#clearPixelSelection').onclick=clearPixelSelection;
 
 function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDoc(d);
- if(withSelection&&underlinePanel?.doc===model&&!underlinePanel.session&&underlinePanel.draft){
-  const {element,draft}=underlinePanel;
+ const stylePanel=listPanel??underlinePanel;
+ if(withSelection&&stylePanel?.doc===model&&!stylePanel.session&&stylePanel.draft){
+  const {element,draft}=stylePanel;
   d={...d,elements:d.elements.map(e=>e.id===element.id?draft:e)};
  }const stack=withSelection&&app.editingId?{...d,elements:d.elements.filter(e=>e.id!==app.editingId||e.textMode==='boundary')}:d;maskRenderDocuments.set(stack,model);c.save();
  // Regional pixelation must sample native document pixels, even in a scaled preview.
@@ -2217,14 +2219,14 @@ function startInlineWysiwyg(e){
    if(underlinePanel&&underlineOwnerValid())syncUnderlinePanel();
   },
   onFallback(selection,reason){finishWysiwygFallback(selection,reason);},
-  onRecovery(){ closeUnderlinePanel();syncBaselineShiftControls();syncTextCaseControls();syncParagraphListControls();$('#wysiwygRecovery').classList.remove('hidden');$('#wysiwygRecoveryMessage').textContent='Ввод не подтверждён и не сохранён. При использовании IME завершите композицию. Скопируйте нужный текст перед восстановлением.';}
+  onRecovery(){ closeListStylePanel();closeUnderlinePanel();syncBaselineShiftControls();syncTextCaseControls();syncParagraphListControls();$('#wysiwygRecovery').classList.remove('hidden');$('#wysiwygRecoveryMessage').textContent='Ввод не подтверждён и не сохранён. При использовании IME завершите композицию. Скопируйте нужный текст перед восстановлением.';}
  });
  // project() already owns the initial end caret. A delayed initialization must
  // never overwrite a selection the user established before the next frame.
  requestAnimationFrame(()=>{if(app.editingId===e.id&&app.wysiwyg&&document.activeElement!==host)app.wysiwyg.focus();});
 }
 function finishWysiwygFallback(c,reason){
- closeUnderlinePanel();
+ closeListStylePanel();closeUnderlinePanel();
  const session=app.wysiwyg;if(!session)return;app.wysiwyg=null;session.dispose();
  const e=app.doc.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');editor.value=e.text;
  app.inlineSession.formatted=true;app.inlineCaret={start:Math.min(c.anchor,c.focus),end:Math.max(c.anchor,c.focus),direction:c.anchor>c.focus?'backward':'forward'};
@@ -2251,7 +2253,7 @@ $('#wysiwygRecover').onclick=()=>{if(app.wysiwyg?.recover())$('#wysiwygRecovery'
 // Controls outside changeProperty still hand off before mutating the layer.
 function routeWysiwygPanelAction(ev){
  if(!app.wysiwyg||!ev.target.closest(inlineFormattingRoots+',#fxPopover,#fxMenu,#fxChooser'))return;
- if(ev.target.closest('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-ins-section="Списки"],[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]'))return;
+ if(ev.target.closest('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-ins-section="Списки"],[data-underline-open],#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]'))return;
  // Capture-phase synchronization must not rewrite a newly edited input/select
  // before its own bubble-phase changeProperty handler reads the new value.
  // The selection was already preserved at pointerdown/focusout; the formatting
@@ -2293,7 +2295,7 @@ function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editi
 }
 function closeInlineText(cancel=false){
  if(!app.editingId)return;
- closeUnderlinePanel();
+ closeListStylePanel();closeUnderlinePanel();
  if(cancel)mobileTextCancelGesture();
  // A numeric property input may own the IME; settle its change while the session still owns history.
  const focused=document.activeElement;if(focused?.closest('#mobilePropertyUI,#inspector,#fillPopover')&&focused.matches('input,textarea,select'))focused.blur();
@@ -2343,7 +2345,7 @@ $('#inlineText').addEventListener('blur',ev=>{
 $('#inlineText').addEventListener('keydown',ev=>{if(app.inlineSession?.formatted&&(ev.ctrlKey||ev.metaKey)&&['z','y'].includes(ev.key.toLowerCase())){ev.preventDefault();ev.stopPropagation();inlineHistoryGo(ev.key.toLowerCase()==='y'||ev.shiftKey?1:-1);return}if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(!matchMedia('(max-width:760px)').matches);canvas.focus()}if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText()}});
 // Formatting tools may take focus (including Android numeric inputs) without
 // releasing the textarea session. Inputs/selects keep native focus behavior.
-const inlineFormattingRoots='#inspector,#underlinePanel,#fillPopover,#fontDialog,#mobileToolbars,#mobilePropertyUI,#undoBtn,#redoBtn';
+const inlineFormattingRoots='#inspector,#underlinePanel,#listStylePanel,#fillPopover,#fontDialog,#mobileToolbars,#mobilePropertyUI,#undoBtn,#redoBtn';
 function restoreInlineElement(e,value){for(const key of Object.keys(e))delete e[key];Object.assign(e,clone(value))}
 function recordInlineSession(inputType){
  if(mobileTextGesture)return;
@@ -2619,9 +2621,9 @@ function positionUnderlinePanel(){
  const b=underlineTrigger()?.getBoundingClientRect();
  if(!b){closeUnderlinePanel();return;}
  const bounds=$('#rightPanel').getBoundingClientRect(),p=underlinePanelNode;
- positionUnderlineSurface(p,bounds, b.top);
+ positionInspectorSurface(p,bounds, b.top);
 }
-function positionUnderlineSurface(p,anchor,top){
+function positionInspectorSurface(p,anchor,top){
  const margin=12,gap=8,width=p.offsetWidth,dock=$('.floating-docks').getBoundingClientRect();
  const x=clamp(anchor.left-width-gap,margin,Math.max(margin,innerWidth-width-margin));
  const bottom=x<dock.right&&x+width>dock.left&&dock.height?Math.min(dock.top-gap,innerHeight-margin):innerHeight-margin;
@@ -2750,23 +2752,32 @@ function underlineNumeric(key,field,final){
  const {min,max}=underlineLimits[key];
  changeUnderline(key,clamp(field.valueAsNumber,min,max),final);
 }
-function underlineSliderEvents(root,selector){
- let pointer=null,field=null,blocked=null;
+function previewSliderEvents(root,selector,owner,cancelPreview,commitDeferredChange){
+ let pointer=null,field=null,blocked=null,deferredChange=false;
  const cancel=()=>{if(pointer!==null){blocked=field;pointer=null;}};
  root.addEventListener('pointerdown',ev=>{
   if(!ev.target.matches(selector)||ev.button!==0)return;
-  blocked=null;pointer=ev.pointerId;field=ev.target;
-  if(underlinePanel)underlinePanel.cancelSlider=cancel;
+  blocked=null;deferredChange=false;pointer=ev.pointerId;field=ev.target;
+  const panel=owner();if(panel)panel.cancelSlider=cancel;
  });
  root.addEventListener('keydown',ev=>{if(ev.target.matches(selector))blocked=null;});
- document.addEventListener('pointerup',ev=>{if(ev.pointerId===pointer)pointer=null;},true);
+ document.addEventListener('pointerup',ev=>{
+  if(ev.pointerId!==pointer)return;
+  pointer=null;
+  if(deferredChange)commitDeferredChange(field);
+ },true);
  for(const type of ['pointercancel','lostpointercapture'])root.addEventListener(type,ev=>{
   if(ev.pointerId!==pointer)return;
-  cancel();cancelUnderlineGesture();
+  cancel();cancelPreview();
  });
- return field=>blocked===field;
+ return (input,final=false)=>{
+  if(blocked===input)return true;
+  // A native range can emit change on blur before its pointer is released.
+  if(commitDeferredChange&&final&&pointer!==null&&input===field){deferredChange=true;return true;}
+  return false;
+ };
 }
-const underlineSliderCanceled=underlineSliderEvents(underlinePanelNode,'[data-underline-range]');
+const underlineSliderCanceled=previewSliderEvents(underlinePanelNode,'[data-underline-range]',()=>underlinePanel,cancelUnderlineGesture);
 underlinePanelNode.addEventListener('input',ev=>{
  const field=ev.target,key=field.dataset.underlineRange||field.dataset.underlineNumber;
  if(key&&!underlineSliderCanceled(field))underlineNumeric(key,field,false);
@@ -2890,100 +2901,320 @@ function changeTextCase(value){
  restoreInlineElement(e,next);commit('Регистр текста');syncInspectorFontFamily();
 }
 
-const paragraphListKinds = [['none','Без списка'],['bullet','Маркеры'],['ordered','Нумерация']];
+const paragraphListKinds = [
+ ['none','Без списка','<path d="M5 10h14"/>'],
+ ['bullet','Маркеры','<path d="M10 5h11m-11 5h11m-11 5h11"/><circle cx="4" cy="5" r="1"/><circle cx="4" cy="10" r="1"/><circle cx="4" cy="15" r="1"/>'],
+ ['ordered','Нумерация','<path d="m3 3 2-1v4M3 9c0-2 4-2 3 0l-3 3h3m-3 2h3l-2 2c3-1 3 3-1 2m7-14h11m-11 6h11m-11 6h11"/>'],
+];
+const listPanelNode=$('#listStylePanel'),listPanelBody=listPanelNode.querySelector('.list-style-body');
+const listSettingsLabel='Настроить существующий список';
+const listPanelTrigger=owner=>$(owner.existingModes?'#inspector [data-list-settings]':'#inspector [data-list-kind="'+owner.mode+'"]');
+const listPanelControls={};
+let listPanel=null;
+
 function supportsParagraphLists(e){
  return e?.type==='text'&&supportsHorizontalTextLayout(e)&&!e.textPathId;
 }
+function canEditParagraphLists(e){
+ return supportsParagraphLists(e)&&app.selectedIds.length===1&&!isLayerLocked(e)&&
+  (!app.editingId||app.wysiwyg?.owns(e)&&app.wysiwyg.clean());
+}
 function paragraphListInspectorState(e){
- if(!supportsParagraphLists(e)||app.selectedIds.length!==1||isLayerLocked(e))return null;
- if(app.editingId&&(!app.wysiwyg?.owns(e)||!app.wysiwyg.clean()))return null;
+ if(!canEditParagraphLists(e)||app.editingId&&!app.inlineCaret)return null;
  return paragraphListState(e,app.editingId?app.inlineCaret:null);
 }
 function paragraphListControls(e){
- const state=paragraphListInspectorState(e),disabled=state?'':'disabled';
- const field=(key,label,min,step)=>{
-  const value=state?state[key]:paragraphListDefaults[key];
-  return `<label>${label}<input type="number" data-list-field="${key}" min="${min}" max="${paragraphListLimits[key]}" step="${step}" value="${value==='mixed'||value===null?'':value}" placeholder="${value==='mixed'?'Mixed':key==='listStart'?'Авто':''}" ${disabled}></label>`;
- };
- return `<div class="paragraph-list-controls">
-  <div class="action-row" role="group" aria-label="Тип списка">
-   ${paragraphListKinds.map(([kind,label])=>`<button type="button" class="linebtn" data-list-kind="${kind}" aria-pressed="${state?.listKind===kind}" ${disabled}>${label}</button>`).join('')}
-   <span data-list-mixed role="status">${state?.listKind==='mixed'?'Mixed':''}</span>
-  </div>
-  <details data-list-gallery ${state?.listKind==='bullet'?'':'hidden'}>
-   <summary aria-label="Галерея маркеров">Маркер <span data-list-current>${state?.listMarker==='mixed'?'Mixed':state?.listMarker??''}</span></summary>
-   ${listMarkerGroups.map(({label,markers})=>`<fieldset><legend>${label}</legend><div class="list-marker-grid">
-    ${markers.map(([marker,name])=>`<button type="button" class="linebtn" data-list-marker="${marker}" aria-label="${name}" title="${name}" aria-pressed="${state?.listMarker===marker}">${marker}</button>`).join('')}
-   </div></fieldset>`).join('')}
-  </details>
-  <div data-list-ordered ${state?.listKind==='ordered'?'':'hidden'}>
-   <label>Стиль нумерации<select data-list-field="listCounterStyle" ${disabled}>
-    <option value="" disabled ${state?.listCounterStyle==='mixed'?'selected':''}>Mixed</option>
-    ${listCounterStyles.map(([style,label])=>`<option value="${style}" ${state?.listCounterStyle===style?'selected':''}>${label}</option>`).join('')}
-   </select></label>
-   ${field('listStart','Начать с',1,1)}
-  </div>
-  <div class="cols2">${field('listIndent','Отступ, px',0,'any')}${field('listGap','Интервал, px',0,'any')}</div>
+ const state=paragraphListInspectorState(e);
+ return `<div class="paragraph-list-controls" role="group" aria-label="Тип списка">
+  ${paragraphListKinds.map(([kind,label,icon])=>`<button type="button" class="linebtn list-kind-button"
+   data-list-kind="${kind}" aria-label="${label}" title="${label}" aria-pressed="${state?.listKind==='mixed'?'mixed':state?.listKind===kind}"
+   ${kind==='none'?'':`aria-haspopup="dialog" aria-controls="listStylePanel" aria-expanded="${!listPanel?.existingModes&&listPanel?.mode===kind}"`}
+   ${state?'':'disabled'}><svg viewBox="0 0 24 20" aria-hidden="true" focusable="false">${icon}</svg></button>`).join('')}
+  <button type="button" class="linebtn list-kind-button" data-list-settings aria-label="${listSettingsLabel}" title="${listSettingsLabel}"
+   aria-haspopup="dialog" aria-controls="listStylePanel" aria-expanded="${!!listPanel?.existingModes}"
+   ${state&&state.listKind!=='none'?'':'disabled'}><svg viewBox="0 0 24 20" aria-hidden="true" focusable="false">
+   <path d="M4 5h4m4 0h8M4 10h9m4 0h3M4 15h4m4 0h8"/><circle cx="10" cy="5" r="2"/><circle cx="15" cy="10" r="2"/><circle cx="10" cy="15" r="2"/></svg></button>
+  <span data-list-mixed role="status">${state?.listKind==='mixed'?'Mixed':''}</span>
  </div>`;
 }
-function syncParagraphListControls(force=null){
+function syncParagraphListControls(){
+ if(listPanel&&!listPanel.applying&&!listOwnerValid(listPanel))closeListStylePanel();
  const root=$('#inspector .paragraph-list-controls');if(!root)return;
  const state=paragraphListInspectorState(active());
- for(const button of root.querySelectorAll('[data-list-kind],[data-list-marker]')){
+ for(const button of root.querySelectorAll('[data-list-kind]')){
+  const kind=button.dataset.listKind;
   button.disabled=!state;
-  const selected=button.dataset.listKind?button.dataset.listKind===state?.listKind:button.dataset.listMarker===state?.listMarker;
-  button.setAttribute('aria-pressed',String(selected));
+  button.setAttribute('aria-pressed',state?.listKind==='mixed'?'mixed':String(state?.listKind===kind));
+  if(kind!=='none')button.setAttribute('aria-expanded',String(!listPanel?.existingModes&&listPanel?.mode===kind));
  }
+ const settings=root.querySelector('[data-list-settings]');
+ settings.disabled=!state||state.listKind==='none';
+ settings.setAttribute('aria-expanded',String(!!listPanel?.existingModes));
  const mixed=root.querySelector('[data-list-mixed]'),label=state?.listKind==='mixed'?'Mixed':'';
  if(mixed.textContent!==label)mixed.textContent=label;
- const gallery=root.querySelector('[data-list-gallery]');
- gallery.hidden=state?.listKind!=='bullet';
- if(gallery.hidden)gallery.open=false;
- const current=gallery.querySelector('[data-list-current]'),marker=state?.listMarker==='mixed'?'Mixed':state?.listMarker??'';
- if(current.textContent!==marker)current.textContent=marker;
- root.querySelector('[data-list-ordered]').hidden=state?.listKind!=='ordered';
- for(const input of root.querySelectorAll('[data-list-field]')){
-  input.disabled=!state;
-  if(document.activeElement===input&&input!==force)continue;
-  const key=input.dataset.listField,value=state?state[key]:paragraphListDefaults[key];
-  input.value=value==='mixed'||value===null?'':value;
-  if(input.type==='number')input.placeholder=value==='mixed'?'Mixed':key==='listStart'?'Авто':'';
- }
 }
-function changeParagraphList(patch){
- const e=active();
- if(!paragraphListInspectorState(e))return false;
- closeUnderlinePanel();
- if(app.editingId)return app.wysiwyg.changeParagraphStyle(patch);
- const next=applyParagraphListStyle(e,patch);
- if(next===e)return false;
- if(next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
- restoreInlineElement(e,next);commit('Форматирование списка');syncInspectorFontFamily();
+function captureListOwner(){
+ const element=active(),session=app.wysiwyg;
+ if(!underlineDesktop()||!canEditParagraphLists(element)||!app.doc||app.maskEditId)return null;
+ let selection=null;
+ try{if(session)selection=session.rememberSelection();}catch{return null;}
+ const range=selection&&{start:Math.min(selection.anchor,selection.focus),end:Math.max(selection.anchor,selection.focus)};
+ return {doc:app.doc,slide:app.doc.activeSlideIndex,element,session,selection,range,revision:JSON.stringify(element),gestureEpoch:0};
+}
+function listOwnerValid(owner){
+ if(!owner||owner.doc!==app.doc||owner.slide!==app.doc.activeSlideIndex||owner.element!==active()||
+    owner.session!==app.wysiwyg||!canEditParagraphLists(owner.element)||app.maskEditId||!underlineDesktop()||
+    owner.revision!==JSON.stringify(owner.element))return false;
+ if(!owner.session)return !app.editingId;
+ try{
+  const {anchor,focus}=owner.session.rememberSelection();
+  return anchor===owner.selection.anchor&&focus===owner.selection.focus;
+ }catch{return false;}
+}
+const listPresets=listPanelNode.querySelector('[data-list-presets]');
+listPresets.innerHTML=listMarkerGroups.map(({label,markers})=>`<fieldset><legend>${label}</legend><div class="list-marker-grid" data-list-grid>
+ ${markers.map(([marker,name])=>`<button type="button" class="linebtn" data-list-marker="${marker}" aria-label="${name}" title="${name}">${marker}</button>`).join('')}
+ </div></fieldset>`).join('');
+const listCounters=listPanelNode.querySelector('[data-list-counters]');
+listCounters.innerHTML=listCounterStyles.map(([key,label])=>`<button type="button" class="linebtn" data-list-counter="${key}" title="${label}">${label}</button>`).join('');
+for(const field of listPanelNode.querySelectorAll('[data-list-field]')){
+ const key=field.dataset.listField;listPanelControls[key]=field;
+ if(field.type==='number')Object.assign(field,{min:paragraphListMinimums[key]??0,max:paragraphListLimits[key],
+  step:['listStart','listMarkerScale','listMarkerOpacity'].includes(key)?1:'any'});
+}
+const listScaleSlider=listPanelNode.querySelector('[data-list-scale-range]');
+Object.assign(listScaleSlider,{min:paragraphListMinimums.listMarkerScale,max:paragraphListLimits.listMarkerScale,step:1});
+const listSpacingSliders=listPanelNode.querySelectorAll('[data-list-spacing-range]');
+for(const slider of listSpacingSliders){
+ const key=slider.dataset.listSpacingRange;
+ Object.assign(slider,{min:paragraphListMinimums[key]??0,max:Math.min(120,paragraphListLimits[key]),step:1});
+}
+const listColorButton=listPanelNode.querySelector('[data-list-color]');
+function listPanelState(owner=listPanel){
+ if(!owner)return null;
+ const onlyKind=owner.existingModes?owner.mode:undefined;
+ const element=owner.draft||owner.element,state=paragraphListState(element,owner.range,{onlyKind}),base=resolveRichTextStyle(element);
+ const solid=(element.fillType||'solid')==='solid';
+ const starts=new Set(paragraphRangeForSelection(element.text,owner.range).map(p=>p.start));
+ const emoji=owner.mode==='bullet'&&normalizeParagraphRuns(element.text,element.paragraphRuns).some(({start,style})=>
+  starts.has(start)&&(!onlyKind||style.listKind===onlyKind)&&isEmojiListMarker(style.listMarker));
+ return {...state,solid,emoji,
+  color:state.listMarkerColor==='inherit'?base.textColor:state.listMarkerColor,
+  opacity:state.listMarkerOpacity==='inherit'?base.fillOpacity:state.listMarkerOpacity};
+}
+function syncListStylePanel(force=null){
+ if(!listPanel)return;
+ const state=listPanelState(),bullet=listPanel.mode==='bullet';
+ const pressed=(button,value)=>button.setAttribute('aria-pressed',String(value));
+ const match=(value,key)=>value==='mixed'?'mixed':value===key;
+ listPresets.hidden=!bullet;
+ listPanelNode.querySelector('[data-list-ordered]').hidden=bullet;
+ for(const button of listPanelNode.querySelectorAll('[data-list-mode],[data-list-marker],[data-list-counter],[data-list-reset]')){
+  const {listMode,listMarker,listCounter,listReset}=button.dataset;
+  if(listMode){
+   pressed(button,listMode===listPanel.mode);
+   button.disabled=!!listPanel.existingModes&&!listPanel.existingModes.includes(listMode);
+  }
+  if(listMarker)pressed(button,match(state.listMarker,listMarker));
+  if(listCounter)pressed(button,match(state.listCounterStyle,listCounter));
+  if(listReset){
+   pressed(button,match(state[listReset],listReset==='listMarkerScale'?'auto':'inherit'));
+   button.disabled=listReset==='listMarkerColor'?!state.solid||state.emoji:listReset==='listMarkerOpacity'&&!state.solid;
+  }
+ }
+ for(const [key,input] of Object.entries(listPanelControls)){
+  input.disabled=key==='listMarkerColor'?!state.solid||state.emoji:key==='listMarkerOpacity'&&!state.solid;
+  if(document.activeElement===input&&input!==force)continue;
+  const value=state[key],scale=key==='listMarkerScale',color=key==='listMarkerColor',opacity=key==='listMarkerOpacity';
+  const effective=scale?(value===null?100:value):color?state.color:opacity?state.opacity:value;
+  input.placeholder=value==='mixed'?'Mixed':(scale&&value==='auto'||key==='listStart'&&value===null)?'Auto':'';
+  input.value=input.disabled||effective==='mixed'||effective==='auto'||effective===null?'':color?effective.toUpperCase():effective;
+ }
+ if(document.activeElement!==listScaleSlider||force===listScaleSlider)listScaleSlider.value=state.listMarkerScale==='mixed'?100:listMarkerPercent(state);
+ listScaleSlider.setAttribute('aria-valuetext',state.listMarkerScale==='mixed'?'Mixed':state.listMarkerScale==='auto'?
+  `Auto · ${state.listMarker==='mixed'&&bullet?'Mixed':listMarkerPercent(state)+'%'}`:`${listMarkerPercent(state)}%`);
+ for(const slider of listSpacingSliders){
+  const key=slider.dataset.listSpacingRange,value=state[key];
+  if(document.activeElement!==slider||force===slider)slider.value=value==='mixed'?paragraphListDefaults[key]:value;
+  slider.setAttribute('aria-valuetext',value==='mixed'?'Mixed':`${value} px`);
+ }
+ listPanelNode.querySelector('[data-list-size-label]').textContent=bullet?'Размер маркера':'Размер номера';
+ listPanelNode.querySelector('[data-list-color-label]').textContent=bullet?'Цвет маркера':'Цвет номера';
+ listColorButton.disabled=!state.solid||state.emoji;
+ listColorButton.querySelector('span').style.backgroundColor=listColorButton.disabled||state.color==='mixed'?'':state.color;
+ const hint=listPanelNode.querySelector('[data-list-color-hint]');
+ hint.hidden=state.solid&&!state.emoji;
+ hint.textContent=state.solid?'У цветных эмодзи своя палитра. Для своего цвета выберите, например, ●.':
+  'Цвет и прозрачность доступны при сплошной заливке текста.';
+}
+function positionListStylePanel(){
+ if(!listPanel)return;
+ const trigger=listPanelTrigger(listPanel);
+ if(!trigger)return;
+ const bounds=$('#rightPanel').getBoundingClientRect(),anchor=trigger.getBoundingClientRect();
+ const stage=$('#stageScroller').getBoundingClientRect();
+ // Keep the center of the canvas and the floating tool dock accessible.
+ const minLeft=(stage.left+stage.right)/2+8;
+ const left=Math.max(bounds.left,minLeft+listPanelNode.offsetWidth+8);
+ positionInspectorSurface(listPanelNode,{left},anchor.top);
+ if(currentPickerKey()==='_listMarker')repositionFillPopover();
+}
+function cancelListPreview(cancelGesture=true){
+ const owner=listPanel;
+ if(!owner)return;
+ if(cancelGesture){owner.gestureEpoch++;owner.cancelSlider?.();}
+ if(!owner.draft)return;
+ owner.draft=null;owner.key=null;
+ if(owner.session)owner.session.cancelParagraphPreview();
+ else paint();
+ syncListStylePanel(document.activeElement);
+}
+function closeListStylePanel(restoreFocus=false){
+ const owner=listPanel;if(!owner||owner.closing)return;
+ owner.closing=true;
+ if(currentPickerKey()==='_listMarker')closeFillPopover();
+ cancelListPreview();
+ listPanel=null;listPanelNode.classList.add('hidden');
+ syncParagraphListControls();
+ if(restoreFocus)listPanelTrigger(owner)?.focus({preventScroll:true});
+}
+function changeParagraphList(owner,patch,final=true){
+ if(!listOwnerValid(owner)){closeListStylePanel();return false;}
+ const key=Object.keys(patch)[0],element=owner.element;
+ const geometry=!['listMarkerColor','listMarkerOpacity'].includes(key);
+ if(!geometry){
+  const state=listPanelState(owner);
+  if(!state.solid||key==='listMarkerColor'&&state.emoji)return false;
+ }
+ const onlyKind=owner.existingModes?owner.mode:undefined;
+ const next=applyParagraphListStyle(element,patch,owner.range,{useAutoMarkerScale:true,onlyKind});
+ if(next===element){
+  if(owner.key===key)cancelListPreview(false);
+  return true;
+ }
+ if(owner.draft&&owner.key!==key)cancelListPreview();
+ if(geometry&&next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
+ owner.draft=final?null:next;owner.key=final?null:key;
+ owner.applying=true;
+ try{
+  if(owner.session){
+   if(!owner.session.applyParagraphProjection(next,{key,selection:owner.selection,final,geometry})){
+    owner.session.cancelParagraphPreview();closeListStylePanel();return false;
+   }
+  }else if(final){
+   restoreInlineElement(element,next);commit('Форматирование списка');syncInspectorFontFamily();
+  }else paint();
+  if(final)owner.revision=JSON.stringify(element);
+ }finally{owner.applying=false;}
+ syncParagraphListControls();
+ syncListStylePanel();
  return true;
 }
-$('#inspector').addEventListener('click',ev=>{
- const kind=ev.target.closest('[data-list-kind]');
- if(kind){if(changeParagraphList({listKind:kind.dataset.listKind}))app.wysiwyg?.focus();return;}
- const preset=ev.target.closest('[data-list-marker]');
- if(!preset)return;
- const gallery=preset.closest('details');
- const changed=changeParagraphList({listMarker:preset.dataset.listMarker});
- gallery.open=false;
- if(changed&&app.wysiwyg)app.wysiwyg.focus();
- else gallery.querySelector('summary').focus();
-});
-$('#inspector').addEventListener('keydown',ev=>{
- if(ev.key!=='Enter'||!ev.target.matches('input[data-list-field]'))return;
- ev.preventDefault();ev.target.blur();app.wysiwyg?.focus();
-});
-$('#inspector').addEventListener('change',ev=>{
- const input=ev.target,key=input.dataset.listField;
- if(!key)return;
- if(input.checkValidity()&&(input.value!==''||key==='listStart')){
-  changeParagraphList({[key]:input.value===''?null:input.type==='number'?input.valueAsNumber:input.value});
+function openListMode(mode,fromInspector){
+ let owner=listPanel;
+ if(owner&&!listOwnerValid(owner)){closeListStylePanel();return;}
+ if(!owner)owner=captureListOwner();
+ if(!owner)return;
+ let existingModes=owner.existingModes;
+ if(mode==='settings'){
+  existingModes=['bullet','ordered'].filter(onlyKind=>paragraphListState(owner.element,owner.range,{onlyKind}));
+  if(!existingModes.length)return;
+  mode=existingModes.includes(owner.mode)?owner.mode:existingModes[0];
+ }else if(fromInspector)existingModes=null;
+ else if(existingModes&&!existingModes.includes(mode))return;
+ closeUnderlinePanel();
+ if(owner===listPanel){
+  if(currentPickerKey()==='_listMarker')closeFillPopover();
+  cancelListPreview();
  }
- syncParagraphListControls(input);
+ owner.existingModes=existingModes;
+ if(!existingModes&&!changeParagraphList(owner,{listKind:mode}))return;
+ if(mode==='none'){closeListStylePanel();return;}
+ const switching=owner.mode!==mode;
+ if(!listPanel){
+  closeFillPopover();
+  listPanel=owner;
+  listPanelNode.classList.remove('hidden');listPanelBody.scrollTop=0;
+ }else if(switching){
+  owner.scrollTop??={};
+  owner.scrollTop[owner.mode]=listPanelBody.scrollTop;
+ }
+ owner.mode=mode;
+ syncParagraphListControls();syncListStylePanel();
+ if(fromInspector||switching)positionListStylePanel();
+ if(switching)listPanelBody.scrollTop=owner.scrollTop?.[mode]??0;
+ if(fromInspector)listPanelNode.querySelector('[data-list-mode="'+mode+'"]').focus({preventScroll:true});
+}
+$('#inspector').addEventListener('click',ev=>{
+ const button=ev.target.closest('[data-list-kind],[data-list-settings]');
+ if(button&&!button.disabled)openListMode(button.dataset.listKind??'settings',true);
 });
+listPanelNode.addEventListener('click',ev=>{
+ const button=ev.target.closest('button');if(!button||!listPanel)return;
+ const {listMode,listMarker,listCounter,listReset}=button.dataset;
+ if(button.hasAttribute('data-list-close'))closeListStylePanel(true);
+ else if(listMode)openListMode(listMode,false);
+ else if(listMarker)changeParagraphList(listPanel,{listMarker});
+ else if(listCounter)changeParagraphList(listPanel,{listCounterStyle:listCounter});
+ else if(listReset){
+  changeParagraphList(listPanel,{[listReset]:paragraphListDefaults[listReset]??'auto'});
+  syncListStylePanel(listPanelControls[listReset]);
+ }else if(button===listColorButton){
+  if(!listOwnerValid(listPanel)){closeListStylePanel();return;}
+  cancelListPreview();openFillPopover('_listMarker',button);
+  if(!$('#fillPopover').classList.contains('hidden'))$('#fillPopover [data-cp-part]')?.focus({preventScroll:true});
+ }
+});
+function listFieldChange(input,final){
+ const key=input.dataset.listField??input.dataset.listSpacingRange??(input===listScaleSlider?'listMarkerScale':null);
+ if(!key||!listPanel||input.disabled)return;
+ // Some native range controls continue moving the thumb after capture is lost.
+ if(listSliderBlocked(input)){syncListStylePanel(input);return;}
+ if(final&&listSliderBlocked(input,true))return;
+ let value=input.type==='number'||input.type==='range'?input.valueAsNumber:null;
+ if(key==='listMarkerColor')value=/^#[0-9a-f]{6}$/i.test(input.value.trim())?input.value.trim():null;
+ if(input.checkValidity()&&(Number.isFinite(value)||typeof value==='string'||key==='listStart'&&input.value==='')){
+  changeParagraphList(listPanel,{[key]:value},final);
+ }else if(final&&listPanel.key===key)cancelListPreview();
+ if(final)syncListStylePanel(input);
+}
+const listSliderSelector='[data-list-scale-range],[data-list-spacing-range]';
+listPanelNode.addEventListener('pointerdown',ev=>{
+ // A native range can emit input before the preceding field emits change on blur.
+ if(ev.button===0&&ev.target.matches(listSliderSelector)&&document.activeElement?.matches('[data-list-field]')){
+  ev.target.focus({preventScroll:true});
+ }
+},true);
+const listSliderBlocked=previewSliderEvents(listPanelNode,listSliderSelector,()=>listPanel,cancelListPreview,input=>listFieldChange(input,true));
+listPanelNode.addEventListener('input',ev=>listFieldChange(ev.target,false));
+listPanelNode.addEventListener('change',ev=>listFieldChange(ev.target,true));
+listPanelNode.addEventListener('keydown',ev=>{
+ if(ev.key==='Enter'&&ev.target.matches('[data-list-field]')){
+  ev.preventDefault();listFieldChange(ev.target,true);return;
+ }
+ const grid=ev.target.closest('[data-list-grid],[data-list-counters]');
+ if(!grid||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(ev.key))return;
+ const buttons=[...grid.querySelectorAll('button')],index=buttons.indexOf(ev.target);
+ const columns=getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+ const next={ArrowLeft:index-1,ArrowRight:index+1,ArrowUp:index-columns,ArrowDown:index+columns,Home:0,End:buttons.length-1}[ev.key];
+ ev.preventDefault();buttons[clamp(next,0,buttons.length-1)]?.focus();
+});
+$('#inspector').addEventListener('scroll',positionListStylePanel,{passive:true});
+window.addEventListener('resize',()=>{
+ if(listPanel&&!listOwnerValid(listPanel))closeListStylePanel();
+ else positionListStylePanel();
+});
+document.addEventListener('compositionstart',ev=>{if(ev.target.id==='inlineWysiwyg')closeListStylePanel();},true);
+document.addEventListener('pointerdown',ev=>{
+ if(listPanel&&!ev.target.closest('#listStylePanel,[data-list-kind],[data-list-settings],#fillPopover[data-key=_listMarker]'))closeListStylePanel();
+},true);
+window.addEventListener('keydown',ev=>{
+ if(!listPanel||ev.key!=='Escape'||ev.isComposing)return;
+ ev.preventDefault();ev.stopImmediatePropagation();
+ if(currentPickerKey()==='_listMarker'&&!$('#fillPopover').classList.contains('hidden')){
+  closeFillPopover();listColorButton.focus({preventScroll:true});
+ }else closeListStylePanel(true);
+},true);
 
 function syncTextDecorationButtons(){
  for(const button of $$('[data-text-decoration]')){
@@ -3081,7 +3312,7 @@ document.addEventListener('mousedown',ev=>{
  app.inlineToolPointer=true;rememberInlineCaret();
  // Buttons can operate on the focused selection. Inputs/selects must retain
  // native focus, keyboard and text-selection behavior on desktop and Android.
- if((!mobileV36Small()&&document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-baseline-shift],[data-text-case],[data-list-kind],[data-list-marker],[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
+ if((!mobileV36Small()&&document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-baseline-shift],[data-text-case],[data-list-kind],[data-list-settings],[data-list-marker],[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
 },true);
 document.addEventListener('keydown',ev=>{
  if(ev.key!=='Escape')return;
@@ -4235,9 +4466,9 @@ window.addEventListener('keydown',event=>{
  const ctrl=event.ctrlKey||event.metaKey,code=event.code;
  const undoCombo=(ctrl&&code==='KeyZ')||(!ctrl&&event.altKey&&code==='KeyZ');
  const redoCombo=ctrl&&(code==='KeyY'||(code==='KeyZ'&&event.shiftKey));
- if((undoCombo||redoCombo)&&target?.closest?.('#underlinePanel,#fillPopover[data-key=_underline]')){event.preventDefault();event.stopImmediatePropagation();undo(redoCombo||event.shiftKey?1:-1);if(underlinePanel){syncUnderlinePanel();if(currentPickerKey()==='_underline')refreshPickerVisual();}return;}
+ if((undoCombo||redoCombo)&&target?.closest?.('#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]')){event.preventDefault();event.stopImmediatePropagation();undo(redoCombo||event.shiftKey?1:-1);if(underlinePanel){syncUnderlinePanel();if(currentPickerKey()==='_underline')refreshPickerVisual();}return;}
  if((undoCombo||redoCombo)&&app.wysiwyg&&target?.closest?.(inlineFormattingRoots)&&['INPUT','TEXTAREA','SELECT'].includes(target?.tagName))return;
- if((undoCombo||redoCombo)&&app.wysiwyg){event.preventDefault();event.stopImmediatePropagation();app.wysiwyg.travel(redoCombo||event.shiftKey?1:-1);return;}
+ if((undoCombo||redoCombo)&&app.wysiwyg){event.preventDefault();event.stopImmediatePropagation();closeListStylePanel(true);app.wysiwyg.travel(redoCombo||event.shiftKey?1:-1);return;}
  if((undoCombo||redoCombo)&&(insidePanel||!['INPUT','TEXTAREA','SELECT'].includes(target?.tagName))){
   event.preventDefault();event.stopImmediatePropagation();undo(redoCombo||event.shiftKey?1:-1);
  }
@@ -4250,7 +4481,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&regionEffectsRequest()){e.preventDefault();cancelRegionEffects();if(matchMedia('(max-width:760px)').matches)mobileV36Close();refreshInspector();return}
  if(input)return;
  if(e.key==='Escape'&&app.inkDraft){e.preventDefault();inkCancel();return}
- if(e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]'))return;
+ if(e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]'))return;
  if(e.code==='Space'){e.preventDefault();closeToolPopovers();app.spaceDown=true;$('#stageScroller').classList.add('hand-mode');toolDockState();return}
  if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.repeat){
   if(e.code==='KeyV'){e.preventDefault();activateMove();return}
@@ -4278,7 +4509,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&app.pixelSelection){e.preventDefault();clearPixelSelection();return}if(e.key==='Escape'&&app.penDraft){e.preventDefault();app.penDraft=null;app.drag=null;updateHistoryButtons();paint();return}if(e.key==='Escape'&&app.penTool){e.preventDefault();setPenMode(false);return}if(e.key==='Escape'){hideContextMenu();if(app.cropMode)exitCrop(false);else if(app.groupIsolation){const el=app.doc.elements.find(x=>x.id===app.groupIsolation);setSelected(el?.groupId?groupMembers(el.groupId).map(x=>x.id):[])}else {closeDialogs();hideInspector();setSelected([])}return}
  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)&&picked().length){e.preventDefault();const st=e.shiftKey?10:1;for(const el of picked().filter(v=>!isLayerLocked(v))){if(e.key==='ArrowLeft')el.x-=st;if(e.key==='ArrowRight')el.x+=st;if(e.key==='ArrowUp')el.y-=st;if(e.key==='ArrowDown')el.y+=st}commit();refreshInspector()}
 });
-window.addEventListener('keyup',e=>{if(e.key==='Alt'){app.altDown=false;document.body.classList.remove('alt-held');paint()}if(e.code==='Space'&&!e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#fillPopover[data-key=_underline]')){e.preventDefault();app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()}});
+window.addEventListener('keyup',e=>{if(e.key==='Alt'){app.altDown=false;document.body.classList.remove('alt-held');paint()}if(e.code==='Space'&&!e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]')){e.preventDefault();app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()}});
 window.addEventListener('blur',()=>{document.body.classList.remove('alt-held');app.altDown=false;app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()});
 window.addEventListener('resize',()=>{if(!matchMedia('(max-width:760px)').matches&&!app.editingId&&!app.drag&&!homeVisible())fitCanvas()});
 window.addEventListener('beforeunload',()=>{if(app.wysiwyg)closeInlineText();if(app.doc)flushSave()});
@@ -4325,21 +4556,25 @@ function positionEffectColorPopover(){
  const height=p.getBoundingClientRect().height;
  p.style.left=x+'px';p.style.top=clamp(r.top,margin,Math.max(margin,bottom-height))+'px';
 }
-function closeFillPopover(){const p=$('#fillPopover');
- if(p.classList.contains('hidden')){if(!underlinePanel)app.wysiwyg?.finishPreview();return;}
- if(p.dataset.key==='_underline'){p.classList.add('hidden');cancelUnderlineGesture();p.classList.remove('underline-color-popover');p.style.removeProperty('max-height')}
- else app.wysiwyg?.finishPreview();
+const scopedInkPicker=key=>key==='_underline'||key==='_listMarker';
+function closeFillPopover(){const p=$('#fillPopover'),key=p.dataset.key;
+ if(p.classList.contains('hidden')){if(!underlinePanel&&!listPanel)app.wysiwyg?.finishPreview();return;}
+ if(scopedInkPicker(key)){
+  p.classList.add('hidden');p.classList.remove('scoped-color-popover');p.style.removeProperty('max-height');
+  if(key==='_underline')cancelUnderlineGesture();
+  else{cancelListPreview();listColorButton.setAttribute('aria-expanded','false');}
+ }else app.wysiwyg?.finishPreview();
  if(fxColorAnchor){if(p.contains(document.activeElement))document.activeElement.blur();fxColorAnchor=null;p.classList.remove('fx-color-popover');p.style.removeProperty('max-height')}
- p.classList.add('hidden');app.pipetteArmed=false;$('#stageScroller').classList.remove('pipette-mode');if(app.doc&&p.dataset.key!=='_underline')paint()}
+ p.classList.add('hidden');app.pipetteArmed=false;$('#stageScroller').classList.remove('pipette-mode');if(app.doc&&!scopedInkPicker(key))paint()}
 function openFillPopover(key,btn){const p=$('#fillPopover'),oldKey=p.dataset.key;
  if(!p.classList.contains('hidden')&&oldKey===key){closeFillPopover();return}
- if(fxColorAnchor||oldKey==='_underline'||key==='_underline')closeFillPopover();
+ if(fxColorAnchor||scopedInkPicker(oldKey)||scopedInkPicker(key))closeFillPopover();
  fxColorAnchor=key==='_effect'&&btn.closest('#fxPopover')?{surface:fxPopoverState,button:btn}:null;
  p.classList.toggle('fx-color-popover',!!fxColorAnchor);
- p.classList.toggle('underline-color-popover',key==='_underline');
- p.setAttribute('aria-label',key==='_underline'?'Палитра подчёркивания':'Настроить заливку');
+ p.classList.toggle('scoped-color-popover',scopedInkPicker(key));
+ p.setAttribute('aria-label',key==='_underline'?'Палитра подчёркивания':key==='_listMarker'?'Палитра списка':'Настроить заливку');
  p.dataset.key=key;if(key!=='_effect')p.dataset.effectType='';p.dataset.format='HEX';p.dataset.paletteEdit='0';if(active()?.fillType==='gradient'){gradientGeometry(active());p.dataset.stopId=gradientStops(active())[0]?.id||'';}renderFillPopover();p.classList.remove('hidden');
- refreshPickerVisual();if(key==='_underline'){repositionFillPopover();return}paint();if(fxColorAnchor){positionEffectColorPopover();return}const b=btn.getBoundingClientRect();p.style.left=Math.max(12,b.left-375)+'px';p.style.top=Math.max(55,Math.min(b.top,innerHeight-p.offsetHeight-12))+'px';}
+ refreshPickerVisual();if(scopedInkPicker(key)){if(key==='_listMarker')listColorButton.setAttribute('aria-expanded','true');repositionFillPopover();return}paint();if(fxColorAnchor){positionEffectColorPopover();return}const b=btn.getBoundingClientRect();p.style.left=Math.max(12,b.left-375)+'px';p.style.top=Math.max(55,Math.min(b.top,innerHeight-p.offsetHeight-12))+'px';}
 // Desktop effects have an id in layer.effects; the older mobile glow,
 // outline and background effects store their color directly on the layer.
 // Both mobile color editors and the shared picker must resolve the same target.
@@ -4349,15 +4584,16 @@ function effectColorBinding(type,field='color',id=''){
  const legacyKey=field==='color'?{glow:'mobileGlowColor',outline:'stroke',background:'mobileBackgroundColor'}[type]:null;
  return {e,effect,legacyKey,color:effect?.[field]||(legacyKey?e?.[legacyKey]:null)||null};
 }
-function targetFillValue(key){if(key==='_underline')return normalizeHex(underlinePanel?underlineState(underlinePanel).inkColor:'')||'#000000';if(['fill','textColor','stroke'].includes(key)&&inlineStyleRange())return inlineSelectionStyle()[key==='stroke'?'stroke':'textColor'];if(key==='stroke'&&app.selectedIds.length>1)return picked()[0]?.stroke||'#000000';if(key==='_effect'){const p=$('#fillPopover');return effectColorBinding(p.dataset.effectType,p.dataset.effectField||'color',p.dataset.effectId).color||'#7857de'}if(key==='_ink')return app.inkSettings.color;const e=active();if(key==='_docBackground')return app.doc.background;if(key==='fill'&&e?.type==='text'&&(e.fillType||'solid')==='solid')return e.textColor||'#000000';return e?.[key]||'#ffffff'}
+function targetFillValue(key){if(key==='_listMarker')return normalizeHex(listPanelState()?.color)||'#000000';if(key==='_underline')return normalizeHex(underlinePanel?underlineState(underlinePanel).inkColor:'')||'#000000';if(['fill','textColor','stroke'].includes(key)&&inlineStyleRange())return inlineSelectionStyle()[key==='stroke'?'stroke':'textColor'];if(key==='stroke'&&app.selectedIds.length>1)return picked()[0]?.stroke||'#000000';if(key==='_effect'){const p=$('#fillPopover');return effectColorBinding(p.dataset.effectType,p.dataset.effectField||'color',p.dataset.effectId).color||'#7857de'}if(key==='_ink')return app.inkSettings.color;const e=active();if(key==='_docBackground')return app.doc.background;if(key==='fill'&&e?.type==='text'&&(e.fillType||'solid')==='solid')return e.textColor||'#000000';return e?.[key]||'#ffffff'}
 function syncTextFill(e){if(e?.type==='text'&&(e.fillType||'solid')==='solid')e.fill=e.textColor||'#000000'}
 function currentPickerKey(){const p=$('#fillPopover');return p.dataset.key==='fill'&&active()?.fillType==='gradient'?'gradientStop':p.dataset.key}
 function pickerAlphaKey(){const k=$('#fillPopover').dataset.key;return k==='stroke'?'strokeOpacity':'fillOpacity'}
 function cpCurrentHex(){if(currentPickerKey()==='gradientStop')return getGradientStop()?.color||'#ffffff';return normalizeHex(targetFillValue(currentPickerKey()))||'#ffffff'}
 function pickerRangeFill(){return !!app.wysiwyg&&['fill','textColor'].includes(currentPickerKey())&&(active()?.fillType||'solid')==='solid';}
 function pickerRangeAlpha(){return pickerRangeFill()||!!app.wysiwyg&&currentPickerKey()==='stroke';}
-function cpCurrentAlpha(){if(currentPickerKey()==='_underline'){if(!underlinePanel)return 100;const state=underlineState(underlinePanel);return state.opacity==='mixed'?'mixed':state.inkOpacity;}if(pickerRangeAlpha()&&inlineStyleRange()){const c=inlineStyleRange(),values=richTextSpans(active()).filter(p=>p.start<c.end&&p.end>c.start).map(p=>p.style[pickerAlphaKey()]);return values.every(v=>v===values[0])?values[0]:'mixed';}if($('#fillPopover').dataset.key==='_effect')return 100;if($('#fillPopover').dataset.key==='_ink')return app.inkSettings.alpha;if($('#fillPopover').dataset.key==='_docBackground')return app.doc.backgroundAlpha??100;if(currentPickerKey()==='gradientStop')return getGradientStop()?.alpha??100;const k=pickerAlphaKey();return Number((active()||picked()[0])?.[k]??100)}
+function cpCurrentAlpha(){if(currentPickerKey()==='_listMarker')return listPanelState()?.opacity??100;if(currentPickerKey()==='_underline'){if(!underlinePanel)return 100;const state=underlineState(underlinePanel);return state.opacity==='mixed'?'mixed':state.inkOpacity;}if(pickerRangeAlpha()&&inlineStyleRange()){const c=inlineStyleRange(),values=richTextSpans(active()).filter(p=>p.start<c.end&&p.end>c.start).map(p=>p.style[pickerAlphaKey()]);return values.every(v=>v===values[0])?values[0]:'mixed';}if($('#fillPopover').dataset.key==='_effect')return 100;if($('#fillPopover').dataset.key==='_ink')return app.inkSettings.alpha;if($('#fillPopover').dataset.key==='_docBackground')return app.doc.backgroundAlpha??100;if(currentPickerKey()==='gradientStop')return getGradientStop()?.alpha??100;const k=pickerAlphaKey();return Number((active()||picked()[0])?.[k]??100)}
 function updatePickerColor(hex,final=false){hex=normalizeHex(hex);if(!hex)return;const k=currentPickerKey(),e=active();
+ if(k==='_listMarker'){if(!$('#fillPopover').classList.contains('hidden'))changeParagraphList(listPanel,{listMarkerColor:hex},final);return}
  if(k==='_underline'){if(!$('#fillPopover').classList.contains('hidden'))changeUnderline('color',hex,final);return}
  if(['fill','textColor','stroke'].includes(k)&&styleInlineSelection(k==='stroke'?'stroke':'textColor',hex,final))return;
  if(app.wysiwyg&&!fallbackInlineWysiwyg('Цвет слоя'))return;
@@ -4374,7 +4610,11 @@ function updatePickerColor(hex,final=false){hex=normalizeHex(hex);if(!hex)return
  else if(['fill','stroke','textColor','rasterFillColor','mobileBackgroundColor'].includes(k)){if(app.selectedIds.length>1){for(const o of picked()){o[k]=hex;if(k==='stroke'&&o.type==='text')restoreTextRuns(o,applyTextStyle(o,0,o.text.length,{stroke:null}).textRuns);}if(final)commit();else{paint();saveSoon()}}else changeProperty(k,hex,final)}
  if(!final)refreshColorRowOnly();else refreshInspector();
 }
-function updatePickerAlpha(alpha,final=false){if(String(alpha).trim()===''||!Number.isFinite(Number(alpha))){if(final&&currentPickerKey()==='_underline')cancelUnderlinePreview();return;}if(currentPickerKey()==='_underline'){if(!$('#fillPopover').classList.contains('hidden'))changeUnderline('opacity',clamp(Number(alpha),0,100),final);return;}if(pickerRangeAlpha()){styleInlineSelection(pickerAlphaKey(),clamp(Number(alpha),0,100),final);return;}if(app.wysiwyg&&!fallbackInlineWysiwyg('Непрозрачность'))return;const e=active()||(app.selectedIds.length>1?picked()[0]:null);const val=clamp(Number(alpha),0,100);if($('#fillPopover').dataset.key==='_effect')return;if($('#fillPopover').dataset.key==='_ink'){app.inkSettings.alpha=val;inkRefreshColor();inkPersist();return}if($('#fillPopover').dataset.key==='_docBackground'){app.doc.backgroundAlpha=val;if(final)commit();else{paint();saveSoon()}return}if(!e)return;
+function updatePickerAlpha(alpha,final=false){if(String(alpha).trim()===''||!Number.isFinite(Number(alpha))){if(final&&currentPickerKey()==='_underline')cancelUnderlinePreview();
+ if(final&&currentPickerKey()==='_listMarker')cancelListPreview();
+ return;}if(currentPickerKey()==='_listMarker'){
+ if(!$('#fillPopover').classList.contains('hidden'))changeParagraphList(listPanel,{listMarkerOpacity:clamp(Number(alpha),0,100)},final);
+ return;}if(currentPickerKey()==='_underline'){if(!$('#fillPopover').classList.contains('hidden'))changeUnderline('opacity',clamp(Number(alpha),0,100),final);return;}if(pickerRangeAlpha()){styleInlineSelection(pickerAlphaKey(),clamp(Number(alpha),0,100),final);return;}if(app.wysiwyg&&!fallbackInlineWysiwyg('Непрозрачность'))return;const e=active()||(app.selectedIds.length>1?picked()[0]:null);const val=clamp(Number(alpha),0,100);if($('#fillPopover').dataset.key==='_effect')return;if($('#fillPopover').dataset.key==='_ink'){app.inkSettings.alpha=val;inkRefreshColor();inkPersist();return}if($('#fillPopover').dataset.key==='_docBackground'){app.doc.backgroundAlpha=val;if(final)commit();else{paint();saveSoon()}return}if(!e)return;
  if(currentPickerKey()==='gradientStop'){const st=getGradientStop();if(!st)return;st.alpha=val;if(final)commit();else{paint();saveSoon()}}
  else{const k=pickerAlphaKey();if(app.selectedIds.length>1){for(const p of picked())p[k]=val;if(final)commit();else{paint();saveSoon()}}else changeProperty(k,val,final)}
  if(final)refreshInspector();
@@ -4400,7 +4640,7 @@ function refreshColorRowOnly(){const b=$('#inspector [data-fill-open="'+$('#fill
 function renderPickerChannels(){
  const p=$('#fillPopover'),fmt=p.dataset.format||'HEX',vals=cpFormatValues(cpCurrentHex(),fmt),wrap=p.querySelector('#cpChannels');
  if(!wrap)return;
- if(p.dataset.key==='_underline'&&wrap.dataset.format===fmt){
+ if(scopedInkPicker(p.dataset.key)&&wrap.dataset.format===fmt){
   vals.forEach((v,i)=>{const input=wrap.children[i];if(input.value!==String(v))input.value=v;});
   return;
  }
@@ -4411,14 +4651,15 @@ function renderPickerChannels(){
 function refreshPickerVisual(updateChannels=true){const p=$('#fillPopover');if(p.classList.contains('hidden'))return;const col=cpCurrentHex(),[h,s,v]=rgbHSV(...hexRgb(col)),square=p.querySelector('#cpSquare'),pt=p.querySelector('#cpPoint');if(square){square.style.backgroundColor=`hsl(${h},100%,50%)`;pt.style.left=s+'%';pt.style.top=(100-v)+'%'}
  const hue=p.querySelector('#cpHue');if(hue)hue.value=h;
  const alphaValue=cpCurrentAlpha();
- const alpha=p.querySelector('#cpAlpha');if(alpha){alpha.disabled=false;alpha.value=alphaValue==='mixed'?(currentPickerKey()==='_underline'?50:inlineSelectionStyle()[pickerAlphaKey()]):alphaValue;alpha.setAttribute('aria-valuetext',alphaValue==='mixed'?'Mixed':String(alphaValue));alpha.style.backgroundImage=`linear-gradient(to right,transparent,${col}),repeating-conic-gradient(#999 0 25%,#555 0 50%)`;alpha.style.backgroundSize='auto,12px 12px'}
+ const alpha=p.querySelector('#cpAlpha');if(alpha){alpha.disabled=false;alpha.value=alphaValue==='mixed'?(scopedInkPicker(currentPickerKey())?50:inlineSelectionStyle()[pickerAlphaKey()]):alphaValue;alpha.setAttribute('aria-valuetext',alphaValue==='mixed'?'Mixed':String(alphaValue));alpha.style.backgroundImage=`linear-gradient(to right,transparent,${col}),repeating-conic-gradient(#999 0 25%,#555 0 50%)`;alpha.style.backgroundSize='auto,12px 12px'}
  const aInput=p.querySelector('#cpAlphaInput');if(aInput){aInput.disabled=false;aInput.placeholder=alphaValue==='mixed'?'Mixed':'';if(updateChannels||document.activeElement!==aInput)aInput.value=alphaValue==='mixed'?'':Math.round(alphaValue);}
  if(updateChannels)renderPickerChannels();syncEffectColorSwatches();if(active()?.fillType==='gradient')paint();
  if(active()?.fillType==='gradient'){const paint=p.querySelector('.cp-gradient-paint');if(paint)paint.style.background=gradientCSS(active());for(const b of p.querySelectorAll('[data-gstop]')){const st=gradientStops(active()).find(st=>st.id===b.dataset.gstop);if(st){b.style.left=st.pos+'%';b.style.setProperty('--stop',hexAlpha(st.color,st.alpha));b.classList.toggle('active',st.id===getGradientStop()?.id)}}for(const row of p.querySelectorAll('[data-stop-row]')){const st=gradientStops(active()).find(st=>st.id===row.dataset.stopRow);if(st){row.classList.toggle('active',st.id===getGradientStop()?.id);const sw=row.querySelector('.stop-swatch');if(sw)sw.style.background=hexAlpha(st.color,st.alpha);const ae=row.querySelector('[data-stop-alpha]');if(ae&&document.activeElement!==ae)ae.value=Math.round(st.alpha);const he=row.querySelector('[data-stop-hex]');if(he&&document.activeElement!==he)he.value=st.color.toUpperCase()}}}
 }
 function fillPreviewMode(k){const e=active();return k!=='fill'?'solid':e?.fillType||'solid'}
 function repositionFillPopover(){const p=$('#fillPopover');if(p.classList.contains('hidden'))return;
- if(p.dataset.key==='_underline'){if(underlinePanel){const r=underlinePanelNode.getBoundingClientRect();positionUnderlineSurface(p,r,r.top);}return;}
+ if(p.dataset.key==='_underline'){if(underlinePanel){const r=underlinePanelNode.getBoundingClientRect();positionInspectorSurface(p,r,r.top);}return;}
+ if(p.dataset.key==='_listMarker'){if(listPanel){const r=listPanelNode.getBoundingClientRect();positionInspectorSurface(p,r,r.top);}return;}
  if(fxColorAnchor){positionEffectColorPopover();return}const anchor=$('#inspector [data-fill-open="'+p.dataset.key+'"]');const y=anchor?.getBoundingClientRect()?.top??220;
  p.style.top=Math.max(54,Math.min(y,innerHeight-p.offsetHeight-12))+'px';}
 function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=active(),type=fillPreviewMode(key);
@@ -4428,17 +4669,17 @@ function renderFillPopover(){const p=$('#fillPopover'),key=p.dataset.key,e=activ
  const paletteSwatch=(color,saved)=>saved&&managing
   ? `<button type="button" data-cp-remove="${color}" class="cp-swatch-remove" aria-label="Цвет ${color}: нажмите, чтобы удалить; перетащите, чтобы изменить порядок" title="Перетащить для сортировки · нажать для удаления · Shift+←/→ для перемещения" style="background:${color}"><span aria-hidden="true">×</span></button>`
   : `<button type="button" data-fill-palette="${color}" aria-label="Выбрать цвет ${color}" title="${color}" style="background:${color}"></button>`;
- const labels={_underline:'Цвет подчёркивания',_effect:'Цвет эффекта',_ink:'Цвет кисти / карандаша',_docBackground:'Фон холста',stroke:'Обводка',fill:'Заливка',textColor:'Цвет текста'};
+ const labels={_underline:'Цвет подчёркивания',_listMarker:listPanel?.mode==='ordered'?'Цвет номера':'Цвет маркера',_effect:'Цвет эффекта',_ink:'Цвет кисти / карандаша',_docBackground:'Фон холста',stroke:'Обводка',fill:'Заливка',textColor:'Цвет текста'};
  const stopPicker=type==='gradient'&&key==='fill'?gradientStopsUI(e):'';
  p.classList.toggle('cp-gradient-active',type==='gradient');p.innerHTML=`<div class="popover-head"><strong>${labels[key]||'Заливка'}</strong><button data-fill-close aria-label="Закрыть">✕</button></div><div class="cp-body">
- ${key==='stroke'||key==='_docBackground'||key==='_ink'||key==='_effect'||key==='_underline'?'':`<div class="fill-tabs">${[['solid','Цвет'],['gradient','Градиент'],['image','Фото'],['none','Без заливки']].map(([k,t])=>`<button data-fill-mode="${k}" class="${k===type?'active':''}">${t}</button>`).join('')}</div>`}
+ ${key==='stroke'||key==='_docBackground'||key==='_ink'||key==='_effect'||scopedInkPicker(key)?'':`<div class="fill-tabs">${[['solid','Цвет'],['gradient','Градиент'],['image','Фото'],['none','Без заливки']].map(([k,t])=>`<button data-fill-mode="${k}" class="${k===type?'active':''}">${t}</button>`).join('')}</div>`}
  ${stopPicker}
  ${type==='image'?`<div class="picker-box">${e&&e.fillType==='image'?imageModeControls(e):''}<button data-fill-image class="btn btn-primary">${uiIcon('image')} ${e?.imageSrc?'Заменить фото':'Выбрать фото'}</button></div><p class="cp-picker-help">Заменённое изображение автоматически вписывается целиком (Fit). Ручная кадрировка не удаляет исходное фото.</p>`:type==='none'?`<p class="cp-picker-help">Заливка отключена. Обводка остаётся видимой.</p>`:
  `<div id="cpSquare" class="cp-square" role="slider" aria-label="Насыщенность и яркость" tabindex="0"><span id="cpPoint" class="cp-point"></span></div>
- <div class="cp-slider-row">${key==='_underline'?'':`<button class="cp-eyedropper" title="Пипетка: взять цвет с холста" data-cp-eyedrop>${uiIcon('pipette')}</button>`}<div class="cp-sliders"><input id="cpHue" class="cp-hue" type="range" min="0" max="360" step="1" aria-label="Цветовой тон"><input id="cpAlpha" class="cp-alpha" type="range" min="0" max="100" step="1" aria-label="Непрозрачность"></div></div>
+ <div class="cp-slider-row">${scopedInkPicker(key)?'':`<button class="cp-eyedropper" title="Пипетка: взять цвет с холста" data-cp-eyedrop>${uiIcon('pipette')}</button>`}<div class="cp-sliders"><input id="cpHue" class="cp-hue" type="range" min="0" max="360" step="1" aria-label="Цветовой тон"><input id="cpAlpha" class="cp-alpha" type="range" min="0" max="100" step="1" aria-label="Непрозрачность"></div></div>
  <div class="cp-channels"><select id="cpFormat" aria-label="Цветовая модель">${['HEX','RGB','CSS','HSL','HSB'].map(v=>`<option ${v===p.dataset.format?'selected':''}>${v}</option>`).join('')}</select><div id="cpChannels" class="cp-channel-values"></div><label class="cp-opacity"><input id="cpAlphaInput" type="number" min="0" max="100" aria-label="Прозрачность в процентах">%</label></div>
  `}
- </div><div class="cp-palette"><div class="cp-palette-head"><span>Цвета проекта</span>${key==='_underline'?'':`<div class="cp-palette-actions"><button type="button" data-cp-manage class="cp-plus cp-manage ${managing?'active':''}" aria-label="${managing?'Завершить редактирование цветов':'Редактировать сохранённые цвета'}" aria-pressed="${managing}" title="${managing?'Готово':'Редактировать сохранённые цвета'}">${managing?'✓':uiIcon('edit')}</button><button type="button" data-cp-add class="cp-plus" title="Сохранить свой цвет" aria-label="Сохранить цвет в палитру">+</button></div>`}</div>${key==='_underline'?'':`<div class="cp-add-row"><input data-cp-savehex aria-label="HEX для добавления в палитру" value="${cpCurrentHex().toUpperCase()}"><span>HEX</span></div>`}
+ </div><div class="cp-palette"><div class="cp-palette-head"><span>Цвета проекта</span>${scopedInkPicker(key)?'':`<div class="cp-palette-actions"><button type="button" data-cp-manage class="cp-plus cp-manage ${managing?'active':''}" aria-label="${managing?'Завершить редактирование цветов':'Редактировать сохранённые цвета'}" aria-pressed="${managing}" title="${managing?'Готово':'Редактировать сохранённые цвета'}">${managing?'✓':uiIcon('edit')}</button><button type="button" data-cp-add class="cp-plus" title="Сохранить свой цвет" aria-label="Сохранить цвет в палитру">+</button></div>`}</div>${scopedInkPicker(key)?'':`<div class="cp-add-row"><input data-cp-savehex aria-label="HEX для добавления в палитру" value="${cpCurrentHex().toUpperCase()}"><span>HEX</span></div>`}
  <div class="cp-palette-caption">Сохранённые цвета</div><div class="cp-palette-grid cp-palette-saved">${savedColors.map(c=>paletteSwatch(c,true)).join('')||'<span class="cp-palette-empty">Пока нет сохранённых цветов</span>'}</div>
  ${usedColors.length?`<div class="cp-palette-caption cp-palette-used-caption">Цвета на карточке</div><div class="cp-palette-grid cp-palette-used">${usedColors.map(c=>paletteSwatch(c,false)).join('')}</div>`:''}</div>`;
  refreshPickerVisual();requestAnimationFrame(repositionFillPopover);
@@ -4565,12 +4806,12 @@ $('#fillPopover').addEventListener('keydown',ev=>{
 
 $('#fillPopover').addEventListener('click',async ev=>{
  const p=$('#fillPopover'),b=ev.target.closest('[data-fill-mode],[data-fill-close],[data-fill-image],[data-cp-eyedrop],[data-fill-palette],[data-cp-add],[data-cp-manage],[data-cp-remove]');if(!b)return;
- if(b.hasAttribute('data-fill-close')){const underline=p.dataset.key==='_underline';closeFillPopover();if(underline)underlinePanelNode.querySelector('[data-underline-color]').focus({preventScroll:true});else resumeInlineTextFromButton();return}
+ if(b.hasAttribute('data-fill-close')){const key=p.dataset.key;closeFillPopover();if(key==='_underline')underlinePanelNode.querySelector('[data-underline-color]').focus({preventScroll:true});else if(key==='_listMarker')listColorButton.focus({preventScroll:true});else resumeInlineTextFromButton();return}
  if(b.hasAttribute('data-fill-mode')){setFillMode(b.dataset.fillMode);return}
  if(b.hasAttribute('data-cp-manage')){p.dataset.paletteEdit=p.dataset.paletteEdit==='1'?'0':'1';renderFillPopover();return}
  if((b.hasAttribute('data-fill-image')||b.hasAttribute('data-cp-add')||b.hasAttribute('data-cp-remove'))&&app.wysiwyg&&!fallbackInlineWysiwyg('Действие палитры'))return;
  if(b.hasAttribute('data-fill-image')){app.pendingImage={kind:'fill',id:active()?.id};$('#imageInput').click();return}
- if(b.hasAttribute('data-fill-palette')){cpLiveColor(b.dataset.fillPalette,true);refreshPickerVisual();if(p.dataset.key!=='_underline')resumeInlineTextFromButton();return}
+ if(b.hasAttribute('data-fill-palette')){cpLiveColor(b.dataset.fillPalette,true);refreshPickerVisual();if(!scopedInkPicker(p.dataset.key))resumeInlineTextFromButton();return}
  if(b.hasAttribute('data-cp-remove')){const color=normalizeHex(b.dataset.cpRemove),palette=app.doc.palette||[];
   if(!color||!palette.some(v=>normalizeHex(v)===color))return;
   app.doc.palette=palette.filter(v=>normalizeHex(v)!==color);commit('Удаление сохранённого цвета');renderFillPopover();toast('Цвет удалён из сохранённых');return}
@@ -4578,29 +4819,35 @@ $('#fillPopover').addEventListener('click',async ev=>{
  if(b.hasAttribute('data-cp-eyedrop')){if('EyeDropper'in window&&window.isSecureContext){try{const result=await new EyeDropper().open();cpLiveColor(result.sRGBHex,true);refreshPickerVisual();return}catch{}}
  app.pipetteArmed=true;$('#stageScroller').classList.add('pipette-mode');toast('Пипетка: щёлкни по цвету на карточке');}
 });
-const underlinePickerSliderCanceled=underlineSliderEvents($('#fillPopover'),'[data-key="_underline"] #cpAlpha,[data-key="_underline"] #cpHue');
+const pickerSliders=key=>[`[data-key="${key}"] #cpAlpha`,`[data-key="${key}"] #cpHue`].join(',');
+const underlinePickerSliderCanceled=previewSliderEvents($('#fillPopover'),pickerSliders('_underline'),()=>underlinePanel,cancelUnderlineGesture);
+const listPickerSliderCanceled=previewSliderEvents($('#fillPopover'),pickerSliders('_listMarker'),()=>listPanel,cancelListPreview);
+const pickerSliderCanceled=field=>scopedInkPicker(currentPickerKey())&&
+ (currentPickerKey()==='_underline'?underlinePickerSliderCanceled(field):listPickerSliderCanceled(field));
 $('#fillPopover').addEventListener('keydown',ev=>{
- if(currentPickerKey()!=='_underline'||ev.key!=='Enter')return;
+ if(!scopedInkPicker(currentPickerKey())||ev.key!=='Enter')return;
  const field=ev.target;
  if(field.id==='cpAlphaInput'||field.hasAttribute('data-cp-part')){
   ev.preventDefault();field.dispatchEvent(new Event('change',{bubbles:true}));
  }
 });
 $('#fillPopover').addEventListener('keydown',ev=>{const field=ev.target;if(field.id==='cpAlphaInput'&&field.value===''&&pickerRangeAlpha()&&inlineStyleRange()&&['ArrowUp','ArrowDown'].includes(ev.key)){ev.preventDefault();field.value=clamp(inlineSelectionStyle()[pickerAlphaKey()]+(ev.key==='ArrowUp'?1:-1),0,100);field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));}});
-$('#fillPopover').addEventListener('change',ev=>{const el=ev.target,p=$('#fillPopover');if(underlinePickerSliderCanceled(el))return;if(el.dataset.key==='imageFit'){changeProperty('imageFit',el.value,true);refreshInspector();renderFillPopover();return;}if(el.id==='cpFormat'){p.dataset.format=el.value;renderPickerChannels()}else if(el.hasAttribute('data-cp-part')){const hex=cpParseChannels();if(hex){cpLiveColor(hex,true);refreshPickerVisual()}else{if(currentPickerKey()==='_underline'){cancelUnderlineGesture();refreshPickerVisual();}toast('Некорректное значение цвета')}}else if(el.id==='cpHue'||el.id==='cpAlpha'||el.id==='cpAlphaInput'){if(el.id==='cpHue')updatePickerColor(rgbHex(...hsvRGB(+el.value,rgbHSV(...hexRgb(cpCurrentHex()))[1],rgbHSV(...hexRgb(cpCurrentHex()))[2])),true);else updatePickerAlpha(el.value,true);refreshPickerVisual()}else if(el.dataset.key){handleInspectorChange(ev,true)}});
-$('#fillPopover').addEventListener('input',ev=>{const el=ev.target;if(underlinePickerSliderCanceled(el))return;if(el.hasAttribute('data-cp-part')&&(app.wysiwyg||currentPickerKey()==='_underline')){const hex=cpParseChannels();if(hex)cpLiveColor(hex,false)}else if(el.id==='cpHue'){const hsv=rgbHSV(...hexRgb(cpCurrentHex()));cpLiveColor(rgbHex(...hsvRGB(+el.value,hsv[1],hsv[2])),false)}else if(el.id==='cpAlpha'||el.id==='cpAlphaInput'){updatePickerAlpha(el.value,false);const a=$('#fillPopover #cpAlpha');if(a&&el!==a)a.value=el.value;const v=$('#fillPopover #cpAlphaInput');if(v&&el!==v)v.value=el.value;refreshPickerVisual(false)}else if(el.dataset.key)handleInspectorChange(ev,false)});
+$('#fillPopover').addEventListener('change',ev=>{const el=ev.target,p=$('#fillPopover');if(pickerSliderCanceled(el))return;if(el.dataset.key==='imageFit'){changeProperty('imageFit',el.value,true);refreshInspector();renderFillPopover();return;}if(el.id==='cpFormat'){p.dataset.format=el.value;renderPickerChannels()}else if(el.hasAttribute('data-cp-part')){const hex=cpParseChannels();if(hex){cpLiveColor(hex,true);refreshPickerVisual()}else{if(scopedInkPicker(currentPickerKey())){if(currentPickerKey()==='_underline')cancelUnderlineGesture();else cancelListPreview();refreshPickerVisual();}toast('Некорректное значение цвета')}}else if(el.id==='cpHue'||el.id==='cpAlpha'||el.id==='cpAlphaInput'){if(el.id==='cpHue')updatePickerColor(rgbHex(...hsvRGB(+el.value,rgbHSV(...hexRgb(cpCurrentHex()))[1],rgbHSV(...hexRgb(cpCurrentHex()))[2])),true);else updatePickerAlpha(el.value,true);refreshPickerVisual()}else if(el.dataset.key){handleInspectorChange(ev,true)}});
+$('#fillPopover').addEventListener('input',ev=>{const el=ev.target;if(pickerSliderCanceled(el))return;if(el.hasAttribute('data-cp-part')&&(app.wysiwyg||scopedInkPicker(currentPickerKey()))){const hex=cpParseChannels();if(hex)cpLiveColor(hex,false)}else if(el.id==='cpHue'){const hsv=rgbHSV(...hexRgb(cpCurrentHex()));cpLiveColor(rgbHex(...hsvRGB(+el.value,hsv[1],hsv[2])),false)}else if(el.id==='cpAlpha'||el.id==='cpAlphaInput'){updatePickerAlpha(el.value,false);const a=$('#fillPopover #cpAlpha');if(a&&el!==a)a.value=el.value;const v=$('#fillPopover #cpAlphaInput');if(v&&el!==v)v.value=el.value;refreshPickerVisual(false)}else if(el.dataset.key)handleInspectorChange(ev,false)});
 $('#fillPopover').addEventListener('click',ev=>{const action=ev.target.closest('[data-action]')?.dataset.action;if(!action)return;ev.preventDefault();ev.stopPropagation();if(action==='toggleCrop'){closeFillPopover();enterCrop()}else if(action==='image'){app.pendingImage={kind:'fill',id:active()?.id};$('#imageInput').click()}});
 // The saturation-value square is intentionally NOT an <input type=color>: Firefox never opens a native dialog.
 $('#fillPopover').addEventListener('pointerdown',ev=>{const square=ev.target.closest('#cpSquare');if(!square||ev.button!==0)return;ev.preventDefault();square.setPointerCapture(ev.pointerId);
- const underline=currentPickerKey()==='_underline',owner=underlinePanel,epoch=owner?.gestureEpoch;
- const valid=()=>!underline||owner&&owner===underlinePanel&&epoch===owner.gestureEpoch;
+ const key=currentPickerKey(),scoped=scopedInkPicker(key);
+ const getOwner=()=>key==='_listMarker'?listPanel:underlinePanel;
+ const owner=getOwner(),epoch=owner?.gestureEpoch;
+ const valid=()=>!scoped||owner&&key===currentPickerKey()&&owner===getOwner()&&epoch===owner.gestureEpoch;
  const move=event=>{if(!valid())return;const bounds=square.getBoundingClientRect(),s=clamp((event.clientX-bounds.left)/bounds.width*100,0,100),v=100-clamp((event.clientY-bounds.top)/bounds.height*100,0,100),h=rgbHSV(...hexRgb(cpCurrentHex()))[0];cpLiveColor(rgbHex(...hsvRGB(h,s,v)),false);renderPickerChannels()};move(ev);
  function up(event){
   if(event.pointerId!==ev.pointerId)return;
   square.removeEventListener('pointermove',move);
   for(const type of ['pointerup','pointercancel','lostpointercapture'])square.removeEventListener(type,up);
   if(!valid())return;
-  if(underline&&event.type!=='pointerup'){cancelUnderlineGesture();refreshPickerVisual();return;}
+  if(scoped&&event.type!=='pointerup'){if(key==='_underline')cancelUnderlineGesture();else cancelListPreview();refreshPickerVisual();return;}
   updatePickerColor(cpCurrentHex(),true);
  }
  square.addEventListener('pointermove',move);
@@ -4609,7 +4856,7 @@ $('#fillPopover').addEventListener('pointerdown',ev=>{const square=ev.target.clo
 });
 // Built-in pipette fallback also works in Firefox with file:// URLs; samples a rendered project pixel.
 canvas.addEventListener('pointerdown',ev=>{if(!app.pipetteArmed)return;ev.preventDefault();ev.stopImmediatePropagation();const pos=clientDocPoint(ev),sample=document.createElement('canvas');sample.width=1;sample.height=1;const c=sample.getContext('2d',{willReadFrequently:true});c.translate(-Math.floor(pos.x),-Math.floor(pos.y));paintDocument(c,app.doc,false);try{const rgba=c.getImageData(0,0,1,1).data;cpLiveColor(rgbHex(rgba[0],rgba[1],rgba[2]),true);refreshPickerVisual()}catch{toast('Не удалось получить пиксель')}app.pipetteArmed=false;$('#stageScroller').classList.remove('pipette-mode')},true);
-document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#shapeTray,#dockShapes')){$('#shapeTray').classList.add('hidden');$('#dockShapes').setAttribute('aria-expanded','false')}if(!app.pipetteArmed&&!ev.target.closest('#fillPopover,[data-fill-open],[data-underline-color],[data-underline-opacity],#inkColorTrigger')&&!(selectedGradientVisible()&&ev.target.closest('#canvas,#canvasHost,#stageScroller')))closeFillPopover()},true);
+document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#shapeTray,#dockShapes')){$('#shapeTray').classList.add('hidden');$('#dockShapes').setAttribute('aria-expanded','false')}if(!app.pipetteArmed&&!ev.target.closest('#fillPopover,[data-fill-open],[data-underline-color],[data-underline-opacity],[data-list-color],#inkColorTrigger')&&!(selectedGradientVisible()&&ev.target.closest('#canvas,#canvasHost,#stageScroller')))closeFillPopover()},true);
 
 // v0.20: unified stage with several artboards and docked slide navigation.
 const ARTBOARD_GAP=105, ARTBOARD_MARGIN=74;
@@ -4771,7 +5018,7 @@ const documentTabSession={activeId:'home',lastDocumentId:null,tabs:[]};
 const DOCUMENT_TAB_FIELDS=['selected','selectedIds','selectedGroupIds','focusGroupId','groupIsolation','zoom','lastZoom','renderScale','history','historyNames','historyIndex','historyBase','historyPreviewOriginal','pixelSelection','pixelDraft','polyDraft','selectionTargetId','guides','showRulers','handTool','penTool','penDraft','penEditId','penNode','marqueeTool','marqueeKind','magicTolerance','insertTool','insertShape','inkTool','inkSettings','maskEditId','maskPaintColor','textToolMode','textDraft','textPathDraft','cropMode','cropBefore','multiMode','panelOpen','mobilePane','mobileLayersOpen','resourceFolderId','filter'];
 function liveDocumentTab(){return documentTabSession.tabs.find(t=>t.id===documentTabSession.activeId)||null}
 // These surfaces belong to the current editor visit, not a saved document view.
-function closeEditorTransientUI(){mobileNudgeClearMeasurements();$('#mobileNudge')?.classList.add('hidden');fxCloseMenu();fxClosePopover();cancelRegionEffects();
+function closeEditorTransientUI(){mobileNudgeClearMeasurements();$('#mobileNudge')?.classList.add('hidden');fxCloseMenu();fxClosePopover();cancelRegionEffects();closeListStylePanel();
  mobileV36Close(); // F-06 settles actual changes and releases owned pointers/timers.
  closeMobileOverlays('mobileProperties');closeToolPopovers();closeMobileLayerMenu();
  if(!$('#fillPopover').classList.contains('hidden')||app.pipetteArmed)closeFillPopover();

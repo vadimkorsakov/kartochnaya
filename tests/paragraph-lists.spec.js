@@ -1,12 +1,20 @@
-const {test,expect,openHome,importPayload,records,openLibraryDocument,canvasPoint,exportPNG}=require('./helpers');
+const {test,expect,openHome,createDocument,importPayload,records,openLibraryDocument,exportedDocument,canvasPoint,exportPNG}=require('./helpers');
 const {model}=require('./support/text-interaction');
 const {PNG}=require('pngjs');
+const {readFile}=require('node:fs/promises');
 const fixture=require('./fixtures/visual-text.json');
 
 const width=640,height=480,origin={x:40,y:38};
 const host=page=>page.locator('#inlineWysiwyg');
 const kind=(page,value)=>page.locator('[data-list-kind='+value+']');
+const configure=page=>page.getByRole('button',{name:'Настроить существующий список'});
 const field=(page,value)=>page.locator('[data-list-field='+value+']');
+const spacingSlider=(page,value)=>page.locator('[data-list-spacing-range='+value+']');
+const panel=page=>page.locator('#listStylePanel');
+const preset=(page,value)=>page.locator('[data-list-marker="'+value+'"]');
+const counter=(page,value)=>page.locator('[data-list-counter='+value+']');
+const colorButton=page=>panel(page).locator('[data-list-color]');
+const autoRun=(start,style)=>run(start,{...style,listMarkerScale:'auto'});
 const press=async(page,...keys)=>{for(const key of keys)await page.keyboard.press(key);};
 const frame=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 const run=(start,style)=>({start,style});
@@ -24,7 +32,8 @@ async function seed(page,patch={},docPatch={}){
    return setTransform.apply(this,args);
   };
   CanvasRenderingContext2D.prototype.fillText=function(text,x,y,...args){
-   const key=tag(this.canvas);if(key)window.listDraws[key].push({text,x,y,width:this.measureText(text).width});
+   const key=tag(this.canvas);if(key)window.listDraws[key].push({text,x,y,width:this.measureText(text).width,font:this.font,
+    color:this.fillStyle,alpha:this.globalAlpha});
    return fillText.call(this,text,x,y,...args);
   };
  });
@@ -64,7 +73,12 @@ async function markerPoint(page,marker){
  const {x,y}=await host(page).evaluate(el=>el.getBoundingClientRect().toJSON());
  return {x:x+marker.x+marker.width/2,y:y+marker.y-10};
 }
-test('Inspector gallery, Mixed, numeric controls, no-op, history, Done, reload and Escape',async({page})=>{
+async function pngWithoutFocusChange(page){
+ const pending=page.waitForEvent('download');
+ await page.locator('#exportBtn').evaluate(button=>button.click());
+ return PNG.sync.read(await readFile(await (await pending).path())).data;
+}
+test('Inspector icons, persistent gallery, Mixed, numeric controls, history and reload',async({page})=>{
  const text='Alpha\nBeta\nGamma',id=await seed(page,{text});
  await page.locator('#layers .layer-name').filter({hasText:'List sample'}).click();
  const section=page.locator('[data-ins-section="Списки"]');
@@ -73,40 +87,360 @@ test('Inspector gallery, Mixed, numeric controls, no-op, history, Done, reload a
  await edit(page);
  await section.click();
  await expect(host(page)).toBeVisible();
+ await expect(page.locator('[data-list-kind] svg')).toHaveCount(3);
+ await expect(configure(page)).toBeDisabled();
+ for(const value of ['none','bullet','ordered']){
+  const button=kind(page,value);
+  await expect(button).toHaveAttribute('title',await button.getAttribute('aria-label'));
+  expect((await button.boundingBox()).width).toBeLessThan(45);
+ }
  await host(page).focus();
  await press(page,'Control+Home','ArrowRight','Shift+ArrowRight');
- await kind(page,'bullet').click();
+ await kind(page,'bullet').focus();await press(page,'Enter');
  await expect(kind(page,'bullet')).toHaveAttribute('aria-pressed','true');
- expect(await selection(page)).toEqual([1,2]);
- expect((await model(page)).paragraphRuns).toEqual([run(0,{listKind:'bullet'})]);
- const summary=page.getByLabel('Галерея маркеров');
- await summary.focus();await press(page,'Enter');
- await page.locator('[data-list-marker="🔶"]').focus();await press(page,'Space');
- await expect(host(page)).toBeFocused();
- expect((await model(page)).paragraphRuns).toEqual([run(0,{listKind:'bullet',listMarker:'🔶'})]);
- await kind(page,'bullet').click();
+ await expect(kind(page,'bullet')).toHaveAttribute('aria-expanded','true');
+ await expect(panel(page)).toBeVisible();
+ expect((await model(page)).paragraphRuns).toEqual([autoRun(0,{listKind:'bullet'})]);
+ await expect(panel(page).locator('legend')).toHaveText(['Основные','Декоративные','Отметки','Стрелки','Эмодзи']);
+ await expect(panel(page).locator('[data-list-marker]')).toHaveCount(33);
+ await preset(page,'•').focus();await press(page,'ArrowRight');
+ await expect(preset(page,'∙')).toBeFocused();
+ await preset(page,'🔶').focus();await press(page,'Space');
+ await expect(preset(page,'🔶')).toBeFocused();
+ await expect(panel(page)).toBeVisible();
+ expect((await model(page)).paragraphRuns).toEqual([autoRun(0,{listKind:'bullet',listMarker:'🔶'})]);
+ await preset(page,'🔶').click();
  await press(page,'Control+z');
- expect((await model(page)).paragraphRuns).toEqual([run(0,{listKind:'bullet'})]);
- await press(page,'Control+Shift+z','Control+Home');
+ expect((await model(page)).paragraphRuns).toEqual([autoRun(0,{listKind:'bullet'})]);
+ await press(page,'Control+Shift+z');
+ await host(page).focus();expect(await selection(page)).toEqual([1,2]);
+ await press(page,'Control+Home');
  for(let i=0;i<8;i++)await press(page,'Shift+ArrowRight');
  await expect(page.locator('[data-list-mixed]')).toHaveText('Mixed');
+ await expect(kind(page,'ordered')).toHaveAttribute('aria-pressed','mixed');
  await kind(page,'ordered').click();
- await field(page,'listCounterStyle').selectOption('roman-lower-dot');
+ await expect(panel(page).locator('[data-list-counter]')).toHaveText(['1. 2. 3.','1) 2) 3)','a. b. c.','A. B. C.','i. ii. iii.','I. II. III.','01. 02. 03.']);
+ await counter(page,'decimal-paren').click();
+ await counter(page,'roman-lower-dot').click();
+ await expect(panel(page)).toBeVisible();
  await field(page,'listStart').fill('18');await press(page,'Enter');
+ await expect(field(page,'listStart')).toBeFocused();
  await field(page,'listIndent').fill('13');await press(page,'Tab');
  await field(page,'listGap').fill('9');await press(page,'Tab');
  expect((await markerDraws(page,/^[ixv]+\.$/)).map(p=>p.text)).toEqual(['xviii.','xix.']);
  expect(await host(page).textContent()).toBe(text);
  const expected=await model(page);
  expect(expected.paragraphRuns).toEqual([
-  run(0,{listKind:'ordered',listMarker:'🔶',listCounterStyle:'roman-lower-dot',listStart:18,listIndent:13,listGap:9}),
-  run(6,{listKind:'ordered',listCounterStyle:'roman-lower-dot',listIndent:13,listGap:9}),
+  autoRun(0,{listKind:'ordered',listMarker:'🔶',listCounterStyle:'roman-lower-dot',listStart:18,listIndent:13,listGap:9}),
+  autoRun(6,{listKind:'ordered',listCounterStyle:'roman-lower-dot',listIndent:13,listGap:9}),
  ]);
  await done(page);
  await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===id)?.elements[0]).toEqual(expected);
  await page.reload();await openLibraryDocument(page,id);await edit(page);
- await press(page,'Control+Home');await kind(page,'none').click();await press(page,'Escape');
+ await press(page,'Control+Home');await kind(page,'none').click();
+ await expect(panel(page)).toBeHidden();
+ await host(page).focus();await press(page,'Escape');
  expect(await model(page)).toEqual(expected);
+});
+
+test('whole-layer settings edit only list items, with one undo per spacing drag',async({page},info)=>{
+ const lines=['Обычный заголовок','Первый пункт','Второй пункт','Обычный заключительный абзац'];
+ const text=lines.join('\n'),starts=lines.slice(1,3).map(line=>text.indexOf(line));
+ const paragraphRuns=starts.map(start=>run(start,{listKind:'bullet'}));
+ const id=await seed(page,{text,w:540,paragraphRuns});
+ await page.locator('#layers .layer-name').filter({hasText:'List sample'}).click();
+ const initial=await model(page);
+ const settings=configure(page),mode=key=>panel(page).locator(`[data-list-mode=${key}]`);
+ await expect(settings).toHaveAttribute('title','Настроить существующий список');
+ await settings.click();await expect(settings).toHaveAttribute('aria-expanded','true');
+ await expect(page.locator('.paragraph-list-controls svg')).toHaveCount(4);
+ await expect(mode('ordered')).toBeDisabled();
+ await expect(field(page,'listGap')).toHaveValue('8');
+ expect(await model(page)).toEqual(initial);
+ for(const [key,value] of [['listMarkerScale','74'],['listMarkerColor','#c51953']]){
+  await field(page,key).fill(value);await press(page,'Enter');
+  await expect(field(page,key)).toBeFocused();
+ }
+ const painted=await model(page);
+ expect(painted.paragraphRuns).toEqual(starts.map(start=>run(start,{listKind:'bullet',listMarkerScale:74,listMarkerColor:'#c51953'})));
+ for(const [index,key] of ['listIndent','listGap','listItemSpacing'].entries()){
+  const slider=spacingSlider(page,key),numeric=field(page,key),before=await model(page);
+  const readDraws=()=>page.evaluate(()=>listDraws.canvas);
+  const anchor=await panel(page).boundingBox();
+  await slider.scrollIntoViewIfNeeded();
+  const {x,y,width:w,height:h}=await slider.boundingBox();
+  const mid=y+h/2;
+  const beforePNG=index===2?await pngWithoutFocusChange(page):null;
+  if(index===2)await expect.poll(async()=>(await records(page,'docs')).find(doc=>doc.id===id).elements[0]).toEqual(before);
+  const beforeDraws=await readDraws();
+  await slider.evaluate(el=>el.addEventListener('pointerdown',e=>el.dataset.pointerId=e.pointerId));
+  await page.mouse.move(x+w*.2,mid);await page.mouse.down();
+  await page.mouse.move(x+w*.35,mid,{steps:4});await frame(page);
+  const firstPreview=await readDraws();expect(firstPreview).not.toEqual(beforeDraws);
+  await page.mouse.move(x+w*.64,mid,{steps:4});await frame(page);
+  expect(await readDraws()).not.toEqual(firstPreview);
+  await expect(numeric).toHaveValue(await slider.inputValue());
+  expect(await model(page)).toEqual(before);
+  if(index===2){
+   expect((await records(page,'docs')).find(doc=>doc.id===id).elements[0]).toEqual(before);
+   expect(maxDelta(await pngWithoutFocusChange(page),beforePNG)).toBe(0);
+  }
+  await page.mouse.up();
+  const changed=await model(page),value=Number(await slider.inputValue());
+  expect(changed.paragraphRuns).toEqual(before.paragraphRuns.map(({start,style})=>run(start,{...style,[key]:value})));
+  await press(page,'Control+z');expect(await model(page)).toEqual(before);
+  await press(page,'Control+Shift+z');expect(await model(page)).toEqual(changed);
+  await settings.click();await slider.scrollIntoViewIfNeeded();
+  await page.mouse.move(x+w*.3,mid);await page.mouse.down();
+  await page.mouse.move(x+w*.8,mid,{steps:5});
+  await slider.dispatchEvent(index===1?'lostpointercapture':'pointercancel',{pointerId:Number(await slider.getAttribute('data-pointer-id'))});
+  await page.mouse.up();expect(await model(page)).toEqual(changed);
+  await expect(slider).toHaveValue(String(value));
+  await slider.focus();await press(page,'ArrowRight');
+  expect((await model(page)).paragraphRuns[0].style[key]).toBe(value+1);
+  await numeric.fill('900.5');await press(page,'Enter');
+  await expect(numeric).toBeFocused();await expect(numeric).toHaveValue('900.5');
+  await expect(slider).toHaveAttribute('aria-valuetext','900.5 px');
+  await press(page,'Enter');await press(page,'Control+z');
+  expect((await model(page)).paragraphRuns[0].style[key]).toBe(value+1);
+  await settings.click();await numeric.fill(String(16+index*4));await press(page,'Enter');
+  expect(await panel(page).boundingBox()).toEqual(anchor);
+ }
+ const after=await model(page);
+ expect(after.text).toBe(text);
+ expect(after.paragraphRuns.map(p=>p.start)).toEqual(starts);
+ await page.setViewportSize({width:1600,height:980});
+ await spacingSlider(page,'listItemSpacing').scrollIntoViewIfNeeded();
+ const path=info.outputPath('list-compact-controls.png');
+ await page.screenshot({path,animations:'disabled'});
+ await info.attach('Новые контролы расстояний',{path,contentType:'image/png'});
+ const spacing=spacingSlider(page,'listItemSpacing'),box=await spacing.boundingBox();
+ await page.mouse.move(box.x+box.width*.55,box.y+box.height/2);await page.mouse.down();
+ await press(page,'Escape');await page.mouse.up();
+ await expect(panel(page)).toBeHidden();await expect(settings).toBeFocused();
+ expect(await model(page)).toEqual(after);
+});
+
+test('switching the layer or document discards an unconfirmed spacing gesture',async({page})=>{
+ const paragraphRuns=[run(0,{listKind:'bullet'}),run(6,{listKind:'bullet'})];
+ const id=await seed(page,{paragraphRuns});
+ await page.locator('#documentTabsHome').click();await createDocument(page,'Другой документ');
+ const otherId=(await exportedDocument(page)).id;
+ const tab=page.locator(`[data-tab-id="${id}"]`);
+ await tab.click();
+ const layer=page.locator('#layers').getByText('List sample',{exact:true});
+ await layer.click();await page.locator('#inspector [data-action=duplicate]').click();
+ const copy=page.locator('#layers').getByText('List sample — копия',{exact:true});
+ const before=(await exportedDocument(page)).elements;
+ const begin=async()=>{
+  await layer.click();await configure(page).click();
+  const slider=spacingSlider(page,'listItemSpacing');
+  await slider.scrollIntoViewIfNeeded();
+  const {x,y,width,height}=await slider.boundingBox();
+  await page.mouse.move(x+width*.45,y+height/2);await page.mouse.down();
+  await expect(field(page,'listItemSpacing')).not.toHaveValue('0');
+ };
+ await begin();
+ await copy.evaluate(button=>button.click());
+ await page.mouse.up();await expect(panel(page)).toBeHidden();
+ expect((await exportedDocument(page)).elements).toEqual(before);
+ await begin();
+ // Programmatic activation bypasses the outside-pointer dismissal and exercises tab ownership.
+ await page.locator(`[data-tab-id="${otherId}"]`).evaluate(button=>button.click());
+ await page.mouse.up();await expect(panel(page)).toBeHidden();
+ expect((await exportedDocument(page)).id).toBe(otherId);
+ await tab.click();expect((await exportedDocument(page)).elements).toEqual(before);
+});
+
+test('settings retain the backward WYSIWYG range and isolate mixed list kinds and plain paragraphs',async({page})=>{
+ const text='Title\nFirst\nPlain\nSecond\nNine\nTen\nEnd';
+ const first=text.indexOf('First'),second=text.indexOf('Second'),nine=text.indexOf('Nine'),ten=text.indexOf('Ten');
+ const original=[run(first,{listKind:'bullet'}),run(second,{listKind:'bullet',listItemSpacing:20}),
+  run(nine,{listKind:'ordered',listStart:9,listItemSpacing:30}),run(ten,{listKind:'ordered',listItemSpacing:30})];
+ await seed(page,{text,paragraphRuns:original});
+ await edit(page);await press(page,'Control+Home');
+ await expect(configure(page)).toBeDisabled();
+ await press(page,'ArrowDown','Home');
+ await configure(page).click();
+ await expect(panel(page).locator('[data-list-mode=ordered]')).toBeDisabled();
+ await expect(field(page,'listItemSpacing')).toHaveValue('0');
+ const slider=spacingSlider(page,'listIndent');
+ await slider.scrollIntoViewIfNeeded();
+ const box=await slider.boundingBox();
+ await page.mouse.move(box.x+box.width*.4,box.y+box.height/2);await page.mouse.down();
+ await expect(field(page,'listIndent')).not.toHaveValue('0');
+ await host(page).focus();await press(page,'Control+End');
+ await page.mouse.up();
+ await expect(panel(page)).toBeHidden();
+ expect((await model(page)).paragraphRuns).toEqual(original);
+ await press(page,'Control+Shift+Home');expect(await selection(page)).toEqual([text.length,0]);
+ const mode=key=>panel(page).locator(`[data-list-mode=${key}]`);
+ await configure(page).click();await expect(mode('bullet')).toBeFocused();
+ await expect(field(page,'listItemSpacing')).toHaveAttribute('placeholder','Mixed');
+ await expect(spacingSlider(page,'listItemSpacing')).toHaveAttribute('aria-valuetext','Mixed');
+ await mode('ordered').click();await expect(field(page,'listItemSpacing')).toHaveValue('30');
+ await mode('bullet').click();expect((await model(page)).paragraphRuns).toEqual(original);
+ await field(page,'listItemSpacing').fill('18');await press(page,'Enter');
+ const changed=[...original];
+ changed[0]=run(first,{listKind:'bullet',listItemSpacing:18});
+ changed[1]=run(second,{listKind:'bullet',listItemSpacing:18});
+ expect((await model(page)).paragraphRuns).toEqual(changed);
+ await host(page).focus();expect(await selection(page)).toEqual([text.length,0]);
+ await press(page,'Control+z');expect((await model(page)).paragraphRuns).toEqual(original);
+ await press(page,'Control+Shift+z');expect((await model(page)).paragraphRuns).toEqual(changed);
+ await configure(page).click();await mode('ordered').click();
+ await field(page,'listGap').fill('15');await press(page,'Enter');
+ expect((await model(page)).paragraphRuns).toEqual(changed.map(({start,style})=>run(start,style.listKind==='ordered'?{...style,listGap:15}:style)));
+ await colorButton(page).click();await expect(page.locator('#fillPopover')).toBeVisible();
+ await press(page,'Escape');await expect(colorButton(page)).toBeFocused();
+ await press(page,'Escape');await expect(configure(page)).toBeFocused();
+ await host(page).focus();expect(await selection(page)).toEqual([text.length,0]);
+ await kind(page,'ordered').click();
+ expect((await model(page)).paragraphRuns.every(p=>p.style.listKind==='ordered')).toBe(true);
+ expect((await model(page)).paragraphRuns).toHaveLength(7);
+});
+
+test('list panel keeps its owner, scroll and focus through sizing, palette and mode changes',async({page},info)=>{
+ const text='Alpha\nBeta\nGamma';
+ const id=await seed(page,{text},{palette:['#d71d49']});
+ await edit(page);
+ await press(page,'Control+Home','ArrowDown','End');
+ for(let i=0;i<8;i++)await press(page,'Shift+ArrowLeft');
+ expect(await selection(page)).toEqual([10,2]);
+ await kind(page,'bullet').click();
+ const settings=panel(page),body=settings.locator('.list-style-body');
+ await expect(settings).toBeVisible();
+ await expect(settings.locator('[data-list-mode=bullet]')).toBeFocused();
+ const b=await settings.boundingBox();
+ const stage=await page.locator('#stageScroller').boundingBox();
+ expect(b.x).toBeGreaterThan(stage.x+stage.width/2);
+ expect(b.x+b.width).toBeLessThanOrEqual(page.viewportSize().width);
+ expect(b.y+b.height).toBeLessThanOrEqual(page.viewportSize().height);
+ const capture=async(name,locator)=>{
+  const path=info.outputPath(name+'.png');
+  await (locator||page).screenshot({path,animations:'disabled'});
+  await info.attach(name,{path,contentType:'image/png'});
+ };
+ await capture('list-compact-controls',page.locator('[data-ins-section="Списки"]').locator('..'));
+ await capture('list-bullet-panel',settings);
+ const bulletDefault=(await markerDraws(page,/^•$/u))[0];
+ await page.setViewportSize({width:1210,height:690});
+ const resized=await settings.boundingBox();
+ expect(resized.y+resized.height).toBeLessThanOrEqual(690);
+ await preset(page,'🔴').scrollIntoViewIfNeeded();
+ const galleryScroll=await body.evaluate(el=>el.scrollTop);
+ expect(galleryScroll).toBeGreaterThan(0);
+ await preset(page,'🔴').click();
+ expect(await body.evaluate(el=>el.scrollTop)).toBe(galleryScroll);
+ let emoji=(await markerDraws(page,/^🔴$/u))[0];
+ expect(parseFloat(emoji.font.match(/[0-9.]+px/)[0])).toBe(18);
+ expect(parseFloat(bulletDefault.font.match(/[0-9.]+px/)[0])).toBe(30);
+ await expect(colorButton(page)).toBeDisabled();
+ await expect(field(page,'listMarkerOpacity')).toBeEnabled();
+ await field(page,'listMarkerOpacity').fill('35');await press(page,'Enter');
+ expect((await markerDraws(page,/^🔴$/u))[0].alpha).toBeCloseTo(.35,2);
+ await settings.locator('[data-list-reset=listMarkerOpacity]').click();
+ await preset(page,'✅').click();await expect(settings).toBeVisible();
+ await preset(page,'◆').click();
+ const initial=await model(page);
+ const beforePNG=await pngWithoutFocusChange(page);
+ const slider=settings.locator('[data-list-scale-range]');
+ await slider.scrollIntoViewIfNeeded();
+ const {x,y,width:w,height:h}=await slider.boundingBox();
+ await page.mouse.move(x+w*.25,y+h/2);await page.mouse.down();
+ await page.mouse.move(x+w*.82,y+h/2,{steps:12});
+ expect(await model(page)).toEqual(initial);
+ expect(maxDelta(await pngWithoutFocusChange(page),beforePNG)).toBe(0);
+ const draft=(await markerDraws(page,/^◆$/u))[0];
+ expect(parseFloat(draft.font.match(/[0-9.]+px/)[0])).toBeGreaterThan(30);
+ expect((await records(page,'docs')).find(doc=>doc.id===id).elements[0].paragraphRuns).toBeUndefined();
+ await page.mouse.up();
+ const sized=await model(page);
+ expect(sized.paragraphRuns[0].style.listMarkerScale).toBeGreaterThan(100);
+ expect(sized.paragraphRuns[1].style.listMarkerScale).toBe(sized.paragraphRuns[0].style.listMarkerScale);
+ await press(page,'Control+z');expect(await model(page)).toEqual(initial);
+ await press(page,'Control+Shift+z');expect(await model(page)).toEqual(sized);
+ await kind(page,'bullet').click();
+ await settings.locator('[data-list-reset=listMarkerScale]').click();
+ await expect(field(page,'listMarkerScale')).toHaveAttribute('placeholder','Auto');
+ await field(page,'listMarkerScale').fill('56');await press(page,'Enter');
+ await expect(field(page,'listMarkerScale')).toBeFocused();
+ expect(parseFloat((await markerDraws(page,/^◆$/u))[0].font.match(/[0-9.]+px/)[0])).toBeCloseTo(16.8,0);
+ await colorButton(page).click();
+ const picker=page.locator('#fillPopover[data-key=_listMarker]');
+ await expect(picker).toBeVisible();
+ const hex=picker.locator('[data-cp-part="0"]');
+ await hex.fill('#148555');await press(page,'Enter');await expect(hex).toBeFocused();
+ expect((await markerDraws(page,/^◆$/u))[0].color).toBe('#148555');
+ await picker.locator('[data-fill-palette="#d71d49"]').click();
+ expect((await markerDraws(page,/^◆$/u))[0].color).toBe('#d71d49');
+ const beforePickerDrag=await model(page);
+ const square=await picker.locator('#cpSquare').boundingBox();
+ await page.mouse.move(square.x+square.width*.4,square.y+30);await page.mouse.down();
+ await page.mouse.move(square.x+square.width*.8,square.y+80,{steps:7});
+ expect(await model(page)).toEqual(beforePickerDrag);
+ await page.mouse.up();
+ expect(await model(page)).not.toEqual(beforePickerDrag);
+ await press(page,'Control+z');expect(await model(page)).toEqual(beforePickerDrag);
+ await kind(page,'bullet').click();await colorButton(page).click();
+ await press(page,'Escape');await expect(picker).toBeHidden();await expect(settings).toBeVisible();
+ await expect(colorButton(page)).toBeFocused();
+ await field(page,'listMarkerOpacity').fill('0');await press(page,'Enter');
+ expect((await markerDraws(page,/^◆$/u))[0].alpha).toBe(0);
+ await settings.locator('[data-list-reset=listMarkerOpacity]').click();
+ await settings.locator('[data-list-mode=ordered]').click();
+ expect((await markerDraws(page,/^1\.$/u))[0].color).toBe('#d71d49');
+ await capture('list-numbering-panel',settings);
+ await settings.locator('[data-list-mode=bullet]').click();
+ const formatted=await model(page);
+ expect(formatted.paragraphRuns).toEqual([0,6].map(start=>run(start,{
+  listKind:'bullet',listMarker:'◆',listMarkerScale:56,listMarkerColor:'#d71d49',
+ })));
+ await press(page,'Escape');
+ await expect(settings).toBeHidden();await expect(kind(page,'bullet')).toBeFocused();
+ await host(page).focus();
+ expect(await selection(page)).toEqual([10,2]);
+ await done(page);
+ await expect.poll(async()=>(await records(page,'docs')).find(doc=>doc.id===id)?.elements[0]).toEqual(formatted);
+});
+test('list settings reject stale, composing and locked targets, and discard canceled gestures',async({page})=>{
+ const original=[autoRun(0,{listKind:'bullet'})];
+ await seed(page,{paragraphRuns:original});
+ await edit(page);await press(page,'Control+Home');
+ await kind(page,'bullet').click();
+ const slider=panel(page).locator('[data-list-scale-range]');
+ await slider.evaluate(el=>el.addEventListener('pointerdown',ev=>el.dataset.pointerId=ev.pointerId,{once:true}));
+ await slider.scrollIntoViewIfNeeded();
+ const {x,y,width:w,height:h}=await slider.boundingBox();
+ await page.mouse.move(x+w*.4,y+h/2);await page.mouse.down();
+ await page.mouse.move(x+w*.9,y+h/2,{steps:5});
+ await slider.dispatchEvent('pointercancel',{pointerId:Number(await slider.getAttribute('data-pointer-id'))});
+ await page.mouse.up();
+ expect((await model(page)).paragraphRuns).toEqual(original);
+ await host(page).focus();
+ await press(page,'Control+End');
+ await expect(panel(page)).toBeHidden();
+ await preset(page,'◆').dispatchEvent('click');
+ expect((await model(page)).paragraphRuns).toEqual(original);
+ await kind(page,'bullet').click();
+ await host(page).dispatchEvent('compositionstart');
+ await expect(panel(page)).toBeHidden();await expect(kind(page,'ordered')).toBeDisabled();
+ await expect(configure(page)).toBeDisabled();
+ await configure(page).dispatchEvent('click');
+ await expect(panel(page)).toBeHidden();
+ await kind(page,'ordered').dispatchEvent('click');
+ expect((await model(page)).paragraphRuns.at(-1)).toEqual(autoRun(11,{listKind:'bullet'}));
+ await host(page).dispatchEvent('compositionend');
+ await page.locator('#wysiwygRecover').click();
+ await done(page);
+ await kind(page,'bullet').click();
+ const lock=page.locator('#inspector [data-action=lock]');
+ await lock.click();
+ await expect(panel(page)).toBeHidden();await expect(kind(page,'ordered')).toBeDisabled();
+ await expect(configure(page)).toBeDisabled();
+ const locked=await model(page);
+ await kind(page,'ordered').dispatchEvent('click');
+ expect(await model(page)).toEqual(locked);
 });
 
 test('marker clicks and drags, Home, Enter, Backspace and ordered renumbering use source offsets',async({page})=>{
@@ -160,25 +494,62 @@ test('marker clicks and drags, Home, Enter, Backspace and ordered renumbering us
  expect((await model(page)).text).toBe(text+'Alpha');
 });
 
+test('WYSIWYG list gaps preserve native source offsets, empty rows and vertical navigation',async({page})=>{
+ const text='Alpha\nBeta\n\nPlain\nTail\n';
+ const paragraphRuns=[run(0,{listKind:'bullet',listItemSpacing:26}),run(6,{listKind:'bullet',listItemSpacing:14}),
+  run(11,{listKind:'bullet',listItemSpacing:90}),run(18,{listKind:'ordered',listStart:9,listItemSpacing:18}),
+  run(23,{listKind:'ordered',listItemSpacing:60})];
+ await seed(page,{text,paragraphRuns,verticalAlign:'bottom'});
+ await edit(page);
+ const rows=await host(page).locator('[data-wysiwyg-row]').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().toJSON()));
+ expect(rows).toHaveLength(6);
+ for(const [i,gap] of [26,14,0,0,18].entries())expect(rows[i+1].top-rows[i].bottom).toBeCloseTo(gap,1);
+ expect(await host(page).textContent()).toBe(text);
+ expect(await host(page).locator('[data-caret-sentinel]').count()).toBe(1);
+ const x=rows[0].left+120,y=rows[0].bottom;
+ await page.mouse.click(x,y+4);expect(await selection(page)).toEqual([5,5]);
+ await page.mouse.click(x,y+21);expect(await selection(page)).toEqual([6,6]);
+ await press(page,'ArrowUp','Home');expect(await selection(page)).toEqual([0,0]);
+ await press(page,'ArrowDown','ArrowDown');expect(await selection(page)).toEqual([11,11]);
+ await press(page,'ArrowDown','Home');expect(await selection(page)).toEqual([12,12]);
+ await press(page,'ArrowDown','ArrowDown');expect(await selection(page)).toEqual([23,23]);
+ await press(page,'Shift+ArrowUp');expect(await selection(page)).toEqual([23,18]);
+ await page.mouse.move(x,y+21);await page.mouse.down();await page.mouse.move(x,y+4);await page.mouse.up();
+ expect(await selection(page)).toEqual([6,5]);
+ expect((await model(page)).paragraphRuns).toEqual(paragraphRuns);
+});
+
 const img=url=>PNG.sync.read(Buffer.from(url.split(',')[1],'base64')).data;
 const maxDelta=(a,b)=>a.reduce((max,value,i)=>Math.max(max,Math.abs(value-b[i])),0);
-test('live DOM position, markers, justify, T1–T3, Canvas and PNG agree',async({page},info)=>{
- const text='Straße  one two three four five six seven eight nine\nSmall';
+for(const variant of ['legacy','customized','spaced'])test(`live DOM position, ${variant} markers, justify, T1–T3, Canvas and PNG agree`,async({page},info)=>{
+ const customized=variant!=='legacy',spaced=variant==='spaced';
+ const text='Straße  one two three four five six seven eight nine\nSmall'+(spaced?'\nNext':'');
  await seed(page,{text,w:250,textAlign:'justify',verticalAlign:'middle',strokeWidth:1,fillOpacity:86,
-  paragraphRuns:[run(0,{listKind:'bullet',listMarker:'◆',listIndent:8,listGap:12}),
-   run(text.indexOf('Small'),{listKind:'ordered',listStart:5})],
+  paragraphRuns:[run(0,{listKind:'bullet',listMarker:'◆',listIndent:8,listGap:12,
+   ...(customized?{listMarkerScale:62,listMarkerColor:'#cc203c',listMarkerOpacity:67}:{})}),
+   run(text.indexOf('Small'),{listKind:'ordered',listStart:spaced?9:5,
+    ...(customized?{listMarkerScale:147,listMarkerColor:'#1467d9',listMarkerOpacity:0}:{}),
+    ...(spaced?{listItemSpacing:32}:{})}),
+   ...(spaced?[run(text.indexOf('Next'),{listKind:'ordered'})]:[])],
   textRuns:[{start:0,end:6,style:{textCase:'upper',baselineShift:'super',underline:true,
-   underlineDetails:{style:'wavy',color:'#d53548'}}}]},{backgroundAlpha:0});
+   underlineDetails:{style:'wavy',color:'#d53548'}}},
+   ...(spaced?[{start:text.indexOf('Small'),end:text.indexOf('Small')+2,style:{baselineShift:'sub'}}]:[])]},{backgroundAlpha:0});
  await edit(page);
  await expect(host(page)).toHaveClass(/wysiwyg-canvas-ink/);
  expect(await host(page).textContent()).toBe(text.replace('Straße','STRASSE'));
- const markers=await markerDraws(page,/^(◆|5\.)$/);
- expect(markers.map(part=>part.text)).toEqual(['◆','5.']);
+ const markerPattern=/^(◆|5\.|9\.|10\.)$/;
+ const markers=await markerDraws(page,markerPattern);
+ expect(markers.map(part=>part.text)).toEqual(spaced?['◆','9.','10.']:['◆','5.']);
+ if(customized){
+  expect(markers.slice(0,2).map(part=>part.color)).toEqual(['#cc203c','#1467d9']);
+  expect(markers[0].alpha).toBeCloseTo(.67,2);
+  expect(markers[1].alpha).toBe(0);
+ }
  const dom=await host(page).locator('[data-wysiwyg-fragment]').evaluateAll(spans=>spans.map(span=>
   ({text:span.textContent.replaceAll('\n',''),x:span.getBoundingClientRect().left-span.closest('#inlineWysiwyg').getBoundingClientRect().left})
  ).filter(part=>part.text));
  const live=img(await page.locator('[data-text-stroke-overlay]').evaluate(el=>el.toDataURL()));
- const draws=(await page.evaluate(()=>listDraws.overlay)).filter(p=>p.text!=='◆'&&p.text!=='5.');
+ const draws=(await page.evaluate(()=>listDraws.overlay)).filter(p=>!markerPattern.test(p.text));
  expect(dom.map(p=>p.text)).toEqual(draws.map(p=>p.text));
  const domError=Math.max(...dom.map((p,i)=>Math.abs(p.x-draws[i].x)));
  expect(domError).toBeLessThan(.12);
@@ -186,6 +557,10 @@ test('live DOM position, markers, justify, T1–T3, Canvas and PNG agree',async(
  const rowOrigins=await host(page).locator('[data-wysiwyg-row]').evaluateAll(rows=>rows.map(row=>
   row.firstChild.getBoundingClientRect().left-row.getBoundingClientRect().left));
  expect(Math.abs(rowOrigins[0]-rowOrigins[1])).toBeLessThan(.12);
+ if(spaced){
+  const gap=await host(page).locator('[data-wysiwyg-row]').evaluateAll(rows=>rows.at(-1).getBoundingClientRect().top-rows.at(-2).getBoundingClientRect().bottom);
+  expect(gap).toBeCloseTo(32,1);
+ }
  await done(page);
  const outside=await canvasPoint(page,625,465,width,height);
  await page.mouse.click(outside.x,outside.y);
@@ -199,6 +574,21 @@ test('live DOM position, markers, justify, T1–T3, Canvas and PNG agree',async(
  expect(canvasToPNG).toBeLessThanOrEqual(1);expect(liveToPNG).toBeLessThanOrEqual(2);
 });
 
+test('capture ordinary, smaller and recolored bullets on the canvas',async({page},info)=>{
+ await seed(page,{text:'Обычный маркер\nУменьшенный маркер\nСобственный цвет',fontSize:35,h:200,
+  paragraphRuns:[
+   autoRun(0,{listKind:'bullet',listMarker:'◆'}),
+   run('Обычный маркер\n'.length,{listKind:'bullet',listMarker:'◆',listMarkerScale:45}),
+   run('Обычный маркер\nУменьшенный маркер\n'.length,{listKind:'bullet',listMarker:'◆',listMarkerScale:72,listMarkerColor:'#ce2355'}),
+  ]});
+ await page.locator('#layers .layer-name').filter({hasText:'List sample'}).click();
+ await kind(page,'bullet').click();
+ await expect(panel(page)).toBeVisible();
+ const path=info.outputPath('list-marker-examples.png');
+ await page.screenshot({path,animations:'disabled'});
+ await info.attach('list-marker-examples',{path,contentType:'image/png'});
+});
+
 test('whole-layer list participates in auto-fit and document undo',async({page})=>{
  const text='Straße one two three four';
  await seed(page,{text,w:140,h:48,autoFontSize:true});
@@ -208,7 +598,7 @@ test('whole-layer list participates in auto-fit and document undo',async({page})
  const bullet=await model(page);
  expect(bullet.text).toBe(text);
  expect(bullet.fontSize).toBeLessThan(plain.fontSize);
- expect(bullet.paragraphRuns).toEqual([run(0,{listKind:'bullet'})]);
+ expect(bullet.paragraphRuns).toEqual([autoRun(0,{listKind:'bullet'})]);
  await page.locator('#undoBtn').click();
  expect(await model(page)).toEqual(plain);
 });
@@ -217,6 +607,7 @@ test('vertical text retains imported paragraph runs with list commands disabled'
  await seed(page,{textMode:'vertical',paragraphRuns});
  await page.locator('#layers .layer-name').filter({hasText:'List sample'}).click();
  await expect(kind(page,'bullet')).toBeDisabled();
+ await expect(configure(page)).toBeDisabled();
  await kind(page,'bullet').dispatchEvent('click');
  expect((await model(page)).paragraphRuns).toEqual(paragraphRuns);
 });
@@ -230,7 +621,7 @@ test.describe('mobile native bridge',()=>{
    mobileListRawTextRuns:[{start:0,end:5,style:{italic:true}}]};
   const id=await seed(page,{...legacy,text,w:330,h:280,
    textRuns:[{start:2,end:6,style:{underline:true,baselineShift:'super',textCase:'upper'}}],
-   paragraphRuns:[run(0,{listMarker:'✓'}),run(17,{listCounterStyle:'latin-upper-dot'})]});
+   paragraphRuns:[run(0,{listMarker:'✓',listMarkerScale:70,listMarkerColor:'#e42e54',listMarkerOpacity:45}),run(17,{listCounterStyle:'latin-upper-dot'})]});
   const input=page.locator('#inlineText'),tool=name=>page.locator('#mobileContext [data-mobile='+name+']').tap();
   await page.locator('[data-mobile=layers]:visible').tap();
   await page.locator('#mobileLayerList .layer-name').filter({hasText:'List sample'}).tap();
@@ -245,7 +636,7 @@ test.describe('mobile native bridge',()=>{
   await select(2,12);await bullet.tap();
   await expect(input).toHaveValue(text);
   let after=await model(page);
-  expect(after.paragraphRuns).toEqual([run(0,{listKind:'bullet',listMarker:'✓'}),
+  expect(after.paragraphRuns).toEqual([run(0,{listKind:'bullet',listMarker:'✓',listMarkerScale:70,listMarkerColor:'#e42e54',listMarkerOpacity:45}),
    run(10,{listKind:'bullet'}),run(17,{listCounterStyle:'latin-upper-dot'})]);
   expect({...after,paragraphRuns:before.paragraphRuns}).toEqual(before);
   expect(await input.evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([2,12]);

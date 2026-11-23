@@ -1,4 +1,5 @@
 import { normalizeParagraphRuns, projectParagraphLists } from '../model/paragraph-style.mjs';
+import { isEmojiListMarker, listMarkerPercent } from '../model/list-presets.mjs';
 import { textDecorationRects } from './text-decorations.mjs';
 import { baselineOffset, glyphFontSize } from './text-baseline-shift.mjs';
 import { isBaselineShift, normalizeRuns, resolveUnderlineDetails } from '../model/rich-text.mjs';
@@ -176,12 +177,22 @@ export function createRichTextLayoutEngine(context, fontSet) {
     const underlineSpans = advancedUnderline ? collectDecorationSpans(true) : [];
     const rows = []; let fragments = [], rowWidth = 0, rowStart = 0, emptyStyle = base;
     let previousDescent = 0, edgeLeading = 0;
-    const markerStyle = {...base, baselineShift:'normal', underline:false, strikethrough:false};
+    const baseMarker = {...base, baselineShift:'normal', underline:false, strikethrough:false};
     const paragraphs = paragraphRuns.length ? projectParagraphLists(text, paragraphRuns) : [];
     const columns = new Map();
     for (const paragraph of paragraphs) {
       if (!paragraph.marker) continue;
-      const metrics = measure(paragraph.marker, markerStyle);
+      const style = paragraph.style;
+      const customColor = solid && style.listMarkerColor !== 'inherit' && !isEmojiListMarker(paragraph.marker);
+      const customOpacity = solid && style.listMarkerOpacity !== 'inherit';
+      paragraph.markerStyle = {
+        ...baseMarker,
+        fontSize:baseMarker.fontSize * (listMarkerPercent(style) / 100),
+        ...(customColor ? {textColor:style.listMarkerColor} : {}),
+        ...(customOpacity ? {fillOpacity:style.listMarkerOpacity,
+          strokeOpacity:baseMarker.strokeOpacity * style.listMarkerOpacity / 100} : {}),
+      };
+      const metrics = paragraph.markerMetrics = measure(paragraph.marker, paragraph.markerStyle);
       paragraph.markerWidth = Math.max(0, metrics.width, metrics.inkRight) + Math.max(0, metrics.inkLeft);
       if (paragraph.sequenceStart !== undefined) {
         columns.set(paragraph.sequenceStart, Math.max(columns.get(paragraph.sequenceStart) ?? 0, paragraph.markerWidth));
@@ -230,9 +241,6 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const blankStyle = {...base, baselineShift:'normal', lineHeight:(breakCluster?.style || emptyStyle).lineHeight};
       const samples = fragments.length ? [...fragments] : [{ style: blankStyle, metrics: measure('Mg', blankStyle) }];
       const paragraph = paragraphForRow();
-      if (paragraph?.marker && rowStart === paragraph.start) {
-        samples.push({style:markerStyle, metrics:measure(paragraph.marker, markerStyle)});
-      }
       let ascent = -Infinity, descent = -Infinity;
       for (const part of samples) {
         const offset = baselineOffset(part.style);
@@ -242,15 +250,36 @@ export function createRichTextLayoutEngine(context, fontSet) {
       }
       // Leading belongs to source fragments, independently of glyph coalescing.
       // Max font metrics keep one baseline safe for mixed families and sizes.
-      const rowHeight = Math.max(...samples.map(requiredHeight), ascent + descent);
+      let leading = Math.max(...samples.map(requiredHeight));
+      if (paragraph?.marker && rowStart === paragraph.start) {
+        const {markerStyle, markerMetrics:ink, style} = paragraph;
+        paragraph.markerOffset = 0;
+        if (style.listMarkerScale === null) {
+          // Documents saved before marker customization retain the original baseline and line box.
+          ascent = Math.max(ascent, ink.ascent);
+          descent = Math.max(descent, ink.descent);
+          leading = Math.max(leading, markerStyle.fontSize * markerStyle.lineHeight);
+        } else {
+          const bullet = style.listKind === 'bullet';
+          if (bullet || markerStyle.fontSize !== baseMarker.fontSize) {
+            const first = {...samples[0].style, baselineShift:'normal'};
+            const reference = measure(bullet ? 'x' : '0', first);
+            paragraph.markerOffset = ((reference.inkDescent - reference.inkAscent) - (ink.inkDescent - ink.inkAscent)) / 2;
+          }
+          ascent = Math.max(ascent, ink.inkAscent - paragraph.markerOffset);
+          descent = Math.max(descent, ink.inkDescent + paragraph.markerOffset);
+        }
+      }
+      const rowHeight = Math.max(leading, ascent + descent);
       const previous = rows.at(-1);
       // The first row keeps half-leading at the top and at the BLOCK's end.
       // Every later row owns the entire baseline interval BEFORE itself.
       // A large preceding descent must also clear the current ascent; leading
       // from the preceding row must never increase this interval.
       if (!previous) edgeLeading = (rowHeight - ascent - descent) / 2;
-      const y = previous ? previous.y + previous.height : 0;
-      const baseline = previous ? previous.baseline + Math.max(rowHeight, previousDescent + ascent) : ascent + edgeLeading;
+      const spacingBefore = rowStart === paragraph?.start ? paragraph.spacingBefore ?? 0 : 0;
+      const y = previous ? previous.y + previous.height + spacingBefore : 0;
+      const baseline = previous ? previous.baseline + Math.max(rowHeight, previousDescent + ascent) + spacingBefore : ascent + edgeLeading;
       // Layout ignores obsolete textLayoutMode; no old-baseline branch remains.
       // Source intervals are UTF-16, independent of rendered geometry. Hard
       // breaks are excluded from end and owned by [end, nextStart). A trailing
@@ -259,7 +288,8 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const nextStart = breakCluster?.end ?? end;
       rows.push({ start: rowStart, end, nextStart, softWrap: !breakCluster && !final,
         fragments, emptyStyle: fragments.length ? undefined : {...blankStyle, underline:false, strikethrough:false}, width: rowWidth,
-        y, height: baseline + descent - y, baseline, ...(paragraph?.marker ? {paragraph} : {}) });
+        y, height: baseline + descent - y, baseline, ...(paragraph?.marker ? {paragraph} : {}),
+        ...(spacingBefore ? {spacingBefore} : {}) });
       previousDescent = descent;
       if (breakCluster) { emptyStyle = breakCluster.style; paragraphIndex++; }
       rowStart = nextStart;
@@ -293,10 +323,10 @@ export function createRichTextLayoutEngine(context, fontSet) {
       i = end;
     }
     finish(undefined, true);
-    // Contiguous row boxes end at their glyph bounds, except for the terminal
-    // block padding. Uniform typography retains its old baselines/block height.
+    // Row boxes end at their glyph bounds, except for the terminal block
+    // padding. Item spacing lies outside the two adjoining line boxes.
     rows.at(-1).height += edgeLeading;
-    const blockHeight = rows.reduce((sum, row) => sum + row.height, 0);
+    const blockHeight = rows.reduce((sum, row) => sum + (row.spacingBefore ?? 0) + row.height, 0);
     const y = e.verticalAlign === 'middle' ? Math.max(0, (height - blockHeight) / 2) :
       e.verticalAlign === 'bottom' ? Math.max(0, height - blockHeight) : 0;
     // Align the whole item (and the ordered column) as a block, so continuation
@@ -322,9 +352,9 @@ export function createRichTextLayoutEngine(context, fontSet) {
       row.y += y; row.baseline += y;
       if (p && rowIndex === p.firstRow) {
         const columnX = x - p.style.listGap - p.markerColumnWidth;
-        const leftBearing = Math.max(0, measure(p.marker, markerStyle).inkLeft);
-        row.marker = {text:p.marker, style:markerStyle, x:columnX + p.markerColumnWidth - p.markerWidth + leftBearing,
-          y:row.baseline, width:p.markerWidth, columnX};
+        const leftBearing = Math.max(0, p.markerMetrics.inkLeft);
+        row.marker = {text:p.marker, style:p.markerStyle, x:columnX + p.markerColumnWidth - p.markerWidth + leftBearing,
+          y:row.baseline + p.markerOffset, width:p.markerWidth, columnX};
       }
       let previousGeometry = null, previousShapeWidth = 0;
       row.fragments = row.fragments.map(({ text, style, start, end, geometry, shapeWidth }) => {

@@ -124,10 +124,18 @@ test('real Canvas geometry: hanging spaces cannot shrink auto-fit or enlarge con
   }
   c.font='20px Arial';c.fontKerning='normal';c.letterSpacing='0px';const boundary=c.measureText('AA BB CC').width;
   const edge=[-.1,0,.1].map(d=>engine.layoutJustified({text:'AA BB CC',w:boundary+d,h:100,fontSize:20}).rows.length);
-  return {cases,boundary,edge};
+  const items={type:'text',text:'One\nTwo',w:290,h:90,fontFamily:'Arial',fontSize:20,lineHeight:1.2,autoFontSize:true,
+   paragraphRuns:[{start:0,style:{listKind:'bullet'}},{start:4,style:{listKind:'bullet'}}]};
+  const spaced={...items,paragraphRuns:items.paragraphRuns.map(p=>({...p,style:{...p.style,listItemSpacing:24}}))};
+  const sized={...items},sizedSpaced={...spaced};
+  run.fitTextBoxToContent(sized);run.fitTextBoxToContent(sizedSpaced);
+  run.autoFitTextFont(items);run.autoFitTextFont(spaced);
+  return {cases,boundary,edge,listFit:[items.fontSize,spaced.fontSize],listHeightIncrease:sizedSpaced.h-sized.h};
  },fit);
  for(const c of results.cases){expect(c.fontSize).toBe(c.leftSize);expect(c.box).toEqual(c.leftBox);expect(c.wraps).toEqual(c.naturalWraps);expect(c.sourcePreserved).toBe(true)}
  expect(results.cases.some(c=>c.hanging)).toBe(true);expect(results.edge[0]).toBeGreaterThan(results.edge[1]);expect(results.edge[1]).toBe(results.edge[2]);
+ expect(results.listFit[1]).toBeLessThan(results.listFit[0]);
+ expect(results.listHeightIncrease).toBe(24);
  await info.attach('geometry.json',{body:JSON.stringify(results,null,2),contentType:'application/json'});
 });
 
@@ -142,6 +150,43 @@ test('justify retains contextual glyph origin across stroke and opacity run boun
   });
  });
  for(const row of rows)expect(row.justify.map(p=>[p.text,p.x,p.logicalX??p.x])).toEqual(row.natural.map(p=>[p.text,p.x,p.logicalX??p.x]));
+});
+
+test('list spacing has shared desktop and mobile Canvas/PNG geometry with pixel-identical zero spacing',async({page},info)=>{
+ const text='AA BB CC DD EE\nNext item\nLast item';
+ const starts=[0,text.indexOf('Next'),text.indexOf('Last')];
+ const paragraphRuns=starts.map((start,i)=>({start,style:{listKind:'ordered',...(i===0?{listStart:9}:{})}}));
+ const doc=await seed(page,{text,paragraphRuns}),e=layer(doc);
+ const bare=(await exportPNG(page)).image.data;
+ const zero=await page.evaluate(async e=>{
+  const {createRichTextLayoutEngine}=await import('/__shipping/render/rich-text-layout.mjs');
+  const c=document.createElement('canvas').getContext('2d'),engine=createRichTextLayoutEngine(c,document.fonts);
+  const draw=element=>{
+   c.canvas.width=320;c.canvas.height=240;
+   c.textBaseline='alphabetic';c.fillStyle='#111111';
+   for(const row of engine.layoutJustified(element).rows)for(const part of [row.marker,...row.fragments]){
+    if(!part)continue;
+    c.font=part.style.fontSize+'px Arial';c.fillText(part.text,part.x,part.y);
+   }
+   return c.canvas.toDataURL();
+  };
+  return draw(e)===draw({...e,paragraphRuns:e.paragraphRuns.map(run=>({...run,style:{...run.style,listItemSpacing:0}}))});
+ },e);
+ expect(zero).toBe(true);
+ await page.locator('#layers .layer-name').first().click();
+ await page.getByRole('button',{name:'Настроить существующий список'}).click();
+ const field=page.locator('[data-list-field=listItemSpacing]');
+ await field.fill('23.5');await field.press('Enter');
+ const saved=layer(await exportedDocument(page));
+ expect(saved.paragraphRuns).toEqual(paragraphRuns.map(run=>({...run,style:{...run.style,listItemSpacing:23.5}})));
+ const calls=await parity(page,info,'list-item-spacing');
+ const spaced=(await exportPNG(page)).image.data;
+ expect(spaced.equals(bare)).toBe(false);
+ const layout=await projection(page,saved);
+ expect(calls.filter(call=>call.method==='fillText').map(p=>p.args)).toEqual(layout.rows.flatMap(r=>[r.marker,...r.fragments].filter(Boolean)).map(p=>[p.text,p.x,p.y]));
+ await page.setViewportSize({width:390,height:844});
+ expect(glyphs(await page.evaluate(()=>window.justifyDraws))).toEqual(glyphs(calls));
+ expect((await exportPNG(page)).image.data.equals(spaced)).toBe(true);
 });
 
 test('text backdrop measures justified visible fragments instead of hanging source spaces',async({page})=>{

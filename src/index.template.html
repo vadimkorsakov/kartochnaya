@@ -100,6 +100,58 @@
     </div>
   </div>
 </div>
+<div id="listStylePanel" class="fx-popover list-style-panel hidden" role="dialog" aria-labelledby="listStyleTitle">
+  <div class="fx-popover-head"><strong id="listStyleTitle">Настройка списка</strong><button type="button" data-list-close aria-label="Закрыть настройки списка">×</button></div>
+  <div class="list-style-modes" role="group" aria-label="Тип списка">
+    <button type="button" data-list-mode="bullet" class="linebtn">Маркеры</button>
+    <button type="button" data-list-mode="ordered" class="linebtn">Нумерация</button>
+  </div>
+  <div class="fx-details list-style-body">
+    <div data-list-presets></div>
+    <section data-list-ordered class="list-style-options" hidden>
+      <div data-list-counters class="list-counter-grid" role="group" aria-label="Стиль нумерации"></div>
+      <label>Начать с<input type="number" data-list-field="listStart" inputmode="numeric"></label>
+    </section>
+    <section class="list-style-options list-style-divider">
+      <div class="list-style-row">
+        <label for="listMarkerScale" data-list-size-label>Размер маркера</label>
+        <button type="button" class="linebtn" data-list-reset="listMarkerScale" aria-label="Автоматический размер">Auto</button>
+        <label class="list-style-unit"><input id="listMarkerScale" type="number" data-list-field="listMarkerScale" inputmode="numeric">%</label>
+      </div>
+      <input data-list-scale-range type="range" aria-label="Размер, ползунок">
+    </section>
+    <section class="list-style-options list-style-divider">
+      <div class="list-style-row"><span data-list-color-label>Цвет маркера</span><button type="button" class="linebtn" data-list-reset="listMarkerColor" aria-label="Наследовать цвет текста">Как у текста</button></div>
+      <div class="list-style-row">
+        <button type="button" data-list-color class="linebtn list-color-swatch" aria-haspopup="dialog" aria-controls="fillPopover" aria-expanded="false"><span aria-hidden="true"></span>Палитра</button>
+        <label class="list-style-unit">HEX<input type="text" data-list-field="listMarkerColor" spellcheck="false" maxlength="7"></label>
+      </div>
+      <p data-list-color-hint hidden></p>
+      <div class="list-style-row list-opacity-row">
+        <label for="listMarkerOpacity">Прозрачность</label>
+        <button type="button" class="linebtn" data-list-reset="listMarkerOpacity" aria-label="Наследовать прозрачность текста">Как у текста</button>
+        <label class="list-style-unit"><input id="listMarkerOpacity" type="number" data-list-field="listMarkerOpacity" inputmode="numeric">%</label>
+      </div>
+    </section>
+    <section class="list-style-options list-style-divider list-style-spacing">
+      <div class="list-style-row">
+        <label for="listIndent">Отступ слева</label>
+        <span class="list-style-unit"><input id="listIndent" type="number" data-list-field="listIndent" inputmode="decimal" aria-label="Отступ слева, px"><span aria-hidden="true">px</span></span>
+      </div>
+      <input type="range" data-list-spacing-range="listIndent" aria-label="Отступ слева, ползунок">
+      <div class="list-style-row">
+        <label for="listGap">Маркер → текст</label>
+        <span class="list-style-unit"><input id="listGap" type="number" data-list-field="listGap" inputmode="decimal" aria-label="Маркер → текст, px"><span aria-hidden="true">px</span></span>
+      </div>
+      <input type="range" data-list-spacing-range="listGap" aria-label="Маркер → текст, ползунок">
+      <div class="list-style-row">
+        <label for="listItemSpacing">Между пунктами</label>
+        <span class="list-style-unit"><input id="listItemSpacing" type="number" data-list-field="listItemSpacing" inputmode="decimal" aria-label="Между пунктами, px"><span aria-hidden="true">px</span></span>
+      </div>
+      <input type="range" data-list-spacing-range="listItemSpacing" aria-label="Между пунктами, ползунок">
+    </section>
+  </div>
+</div>
 <div id="fillPopover" class="fill-popover hidden" role="dialog" aria-label="Настроить заливку"></div>
 <div id="contextMenu" class="context-menu hidden" role="menu" aria-label="Действия со слоем"><button type="button" id="contextSaveShape" class="hidden" data-menu="saveShape">＋ Сохранить в Фигуры</button><div class="context-item hidden" id="contextReplaceImage" data-menu="replaceImage"><span>▧</span>Заменить изображение</div><div class="context-item hidden" id="contextTitleLayer" data-menu="titleLayer"><span>H1</span><span id="contextTitleLayerText" style="width:auto;text-align:left;color:inherit;font-size:13px">Сделать заголовком</span></div>
 <div class="context-item hidden" id="contextCreateMask" data-menu="createMask"><span>◩</span>Создать маску</div>

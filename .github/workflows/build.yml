@@ -161,6 +161,14 @@ jobs:
           path: test-results/selection/selected-text-baseline-*/baseline-*
           if-no-files-found: warn
           retention-days: 14
+      - name: Preserve Firefox text case evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: text-case-firefox
+          path: test-results/selection/selected-text-case-*/case-*
+          if-no-files-found: warn
+          retention-days: 14
       - name: Multiline WYSIWYG in Chromium and Firefox
         run: npx playwright test --config=playwright.multiline.config.js
       - name: Text alignment WYSIWYG in Chromium and Firefox
@@ -244,6 +252,14 @@ jobs:
         with:
           name: text-baseline-shift-chromium-shard-${{ matrix.shard }}
           path: test-results/selected-text-baseline-*/baseline-*
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Preserve Chromium text case evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: text-case-chromium-shard-${{ matrix.shard }}
+          path: test-results/selected-text-case-*/case-*
           if-no-files-found: ignore
           retention-days: 14
       - name: Preserve browser failure diagnostics

@@ -1,6 +1,7 @@
 import { textDecorationRects } from './text-decorations.mjs';
 import { baselineOffset, glyphFontSize } from './text-baseline-shift.mjs';
 import { isBaselineShift, normalizeRuns, resolveUnderlineDetails } from '../model/rich-text.mjs';
+import { projectTextCase, resolveTextCase, sourceToDisplay, textGraphemes } from '../model/text-case.mjs';
 
 // Ordinary horizontal text always uses one renderer, whether or not styled
 // ranges exist. A formatting operation must not switch the rendering engine.
@@ -62,7 +63,8 @@ export function richTextSpans(e) {
   const text = String(e.text ?? ''), runs = normalizeRuns(text, e.textRuns), spans = [];
   let offset = 0;
   const add = (start, end, style) => {
-    if (end > start) spans.push({ start, end, text: text.slice(start, end), style: resolveRichTextStyle(e, style) });
+    if (end > start) spans.push({ start, end, text: text.slice(start, end),
+      style: resolveRichTextStyle(e, style), textCase:resolveTextCase(e.textCase, style?.textCase) });
   };
   for (const run of runs) {
     add(offset, run.start); add(run.start, run.end, run.style); offset = run.end;
@@ -93,16 +95,28 @@ export function createRichTextLayoutEngine(context, fontSet) {
       });
     }finally{context.restore();}
   }
-  const layouts = new Map(), metrics = new Map();
+  const layouts = new Map(), metrics = new Map(), caseProjections = new Map();
   let fontCount = fontSet?.size;
   const invalidate = () => { layouts.clear(); metrics.clear(); };
   fontSet?.addEventListener('loadingdone', invalidate);
   fontSet?.addEventListener('loadingerror', invalidate);
-  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  const segmenter = textGraphemes;
   const boundedSet = (cache, key, value, limit) => {
     if (cache.size >= limit) cache.delete(cache.keys().next().value);
     cache.set(key, value); return value;
   };
+  function caseProjectionFor(text, spans) {
+    if (!spans.some(span => span.textCase !== 'original')) return null;
+    const modes = [];
+    for (const {end,textCase} of spans) {
+      if (modes.at(-1)?.textCase === textCase) modes.at(-1).end = end;
+      else modes.push({end,textCase});
+    }
+    // Font fitting tries several sizes for the same source and case ranges.
+    // Their intervals are independent of geometry, paint and font changes.
+    const key = JSON.stringify([text,modes]);
+    return caseProjections.get(key) ?? boundedSet(caseProjections,key,projectTextCase(text,modes),32);
+  }
   function measure(text, style) {
     const font = richTextFont(style), key = JSON.stringify([font, style.letterSpacing, text]);
     if (metrics.has(key)) return metrics.get(key);
@@ -124,16 +138,21 @@ export function createRichTextLayoutEngine(context, fontSet) {
     const spans = richTextSpans(e), base = resolveRichTextStyle(e);
     const solid = (e.fillType || 'solid') === 'solid';
     const width = Math.max(1, Number(e.w) || 1), height = Math.max(0, Number(e.h) || 0);
-    const key = JSON.stringify([spans, base, solid, width, height, e.textAlign, e.verticalAlign, fontSet?.size]);
+    const horizontal = supportsHorizontalTextLayout(e);
+    const key = JSON.stringify([spans, base, solid, width, height, e.textAlign, e.verticalAlign, fontSet?.size, horizontal]);
     if (layouts.has(key)) return layouts.get(key);
     // Segment the source as a whole: run boundaries cannot split emoji/combining
     // clusters. If a run starts inside a cluster, its first character owns it.
     const clusters = [], text = String(e.text ?? ''); let spanIndex = 0;
-    for (const { segment, index } of segmenter.segment(text)) {
+    const caseProjection = horizontal ? caseProjectionFor(text, spans) : null;
+    const projected = caseProjection?.intervals;
+    function addCluster(segment, index, end) {
       while (spanIndex + 1 < spans.length && spans[spanIndex].end <= index) spanIndex++;
-      if (segment === '\r') continue; // Same CR compatibility as legacy horizontal text.
-      clusters.push({ text: segment === '\r\n' ? '\n' : segment, start: index, end: index + segment.length, style: spans[spanIndex]?.style || base });
+      if (segment === '\r') return; // Same CR compatibility as legacy horizontal text.
+      clusters.push({ text: segment === '\r\n' ? '\n' : segment, start: index, end, style: spans[spanIndex]?.style || base });
     }
+    if (projected) for (const part of projected) addCluster(part.projectedText, part.sourceStart, part.sourceEnd);
+    else for (const {segment,index} of segmenter.segment(text)) addCluster(segment,index,index+segment.length);
     // Use the same whole-grapheme ownership as glyph painting. A saved run
     // boundary inside a combining/ZWJ cluster cannot paint a partial glyph line.
     const advancedUnderline = spans.some(({style}) => style.underline && style.underlineDetails);
@@ -288,7 +307,11 @@ export function createRichTextLayoutEngine(context, fontSet) {
         for (const span of spans) {
           const start = Math.max(part.start, span.start), end = Math.min(part.end, span.end);
           if (start >= end || (!span.style.underline && !span.style.strikethrough)) continue;
-          const prefix = offset => offset === part.end ? part.width : measure(text.slice(part.start, offset).replaceAll('\r', ''), part.style).width;
+          const prefix = offset => {
+            if (offset === part.end) return part.width;
+            const value = projected ? caseProjection.text.slice(sourceToDisplay(caseProjection, part.start), sourceToDisplay(caseProjection, offset)) : text.slice(part.start, offset);
+            return measure(value.replaceAll('\r', ''), part.style).width;
+          };
           const left = prefix(start), right = prefix(end);
           const rects = textDecorationRects({x:(part.logicalX??part.x) + left, y:part.y, width:right-left}, span.style, kind);
           for (const rect of rects)
@@ -305,7 +328,8 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const m=measure(part.text,part.style);
       inkOverflow=Math.max(inkOverflow,m.inkLeft-part.x,m.inkAscent-part.y,part.x+m.inkRight-width,part.y+m.inkDescent-height);
     }
-    return boundedSet(layouts, key, { rows, width: Math.max(...rows.map(r => r.width)), height: blockHeight, inkOverflow }, 128);
+    return boundedSet(layouts, key, { rows, width: Math.max(...rows.map(r => r.width)), height: blockHeight, inkOverflow,
+      ...(projected ? {caseProjection} : {}) }, 128);
   }
   /** Horizontal justify projection. Reuse shared rows and metrics;
    * only U+0020 spaces between words on soft-wrapped rows receive extra advance.
@@ -314,29 +338,45 @@ export function createRichTextLayoutEngine(context, fontSet) {
   function layoutJustified(e) {
     const natural = layout({...e, textAlign:'left'});
     const sourceText = String(e.text ?? '');
+    const projection = natural.caseProjection;
+    const containsCR = sourceText.includes('\r');
     // Shared layout omits legacy standalone CRs from glyph text, but source
     // coordinates still include them. Map rendered prefix lengths back to UTF-16.
     const sourceOffset = (part, index) => {
       if (index === part.text.length) return part.end;
-      if (!sourceText.includes('\r')) return part.start + index;
+      if (!containsCR) return part.start + index;
       let visible = 0;
       for (let i=part.start; i<part.end; i++) {
         if (sourceText[i] !== '\r' && visible++ === index) return i;
       }
       return part.end;
     };
+    function partSegments(part) {
+      if (!projection) return [...segmenter.segment(part.text)].map(p=>({...p, offset:sourceOffset(part,p.index)}));
+      const result = [];
+      let index = 0;
+      for (const item of segmenter.segment(sourceText.slice(part.start,part.end))) {
+        if (item.segment === '\r') continue;
+        const offset = part.start + item.index;
+        const segment = projection.text.slice(sourceToDisplay(projection,offset),sourceToDisplay(projection,offset+item.segment.length));
+        result.push({segment,index,offset});
+        index += segment.length;
+      }
+      return result;
+    }
     const frameWidth = Math.max(1, Number(e.w) || 1);
     const rows = natural.rows.map(row => {
       const source = row.fragments.map(p => p.text).join('');
       // Leading/trailing whitespace and tabs/NBSP are retained, never expanded.
       const first = source.search(/\S/u), last = source.search(/\s*$/u);
       const spaces = [];
+      const segments = row.fragments.map(partSegments);
       let local = 0, contentWidth = 0;
       const prefix = (part, offset) => offset === part.text.length ? part.width : measure(part.text.slice(0, offset), part.style).width;
-      for (const part of row.fragments) {
+      for (const [i,part] of row.fragments.entries()) {
         if (last > local && last <= local + part.text.length) contentWidth = (part.logicalX ?? part.x) + prefix(part, last-local);
-        for (const {segment, index} of segmenter.segment(part.text)) {
-          if (segment === ' ' && local + index > first && local + index < last) spaces.push(sourceOffset(part,index));
+        for (const {segment, index, offset} of segments[i]) {
+          if (segment === ' ' && local + index > first && local + index < last) spaces.push(offset);
         }
         local += part.text.length;
       }
@@ -349,20 +389,20 @@ export function createRichTextLayoutEngine(context, fontSet) {
         return low*extra;
       };
       const carets = [], fragments = [];
-      for (const part of row.fragments) {
+      for (const [p,part] of row.fragments.entries()) {
         // Contextual prefix advances retain shaping inside words, including at
         // paint-only run boundaries. Never split a source grapheme for a run.
-        const segments = [...segmenter.segment(part.text)];
+        const offsets = new Map(segments[p].map(({index,offset})=>[index,offset]));
+        offsets.set(part.text.length,part.end);
         const cuts = new Set([0, part.text.length]);
-        for (const {segment,index} of segments) {
-          const offset = sourceOffset(part,index);
+        for (const {segment,index,offset} of segments[p]) {
           carets.push({offset, x:(part.logicalX ?? part.x) + prefix(part,index) + shift(offset)});
           if (/^\s+$/u.test(segment)) { cuts.add(index); cuts.add(index + segment.length); }
         }
         carets.push({offset:part.end, x:(part.logicalX ?? part.x) + part.width + shift(part.end)});
         const boundaries = [...cuts].sort((a,b) => a-b);
         for (let i=1; i<boundaries.length; i++) {
-          const a=boundaries[i-1], b=boundaries[i], start=sourceOffset(part,a), end=sourceOffset(part,b);
+          const a=boundaries[i-1], b=boundaries[i], start=offsets.get(a), end=offsets.get(b);
           // Keep the shared painter's contextual glyph origin separate from
           // logical advances (opacity/stroke boundaries can kern inside a word).
           const logicalX=(part.logicalX ?? part.x)+prefix(part,a)+shift(start);

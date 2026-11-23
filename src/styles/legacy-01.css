@@ -1973,6 +1973,19 @@ html,body{background:#1e1f27!important;}
 .list-style-panel legend{font-size:12px;color:#d3cfde;margin-bottom:5px;padding:0}
 .list-marker-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
 .list-marker-grid .linebtn{aspect-ratio:1;min-width:0;padding:0;font-size:17px}
+.list-custom-entry,.list-custom-actions{display:grid;gap:6px}
+.list-custom-entry{grid-template-columns:minmax(0,1fr) 44px}
+.list-custom-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+.list-custom-entry textarea,.list-custom-preview{min-height:36px;background:#24232a;color:inherit;border:1px solid #51505b;border-radius:5px}
+.list-custom-entry textarea{min-width:0;padding:7px 6px;resize:none;font:inherit}
+.list-custom-entry textarea[aria-invalid=true]{border-color:#e4a3aa}
+.list-custom-preview{display:grid;place-items:center;font:20px system-ui;overflow:hidden}
+.list-custom-message{margin:0;color:#d3cfde;line-height:1.4}
+.list-custom-message[data-error=true]{color:#ffb2ba}
+.list-personal-grid{grid-template-columns:repeat(5,minmax(0,1fr));max-height:160px;overflow:auto;scrollbar-width:thin;overscroll-behavior:contain}
+.list-personal-tile{position:relative;min-width:0}
+.list-personal-grid button[data-list-marker]{width:100%;padding-top:9px;font-family:system-ui,sans-serif}
+.list-personal-grid button[data-list-marker-remove]{position:absolute;inset:2px 2px auto auto;aspect-ratio:auto;min-height:18px;width:18px;line-height:1;font-size:13px}
 .list-style-options{display:grid;gap:8px;font-size:12px}
 .list-style-divider{padding-top:10px;margin-top:10px;border-top:1px solid #514b56}
 .list-style-row{display:flex;align-items:center;justify-content:space-between;gap:5px}

@@ -20,9 +20,10 @@ const frame=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame((
 const run=(start,style)=>({start,style});
 async function seed(page,patch={},docPatch={}){
  await page.addInitScript(()=>{
-  window.listDraws={canvas:[],overlay:[]};
+  window.listDraws={canvas:[],overlay:[],export:[]};
   const {fillText,clearRect,setTransform}=CanvasRenderingContext2D.prototype;
-  const tag=canvas=>canvas.id==='canvas'?'canvas':'textStrokeOverlay' in canvas.dataset?'overlay':null;
+  const tag=canvas=>canvas.id==='canvas'?'canvas':'textStrokeOverlay' in canvas.dataset?'overlay':
+   !canvas.isConnected&&canvas.width===640&&canvas.height===480?'export':null;
   CanvasRenderingContext2D.prototype.clearRect=function(...args){
    const key=tag(this.canvas);if(key)window.listDraws[key]=[];
    return clearRect.apply(this,args);
@@ -300,6 +301,144 @@ test('settings retain the backward WYSIWYG range and isolate mixed list kinds an
  expect((await model(page)).paragraphRuns).toHaveLength(7);
 });
 
+test('custom Unicode markers stay reusable while the document owns its text and markers',async({page},info)=>{
+ const lines=['Title','First item','Second item','Plain','Ordered'];
+ const text=lines.join('\n'),first=text.indexOf(lines[1]),second=text.indexOf(lines[2]),ordered=text.indexOf(lines[4]);
+ const original=[run(first,{listKind:'bullet'}),run(second,{listKind:'bullet',listMarker:'◆'}),
+  run(ordered,{listKind:'ordered',listStart:9})];
+ const family='👨‍👩‍👧‍👦',flag='🇳🇱',arrow='➤';
+ const id=await seed(page,{text,paragraphRuns:original,textRuns:[{start:first,end:first+5,style:{underline:true}}]});
+ await edit(page);await press(page,'Control+End','Control+Shift+Home');
+ expect(await selection(page)).toEqual([text.length,0]);
+ const before=await model(page);
+ await expect(page.locator('[data-list-mixed]')).toHaveText('Mixed');
+ await configure(page).click();
+ const settings=panel(page),input=settings.locator('[data-list-marker-input]'),preview=settings.locator('[data-list-marker-preview]');
+ const add=settings.getByRole('button',{name:'Добавить',exact:true});
+ const apply=settings.getByRole('button',{name:'Применить',exact:true});
+ const gallery=settings.locator('[data-list-library]');
+ const saved=marker=>gallery.getByRole('button',{name:'Применить маркер '+marker,exact:true});
+ const remove=marker=>gallery.getByRole('button',{name:'Удалить маркер '+marker,exact:true});
+ const libraryRecord=async()=>(await records(page,'settings')).find(row=>row.key==='list-markers-v1');
+ for(const invalid of [' ', '🦊🔥', '➤\n','\u202e✔️','<svg><foreignObject/></svg>']){
+  await input.fill(invalid);
+  await expect(input).toHaveAttribute('aria-invalid','true');
+  await expect(preview).toBeEmpty();
+  await expect(add).toBeDisabled();await expect(apply).toBeDisabled();
+ }
+ await input.fill('<');await expect(preview).toHaveText('<');
+ await add.click();await expect(saved('<')).toHaveText('<');
+ await expect(gallery.locator('svg,img,script')).toHaveCount(0);
+ await remove('<').click();await expect(saved('<')).toHaveCount(0);
+ await input.fill(family);
+ await press(page,'Control+a','Control+c','Backspace','Control+v');
+ await expect(input).toHaveValue(family);
+ await expect(preview).toHaveText(family);
+ await add.click();await expect(saved(family)).toHaveText(family);
+ await expect(settings.locator('[data-list-library-status]')).toHaveText('Маркер сохранён.');
+ await expect(input).toBeFocused();await expect(add).toBeDisabled();
+ await expect(settings).toBeVisible();
+ for(const marker of [flag,arrow]){
+  await input.fill(marker);await add.click();await expect(saved(marker)).toBeVisible();
+ }
+ expect((await libraryRecord()).markers).toEqual([family,flag,arrow]);
+ expect(await model(page)).toEqual(before);
+ await input.fill('◆');await expect(add).toBeDisabled();
+ await expect(settings.locator('[data-list-presets] [data-list-marker]')).toHaveCount(33);
+ await expect(settings.locator('[data-list-presets] [data-list-marker-remove]')).toHaveCount(0);
+ await input.fill(family);await apply.click();
+ const featured=await model(page);
+ expect(featured).toEqual({...before,paragraphRuns:[autoRun(first,{listKind:'bullet',listMarker:family}),
+  autoRun(second,{listKind:'bullet',listMarker:family}),original[2]]});
+ await expect(saved(family)).toHaveAttribute('aria-pressed','true');
+ await expect(colorButton(page)).toBeDisabled();
+ await expect(settings.locator('[data-list-color-hint]')).toContainText('Цвет эмодзи задаёт системный шрифт');
+ await expect(field(page,'listMarkerOpacity')).toBeEnabled();
+ await expect(settings.locator('[data-list-scale-range]')).toHaveAttribute('aria-valuetext','Auto · 70%');
+ const draws=()=>markerDraws(page,/^👨‍👩‍👧‍👦$/u);
+ expect((await draws()).map(part=>part.text)).toEqual([family,family]);
+ expect((await draws())[0].width).toBeGreaterThan(0);
+ expect(await host(page).textContent()).toBe(text);
+ await input.fill('✔️');
+ await input.scrollIntoViewIfNeeded();
+ const screenshot=info.outputPath('list-custom-markers.png');
+ await settings.screenshot({path:screenshot,animations:'disabled'});
+ await info.attach('list-custom-markers',{path:screenshot,contentType:'image/png'});
+ await host(page).focus();expect(await selection(page)).toEqual([text.length,0]);
+ await press(page,'Control+z');expect(await model(page)).toEqual(before);
+ await press(page,'Control+Shift+z');expect(await model(page)).toEqual(featured);
+ await configure(page).click();await expect(saved(family)).toHaveAttribute('aria-pressed','true');
+ await saved(arrow).click();await expect(saved(arrow)).toHaveAttribute('aria-pressed','true');
+ await expect(colorButton(page)).toBeEnabled();
+ const originalArrow=(await markerDraws(page,/^➤$/u))[0];
+ for(const [key,value] of [['listMarkerScale','64'],['listMarkerOpacity','37'],['listMarkerColor','#c51953'],
+  ['listIndent','13'],['listGap','17'],['listItemSpacing','22']]){
+  await field(page,key).fill(value);await press(page,'Enter');
+ }
+ const [painted,next]=(await markerDraws(page,/^➤$/u));
+ expect(painted.font).toContain('19.');
+ expect(painted.alpha).toBeCloseTo(.37,2);
+ expect(painted.color).toBe('#c51953');
+ expect(painted.x-originalArrow.x).toBeCloseTo(13);
+ expect(next.y-painted.y).toBeGreaterThanOrEqual(22);
+ const decorated=await model(page);
+ expect(decorated.paragraphRuns[0].style).toEqual({listKind:'bullet',listMarker:arrow,listMarkerScale:64,
+  listMarkerOpacity:37,listMarkerColor:'#c51953',listIndent:13,listGap:17,listItemSpacing:22});
+ const png=await pngWithoutFocusChange(page);
+ const body=settings.locator('.list-style-body');
+ await body.evaluate(el=>{el.scrollTop=0;});
+ await remove(arrow).click();await expect(saved(arrow)).toHaveCount(0);
+ await expect(settings.locator('[data-list-unsaved-marker] bdi')).toHaveText(arrow);
+ await expect(settings).toBeVisible();
+ expect(await model(page)).toEqual(decorated);
+ expect((await libraryRecord()).markers).toEqual([family,flag]);
+ expect(await pngWithoutFocusChange(page)).toEqual(png);
+ await done(page);
+ await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===id)?.elements[0]).toEqual(decorated);
+ await page.reload();await openLibraryDocument(page,id);await edit(page);
+ await expect.poll(async()=>await model(page)).toEqual(decorated);
+ expect(await pngWithoutFocusChange(page)).toEqual(png);
+ await press(page,'Control+End','Control+Shift+Home');await configure(page).click();
+ await expect(saved(flag)).toBeVisible();
+ await expect(settings.locator('[data-list-unsaved-marker] bdi')).toHaveText(arrow);
+ await settings.locator('[data-list-mode=ordered]').click();
+ await expect(input).toBeHidden();
+ await settings.locator('[data-list-marker-apply]').dispatchEvent('click');
+ expect(await model(page)).toEqual(decorated);
+});
+
+test('an aborted gallery transaction reports failure without changing the document or tiles',async({page})=>{
+ await page.addInitScript(()=>{
+  const put=IDBObjectStore.prototype.put;
+  let abortNext=true;
+  IDBObjectStore.prototype.put=function(record,...args){
+   const request=put.call(this,record,...args);
+   if(record?.key==='list-markers-v1'&&abortNext){
+    abortNext=false;
+    request.addEventListener('success',()=>this.transaction.abort());
+   }
+   return request;
+  };
+ });
+ await seed(page,{paragraphRuns:[run(0,{listKind:'bullet',listMarker:'<svg>',listIndent:10})]});
+ await page.locator('#layers .layer-name').filter({hasText:'List sample'}).click();
+ const before=await model(page);
+ expect(before.paragraphRuns).toEqual([run(0,{listKind:'bullet',listIndent:10})]);
+ await configure(page).click();
+ const settings=panel(page);
+ const add=settings.getByRole('button',{name:'Добавить',exact:true});
+ await settings.locator('[data-list-marker-input]').fill('🧑‍💻');
+ await add.click();
+ await expect(settings.locator('[data-list-library-status]')).toHaveText('Изменение галереи не сохранено.');
+ await expect(settings.locator('[data-list-library]')).toBeEmpty();
+ await expect(add).toBeEnabled();
+ expect((await records(page,'settings')).some(row=>row.key==='list-markers-v1')).toBe(false);
+ await add.click();
+ await expect(settings.locator('[data-list-library] [data-list-marker]')).toHaveText('🧑‍💻');
+ expect((await records(page,'settings')).find(row=>row.key==='list-markers-v1').markers).toEqual(['🧑‍💻']);
+ expect(await model(page)).toEqual(before);
+});
+
 test('list panel keeps its owner, scroll and focus through sizing, palette and mode changes',async({page},info)=>{
  const text='Alpha\nBeta\nGamma';
  const id=await seed(page,{text},{palette:['#d71d49']});
@@ -423,10 +562,15 @@ test('list settings reject stale, composing and locked targets, and discard canc
  await preset(page,'◆').dispatchEvent('click');
  expect((await model(page)).paragraphRuns).toEqual(original);
  await kind(page,'bullet').click();
+ const custom=panel(page).locator('[data-list-marker-input]'),apply=panel(page).locator('[data-list-marker-apply]');
+ await custom.fill('🇳🇱');
+ await custom.dispatchEvent('compositionstart');await expect(apply).toBeDisabled();
+ await custom.dispatchEvent('compositionend');await expect(apply).toBeEnabled();
  await host(page).dispatchEvent('compositionstart');
  await expect(panel(page)).toBeHidden();await expect(kind(page,'ordered')).toBeDisabled();
  await expect(configure(page)).toBeDisabled();
  await configure(page).dispatchEvent('click');
+ await apply.dispatchEvent('click');
  await expect(panel(page)).toBeHidden();
  await kind(page,'ordered').dispatchEvent('click');
  expect((await model(page)).paragraphRuns.at(-1)).toEqual(autoRun(11,{listKind:'bullet'}));
@@ -521,11 +665,12 @@ test('WYSIWYG list gaps preserve native source offsets, empty rows and vertical 
 
 const img=url=>PNG.sync.read(Buffer.from(url.split(',')[1],'base64')).data;
 const maxDelta=(a,b)=>a.reduce((max,value,i)=>Math.max(max,Math.abs(value-b[i])),0);
-for(const variant of ['legacy','customized','spaced'])test(`live DOM position, ${variant} markers, justify, T1–T3, Canvas and PNG agree`,async({page},info)=>{
- const customized=variant!=='legacy',spaced=variant==='spaced';
+for(const variant of ['legacy','customized','spaced','Unicode'])test(`live DOM position, ${variant} markers, justify, T1–T3, Canvas and PNG agree`,async({page},info)=>{
+ const customized=variant!=='legacy',spaced=variant==='spaced',unicode=variant==='Unicode';
+ const marker=unicode?'👨‍👩‍👧‍👦':'◆';
  const text='Straße  one two three four five six seven eight nine\nSmall'+(spaced?'\nNext':'');
  await seed(page,{text,w:250,textAlign:'justify',verticalAlign:'middle',strokeWidth:1,fillOpacity:86,
-  paragraphRuns:[run(0,{listKind:'bullet',listMarker:'◆',listIndent:8,listGap:12,
+  paragraphRuns:[run(0,{listKind:'bullet',listMarker:marker,listIndent:8,listGap:12,
    ...(customized?{listMarkerScale:62,listMarkerColor:'#cc203c',listMarkerOpacity:67}:{})}),
    run(text.indexOf('Small'),{listKind:'ordered',listStart:spaced?9:5,
     ...(customized?{listMarkerScale:147,listMarkerColor:'#1467d9',listMarkerOpacity:0}:{}),
@@ -537,11 +682,11 @@ for(const variant of ['legacy','customized','spaced'])test(`live DOM position, $
  await edit(page);
  await expect(host(page)).toHaveClass(/wysiwyg-canvas-ink/);
  expect(await host(page).textContent()).toBe(text.replace('Straße','STRASSE'));
- const markerPattern=/^(◆|5\.|9\.|10\.)$/;
+ const markerPattern=unicode?/^(👨‍👩‍👧‍👦|5\.)$/u:/^(◆|5\.|9\.|10\.)$/;
  const markers=await markerDraws(page,markerPattern);
- expect(markers.map(part=>part.text)).toEqual(spaced?['◆','9.','10.']:['◆','5.']);
+ expect(markers.map(part=>part.text)).toEqual(spaced?[marker,'9.','10.']:[marker,'5.']);
  if(customized){
-  expect(markers.slice(0,2).map(part=>part.color)).toEqual(['#cc203c','#1467d9']);
+  expect(markers.slice(0,2).map(part=>part.color)).toEqual([unicode?'#192b40':'#cc203c','#1467d9']);
   expect(markers[0].alpha).toBeCloseTo(.67,2);
   expect(markers[1].alpha).toBe(0);
  }
@@ -599,6 +744,14 @@ test('whole-layer list participates in auto-fit and document undo',async({page})
  expect(bullet.text).toBe(text);
  expect(bullet.fontSize).toBeLessThan(plain.fontSize);
  expect(bullet.paragraphRuns).toEqual([autoRun(0,{listKind:'bullet'})]);
+ await panel(page).locator('[data-list-marker-input]').fill('👨‍👩‍👧‍👦');
+ await panel(page).getByRole('button',{name:'Применить',exact:true}).click();
+ const custom=await model(page);
+ expect(custom.text).toBe(text);
+ expect(custom.fontSize).toBeLessThanOrEqual(bullet.fontSize);
+ expect(custom.paragraphRuns).toEqual([autoRun(0,{listKind:'bullet',listMarker:'👨‍👩‍👧‍👦'})]);
+ await page.locator('#undoBtn').click();
+ expect(await model(page)).toEqual(bullet);
  await page.locator('#undoBtn').click();
  expect(await model(page)).toEqual(plain);
 });
@@ -614,6 +767,26 @@ test('vertical text retains imported paragraph runs with list commands disabled'
 
 test.describe('mobile native bridge',()=>{
  test.use({viewport:{width:390,height:844},hasTouch:true});
+ test('mobile Canvas and PNG preserve custom graphemes without a gallery',async({page,browserName})=>{
+  test.skip(browserName!=='chromium','Android-sized touch behavior is covered in Chromium.');
+  const text='First item\nSecond item',family='👨‍👩‍👧‍👦',flag='🇳🇱';
+  const paragraphRuns=[run(0,{listKind:'bullet',listMarker:family,listMarkerScale:85,listMarkerOpacity:45,listGap:13}),
+   autoRun(text.indexOf('Second'),{listKind:'bullet',listMarker:flag})];
+  const id=await seed(page,{text,paragraphRuns});
+  const markerDrawsFor=target=>page.evaluate(({target,family,flag})=>listDraws[target].filter(p=>[family,flag].includes(p.text)),
+   {target,family,flag});
+  const canvas=await markerDrawsFor('canvas');
+  expect(canvas.map(p=>p.text)).toEqual([family,flag]);
+  expect(canvas.every(p=>p.width>0)).toBe(true);
+  expect(canvas[0].alpha).toBeCloseTo(.45,2);
+  await page.evaluate(()=>{listDraws.export=[];});
+  await exportPNG(page,width,height);
+  expect(await markerDrawsFor('export')).toEqual(canvas);
+  expect((await records(page,'settings')).some(row=>row.key==='list-markers-v1')).toBe(false);
+  const stored=(await records(page,'docs')).find(doc=>doc.id===id).elements[0];
+  expect(stored.text).toBe(text);
+  expect(stored.paragraphRuns).toEqual(paragraphRuns);
+ });
  test('paused range and collapsed caret toggle list kinds without restoring stale snapshots',async({page,browserName})=>{
   test.skip(browserName!=='chromium','Android-sized touch behavior is covered in Chromium.');
   const text='• Keep 😀\nSecond\nThird';

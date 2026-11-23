@@ -4,8 +4,8 @@ import {eligibleWysiwyg, justifyWysiwygEnabled, createWysiwygSession} from './ed
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from './render/text-stroke.mjs';
 import { createInlineHistory, recordInlineHistory, moveInlineHistory } from './model/inline-text-history.mjs';
 import { applyTextStyle, applyBaselineShift, applyTextCase, applyLayerUnderlineStyle, effectiveTextCase, isBaselineShift, underlineDefaults, underlineLimits, updateText, createTextEditHistory, editTextWithHistory } from './model/rich-text.mjs';
-import {applyParagraphListStyle, paragraphListState, paragraphListDefaults, paragraphListLimits, paragraphListMinimums, paragraphRangeForSelection, normalizeParagraphRuns} from './model/paragraph-style.mjs';
-import {listMarkerGroups, listCounterStyles, isEmojiListMarker, listMarkerPercent} from './model/list-presets.mjs';
+import {applyParagraphListStyle, cleanImportedListMarkers, paragraphListState, paragraphListDefaults, paragraphListLimits, paragraphListMinimums, paragraphRangeForSelection, normalizeParagraphRuns} from './model/paragraph-style.mjs';
+import {listMarkerGroups, listCounterStyles, isBuiltinListMarker, isEmojiListMarker, listMarkerMaxLength, listMarkerPercent, validateListMarker} from './model/list-presets.mjs';
 import { isTextCase, textCaseValues } from './model/text-case.mjs';
 import { supportsHorizontalTextLayout, richTextFont, richTextSpans, resolveRichTextStyle, retainRichTextSizeBase, createRichTextLayoutEngine } from './render/rich-text-layout.mjs';
 import { createReplacementSession } from './backup/replace.mjs';
@@ -13,6 +13,7 @@ import { createInstanceGuard } from './backup/instances.mjs';
 import { installBackupUI } from './backup/ui.mjs';
 import { readWorkspaceSnapshot, createWorkspaceBarrier } from './backup/storage.mjs';
 import { openDatabase, runStoreRequest, runStoreTransaction } from './storage/indexeddb.mjs';
+import { listMarkerLibraryLimit, loadListMarkers, updateListMarkers } from './storage/list-marker-library.mjs';
 import { planLayerGroup } from './model/group-plan.mjs';
 import { prepareProjectImport } from './model/project-integrity.mjs';
 import { remapCanvasGraph, remapDocumentGraph, selectCanvasGraph, canvasGraphIds } from './model/canvas-graph.mjs';
@@ -2975,6 +2976,96 @@ const listPresets=listPanelNode.querySelector('[data-list-presets]');
 listPresets.innerHTML=listMarkerGroups.map(({label,markers})=>`<fieldset><legend>${label}</legend><div class="list-marker-grid" data-list-grid>
  ${markers.map(([marker,name])=>`<button type="button" class="linebtn" data-list-marker="${marker}" aria-label="${name}" title="${name}">${marker}</button>`).join('')}
  </div></fieldset>`).join('');
+const listMarkerInput=listPanelNode.querySelector('[data-list-marker-input]');
+const listMarkerPreview=listPanelNode.querySelector('[data-list-marker-preview]');
+const listMarkerMessage=listPanelNode.querySelector('[data-list-marker-message]');
+const listMarkerAdd=listPanelNode.querySelector('[data-list-marker-add]');
+const listMarkerApply=listPanelNode.querySelector('[data-list-marker-apply]');
+const listLibraryGrid=listPanelNode.querySelector('[data-list-library]');
+const listLibraryStatus=listPanelNode.querySelector('[data-list-library-status]');
+const listUnsavedMarker=listPanelNode.querySelector('[data-list-unsaved-marker]');
+let listMarkerLibrary=[],listMarkerLibraryPending=false;
+
+function listMarkerFeedback(node,message='',error=false){
+ if(node.textContent!==message)node.textContent=message;
+ node.hidden=!message;
+ node.dataset.error=String(error);
+}
+function syncCustomListMarker(){
+ const marker=listMarkerInput.value,valid=validateListMarker(marker);
+ const invalid=!!marker&&!valid;
+ const duplicate=valid&&(isBuiltinListMarker(marker)||listMarkerLibrary.includes(marker));
+ const full=listMarkerLibrary.length>=listMarkerLibraryLimit;
+ let message='';
+ if(invalid)message=marker.length>listMarkerMaxLength?
+  'Маркер слишком длинный. Вставьте один символ или эмодзи.':
+  'Вставьте один видимый символ или эмодзи без пробелов и переносов.';
+ else if(duplicate)message='Этот маркер уже есть в галерее.';
+ else if(valid&&full)message='Галерея заполнена. Удалите один из своих маркеров.';
+ listMarkerFeedback(listMarkerMessage,message,invalid);
+ listMarkerInput.setAttribute('aria-invalid',String(invalid));
+ listMarkerPreview.textContent=valid?marker:'';
+ const composing=listPanel?.markerComposing;
+ listMarkerAdd.disabled=!valid||duplicate||full||listMarkerLibraryPending||!!composing;
+ listMarkerApply.disabled=!valid||!!composing;
+}
+function renderListMarkerLibrary(markers){
+ if(markers.length===listMarkerLibrary.length&&markers.every((marker,index)=>marker===listMarkerLibrary[index]))return;
+ listMarkerLibrary=markers;
+ listLibraryGrid.replaceChildren(...markers.map(marker=>{
+  const tile=document.createElement('div');
+  tile.className='list-personal-tile';
+  const apply=document.createElement('button'),remove=document.createElement('button');
+  for(const button of [apply,remove]){
+   button.type='button';button.className='linebtn';
+  }
+  apply.dataset.listMarker=marker;
+  apply.textContent=marker;
+  apply.dir='auto';
+  apply.setAttribute('aria-label','Применить маркер '+marker);
+  remove.dataset.listMarkerRemove=marker;
+  remove.textContent='×';
+  remove.setAttribute('aria-label','Удалить маркер '+marker);
+  remove.title='Удалить из «Мои маркеры»';
+  tile.append(apply,remove);
+  return tile;
+ }));
+ listLibraryGrid.hidden=!markers.length;
+ listPanelNode.querySelector('[data-list-library-empty]').hidden=!!markers.length;
+}
+async function refreshListMarkerLibrary(owner,action,marker,button){
+ if(listMarkerLibraryPending)return;
+ listMarkerLibraryPending=true;
+ if(action){
+  if(action==='add'&&document.activeElement===button)listMarkerInput.focus({preventScroll:true});
+  listMarkerFeedback(listLibraryStatus);
+ }
+ syncCustomListMarker();
+ const removedIndex=listMarkerLibrary.indexOf(marker);
+ try{
+  if(!workspaceInstances.writable()||(action&&replacementSealed))throw Error('Workspace is being replaced');
+  const operation=action?updateListMarkers(app.db,action,marker):loadListMarkers(app.db);
+  // Snapshots wait for the transaction. A rollback leaves no unconfirmed settings in memory.
+  const result=await workspaceBarrier.track(operation);
+  const restoreFocus=action==='remove'&&listPanel===owner&&document.activeElement===button;
+  renderListMarkerLibrary(action?result.markers:result);
+  if(restoreFocus){
+   const tile=listLibraryGrid.children[Math.min(removedIndex,listLibraryGrid.children.length-1)];
+   (tile?.querySelector('[data-list-marker]')||listMarkerInput).focus({preventScroll:true});
+  }
+  if(action&&listPanel===owner){
+   const messages={added:'Маркер сохранён.',removed:'Маркер удалён из галереи.',duplicate:'Этот маркер уже есть в галерее.',
+    full:'Галерея заполнена. Удалите один из своих маркеров.',missing:'Маркер уже удалён из галереи.'};
+   listMarkerFeedback(listLibraryStatus,messages[result.status]);
+  }
+ }catch(error){
+  console.warn('Галерея маркеров:',error);
+  if(listPanel===owner)listMarkerFeedback(listLibraryStatus,action?'Изменение галереи не сохранено.':'Не удалось прочитать галерею маркеров.',true);
+ }finally{
+  listMarkerLibraryPending=false;
+  if(listPanel&&listOwnerValid(listPanel))syncListStylePanel();
+ }
+}
 const listCounters=listPanelNode.querySelector('[data-list-counters]');
 listCounters.innerHTML=listCounterStyles.map(([key,label])=>`<button type="button" class="linebtn" data-list-counter="${key}" title="${label}">${label}</button>`).join('');
 for(const field of listPanelNode.querySelectorAll('[data-list-field]')){
@@ -3007,8 +3098,15 @@ function syncListStylePanel(force=null){
  const state=listPanelState(),bullet=listPanel.mode==='bullet';
  const pressed=(button,value)=>button.setAttribute('aria-pressed',String(value));
  const match=(value,key)=>value==='mixed'?'mixed':value===key;
- listPresets.hidden=!bullet;
+ listPanelNode.querySelector('[data-list-bullets]').hidden=!bullet;
  listPanelNode.querySelector('[data-list-ordered]').hidden=bullet;
+ if(bullet){
+  syncCustomListMarker();
+  const marker=state.listMarker;
+  const unsaved=marker!=='mixed'&&!isBuiltinListMarker(marker)&&!listMarkerLibrary.includes(marker);
+  listUnsavedMarker.hidden=!unsaved;
+  listUnsavedMarker.querySelector('bdi').textContent=unsaved?marker:'';
+ }
  for(const button of listPanelNode.querySelectorAll('[data-list-mode],[data-list-marker],[data-list-counter],[data-list-reset]')){
   const {listMode,listMarker,listCounter,listReset}=button.dataset;
   if(listMode){
@@ -3044,7 +3142,7 @@ function syncListStylePanel(force=null){
  listColorButton.querySelector('span').style.backgroundColor=listColorButton.disabled||state.color==='mixed'?'':state.color;
  const hint=listPanelNode.querySelector('[data-list-color-hint]');
  hint.hidden=state.solid&&!state.emoji;
- hint.textContent=state.solid?'У цветных эмодзи своя палитра. Для своего цвета выберите, например, ●.':
+ hint.textContent=state.solid?'Цвет эмодзи задаёт системный шрифт. HEX доступен для монохромных маркеров.':
   'Цвет и прозрачность доступны при сплошной заливке текста.';
 }
 function positionListStylePanel(){
@@ -3131,8 +3229,11 @@ function openListMode(mode,fromInspector){
  if(!existingModes&&!changeParagraphList(owner,{listKind:mode}))return;
  if(mode==='none'){closeListStylePanel();return;}
  const switching=owner.mode!==mode;
- if(!listPanel){
+ const opening=!listPanel;
+ if(opening){
   closeFillPopover();
+  listMarkerInput.value='';
+  listMarkerFeedback(listLibraryStatus);
   listPanel=owner;
   listPanelNode.classList.remove('hidden');listPanelBody.scrollTop=0;
  }else if(switching){
@@ -3141,6 +3242,7 @@ function openListMode(mode,fromInspector){
  }
  owner.mode=mode;
  syncParagraphListControls();syncListStylePanel();
+ if(mode==='bullet'&&(opening||switching))void refreshListMarkerLibrary(owner);
  if(fromInspector||switching)positionListStylePanel();
  if(switching)listPanelBody.scrollTop=owner.scrollTop?.[mode]??0;
  if(fromInspector)listPanelNode.querySelector('[data-list-mode="'+mode+'"]').focus({preventScroll:true});
@@ -3150,11 +3252,18 @@ $('#inspector').addEventListener('click',ev=>{
  if(button&&!button.disabled)openListMode(button.dataset.listKind??'settings',true);
 });
 listPanelNode.addEventListener('click',ev=>{
- const button=ev.target.closest('button');if(!button||!listPanel)return;
- const {listMode,listMarker,listCounter,listReset}=button.dataset;
+ const button=ev.target.closest('button');if(!button||button.disabled||!listPanel)return;
+ const {listMode,listMarker,listCounter,listReset,listMarkerRemove}=button.dataset;
+ const bullet=listPanel.mode==='bullet';
  if(button.hasAttribute('data-list-close'))closeListStylePanel(true);
  else if(listMode)openListMode(listMode,false);
- else if(listMarker)changeParagraphList(listPanel,{listMarker});
+ else if(bullet&&(listMarker||button===listMarkerApply)){
+  const marker=listMarker||listMarkerInput.value;
+  if(validateListMarker(marker))changeParagraphList(listPanel,{listMarker:marker});
+ }else if(bullet&&(button===listMarkerAdd||listMarkerRemove)){
+  if(!listOwnerValid(listPanel)){closeListStylePanel();return;}
+  void refreshListMarkerLibrary(listPanel,listMarkerRemove?'remove':'add',listMarkerRemove||listMarkerInput.value,button);
+ }
  else if(listCounter)changeParagraphList(listPanel,{listCounterStyle:listCounter});
  else if(listReset){
   changeParagraphList(listPanel,{[listReset]:paragraphListDefaults[listReset]??'auto'});
@@ -3186,7 +3295,14 @@ listPanelNode.addEventListener('pointerdown',ev=>{
  }
 },true);
 const listSliderBlocked=previewSliderEvents(listPanelNode,listSliderSelector,()=>listPanel,cancelListPreview,input=>listFieldChange(input,true));
-listPanelNode.addEventListener('input',ev=>listFieldChange(ev.target,false));
+listPanelNode.addEventListener('input',ev=>{
+ if(ev.target===listMarkerInput)syncCustomListMarker();
+ else listFieldChange(ev.target,false);
+});
+for(const event of ['compositionstart','compositionend'])listMarkerInput.addEventListener(event,()=>{
+ if(listPanel)listPanel.markerComposing=event==='compositionstart';
+ syncCustomListMarker();
+});
 listPanelNode.addEventListener('change',ev=>listFieldChange(ev.target,true));
 listPanelNode.addEventListener('keydown',ev=>{
  if(ev.key==='Enter'&&ev.target.matches('[data-list-field]')){
@@ -3194,7 +3310,8 @@ listPanelNode.addEventListener('keydown',ev=>{
  }
  const grid=ev.target.closest('[data-list-grid],[data-list-counters]');
  if(!grid||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(ev.key))return;
- const buttons=[...grid.querySelectorAll('button')],index=buttons.indexOf(ev.target);
+ const buttons=[...grid.querySelectorAll('button:not([data-list-marker-remove])')],index=buttons.indexOf(ev.target);
+ if(index===-1)return;
  const columns=getComputedStyle(grid).gridTemplateColumns.split(' ').length;
  const next={ArrowLeft:index-1,ArrowRight:index+1,ArrowUp:index-columns,ArrowDown:index+columns,Home:0,End:buttons.length-1}[ev.key];
  ev.preventDefault();buttons[clamp(next,0,buttons.length-1)]?.focus();
@@ -4060,7 +4177,7 @@ async function importProjectSet(payload,items,maxDocuments,zipSnapshot=null,chec
   return diagnostics;
  }finally{projectOperation=false}
 }
-async function zipOriginal_importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}if(projectOperation)throw Error('Дождись завершения операции с проектами');if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=cloneDocumentGraph(d);imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено. Не закрывай приложение');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast('Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
+async function zipOriginal_importJSON(file){try{const payload=JSON.parse(await file.text());if(payload.format==='kartochnaya-workspace-v1'){await importWorkspaceBackup(payload);return}if(payload.format==='kartochnaya-project-v1'){await importProjectBackup(payload);return}if(projectOperation)throw Error('Дождись завершения операции с проектами');if(payload.shapeCatalog){applyShapeCatalog(payload.shapeCatalog);await persistShapeCatalog();}const d=payload.document||payload;if(!d||!Array.isArray(d.elements)||!d.width||!d.height)throw new Error('Неверный формат');if(d.width>5000||d.height>5000)throw new Error('Холст больше 5000 px');for(const f of payload.fonts||[])if(f.data&&!app.fonts.some(v=>v.name===f.name)){f.id=f.id||uid();normaliseFont(f);await loadFontFace(f);await dbOp('fonts','readwrite',s=>s.put(f));app.fonts.push(f)}const imp=cloneDocumentGraph(d),invalidMarkers=cleanImportedListMarkers(imp);imp.projectId=app.currentProjectId;imp.title=(imp.title||'Импорт')+' (импорт)';imp.type=['template','card'].includes(imp.type)?imp.type:'template';imp.createdAt=Date.now();imp.updatedAt=Date.now();const fromHome=homeVisible();if(!await flushSave())throw Error('Сохранение не подтверждено. Не закрывай приложение');if(fromHome){await dbOp('docs','readwrite',s=>s.put(clone(imp)));app.docs.push(clone(imp));app.filter=imp.type;closeDialogs();showHome('workspace')}else {openDocumentTab(imp);closeDialogs()}toast(invalidMarkers?'Документ импортирован · недопустимые маркеры пропущены':'Документ импортирован')}catch(e){console.error(e);toast('Ошибка: '+e.message)}}
 async function storeNewDocument(doc){try{await dbOp('docs','readwrite',s=>s.put(clone(doc)))}catch(error){return false}app.docs.push(clone(doc));app.filter=doc.type;renderLibrary();toast(doc.type==='card'?'Карточка добавлена в список':'Копия добавлена в список');return true}
 async function makeCardFrom(template){const fromEditor=!homeVisible()&&app.doc?.id===template.id;
  if(!await flushSave())return;const doc=cloneDocumentGraph(template);doc.projectId=template.projectId||app.currentProjectId;doc.type='card';doc.hasCustomName=false;doc.title=template.title+' · карточка';doc.createdAt=doc.updatedAt=Date.now();
@@ -4463,6 +4580,7 @@ window.addEventListener('keydown',ev=>{if((ev.ctrlKey||ev.metaKey)&&!ev.altKey&&
 window.addEventListener('keydown',event=>{
  if(!app.doc||event.defaultPrevented)return;
  const target=event.target,insidePanel=!!target?.closest?.('#inspector,#rightPanel,#fxPopover,#fxMenu,#fxChooser,#fillPopover,#inkPopover');
+ if(target===listMarkerInput)return; // The draft has its own native undo history.
  const ctrl=event.ctrlKey||event.metaKey,code=event.code;
  const undoCombo=(ctrl&&code==='KeyZ')||(!ctrl&&event.altKey&&code==='KeyZ');
  const redoCombo=ctrl&&(code==='KeyY'||(code==='KeyZ'&&event.shiftKey));

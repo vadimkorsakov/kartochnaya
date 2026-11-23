@@ -5,7 +5,7 @@ import {createBackup, readBackup} from '../src/backup/archive.mjs';
 import {openDatabase, runStoreRequest} from '../src/storage/indexeddb.mjs';
 import {applyParagraphListStyle as apply, clearParagraphFormatting, effectiveParagraphStyleAt, normalizeParagraphRuns,
   paragraphListDefaults, paragraphListState, paragraphRangeForSelection, projectParagraphLists} from '../src/model/paragraph-style.mjs';
-import {formatListCounter, listMarkerGroups, listMarkerPercent} from '../src/model/list-presets.mjs';
+import {formatListCounter, isEmojiListMarker, listMarkerGroups, listMarkerMaxLength, listMarkerPercent, validateListMarker} from '../src/model/list-presets.mjs';
 import {replaceText, updateText} from '../src/model/rich-text.mjs';
 import {createRichTextLayoutEngine} from '../src/render/rich-text-layout.mjs';
 
@@ -53,6 +53,64 @@ test('kind, marker and counter are independent preferences with Mixed and semant
  assert.deepEqual(markers(apply(plain,{listKind:'ordered'},range(0))),['1)','','']);
  assert.equal(ordered.text,source.text);assert.equal(ordered.textRuns,source.textRuns);
  assert.deepEqual(clearParagraphFormatting(ordered),source);
+});
+
+test('list markers accept one visible extended grapheme and preserve its exact Unicode value',()=>{
+ const glyphs=['•','◆','☑','➤','✔️','☑︎','💠','🔻','🦊','🔥','👍🏽','🇳🇱','🧑‍💻','👨‍👩‍👧‍👦',
+  '🏳️‍🌈','#⃣','e\u0301','漢','<','"','&','🏴\u{e0067}\u{e0062}\u{e0065}\u{e006e}\u{e0067}\u{e007f}'];
+ const source={text:'😀\nStraße',textRuns:[{start:3,end:9,style:{textCase:'upper',baselineShift:'super'}}]};
+ for(const glyph of glyphs){
+  assert.equal(validateListMarker(glyph),true,JSON.stringify(glyph));
+  const marked=apply(source,{listKind:'bullet',listMarker:glyph},range(3));
+  assert.deepEqual(markers(marked),['',glyph]);
+  assert.equal(marked.text,source.text);
+  assert.equal(marked.textRuns,source.textRuns);
+  assert.equal(marked.paragraphRuns[0].start,3);
+ }
+ const overlong='👨‍'.repeat(11)+'👩';
+ assert.ok(overlong.length>listMarkerMaxLength);
+ const marked=apply(source,{listKind:'bullet',listMarker:'🦊'},range(3));
+ for(const invalid of [undefined,null,2,{},'', ' ', '\u00a0','🔻 ', '\n','\r','\t','\u0000','\u0085',
+  '\u202e➤','\u2066','\u200e','\u200b','\u200c','\u200d','\ufe0f','\u{e0100}','🏽','\u0301','\ud800','\uffff',
+  'A\u{e0067}','🦊🔥','➤➤',overlong,'<svg>','<img src=x>','&lt;']){
+  assert.equal(validateListMarker(invalid),false,JSON.stringify(invalid));
+  assert.equal(apply(marked,{listMarker:invalid},range(3)),marked);
+  assert.deepEqual(normalizeParagraphRuns(source.text,[{start:3,style:{listKind:'bullet',listMarker:invalid}}]),
+   [{start:3,style:{listKind:'bullet'}}]);
+ }
+});
+
+test('custom emoji Auto, text presentation, inherited ink and opacity use the shared layout',()=>{
+ const base={text:'Straße one two three four five\nSecond',fontSize:30,w:180,h:360,textAlign:'justify',
+  textColor:'#234567',strokeOpacity:60,fillOpacity:90,textRuns:[{start:0,end:6,style:{
+   textCase:'upper',baselineShift:'sub',underline:true,underlineDetails:{style:'wavy'}}}]};
+ const patch={listKind:'bullet',listMarkerScale:'auto',listMarkerColor:'#aabbcc',listMarkerOpacity:30,
+  listIndent:12,listGap:9,listItemSpacing:5};
+ for(const glyph of ['➤','✔','✔︎','©','⌚︎','☑︎','✍']){
+  assert.equal(isEmojiListMarker(glyph),false,glyph);
+  const row=engine.layoutJustified(apply(base,{...patch,listMarker:glyph})).rows[0];
+  assert.equal(row.marker.style.textColor,patch.listMarkerColor);
+  assert.equal(row.marker.style.fontSize,30);
+ }
+ for(const glyph of ['✔️','🦊','👍🏽','🇳🇱','👨‍👩‍👧‍👦','🏳️‍🌈','#⃣']){
+  assert.equal(isEmojiListMarker(glyph),true,glyph);
+  const layer=apply(base,{...patch,listMarker:glyph});
+  const view=engine.layoutJustified(layer);
+  const [first,continuation]=view.rows;
+  assert.equal(first.marker.style.textColor,base.textColor);
+  assert.equal(first.marker.style.fillOpacity,30);
+  assert.equal(first.marker.style.strokeOpacity,18);
+  assert.equal(first.marker.style.fontSize,21);
+  assert.equal(first.marker.text,glyph);
+  assert.equal(first.marker.columnX,12);
+  assert.equal(first.x,first.marker.columnX+first.paragraph.markerColumnWidth+9);
+  assert.ok(first.softWrap);
+  assert.equal(first.x,continuation.x);
+  assert.equal(continuation.marker,undefined);
+  assert.ok(first.decorations.some(decoration=>decoration.advanced));
+  assert.equal(view.caseProjection.text,base.text.replace('Straße','STRASSE'));
+  assert.equal(engine.layoutJustified(apply(layer,{listMarkerScale:140})).rows[0].marker.style.fontSize,42);
+ }
 });
 
 test('marker preferences are sparse, individually mixed, and retained through type changes and text edits',()=>{

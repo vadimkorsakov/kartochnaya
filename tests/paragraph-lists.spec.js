@@ -139,6 +139,8 @@ test('Inspector icons, persistent gallery, Mixed, numeric controls, history and 
  await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===id)?.elements[0]).toEqual(expected);
  await page.reload();await openLibraryDocument(page,id);await edit(page);
  await press(page,'Control+Home');await kind(page,'none').click();
+ await expect(panel(page)).toBeVisible();
+ await panel(page).locator('[data-list-close]').click();
  await expect(panel(page)).toBeHidden();
  await host(page).focus();await press(page,'Escape');
  expect(await model(page)).toEqual(expected);
@@ -243,14 +245,41 @@ test('switching the layer or document discards an unconfirmed spacing gesture',a
  };
  await begin();
  await copy.evaluate(button=>button.click());
- await page.mouse.up();await expect(panel(page)).toBeHidden();
+ await page.mouse.up();await expect(panel(page)).toBeVisible();
  expect((await exportedDocument(page)).elements).toEqual(before);
  await begin();
- // Programmatic activation bypasses the outside-pointer dismissal and exercises tab ownership.
+ // Switching documents must cancel drafts, but the settings panel stays visible.
  await page.locator(`[data-tab-id="${otherId}"]`).evaluate(button=>button.click());
- await page.mouse.up();await expect(panel(page)).toBeHidden();
+ await page.mouse.up();await expect(panel(page)).toBeVisible();
  expect((await exportedDocument(page)).id).toBe(otherId);
  await tab.click();expect((await exportedDocument(page)).elements).toEqual(before);
+});
+
+test('list settings stay visible when the selected layer enters and exits WYSIWYG',async({page})=>{
+ const text='Title\\nFirst\\nSecond';
+ const first=text.indexOf('First'),second=text.indexOf('Second');
+ await seed(page,{text,paragraphRuns:[run(first,{listKind:'bullet'}),run(second,{listKind:'bullet'})]});
+ await page.locator('#layers .layer-name').filter({hasText:'List sample'}).click();
+ await configure(page).click();
+ const settings=panel(page);
+ await expect(settings).toBeVisible();
+ // This used to close the floating menu through openInlineText -> hideInspector.
+ await edit(page);
+ await expect(settings).toBeVisible();
+ await press(page,'Control+Home','ArrowDown','Home');
+ await expect(settings.locator('[data-list-target-note]')).toBeHidden();
+ await preset(page,'◆').click();
+ expect((await model(page)).paragraphRuns).toEqual([
+  autoRun(first,{listKind:'bullet',listMarker:'◆'}),run(second,{listKind:'bullet'}),
+ ]);
+ await done(page);
+ await expect(settings).toBeVisible();
+ // Even leaving the entire text layer selected must not implicitly dismiss it.
+ const empty=await canvasPoint(page,610,430,width,height);
+ await page.mouse.click(empty.x,empty.y);
+ await expect(settings).toBeVisible();
+ await settings.locator('[data-list-close]').click();
+ await expect(settings).toBeHidden();
 });
 
 test('list settings stay open across real caret clicks and retarget only existing list paragraphs',async({page})=>{
@@ -611,11 +640,11 @@ test('list settings survive caret moves but reject composing and locked targets 
  await custom.dispatchEvent('compositionstart');await expect(apply).toBeDisabled();
  await custom.dispatchEvent('compositionend');await expect(apply).toBeEnabled();
  await host(page).dispatchEvent('compositionstart');
- await expect(panel(page)).toBeHidden();await expect(kind(page,'ordered')).toBeDisabled();
+ await expect(panel(page)).toBeVisible();await expect(kind(page,'ordered')).toBeDisabled();
  await expect(configure(page)).toBeDisabled();
  await configure(page).dispatchEvent('click');
  await apply.dispatchEvent('click');
- await expect(panel(page)).toBeHidden();
+ await expect(panel(page)).toBeVisible();
  await kind(page,'ordered').dispatchEvent('click');
  expect((await model(page)).paragraphRuns.at(-1)).toEqual(autoRun(11,{listKind:'bullet'}));
  await host(page).dispatchEvent('compositionend');
@@ -624,7 +653,7 @@ test('list settings survive caret moves but reject composing and locked targets 
  await kind(page,'bullet').click();
  const lock=page.locator('#inspector [data-action=lock]');
  await lock.click();
- await expect(panel(page)).toBeHidden();await expect(kind(page,'ordered')).toBeDisabled();
+ await expect(panel(page)).toBeVisible();await expect(kind(page,'ordered')).toBeDisabled();
  await expect(configure(page)).toBeDisabled();
  const locked=await model(page);
  await kind(page,'ordered').dispatchEvent('click');

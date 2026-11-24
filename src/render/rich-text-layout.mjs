@@ -3,7 +3,9 @@ import { isEmojiListMarker, listMarkerPercent } from '../model/list-presets.mjs'
 import { textDecorationRects } from './text-decorations.mjs';
 import { baselineOffset, glyphFontSize } from './text-baseline-shift.mjs';
 import { isBaselineShift, normalizeRuns, resolveUnderlineDetails } from '../model/rich-text.mjs';
-import { projectTextCase, resolveTextCase, sourceToDisplay, textGraphemes } from '../model/text-case.mjs';
+import { resolveTextCase, sourceToDisplay, textGraphemes } from '../model/text-case.mjs';
+import { projectText } from '../model/text-projection.mjs';
+import { normalizeTypography } from '../model/text-typography.mjs';
 
 // Ordinary horizontal text always uses one renderer, whether or not styled
 // ranges exist. A formatting operation must not switch the rendering engine.
@@ -99,7 +101,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       });
     }finally{context.restore();}
   }
-  const layouts = new Map(), metrics = new Map(), caseProjections = new Map(), sourceClusters = new Map();
+  const layouts = new Map(), metrics = new Map(), textProjections = new Map(), sourceClusters = new Map();
   const displaySizes = new WeakMap(), justifiedLayouts = new WeakMap();
   let fontCount = fontSet?.size;
   const invalidate = () => { layouts.clear(); metrics.clear(); };
@@ -112,17 +114,24 @@ export function createRichTextLayoutEngine(context, fontSet) {
   };
   const segmentsFor = text => sourceClusters.get(text) ??
     boundedSet(sourceClusters, text, [...segmenter.segment(text)], 16);
-  function caseProjectionFor(text, spans) {
-    if (!spans.some(span => span.textCase !== 'original')) return null;
+  function projectionFor(text, spans, typography) {
+    if (!typography && !spans.some(span => span.textCase !== 'original')) return null;
     const modes = [];
     for (const {end,textCase} of spans) {
       if (modes.at(-1)?.textCase === textCase) modes.at(-1).end = end;
       else modes.push({end,textCase});
     }
-    // Font fitting tries several sizes for the same source and case ranges.
-    // Their intervals are independent of geometry, paint and font changes.
-    const key = JSON.stringify([text,modes]);
-    return caseProjections.get(key) ?? boundedSet(caseProjections,key,projectTextCase(text,modes),32);
+    const boundaries = [];
+    if (typography) {
+      let previous;
+      for (const {start, style, textCase} of spans) {
+        const key = JSON.stringify([style, textCase]);
+        if (previous !== undefined && previous !== key) boundaries.push(start);
+        previous = key;
+      }
+    }
+    const key = JSON.stringify([text, modes, typography, boundaries]);
+    return textProjections.get(key) ?? boundedSet(textProjections,key,projectText(text,modes,typography,boundaries),32);
   }
   function measure(text, style) {
     const font = richTextFont(style), key = JSON.stringify([font, style.letterSpacing, text]);
@@ -140,7 +149,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       inkDescent: m.actualBoundingBoxDescent ?? m.fontBoundingBoxDescent ?? glyphFontSize(style) * .2,
     }, 4096);
   }
-  function layout(e, measuring = false) {
+  function layout(e, measuring = false, prepared) {
     if (fontCount !== fontSet?.size) { invalidate(); fontCount = fontSet?.size; }
     const spans = richTextSpans(e), base = resolveRichTextStyle(e);
     const solid = (e.fillType || 'solid') === 'solid';
@@ -149,12 +158,15 @@ export function createRichTextLayoutEngine(context, fontSet) {
     const wholeWords = horizontal && e.autoFontSize === true;
     const text = String(e.text ?? '');
     const paragraphRuns = horizontal ? normalizeParagraphRuns(text,e.paragraphRuns) : [];
-    const key = measuring ? null : JSON.stringify([spans, base, solid, width, height, e.textAlign, e.verticalAlign, fontSet?.size, horizontal, wholeWords, paragraphRuns]);
+    const config = prepared ? prepared.typography : horizontal ? normalizeTypography(e.typography) : undefined;
+    const typography = config?.enabled ? config : undefined;
+    const glueFixed = typography?.rules.nbsp === true;
+    const key = measuring ? null : JSON.stringify([spans, base, solid, width, height, e.textAlign, e.verticalAlign, fontSet?.size, horizontal, wholeWords, paragraphRuns, typography]);
     if (!measuring && layouts.has(key)) return layouts.get(key);
     // Segment the source as a whole: run boundaries cannot split emoji/combining
     // clusters. If a run starts inside a cluster, its first character owns it.
     const clusters = []; let spanIndex = 0;
-    const caseProjection = horizontal ? caseProjectionFor(text, spans) : null;
+    const caseProjection = prepared ? prepared.projection : horizontal ? projectionFor(text, spans, typography) : null;
     const projected = caseProjection?.intervals;
     function addCluster(segment, index, end) {
       while (spanIndex + 1 < spans.length && spans[spanIndex].end <= index) spanIndex++;
@@ -385,16 +397,19 @@ export function createRichTextLayoutEngine(context, fontSet) {
       }
       if (pending) useToken(appendToken(pending.parts));
     } else {
-      // Fixed-size text retains its whitespace grouping and grapheme fallback.
+      // Retain the legacy fallback for ordinary tokens. A glued token may
+      // overflow the frame but cannot break at either side of a no-break space.
+      const noBreakSpace = /[\u00a0\u202f]/u;
+      const isBlank = value => /^\s+$/u.test(value) && !(glueFixed && noBreakSpace.test(value));
       for (let i = 0; i < clusters.length;) {
         if (clusters[i].text === '\n') { finish(clusters[i]); i++; continue; }
-        const blank = /^\s+$/u.test(clusters[i].text); let end = i + 1;
-        while (end < clusters.length && clusters[end].text !== '\n' && /^\s+$/u.test(clusters[end].text) === blank) end++;
+        const blank = isBlank(clusters[i].text); let end = i + 1;
+        while (end < clusters.length && clusters[end].text !== '\n' && isBlank(clusters[end].text) === blank) end++;
         const token = tokenParts(i, end);
         const trial = appendToken(token);
         if (!blank && fragments.length && trial.width > availableWidth()) finish();
         const next = appendToken(token);
-        if (next.width <= availableWidth()) useToken(next);
+        if (next.width <= availableWidth() || glueFixed && token.some(part => noBreakSpace.test(part.text))) useToken(next);
         else for (let j = i; j < end; j++) {
           let candidate = appendToken([clusters[j]]);
           if (fragments.length && candidate.width > availableWidth()) {
@@ -551,14 +566,16 @@ export function createRichTextLayoutEngine(context, fontSet) {
       }
       return part.end;
     };
+    let projectedIndex = 0;
     function partSegments(part) {
       if (!projection) return [...segmenter.segment(part.text)].map(p=>({...p, offset:sourceOffset(part,p.index)}));
       const result = [];
       let index = 0;
-      for (const item of segmenter.segment(sourceText.slice(part.start,part.end))) {
-        if (item.segment === '\r') continue;
-        const offset = part.start + item.index;
-        const segment = projection.text.slice(sourceToDisplay(projection,offset),sourceToDisplay(projection,offset+item.segment.length));
+      const intervals = projection.intervals;
+      while (intervals[projectedIndex]?.sourceEnd <= part.start) projectedIndex++;
+      while (intervals[projectedIndex]?.sourceStart < part.end) {
+        const {projectedText:segment, sourceStart:offset} = intervals[projectedIndex++];
+        if (segment === '\r') continue;
         result.push({segment,index,offset});
         index += segment.length;
       }
@@ -652,6 +669,9 @@ export function createRichTextLayoutEngine(context, fontSet) {
     if (!text || !supportsHorizontalTextLayout(e)) return e.fontSize;
     const sample = {...e, autoFontSize:true};
     retainRichTextSizeBase(sample);
+    const config = normalizeTypography(sample.typography);
+    const typography = config?.enabled ? config : undefined;
+    const prepared = {typography, projection:projectionFor(text, richTextSpans(sample), typography)};
     const min = 10, max = Math.floor(ceiling * 10), checked = new Map();
     const mixedHeight = sample.textRuns?.some(({style}) => style?.fontSize !== undefined || style?.lineHeight !== undefined);
     // With constant leading, every baseline interval after the first row
@@ -685,7 +705,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
     function fits(tick) {
       if (!checked.has(tick)) {
         sample.fontSize = tick / 10;
-        const natural = layout(sample, true);
+        const natural = layout(sample, true, prepared);
         checked.set(tick, natural.fits && (sample.textAlign !== 'justify' || layoutJustified(sample, natural).fits));
       }
       return checked.get(tick);

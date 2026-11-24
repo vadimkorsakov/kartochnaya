@@ -68,6 +68,18 @@
 <div id="fxPopover" class="fx-popover hidden" role="dialog" aria-labelledby="fxPopoverTitle"></div>
 <div id="fxChooser" class="fx-chooser hidden" role="dialog" aria-label="Добавить эффект"></div>
 <div id="fxMenu" class="fx-menu hidden" role="menu" aria-label="Действия с эффектом"></div>
+<div id="typographyPanel" class="fx-popover typography-panel hidden" role="dialog" aria-labelledby="typographyTitle">
+  <div class="fx-popover-head"><strong id="typographyTitle">Автоматическая типографика</strong><button type="button" data-typography-close aria-label="Закрыть настройки типографики">×</button></div>
+  <div class="fx-details">
+    <p id="typographyTarget" role="status"></p>
+    <fieldset id="typographyControls" aria-label="Настройки слоя">
+      <label class="typography-rule typography-master"><input type="checkbox" data-typography-master><span>Включить типографику</span></label>
+      <div id="typographyRules" role="group" aria-label="Правила"></div>
+      <details><summary>Группы неразрывных пробелов</summary><div id="typographyNbspRules"></div></details>
+      <button type="button" class="linebtn" data-typography-reset>По умолчанию</button>
+    </fieldset>
+  </div>
+</div>
 <div id="underlinePanel" class="fx-popover underline-panel hidden" role="dialog" aria-labelledby="underlinePanelTitle">
   <div class="fx-popover-head"><strong id="underlinePanelTitle">Подчёркивание</strong><button type="button" data-underline-close aria-label="Закрыть настройки подчёркивания">×</button></div>
   <div class="fx-details underline-panel-body">

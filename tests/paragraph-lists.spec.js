@@ -138,7 +138,13 @@ test('Inspector icons, persistent gallery, Mixed, numeric controls, history and 
  await done(page);
  await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===id)?.elements[0]).toEqual(expected);
  await page.reload();await openLibraryDocument(page,id);await edit(page);
- await press(page,'Control+Home');await kind(page,'none').click();
+ await press(page,'Control+Home');
+ // Reload starts with the panel closed. Once explicitly opened, removing the
+ // list must not dismiss the panel.
+ await expect(panel(page)).toBeHidden();
+ await configure(page).click();
+ await expect(panel(page)).toBeVisible();
+ await kind(page,'none').click();
  await expect(panel(page)).toBeVisible();
  await panel(page).locator('[data-list-close]').click();
  await expect(panel(page)).toBeHidden();
@@ -275,7 +281,7 @@ test('list settings stay visible when the selected layer enters and exits WYSIWY
  await done(page);
  await expect(settings).toBeVisible();
  // Even leaving the entire text layer selected must not implicitly dismiss it.
- const empty=await canvasPoint(page,610,430,width,height);
+ const empty=await canvasPoint(page,5,430,width,height);
  await page.mouse.click(empty.x,empty.y);
  await expect(settings).toBeVisible();
  await settings.locator('[data-list-close]').click();

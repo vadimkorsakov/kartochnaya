@@ -128,8 +128,8 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const canvasInk=needsCanvasInk(projection);
   const nodes=[],boundaries=new WeakMap();
   const display=projection.caseProjection;
-  const expansions=display?.intervals.filter(p=>p.displayEnd-p.displayStart!==p.sourceEnd-p.sourceStart) || [];
-  let sourceEnd=0, expansion=0;
+  const lengthChanges=display?.intervals.filter(p=>p.displayEnd-p.displayStart!==p.sourceEnd-p.sourceStart) || [];
+  let sourceEnd=0, lengthChange=0;
   for(const [rowIndex,row] of projection.rows.entries()){
    const rowNode=document.createElement('span');rowNode.dataset.wysiwygRow='';
    Object.assign(rowNode.style,{position:'absolute',display:'inline-block',left:'0px',top:row.y+'px',height:row.height+'px',whiteSpace:'pre',fontSize:'0px',lineHeight:'0px'});
@@ -144,13 +144,13 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
     const before=i>0&&parts[i-1].y!==part.y,after=i+1<parts.length&&parts[i+1].y!==part.y;
     const start=part.start??row.start,end=part.end??row.start;
     const displayStart=display?sourceToDisplay(display,start):start;
-    const expandedGraphemes=[];
+    const atomicIntervals=[];
     if(display){
-     if(start!==sourceEnd||end<start||display.text.slice(displayStart,sourceToDisplay(display,end))!==part.text)throw Error('Invalid case projection coverage');
+     if(start!==sourceEnd||end<start||display.text.slice(displayStart,sourceToDisplay(display,end))!==part.text)throw Error('Invalid text projection coverage');
      sourceEnd=end;
-     while(expansions[expansion]?.sourceStart<end)expandedGraphemes.push(expansions[expansion++]);
+     while(lengthChanges[lengthChange]?.sourceStart<end)atomicIntervals.push(lengthChanges[lengthChange++]);
     }
-    if(before||after||expandedGraphemes.length)boundaries.set(span,{part,rowIndex,before,after,displayStart,expandedGraphemes});
+    if(before||after||atomicIntervals.length)boundaries.set(span,{part,rowIndex,before,after,displayStart,atomicIntervals});
     const offset=unifiedDOMOffset(part.style,{height:row.height,baseline:(part.y??row.baseline)-row.y},part.text,baselineOffsets);
     span.append(document.createTextNode(part.text));
     // Source newlines live with their preceding row, including empty rows.
@@ -185,7 +185,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
     sourceEnd=end;
    }
   }
-  if(display&&sourceEnd!==value.text.length)throw Error('Incomplete case projection coverage');
+  if(display&&sourceEnd!==value.text.length)throw Error('Incomplete text projection coverage');
   decorationProjection=null;
   // The browser can blur contenteditable while replaceChildren invalidates
   // its current Range, particularly when a trailing LF gains a caret sentinel.
@@ -341,18 +341,19 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const origin=preview?.element||structuredClone(layer);
   if(!compatible(origin))return false;
   let next=range?applyTextStyle(origin,Math.min(selection.anchor,selection.focus),Math.max(selection.anchor,selection.focus),patch):structuredClone(origin);
+  const preserveSize=['textAlign','verticalAlign','typography'].includes(key);
   if(!range){
    if(['underline','strikethrough'].includes(key))next=applyTextStyle(next,0,next.text.length,{[key]:null});
-   if(!['textAlign','verticalAlign'].includes(key))retainRichTextSizeBase(next);Object.assign(next,patch);
+   if(!preserveSize)retainRichTextSizeBase(next);Object.assign(next,patch);
   }
   if(key==='fontSize')next.autoFontSize=false;
-  // Alignment changes row origins, not the saved size or run-size base.
-  // displaySample still guards ink overflow for old auto-fit documents.
-  if(!['textAlign','verticalAlign'].includes(key))retainRichTextSizeBase(next);
-  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle','textAlign','verticalAlign'].includes(key))fit(next,{preserveSizeBase:true});
+  // Alignment and typography settings leave the saved size and run-size
+  // base available for reversal. displaySample guards projected ink overflow.
+  if(!preserveSize)retainRichTextSizeBase(next);
+  if(!preserveSize&&next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle'].includes(key))fit(next,{preserveSizeBase:true});
   if(!compatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
-  try{project(next,selection);}catch{return false;}
+  try{project(next,selection,key==='typography'?savedAffinity:null);}catch{return false;}
   if(!preview){recordInlineHistory(history,origin,caret(selection));preview={key,element:origin,selection};}
   if(final)finishPreview();else onChange();
   return true;
@@ -363,6 +364,8 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
 const applyRangeStyle=(patch,options)=>applyStyle(patch,options);
 const applyLayerStyle=(patch,options)=>applyStyle(patch,{...options,range:false});
 const graphemes=textGraphemes;
+const sourceBoundaries=()=>[...(caseProjection?.intervals.map(part=>part.sourceStart) ??
+ Array.from(graphemes.segment(layer.text),part=>part.index)),layer.text.length];
 function changeGraphemeStyle(apply,value){
  if(!clean()||safe.phase!=='confirmed'||inactive||!compatible(layer))return false;
  let selection;try{selection=rememberSelection();}catch{return false;}
@@ -415,7 +418,7 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;listDr
   if(!boundary||inactive||safe.phase!=='confirmed'||!clean())return null;
   const {part}=boundary,node=span.firstChild;
   const range=doc.createRange();
-  for(const interval of boundary.expandedGraphemes){
+  for(const interval of boundary.atomicIntervals){
    range.setStart(node,interval.displayStart-boundary.displayStart);range.setEnd(node,interval.displayEnd-boundary.displayStart);
    const rect=range.getBoundingClientRect();
    if(x>rect.left&&x<rect.right&&y>=rect.top&&y<=rect.bottom){
@@ -572,7 +575,7 @@ listen('keydown',event=>{
  const focusNode=getSelection().focusNode;
  let rowIndex=rowNodes.indexOf((focusNode.nodeType===3?focusNode.parentElement:focusNode).closest('[data-wysiwyg-row]'));
  if(rowIndex<0)rowIndex=Math.max(0,rows.findLastIndex(r=>r.start<=c.focus));
- const row=rows[rowIndex],boundaries=[...graphemes.segment(layer.text)].map(p=>p.index).concat(layer.text.length);
+ const row=rows[rowIndex],boundaries=sourceBoundaries();
  let next=c.focus,targetRow=null;
  if(vertical){
   const xAt=(row,offset)=>{
@@ -781,7 +784,7 @@ listen('beforeinput',e=>{
   return;
  }
  if(e.inputType.startsWith('delete')&&start===end){
-  const points=[...graphemes.segment(layer.text)].map(p=>p.index).concat(layer.text.length);
+  const points=sourceBoundaries();
   if(e.inputType==='deleteContentBackward')start=points.findLast(i=>i<start)??0;
   else end=points.find(i=>i>end)??layer.text.length;
  }

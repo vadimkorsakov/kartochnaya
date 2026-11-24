@@ -1924,15 +1924,18 @@ html,body{background:#1e1f27!important;}
  #mobilePropertyUI .mp-pill>[data-mobile-text-selection]{flex-basis:100%}
  #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel){--mp-format-max-height:min(49dvh,440px);max-height:var(--mp-format-max-height)!important}
  body.karto-keyboard-open #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel){max-height:min(var(--mp-format-max-height),max(80px,calc(var(--v41-visual-height) - 204px)))!important}
- #mobilePropertyUI .mp-case-panel{--mp-format-max-height:min(53dvh,440px)}
+ #mobilePropertyUI .mp-case-panel{--mp-format-max-height:min(52dvh,440px)}
  #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel) .mp-head{height:44px!important;min-height:44px!important}
  #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel) .mp-head button{width:44px!important;min-width:44px!important;height:44px!important}
  #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel) .mp-body{touch-action:pan-y}
  #mobilePropertyUI .mp-format-target{display:flex;justify-content:space-between;gap:8px;color:#dacaff;font-size:11px;line-height:18px}
  #mobilePropertyUI .mp-format-target .mp-text-selection{flex:1}
  #mobilePropertyUI .mp-format-target [role=status]:last-child{flex-shrink:0}
- #mobilePropertyUI .mp-case-options{display:grid;gap:5px}
- #mobilePropertyUI .mp-case-options button{display:grid;grid-template-columns:62px minmax(0,1fr);align-items:center;min-height:44px;padding:5px 8px;text-align:left;font:inherit}
+ /* Keep all five 44px choices visible on short phones without depending on
+    platform font line-height or taking more than the stage's height budget. */
+ #mobilePropertyUI .mp-case-panel .mp-body{padding:4px 12px!important}
+ #mobilePropertyUI .mp-case-options{display:grid;gap:3px}
+ #mobilePropertyUI .mp-case-options button{display:grid;grid-template-columns:62px minmax(0,1fr);align-items:center;min-height:44px;padding:3px 8px;text-align:left;font:inherit;line-height:18px}
  #mobilePropertyUI .mp-case-options button span{font-size:16px;font-weight:650}
  #mobilePropertyUI :is(.mp-format-btn,.mp-case-options button):disabled,#mobilePropertyUI .mp-typography-panel fieldset:disabled{opacity:.45}
  #mobilePropertyUI .mp-typography-panel .mp-text-selection{margin:0 0 4px}

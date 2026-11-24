@@ -734,7 +734,9 @@ test('emergency action is usable on phone with unavailable IndexedDB; cancel and
     };
     const report = console.error;
     console.error = function (error, ...args) {
-      if (error?.message === 'Synthetic JSON failure') window.emergencyError = error.message;
+      // This is the exact error deliberately injected above. All unexpected
+      // console errors must still reach the shared Playwright error guard.
+      if (error?.message === 'Synthetic JSON failure') { window.emergencyError = error.message; return; }
       return report.call(this, error, ...args);
     };
     // A pending IndexedDB write may report its own failure immediately after

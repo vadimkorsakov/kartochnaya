@@ -41,6 +41,31 @@ async function select(page,anchor,focus){await page.locator(host).evaluate((el,{
  },{anchor,focus});await expect.poll(()=>selection(page)).toEqual({anchor,focus});
 }
 async function geometry(page){return page.locator(host).evaluate(el=>[...el.querySelectorAll('[data-wysiwyg-fragment]')].map(p=>({text:p.textContent,style:p.getAttribute('style'),row:p.parentElement.style.top})));}
+// Auto-fit corrects DOM rounding relative to the host after projection.
+// A reflow can change its CSS left correction by one layout subpixel without
+// moving the glyph in document coordinates. Verify actual rectangles, retain
+// exact equality for every other style property and keep source rows intact.
+async function measuredGeometry(page){return page.locator(host).evaluate(el=>{
+ const h=el.getBoundingClientRect(),scale=h.width/parseFloat(el.style.width);
+ return [...el.querySelectorAll('[data-wysiwyg-fragment]')].map(p=>{
+  const b=p.getBoundingClientRect(),copy=p.cloneNode(false);
+  const correction=parseFloat(copy.style.left)||0;copy.style.removeProperty('left');
+  return {text:p.textContent,style:copy.getAttribute('style'),row:p.parentElement.style.top,
+   correction,x:(b.left-h.left)/scale,y:(b.top-h.top)/scale,width:b.width/scale,height:b.height/scale};
+ });
+})}
+async function expectMeasuredGeometry(page,before){
+ const after=await measuredGeometry(page);
+ expect(after.length).toBe(before.length);
+ for(let i=0;i<before.length;i++){
+  const {correction,x,y,width,height,...style}=after[i];
+  const {correction:oldCorrection,x:oldX,y:oldY,width:oldWidth,height:oldHeight,...oldStyle}=before[i];
+  expect(style).toEqual(oldStyle);
+  expect(Math.abs(correction-oldCorrection)).toBeLessThanOrEqual(1/64+1e-7);
+  // Two CSS layout subpixels in document coordinates, not a visual threshold.
+  for(const delta of [x-oldX,y-oldY,width-oldWidth,height-oldHeight])expect(Math.abs(delta)).toBeLessThanOrEqual(1/32+1e-7);
+ }
+}
 async function lines(page){return page.locator(host).evaluate(el=>[...el.querySelectorAll('[data-wysiwyg-row]')].flatMap(row=>{
  if(!row.style.backgroundImage)return [];
  const split=s=>s.split(/,(?![^()]*\))/).map(s=>s.trim());
@@ -233,7 +258,7 @@ test('advanced range: backward selection, Mixed, slider and color gestures, save
  const source='AV fi Первое 👩‍💻 е\u0301 слово  на первой строке\nВторая строка в рамке';
  const id=await setup(page,{text:source,w:340,textAlign:'justify',verticalAlign:'middle',autoFontSize:true,fillOpacity:82,
   textRuns:[{start:3,end:5,style:{fontSize:38,fontFamily:'Georgia',textColor:'#114477',underlineDetails:{offset:-2},strikethrough:true}}]});
- const before=await model(page),glyphs=await geometry(page);
+ const before=await model(page),glyphs=await measuredGeometry(page);
  const end=source.indexOf(' слово'),anchor=end,focus=0;
  await select(page,anchor,focus);
  await openUnderlineSettings(page,true);
@@ -241,7 +266,7 @@ test('advanced range: backward selection, Mixed, slider and color gestures, save
  await styleControl(page,'dotted').press('Space');
  await expect(page.locator(host)).toBeVisible();
  await expect(page.locator(ink)).toBeVisible();
- expect(await geometry(page)).toEqual(glyphs);
+ await expectMeasuredGeometry(page,glyphs);
  const dotted=await model(page);
  expect(dotted.textRuns.every(r=>r.style.underlineDetails?.style==='dotted')).toBe(true);
 
@@ -290,7 +315,7 @@ test('advanced range: backward selection, Mixed, slider and color gestures, save
  await page.locator(`${panel} [data-underline-close]`).click();
  await page.locator(host).focus();expect(await selection(page)).toEqual({anchor,focus});
  expect(await page.locator(host).textContent()).toBe(source);
- expect(await geometry(page)).toEqual(glyphs);
+ await expectMeasuredGeometry(page,glyphs);
  await close(page);
  const {exportedDocument}=require('./helpers');expect((await exportedDocument(page)).elements[0]).toEqual(colored);
  await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===id)?.elements[0]).toEqual(colored);

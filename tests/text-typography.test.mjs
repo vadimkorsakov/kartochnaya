@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {projectText} from '../src/model/text-projection.mjs';
 import {sourceToDisplay, displayToSource, textGraphemes} from '../src/model/text-case.mjs';
-import {cleanImportedTypography, normalizeTypography, nbspDefaults, typographyDefaults} from '../src/model/text-typography.mjs';
+import {cleanImportedTypography, normalizeTypography, nbspDefaults, protectedTypographySpans, typographyDefaults} from '../src/model/text-typography.mjs';
 import {analyzeProject, prepareProjectImport} from '../src/model/project-integrity.mjs';
 import {createRichTextLayoutEngine} from '../src/render/rich-text-layout.mjs';
 import {createBackup, readBackup} from '../src/backup/archive.mjs';
@@ -20,8 +20,26 @@ const fixtures = {
   minus:[['-25 °C; (-5); +5; x = -8','−25 °C; (−5); +5; x = −8'],['10 - 5; -2020-2025; CLI --n=-15; --n -5; --range="x -5"; vals[-1]; 2026-01-20; 8 800-555-35-35']],
   multiply:[['1080 x 1920; 1080 х 1920; 3 * 4','1080 × 1920; 1080 × 1920; 3 × 4'],['3*4; A x B; 0xFF; v2.0 x 4; 3 x 4K; 3 x 4.2.1']],
   marks:[['(C) (r), (TM).','© ®, ™.'],['x(c) (r)abc; fn(c); name@(tm).com; https://host.test/(c); `(tm)`']],
-  fractions:[['1/2, 1/4 и 3/4.','½, ¼ и ¾.'],['1/2/2026; 24/11; /tmp/1/2; 1/2a; 1/2.3; 11/2; 3/4/5; раздел 1/2; 1 1/2']],
+  fractions:[
+    ['1/2, 1/3, 2/3, 1/4, 3/4, 1/5, 2/5, 3/5, 4/5, 1/6, 5/6, 1/7, 1/8, 3/8, 5/8, 7/8, 1/9, 1/10.',
+     '½, ⅓, ⅔, ¼, ¾, ⅕, ⅖, ⅗, ⅘, ⅙, ⅚, ⅐, ⅛, ⅜, ⅝, ⅞, ⅑, ⅒.'],
+    ['0/3; (7/12), «13/27»; 125/256; 24/11; 11/2; 01/002; 0/2.',
+     '↉; (⁷⁄₁₂), «¹³⁄₂₇»; ¹²⁵⁄₂₅₆; ²⁴⁄₁₁; ¹¹⁄₂; ⁰¹⁄₀₀₂; ⁰⁄₂.'],
+    ['1/2/2026; 2026/2/1; /tmp/1/2; https://a.test/7/12; user/7/12; 7/12.txt; 1/2a; abc7/12; 1/2.3; 3/4/5; 7/0; 1/000'],
+    ['раздел 1/2; §\u00a07/12; №7/12; 1\u202f1/2; 1 1/2; ID: 7/12; `7/12`; e\u03017/12; 7/12\u0301'],
+    ['2 x 7/12; 2 х\u00a07/12; 3 / 7/12; 1/2 + 3/4; 1/2 = x; 2 × (7/12); (7/12) - 5'],
+    ...[...'+-−±∓×*÷/=≠<>≤≥'].flatMap(sign => ['', ' ', '\u00a0', '\u202f'].map(gap => [sign+gap+'7/12'])),
+  ],
   nbsp:[['в доме 20 кг','в\u00a0доме 20\u00a0кг'],['в  доме; в\tдоме; в\r\nдоме; в\u202fдоме']],
+  timeColon:[
+    ['9.30', '9:30'], ['09.05; на 23.59 и (0.00). «3.14» 00.59…', '09:05; на 23:59 и (0:00). «3:14» 00:59…'],
+    ['09.00–18.00; 9.30 - 17.45; 0.00-2.15; 12.05\u00a0–\u202f18.50', '09:00–18:00; 9:30 - 17:45; 0:00-2:15; 12:05\u00a0–\u202f18:50'],
+    ['24.00; 25.30; 12.60; 9.5; 12:30; 129.30; 9.301; 09.00 – 24.00; 29.00 – 17.45; 24.11.2026; v2.15; 1.2.3; 12.34.56.78'],
+    ['é9.30; ９.30; 9.30é; 9.30\u0301; 9.30..22; 12:09.30; 9.30:41; -9.30; +\u00a09.30; − 9.30'],
+    ['12.30 кг; 12.30\u00a0м²; 5.25 ₽; 5.25\u202f%; 7.33°С; 12.30 kg; 5.25 EUR; $ 5.25; USD 5.25; 09.00–18.00 V'],
+    ['https://site.test/9.30-17.45; example.test/09.00–18.00; 9.30.test; mail9.30@example.org; C:\\tmp\\9.30; ../9.30; /9.30; file/9.30'],
+    ['`9.30 - 17.45`; ```\n9.30–17.45\n```; fn(9.30-17.45); ID: 9.30; sku: 9.30–17.45; № 9.30; foo_09.00-18.00; --value=09.00–18.00'],
+  ],
 };
 for (const [rule, cases] of Object.entries(fixtures)) test(rule, () => {
   for (const [source, expected = source] of cases) {
@@ -53,16 +71,28 @@ test('combinations are idempotent and preserve deliberate whitespace and protect
   assert.equal(project(visible), visible);
   assert.equal(project('www.example.org/(tm) a-b@example.org 2026/11/24 C:\\tmp\\1/2 ../1/4'), 'www.example.org/(tm) a-b@example.org 2026/11/24 C:\\tmp\\1/2 ../1/4');
   assert.equal(project('«Сказал “да”»', ['quotes']), '«Сказал “да”»');
+  const range = '09.00 - 18.00';
+  assert.deepEqual(protectedTypographySpans(range), [{start:0,end:range.length}]);
+  assert.equal(project(range, ['emDash','nbsp']), range);
+  assert.equal(project(range), '09:00 - 18:00');
 });
 
 test('normalized configuration is sparse at layer level, boolean-only and deterministic', () => {
   for (const input of [undefined,null,[],{},'on',{enabled:'yes'},{enabled:true,rules:[]},
-    {enabled:true,rules:{quotes:1}},{enabled:true,nbspRules:{units:'off'}}])
+    {enabled:true,rules:{quotes:1}},{enabled:true,rules:{timeColon:1}},{enabled:true,nbspRules:{units:'off'}}])
     assert.equal(normalizeTypography(input), undefined);
   const normalized = normalizeTypography({enabled:false,rules:{nestedQuotes:false,unknown:true},nbspRules:{unknown:true}});
   assert.deepEqual(normalized, {enabled:false,rules:{...typographyDefaults,nestedQuotes:false},nbspRules:{...nbspDefaults}});
   assert.deepEqual(projectText('"да" -5 (tm)',[],normalized), {text:'"да" -5 (tm)',intervals:null});
   assert.deepEqual(normalizeTypography({enabled:true}).rules, typographyDefaults);
+});
+
+test('old eight-rule settings do not opt into time display', () => {
+  const legacy = {enabled:true,rules:{quotes:true,nestedQuotes:true,emDash:true,minus:true,multiply:true,marks:true,fractions:true,nbsp:true}};
+  const normalized = normalizeTypography(legacy);
+  assert.deepEqual(normalized.rules, {...legacy.rules,timeColon:false});
+  assert.equal(projectText('7/12 в 09.05', [], normalized).text, '⁷⁄₁₂ в 09.05');
+  assert.equal(normalizeTypography({enabled:true}).rules.timeColon, false);
 });
 
 test('contiguous monotonic UTF-16 coverage with contractions, expansion, CRLF and emoji', () => {
@@ -109,6 +139,23 @@ test('do not consume incompatible run boundaries or partial graphemes', () => {
   assert.equal(projectText(source, [], config(), [5,9]).text,source);
   assert.equal(projectText('(tm)\u0301', [], config()).text,'(tm)\u0301');
   assert.equal(projectText('1/2 -- word',[],config(),[1]).text,'1/2\u00a0— word');
+  assert.equal(projectText('7/12 9.30',[],config(),[2,6,7]).text,'7/12 9:30');
+});
+
+test('equal-length fraction is atomic and time preserves each source boundary', () => {
+  const view = projectText('7/12; 9.30', [], config());
+  assert.equal(view.text, '⁷⁄₁₂; 9:30');
+  assert.deepEqual(view.intervals[0], {
+    sourceStart:0,sourceEnd:4,displayStart:0,displayEnd:4,projectedText:'⁷⁄₁₂',atomic:true,
+  });
+  for (const offset of [1,2,3]) for (const map of [sourceToDisplay,displayToSource]) {
+    assert.equal(map(view,offset), 0);
+    assert.equal(map(view,offset,true), 4);
+  }
+  for (let offset=4; offset<=view.text.length; offset++) {
+    assert.equal(sourceToDisplay(view,offset), offset);
+    assert.equal(displayToSource(view,offset), offset);
+  }
 });
 
 const engine = createRichTextLayoutEngine({measureText(text) {
@@ -154,10 +201,23 @@ test('shared fragments preserve completed source intervals in mixed style and ju
   assert.equal(engine.layout({...layer,textMode:'vertical'}).caseProjection,undefined);
 });
 
+test('oversized fractions wrap intact and expose only edge carets at fixed size and auto-fit', () => {
+  const text = 'до 125/256 после';
+  const layer = {text,w:45,h:160,fontSize:20,typography:config(),textAlign:'justify'};
+  for (const autoFontSize of [false,true]) {
+    const view = engine.layoutJustified({...layer,autoFontSize});
+    assert.ok(view.rows.some(row=>rowText(row).includes('¹²⁵⁄₂₅₆')));
+    assert.ok(view.rows.flatMap(row=>row.carets).every(({offset})=>offset<=3 || offset>=10));
+  }
+});
+
 test('JSON import and ZIP preserve source and valid settings, invalid configs stay inactive', async () => {
-  const canonical={id:'layer',type:'text',text:'"да" 1/2',textRuns:[{start:0,end:4,style:{underline:true}}],typography:config()};
+  const canonical={id:'layer',type:'text',text:'"да" 7/12; 9.30',textRuns:[{start:0,end:4,style:{underline:true}}],typography:config()};
   const malformed={...canonical,id:'bad',typography:{enabled:true,rules:{quotes:'true'}}};
-  const document={id:'doc',projectId:'p',width:320,height:240,elements:[canonical,malformed]};
+  const malformedTime={...canonical,id:'bad-time',typography:{enabled:true,rules:{timeColon:'true'}}};
+  const legacy=structuredClone({...canonical,id:'old'});
+  delete legacy.typography.rules.timeColon;
+  const document={id:'doc',projectId:'p',width:320,height:240,elements:[canonical,malformed,legacy,malformedTime]};
   const project={id:'p',name:'T5'};
   const data={docs:[document],projects:[project],fonts:[],settings:[]};
   const restored=await readBackup((await createBackup(data)).bytes);
@@ -168,6 +228,9 @@ test('JSON import and ZIP preserve source and valid settings, invalid configs st
   assert.deepEqual(plan.documents[0].elements[0],canonical);
   assert.equal(plan.documents[0].elements[1].typography,undefined);
   assert.equal(plan.documents[0].elements[1].text,canonical.text);
+  assert.equal(plan.documents[0].elements[2].typography.rules.timeColon,false);
+  assert.equal(plan.documents[0].elements[2].text,canonical.text);
+  assert.equal(plan.documents[0].elements[3].typography,undefined);
   const copy={elements:[],slides:[{elements:[structuredClone(malformed)]}]};
   assert.equal(cleanImportedTypography(copy),1);
   assert.equal(copy.slides[0].elements[0].typography,undefined);

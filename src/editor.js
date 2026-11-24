@@ -2589,15 +2589,16 @@ const typographyLabels={
  minus:['Математический минус','-25 → −25'],
  multiply:['Знак умножения','1080 х 1920 → 1080 × 1920'],
  marks:['Авторские символы','(c) (r) (tm) → © ® ™'],
- fractions:['Распространённые дроби','1/2, 1/4, 3/4 → ½, ¼, ¾'],
+ fractions:['Типографские дроби','1/2 → ½, 7/12 → ⁷⁄₁₂'],
  nbsp:['Неразрывные пробелы','10 кг → 10\u00a0кг'],
+ timeColon:['Время через двоеточие','9.30 → 9:30','Отдельное число вроде 3.14 тоже отображается как время'],
 };
 const typographyGroupLabels={
  shortWords:'Предлоги и союзы',particles:'Частицы',units:'Числа с единицами, валютой и %',
  initials:'Инициалы',dates:'Даты и сокращения',designations:'Номера и обозначения',dash:'Перед тире',
 };
-$('#typographyRules').innerHTML=Object.entries(typographyLabels).map(([key,[label,example]])=>
- `<label class="typography-rule"><input type="checkbox" data-typography-rule="${key}"><span>${label}<small aria-hidden="true">${html(example)}</small></span></label>`
+$('#typographyRules').innerHTML=Object.entries(typographyLabels).map(([key,[label,example,hint]])=>
+ `<label class="typography-rule"${hint?' title="'+html(hint)+'"':''}><input type="checkbox" data-typography-rule="${key}"><span>${label}<small aria-hidden="true">${html(example)}</small></span></label>`
 ).join('');
 $('#typographyNbspRules').innerHTML=Object.entries(typographyGroupLabels).map(([key,label])=>
  `<label class="typography-rule"><input type="checkbox" data-typography-nbsp="${key}"><span>${label}</span></label>`

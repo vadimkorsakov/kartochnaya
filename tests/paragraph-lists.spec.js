@@ -256,7 +256,7 @@ test('switching the layer or document discards an unconfirmed spacing gesture',a
 });
 
 test('list settings stay visible when the selected layer enters and exits WYSIWYG',async({page})=>{
- const text='Title\\nFirst\\nSecond';
+ const text='Title\nFirst\nSecond';
  const first=text.indexOf('First'),second=text.indexOf('Second');
  await seed(page,{text,paragraphRuns:[run(first,{listKind:'bullet'}),run(second,{listKind:'bullet'})]});
  await page.locator('#layers .layer-name').filter({hasText:'List sample'}).click();

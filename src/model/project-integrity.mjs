@@ -1,5 +1,6 @@
 // JSON records only. This module inspects copies and never repairs source data.
 import { cleanImportedListMarkers } from './paragraph-style.mjs';
+import { cleanImportedTypography, normalizeTypography } from './text-typography.mjs';
 
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const identity = value => typeof value === 'string' && value.length > 0;
@@ -61,6 +62,8 @@ export function analyzeProject(project, documents = []) {
       const elements = index(value.elements, at + '.elements');
       const groups = index(list(value, 'groups', at + '.groups'), at + '.groups');
       for (const [id, element] of elements) {
+        if (Object.hasOwn(element, 'typography') && (element.type !== 'text' || !normalizeTypography(element.typography)))
+          report('warnings', 'invalid-typography', `${at}.elements:${id}.typography`);
         if (element.groupId && !groups.has(element.groupId)) report('warnings', 'missing-layer-group', `${at}.elements:${id}.groupId`);
         if (element.clipBaseId && !elements.has(element.clipBaseId)) report('warnings', 'missing-clip-base', `${at}.elements:${id}.clipBaseId`);
         if (element.pathBoundary?.sourceId && !elements.has(element.pathBoundary.sourceId)) report('warnings', 'missing-boundary-source', `${at}.elements:${id}.pathBoundary.sourceId`);
@@ -108,6 +111,7 @@ export function prepareProjectImport(items, { generateId, now, existingProjectId
       if (cleanImportedListMarkers(document)) {
         diagnostics.warnings.push({code:'invalid-list-marker', path:`documents:${document.id}`});
       }
+      cleanImportedTypography(document);
       documents.push(document);
     }
   }

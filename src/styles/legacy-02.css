@@ -43,3 +43,22 @@
 .zoom-control{position:relative;display:inline-flex}
 .zoom-input{position:absolute;inset:0;width:100%;min-width:0;box-sizing:border-box;border:1px solid #a991df;border-radius:6px;background:#34343a;color:#f5f5fc;padding:4px;text-align:center;font:inherit;outline-offset:2px}
 .zoom-input[aria-invalid="true"]{border-color:#ff9292}
+
+.typography-trigger { width:36px; min-height:30px; }
+.inspector .typography-trigger.active { background:var(--accent); color:#fff; }
+.inspector .typography-trigger.active:hover:not(:disabled) { background:var(--accent-dark); }
+.typography-trigger:disabled, .typography-panel fieldset:disabled { opacity:.5; }
+.typography-trigger:focus-visible, .typography-panel :focus-visible { outline:2px solid #b4a8e4; outline-offset:2px; }
+.typography-panel { width:304px; max-width:calc(100vw - 24px); }
+.typography-panel .fx-details { padding-top:0; overscroll-behavior:contain; }
+.typography-panel p { margin:0 0 8px; color:#d3cfde; overflow-wrap:anywhere; }
+.typography-panel fieldset { border:0; min-width:0; margin:0; padding:0; }
+.typography-panel .typography-rule { display:flex; align-items:flex-start; gap:8px; padding:4px 2px; color:inherit; font-size:12px; cursor:pointer; }
+.typography-panel .typography-rule input { flex:none; accent-color:#b4a8e4; margin:1px 0 0; }
+.typography-rule small { display:block; color:#d3cfde; font-size:11px; }
+.typography-panel .typography-master { padding-bottom:8px; margin-bottom:4px; border-bottom:1px solid #51505b; font-weight:600; }
+.typography-panel details { margin:4px 0 8px 20px; }
+.typography-panel summary { cursor:pointer; }
+.typography-panel details .typography-rule { font-size:12px; }
+.typography-panel .linebtn { min-height:30px; padding:4px 8px; color:inherit; background:#383740; border:1px solid #514d5b; border-radius:7px; cursor:pointer; }
+.typography-panel .linebtn:hover:not(:disabled) { background:#514a5b; }

@@ -517,3 +517,110 @@ test('case expansion wraps atomically and maps source carets and T1/T2 decoratio
  assert.equal(engine.layout({...e,textCase:'invalid',textRuns:[]}).caseProjection,undefined);
  assert.strictEqual(engine.layout(e),natural);
 });
+
+function autoFitTestEngine() {
+ return createRichTextLayoutEngine({
+  measureText(text) {
+   const size = parseFloat(this.font.match(/([\d.]+)px/)[1]);
+   const tracking = parseFloat(this.letterSpacing) || 0;
+   const width = [...text].reduce((sum, ch) => sum + (ch === '\t' ? 2 : ch === ' ' ? .25 : .5)*size + tracking, 0);
+   return {width, fontBoundingBoxAscent:size*.8, fontBoundingBoxDescent:size*.2,
+    actualBoundingBoxLeft:0, actualBoundingBoxRight:width,
+    actualBoundingBoxAscent:size*.78, actualBoundingBoxDescent:size*.18};
+  },
+ });
+}
+
+test('auto-fit owns only soft-wrap U+0020 separators without changing the source or fixed-size rows', () => {
+ const engine = autoFitTestEngine();
+ const layer = {text:'alpha   beta\n  gamma delta\n\na\u00a0b\u202fc\tZ\nend  ',fontSize:10,w:36,h:200,
+  autoFontSize:true,textRuns:[{start:5,end:8,style:{fontSize:80,underline:true}}]};
+ const before = structuredClone(layer);
+ const layout = engine.layout(layer);
+ assert.deepEqual(layout.rows.map(row => row.fragments.map(part => part.text).join('')),
+  ['alpha','beta','  gamma','delta','','a\u00a0b\u202fc','\tZ','end  ']);
+ const restored = layout.rows.map(row => {
+  const hidden = row.hiddenSeparator;
+  const painted = row.fragments.map(part => part.text).join('');
+  if (hidden) {
+   assert.ok(row.softWrap);
+   assert.equal(hidden.end,row.end);
+   assert.equal(row.decorations.length,0);
+  }
+  return painted + (hidden ? layer.text.slice(hidden.start,hidden.end) : '') + layer.text.slice(row.end,row.nextStart);
+ }).join('');
+ assert.equal(restored,layer.text);
+ assert.deepEqual(layer,before);
+ assert.deepEqual(layout.rows[0].hiddenSeparator,{start:5,end:8});
+ assert.ok(layout.rows[0].height<20,'hidden styled spaces must not add leading');
+ const manual = engine.layout({...layer,autoFontSize:false});
+ assert.ok(manual.rows.every(row => !row.hiddenSeparator));
+ assert.notStrictEqual(manual,layout);
+ const justified = engine.layoutJustified({...layer,text:'aa bb  ccccc',w:35,textRuns:[]});
+ assert.deepEqual(justified.rows[0].justification.spaces,[2]);
+ assert.deepEqual(justified.rows[0].hiddenSeparator,{start:5,end:7});
+ assert.equal(justified.rows[0].justification.contentWidth,35);
+});
+
+test('auto-fit shrinks a whole styled token, including T3 expansions, NBSP and intact graphemes', () => {
+ const engine = autoFitTestEngine();
+ const text = 'X straße\u00a0👩‍💻';
+ const layer = {text,fontSize:20,textRunsBaseFontSize:20,autoFontSize:true,textCase:'upper',w:65,h:150,
+  textRuns:[{start:4,end:8,style:{fontSize:40,italic:true}}]};
+ const fitted = engine.fitFontSize(layer);
+ const actual = engine.layout({...layer,fontSize:fitted});
+ assert.equal(actual.fits,true);
+ assert.equal(engine.layout({...layer,fontSize:fitted+.1}).fits,false);
+ const token = actual.rows.find(row => row.start===2);
+ assert.equal(token.fragments.map(p=>p.text).join(''),'STRASSE\u00a0👩‍💻');
+ assert.equal(token.fragments.at(-1).end,text.length);
+ assert.equal(token.fragments[1].style.fontSize,fitted*2);
+ assert.equal(engine.fitFontSize({...layer,fontSize:fitted}),fitted);
+ const emergency = {...layer,text:'https://example.com/'+'x'.repeat(50),w:5,textCase:'original',textRuns:[]};
+ assert.equal(engine.fitFontSize(emergency),1);
+ const fallback = engine.layout({...emergency,fontSize:1});
+ assert.equal(fallback.fits,false);
+ assert.deepEqual(fallback.rows.map(row=>row.fragments.map(p=>p.text).join('')),[emergency.text]);
+ assert.equal(engine.fitFontSize({...layer,text:''}),20);
+});
+
+test('auto-fit matches exhaustive tenths for representative frames and mixed list geometry', () => {
+ const engine = autoFitTestEngine();
+ const text = 'Первый пункт\nСледующий очень длинный\nПоследний пункт';
+ const e = {text,fontSize:16,textRunsBaseFontSize:16,autoFontSize:true,lineHeight:1.3,letterSpacing:.45,
+  textRuns:[{start:16,end:22,style:{fontSize:24,lineHeight:1.5,baselineShift:'super'}}],
+  paragraphRuns:text.split('\n').map((_,i,a)=>({start:a.slice(0,i).reduce((n,line)=>n+line.length+1,0),style:{
+   listKind:'ordered',listStart:i===0?9:undefined,listIndent:8,listGap:6,listItemSpacing:8,listMarkerScale:145,
+  }}))};
+ for (const frame of [{w:90,h:68},{w:130,h:110},{w:96,h:155},{w:180,h:72}]) {
+  for (const textAlign of ['left','justify']) {
+   const layer = {...e,...frame,textAlign};
+   const layout = fontSize => textAlign==='justify' ? engine.layoutJustified({...layer,fontSize}) : engine.layout({...layer,fontSize});
+   const fitted = engine.fitFontSize(layer);
+   let expected = 1;
+   // Even one unstyled row requires 1.3 * fontSize; these frames
+   // preclude candidates above 120px independently of the wrap algorithm.
+   for(let tick=10;tick<=1200;tick++)if(layout(tick/10).fits)expected=tick/10;
+   assert.equal(fitted,expected,JSON.stringify({frame,textAlign}));
+   const projection = layout(fitted);
+   assert.ok(projection.fits);
+   assert.ok(projection.height<=frame.h);
+   assert.deepEqual(projection.rows.filter(row=>row.marker).map(row=>row.marker.text),['9.','10.','11.']);
+   assert.ok(projection.rows.some(row=>row.spacingBefore===8));
+  }
+ }
+});
+
+test('auto-fit searches beyond a height failure when taller words regroup on a single row', () => {
+ const engine = autoFitTestEngine();
+ const layer = {text:'aa bb cc dd ee ff',w:55,h:130,fontSize:20,autoFontSize:true,
+  textRuns:[{start:6,end:11,style:{lineHeight:5}}]};
+ const layout = fontSize => engine.layout({...layer,fontSize});
+ assert.equal(layout(15.7).fits,false);
+ assert.equal(layout(15.8).fits,true);
+ assert.equal(layout(15.8).rows[1].fragments.map(part=>part.text).join(''),'cc dd');
+ let maximum=1;
+ for(let tick=10;tick<=260;tick++)if(layout(tick/10).fits)maximum=tick/10;
+ assert.equal(maximum,17.8);
+ assert.equal(engine.fitFontSize(layer),maximum);
+});

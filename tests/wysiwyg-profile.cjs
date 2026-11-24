@@ -23,7 +23,9 @@ async function applicationHTML(ref='current',instrument=false){
    replace('function createWysiwygSession(', 'paintHorizontalTextPass=window.__measure("inkPass",paintHorizontalTextPass);\n function createWysiwygSession(');
    replace('let layer = element,','layout=window.__measure("sessionLayout",layout);\n let layer = element,');
    replace('host.contentEditable = "plaintext-only";','project=window.__measure("project",project);syncOverlay=window.__measure("syncOverlay",syncOverlay);\n host.contentEditable = "plaintext-only";');
-   replace('return { layout, layoutJustified, invalidate };','layout=window.__measure("layout",layout);layoutJustified=window.__measure("layoutJustified",layoutJustified);return { layout,layoutJustified,invalidate };');
+   // Keep historical profiling references and current T4.3 exports intact.
+   const layoutReturn=ref==='current'?'return { layout, layoutJustified, fitFontSize, displaySample, invalidate };':'return { layout, layoutJustified, invalidate };';
+   replace(layoutReturn,'layout=window.__measure("layout",layout);layoutJustified=window.__measure("layoutJustified",layoutJustified);'+layoutReturn);
    replace('function createWysiwygSession(', 'lineHeight=window.__measure("lineHeight",lineHeight);unifiedDOMOffset=window.__measure("baseline",unifiedDOMOffset);\n function createWysiwygSession(');
   }
   return html;

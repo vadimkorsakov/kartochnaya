@@ -304,7 +304,7 @@ function inspectorNumericTextStyle(e,key,fallback){
 }
 function fontSizeField(e,label='Размер, px'){
  const size=inspectorFontSize(e);
- return `<label>${label}<input data-key="fontSize" type="number" value="${size===null?'':fmt(size)}" min="1" max="100000" step="1"${size===null?' placeholder="Mixed"':''}></label>`;
+ return `<label>${label}<input data-key="fontSize" type="number" value="${size===null?'':fmt(size)}" min="1" max="100000" step="any" data-step-amount="1"${size===null?' placeholder="Mixed"':''}></label>`;
 }
 function letterSpacingField(e){
  const spacing=inspectorLetterSpacing(e);
@@ -402,7 +402,8 @@ function v41RefreshDesktopFonts(menu){if(!menu)return;const term=(menu.querySele
 const fontResources=createFontResources({createFace:(...args)=>new FontFace(...args),fontSet:document.fonts});
 async function loadFontFace(f){normaliseFont(f);try{
  await prepareCanvasResources({images:[],fonts:[{family:f.family}]},{prepareFont:()=>fontResources.load(f)});
-}catch(e){console.warn('Font load failure',f.name,e);toast('Не удалось загрузить '+f.name)}}
+ return true;
+}catch(e){console.warn('Font load failure',f.name,e);toast('Не удалось загрузить '+f.name);return false}}
 // v0.20: A card may contain multiple fully editable canvases. The original root
 // fields continue to point at the active canvas for the existing paint engine.
 const SLIDE_FIELDS=['width','height','background','backgroundAlpha','palette','rulers','groups','elements'];
@@ -663,7 +664,7 @@ function onMobileMultiAction(action){if(action==='all'){for(const row of layerRo
 function active(){return app.doc?.elements.find(e=>e.id===app.selected)||null}
 function picked(){return app.doc?.elements.filter(e=>app.selectedIds.includes(e.id))||[]}
 function setSelected(ids,isolated=false){if(app.inkDraft&&(app.maskEditId||!ids.includes(app.inkDraft.targetId)))inkCancel();if(app.editingId&&(ids.length!==1||ids[0]!==app.editingId))closeInlineText();cancelRegionEffects();if(app.maskEditId&&!ids.includes(app.maskEditId))app.maskEditId=null;app.selectedGroupIds=[];app.focusGroupId=null;app.groupIsolation=isolated?(ids[0]||null):null;app.selectedIds=expandSelection([...new Set(ids)].filter(id=>app.doc.elements.some(e=>e.id===id)),isolated);app.selected=app.selectedIds.length===1?app.selectedIds[0]:null;app.guides=[];app.cropMode=false;$('#cropActions').classList.add('hidden');refreshLayers();refreshInspector();refreshMobileTools();paint()}
-const iconPaths={text:'M4 5h16 M12 5v15 M8 20h8',image:'M3 4h18v16H3z M6 16l5-5 4 3 3-4 3 4 M8 9h.01',rect:'M4 5h16v14H4z',circle:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',triangle:'M12 3 22 21H2z',star:'M12 2 15 9l8 .4-6 5 2 8-7-4.5L5 22l2-8-6-5 8-.4z',hexagon:'M7 3h10l5 9-5 9H7l-5-9z',parallelogram:'M8 4h13l-5 16H3z',edit:'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',font:'M3 19 10 4l7 15 M6 13h9 M18 5h4 M20 5v14',size:'M4 6h16 M12 6v14 M8 20h8',color:'M12 3a9 9 0 1 0 9 9c0-2-2-2-3-1s-3 0-2-2S16 3 12 3z M7 10h.01 M11 7h.01 M16 8h.01',align:'M4 6h16 M4 10h10 M4 14h16 M4 18h10',spacing:'M4 4v16 M20 4v16 M8 9h8 M8 15h8',opacity:'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 2a10 10 0 0 1 0 20z',crop:'M7 3v14a3 3 0 0 0 3 3h11 M3 7h14a3 3 0 0 1 3 3v11',replace:'M4 6h16v13H4z M4 15l5-5 4 4 3-3 4 5 M8 9h.01',stroke:'M3 12h18 M12 3v18',round:'M3 21V10a7 7 0 0 1 7-7h11',layers:'M4 7l8-4 8 4-8 4z M4 12l8 4 8-4 M4 17l8 4 8-4',duplicate:'M8 7h12v14H8z M4 17V3h13',delete:'M4 7h16 M9 7V4h6v3 M7 7l1 14h8l1-14',back:'M19 12H5m7-7-7 7 7 7',position:'M12 2v20 M2 12h20 M8 6l4-4 4 4 M8 18l4 4 4-4',more:'M5 12h.01 M12 12h.01 M19 12h.01',fill:'M5 14 13 4l7 7-8 8-7-5z M4 21h17',settings:'M5 6h14 M5 12h14 M5 18h14',eye:'M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6 M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',eyeOff:'M3 3l18 18 M10 6c6-2 11 6 11 6s-2 4-5 5 M8 18C4 17 2 12 2 12s1-2 3-4',lock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4',unlock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0',alignLeft:'M4 4v16 M7 7h13 M7 12h9 M7 17h13',alignCenter:'M12 3v18 M4 7h16 M7 12h10 M4 17h16',alignJustify:'M4 5h16 M4 10h16 M4 15h16 M4 20h16',alignRight:'M20 4v16 M4 7h13 M8 12h9 M4 17h13',alignTop:'M3 4h18 M7 7v13 M12 7v9 M17 7v13',alignMiddle:'M3 12h18 M7 4v16 M12 7v10 M17 4v16',alignBottom:'M3 20h18 M7 4v13 M12 8v9 M17 4v13'};
+const iconPaths={textFit:'M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5 M8 8h8 M12 8v8',text:'M4 5h16 M12 5v15 M8 20h8',image:'M3 4h18v16H3z M6 16l5-5 4 3 3-4 3 4 M8 9h.01',rect:'M4 5h16v14H4z',circle:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',triangle:'M12 3 22 21H2z',star:'M12 2 15 9l8 .4-6 5 2 8-7-4.5L5 22l2-8-6-5 8-.4z',hexagon:'M7 3h10l5 9-5 9H7l-5-9z',parallelogram:'M8 4h13l-5 16H3z',edit:'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',font:'M3 19 10 4l7 15 M6 13h9 M18 5h4 M20 5v14',size:'M4 6h16 M12 6v14 M8 20h8',color:'M12 3a9 9 0 1 0 9 9c0-2-2-2-3-1s-3 0-2-2S16 3 12 3z M7 10h.01 M11 7h.01 M16 8h.01',align:'M4 6h16 M4 10h10 M4 14h16 M4 18h10',spacing:'M4 4v16 M20 4v16 M8 9h8 M8 15h8',opacity:'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 2a10 10 0 0 1 0 20z',crop:'M7 3v14a3 3 0 0 0 3 3h11 M3 7h14a3 3 0 0 1 3 3v11',replace:'M4 6h16v13H4z M4 15l5-5 4 4 3-3 4 5 M8 9h.01',stroke:'M3 12h18 M12 3v18',round:'M3 21V10a7 7 0 0 1 7-7h11',layers:'M4 7l8-4 8 4-8 4z M4 12l8 4 8-4 M4 17l8 4 8-4',duplicate:'M8 7h12v14H8z M4 17V3h13',delete:'M4 7h16 M9 7V4h6v3 M7 7l1 14h8l1-14',back:'M19 12H5m7-7-7 7 7 7',position:'M12 2v20 M2 12h20 M8 6l4-4 4 4 M8 18l4 4 4-4',more:'M5 12h.01 M12 12h.01 M19 12h.01',fill:'M5 14 13 4l7 7-8 8-7-5z M4 21h17',settings:'M5 6h14 M5 12h14 M5 18h14',eye:'M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6 M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',eyeOff:'M3 3l18 18 M10 6c6-2 11 6 11 6s-2 4-5 5 M8 18C4 17 2 12 2 12s1-2 3-4',lock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4',unlock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0',alignLeft:'M4 4v16 M7 7h13 M7 12h9 M7 17h13',alignCenter:'M12 3v18 M4 7h16 M7 12h10 M4 17h16',alignJustify:'M4 5h16 M4 10h16 M4 15h16 M4 20h16',alignRight:'M20 4v16 M4 7h13 M8 12h9 M4 17h13',alignTop:'M3 4h18 M7 7v13 M12 7v9 M17 7v13',alignMiddle:'M3 12h18 M7 4v16 M12 7v10 M17 4v16',alignBottom:'M3 20h18 M7 4v13 M12 8v9 M17 4v13'};
 iconPaths.folder='M3 8V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8h18';
 iconPaths.chevronRight='M9 6l6 6-6 6';
 iconPaths.chevronDown='M6 9l6 6 6-6';
@@ -900,7 +901,7 @@ function refreshInspector(){
  if(e.type==='raster')s+=propertySection('Растровый слой',`<label>Цвет заливки<input type="color" id="rasterFillColor" value="${html(e.rasterFillColor||'#7457ed')}"></label><button class="linebtn wide" type="button" id="rasterFillAction">Залить ${app.pixelSelection?'выделение':'растровый слой'} цветом</button><div class="ins-caption">Растровая заливка сохраняется в этом же слое. Последующие мазки кисти не создают новые слои.</div>`,'fill');
  if(e.type==='vector')s+=propertySection('Библиотека фигур','<button class="linebtn wide" data-action="saveShape">＋ Сохранить в Фигуры</button>','more');
  if(e.type==='text'){
-  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${fontVariantField(e)}${fontSizeField(e)}</div><div class="cols2">${lineHeightField(e)}${letterSpacingField(e)}</div>${textDecorationControls()}${baselineShiftControls(e)}${textCaseControls(e)}${alignBar('text')}${(!e.textMode||e.textMode==='horizontal')?`<label class="text-auto-font"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Подбирать размер шрифта под рамку</span></label>`:''}<button class="linebtn wide" data-action="fonts">${uiIcon('font')} Загрузить свой шрифт</button><div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
+  s+=propertySection('Типографика',`${fontSelectControl(e)}<div class="cols2">${fontVariantField(e)}${fontSizeField(e)}</div><div class="cols2">${lineHeightField(e)}${letterSpacingField(e)}</div>${textDecorationControls(e)}${baselineShiftControls(e)}${textCaseControls(e)}${alignBar('text')}<div class="ins-caption">Дважды нажми на текст, чтобы изменить его прямо на холсте</div>`,'font');
   if(underlineDesktop())s+=propertySection('Списки',paragraphListControls(e),'align');
   s+=propertySection('Заливка',fillRow('Заливка текста','fill',e.fillType==='solid'?e.textColor:e.fill,e.fillType||'solid'),'fill');
  }else{
@@ -944,7 +945,7 @@ function relocateMobileHistory(){
 
 function showInspector(mode='settings'){if(matchMedia('(max-width:760px)').matches&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(matchMedia('(max-width:760px)').matches){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
 function hideInspector(){closeListStylePanel();closeUnderlinePanel();cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
-function changeProperty(key,val,final=false){if(rejectMobileTextTarget(key))return;if(styleInlineSelection(key,val,final)||styleInlineLayer(key,val,final))return;if(app.wysiwyg&&!fallbackInlineWysiwyg('Форматирование'))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity','strokeWidth','stroke','strokeStyle','strokeOpacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='strokeWidth')n=Math.max(0,n);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(e.type==='text'&&['strokeWidth','stroke'].includes(key))restoreTextRuns(e,applyTextStyle(e,0,e.text.length,{[key]:null}).textRuns);if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(['strokeWidth','stroke'].includes(key))restoreTextRuns(other,applyTextStyle(other,0,other.text.length,{[key]:null}).textRuns);if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)&&autoFitTextFont(e)&&app.editingId===e.id)positionInlineText();if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
+function changeProperty(key,val,final=false){if(rejectMobileTextTarget(key))return;if(styleInlineSelection(key,val,final)||styleInlineLayer(key,val,final))return;if(app.wysiwyg&&!fallbackInlineWysiwyg('Форматирование'))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity','strokeWidth','stroke','strokeStyle','strokeOpacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='strokeWidth')n=Math.max(0,n);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(e.type==='text'&&['strokeWidth','stroke'].includes(key))restoreTextRuns(e,applyTextStyle(e,0,e.text.length,{[key]:null}).textRuns);if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(['strokeWidth','stroke'].includes(key))restoreTextRuns(other,applyTextStyle(other,0,other.text.length,{[key]:null}).textRuns);if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)){const targets=multiText?picked():[e];for(const text of targets)if(autoFitTextFont(text,{preserveSizeBase:true})&&app.editingId===text.id)positionInlineText();if(!multiText)syncTextAutoFontControls(e)}if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
 function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;if(['fontSize','letterSpacing','lineHeight','strokeWidth'].includes(t.dataset.key)&&String(t.value).trim()==='')return;const editedValue=t.value;inspectorEditingControl=t;try{changeProperty(t.dataset.key,editedValue,final)}finally{inspectorEditingControl=null}if(final&&['lineHeight','strokeWidth','strokeStyle'].includes(t.dataset.key))syncInspectorFontFamily();if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
 $('#inspector').addEventListener('change',e=>{if(e.target.dataset.clipCheckbox){const elem=app.doc.elements.find(x=>x.id===e.target.dataset.clipCheckbox);if(elem){elem.clipped=!e.target.checked;toggleClip(elem.id)}refreshInspector()}});
 $('#inspector').addEventListener('change',ev=>{if(ev.target.matches('[data-text-auto-font]'))setTextAutoFont(ev.target.checked)});
@@ -957,7 +958,7 @@ function applyFontFamily(family){if(rejectMobileTextTarget('fontFamily'))return;
  if(styleInlineSelection('fontFamily',family,true)){refreshInspector();refreshMobileTools();if(!app.wysiwyg)restoreInlineCaret();return}
  if(app.wysiwyg?.applyLayerStyle({fontFamily:family,fontWeight:weight,fontStyle:style},{key:'fontFamily',final:true})){refreshInspector();refreshMobileTools();return;}
  if(app.wysiwyg&&!fallbackInlineWysiwyg('Шрифт слоя'))return;
- for(const e of es){e.fontFamily=family;e.fontWeight=weight;e.fontStyle=style}
+ for(const e of es){e.fontFamily=family;e.fontWeight=weight;e.fontStyle=style;autoFitTextFont(e,{preserveSizeBase:true})}
  commit();refreshInspector();refreshMobileTools();if(app.editingId)restoreInlineCaret();toast('Шрифт: '+family);
 }
 $('#inspector').addEventListener('click',ev=>{
@@ -1180,7 +1181,7 @@ const textFitContext=document.createElement('canvas').getContext('2d');
 const richTextEngine=createRichTextLayoutEngine(document.createElement('canvas').getContext('2d'),document.fonts);
 function mixedTextLayout(e){
  const preview=!pngRendering&&app.fontPreview?.ids?.includes(e.id)?app.fontPreview:null;
- const sample=preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e;
+ const sample=richTextEngine.displaySample(preview?{...e,fontFamily:preview.family,fontWeight:preview.weight,fontStyle:preview.style}:e);
  return sample.textAlign==='justify'?richTextEngine.layoutJustified(sample):richTextEngine.layout(sample);
 }
 // The editable surface projects the same positioned rows as Canvas/PNG.
@@ -1197,11 +1198,18 @@ function autoFitTextFont(e,{preserveSizeBase=false}={}){
  if(!e?.autoFontSize||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||!String(e.text||'').length)return false;
  const before=e.fontSize,baseBefore=e.textRunsBaseFontSize;
  retainRichTextSizeBase(e);
+ if(supportsHorizontalTextLayout(e))e.fontSize=richTextEngine.fitFontSize(e);
+ else e.fontSize=legacyAutoFitTextFont(e);
+ if(preserveSizeBase&&before===e.fontSize&&baseBefore!==e.textRunsBaseFontSize){
+  if(baseBefore===undefined)delete e.textRunsBaseFontSize;
+  else e.textRunsBaseFontSize=baseBefore;
+ }
+ return before!==e.fontSize;
+}
+function legacyAutoFitTextFont(e){
  const lh=Math.max(.5,Number(e.lineHeight)||1.15),maxW=Math.max(10,e.w)-1,maxH=Math.max(1,e.h)-1;
  const fits=size=>{
   const sample={...e,fontSize:size};
-  // Fit natural advances: stretched rows and hanging source spaces are not overflow.
-  if(supportsHorizontalTextLayout(sample)){const layout=richTextEngine.layout(sample);return layout.height<=maxH&&layout.width<=maxW}
   textFitContext.font=fontString(sample);
   const lines=wrapLines(textFitContext,sample);
   return lines.length*size*lh<=maxH&&lines.every(line=>measuredTextWidth(textFitContext,sample,line)<=maxW);
@@ -1209,12 +1217,7 @@ function autoFitTextFont(e,{preserveSizeBase=false}={}){
  let low=1,high=500;
  // A minimum of 1px is retained when the box cannot contain all the text.
  if(fits(1))while(low<high){const mid=Math.ceil((low+high)/2);if(fits(mid))low=mid;else high=mid-1}
- e.fontSize=low;
- if(preserveSizeBase&&before===e.fontSize&&baseBefore!==e.textRunsBaseFontSize){
-  if(baseBefore===undefined)delete e.textRunsBaseFontSize;
-  else e.textRunsBaseFontSize=baseBefore;
- }
- return before!==e.fontSize;
+ return low;
 }
 function fitTextBoxToContent(e){
  if(!e||e.type!=='text'||(e.textMode&&e.textMode!=='horizontal')||!e.text)return false;
@@ -1222,26 +1225,30 @@ function fitTextBoxToContent(e){
  // enormously wide single lines. Grow only if a single glyph cannot fit.
  textFitContext.font=fontString(e);
  // Size from natural rows, never from justify's expanded/hanging row.width.
- const mixed=supportsHorizontalTextLayout(e)?richTextEngine.layout(e):null,lines=mixed?null:wrapLines(textFitContext,e);
+ const sample=richTextEngine.displaySample(e);
+ const mixed=supportsHorizontalTextLayout(e)?richTextEngine.layout(sample):null,lines=mixed?null:wrapLines(textFitContext,e);
  const naturalWidth=mixed?Math.max(12,Math.ceil(mixed.width+2)):Math.max(12,...lines.map(line=>Math.ceil(measuredTextWidth(textFitContext,e,line)+2)));
- const nextW=Math.max(12,naturalWidth+2),nextSample={...e,w:nextW};
+ const nextW=Math.max(12,naturalWidth+2),nextSample={...sample,w:nextW,autoFontSize:false};
  const nextH=mixed?Math.max(12,Math.ceil(richTextEngine.layout(nextSample).height+2)):Math.max(12,Math.ceil(wrapLines(textFitContext,nextSample).length*(e.fontSize||24)*(e.lineHeight||1.15)+2));
  const oldW=e.w,oldH=e.h;if(nextW===oldW&&nextH===oldH)return false;
  if(e.textAlign==='right')e.x+=oldW-nextW;
  else if(e.textAlign==='center')e.x+=Math.round((oldW-nextW)/2);
  if(e.verticalAlign==='bottom')e.y+=oldH-nextH;
  else if(e.verticalAlign==='middle')e.y+=Math.round((oldH-nextH)/2);
+ if(sample!==e){retainRichTextSizeBase(e);e.fontSize=sample.fontSize}
  e.w=nextW;e.h=nextH;e.autoFontSize=false;
  return true;
 }
 function setTextAutoFont(enabled){
  mobileTextFinishGesture();
- if(app.wysiwyg?.applyLayerStyle({autoFontSize:!!enabled},{key:'autoFontSize',final:true})){refreshInspector();refreshMobileTools();return;}
- if(app.wysiwyg&&!fallbackInlineWysiwyg('Автоподбор размера'))return;
  const e=active();if(e?.type!=='text'||isLayerLocked(e)||(e.textMode&&e.textMode!=='horizontal'))return;
+ if(app.wysiwyg?.applyLayerStyle({autoFontSize:!!enabled},{key:'autoFontSize',final:true})){
+  syncTextAutoFontControls(e);syncListStylePanel();refreshMobileTools();return;
+ }
+ if(app.wysiwyg&&!fallbackInlineWysiwyg('Автоподбор размера'))return;
  e.autoFontSize=!!enabled;if(e.autoFontSize)autoFitTextFont(e);
  if(app.editingId===e.id)positionInlineText();
- commit('Автоподбор размера текста');refreshInspector();refreshMobileTools();
+ commit('Автоподбор размера текста');syncTextAutoFontControls(e);refreshMobileTools();
  if(mobileV36Small()&&mobileV36State.tool==='size')mobileV36Render();
 }
 
@@ -2214,8 +2221,7 @@ function startInlineWysiwyg(e){
   available:family=>!v41FontUnavailable(family),
   onChange(){
    // Do not interrupt a focused numeric field or an active color/font picker.
-   const autoBox=$('#inspector [data-text-auto-font]');if(autoBox)autoBox.checked=!!e.autoFontSize;
-   if(e.autoFontSize){const size=$('#inspector [data-key=fontSize]');if(size&&document.activeElement!==size)size.value=String(e.fontSize)}
+   syncTextAutoFontControls(e);
    positionInlineText();syncAutoCardTitle();rememberInlineCaret();syncTextAlignmentButtons();refreshSaveStatus();updateHistoryButtons();paint();
    if(underlinePanel&&underlineOwnerValid())syncUnderlinePanel();
   },
@@ -2281,11 +2287,12 @@ function openInlineText(){const e=active();if(!e||e.type!=='text'||isLayerLocked
  // for replacement. Never collapse that selection in this deferred open frame.
  if(document.activeElement!==editor){editor.focus();editor.setSelectionRange(editor.value.length,editor.value.length)}
  v41KeyboardViewport();requestAnimationFrame(revealInlineText)})}
-function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');
+function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editingId),editor=$('#inlineText');if(!e)return;editor.style.setProperty('--v41-text-color',e.textColor||e.fill||'#f3f2fc');const host=$('#canvasHost'),hostRect=host.getBoundingClientRect(),canvasRect=canvas.getBoundingClientRect();const parent=editor.offsetParent||host,pr=parent.getBoundingClientRect();const px=(canvasRect.left-pr.left)+(e.x*app.zoom),py=(canvasRect.top-pr.top)+(e.y*app.zoom);editor.style.left=px+'px';editor.style.top=py+'px';editor.style.width=e.w*app.zoom+'px';editor.style.height=Math.max(24,e.h*app.zoom)+'px';editor.style.font=fontString(e).replace(String(e.fontSize||24)+'px',String((e.fontSize||24)*app.zoom)+'px');editor.style.fontFamily='"'+(e.fontFamily||'Arial')+'"';editor.style.fontWeight=e.fontWeight||'400';editor.style.fontSize=e.fontSize*app.zoom+'px';editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)*app.zoom+'px';editor.style.color=e.textColor||'#000';editor.style.textAlign=e.textAlign||'left';editor.style.writingMode=e.textMode==='vertical'?'vertical-lr':'horizontal-tb';editor.style.textOrientation=e.textMode==='vertical'?'upright':'mixed';editor.style.whiteSpace='pre-wrap';editor.style.overflowWrap=e.autoFontSize&&supportsHorizontalTextLayout(e)?'normal':'';editor.style.transform=e.textMode==='vertical'?'none':'rotate('+(e.rotation||0)+'deg)';editor.classList.toggle('vertical-wysiwyg',e.textMode==='vertical');
  if(!e.textMode||e.textMode==='horizontal'){
   editor.style.width=Math.max(1,e.w)+'px';editor.style.height=Math.max(1,e.h)+'px';
   editor.style.minWidth='0';editor.style.minHeight='0';
-  editor.style.font=fontString(e);editor.style.fontKerning='normal';
+  const display=editor.classList.contains('hidden')?e:richTextEngine.displaySample(e);
+  editor.style.font=fontString(display);editor.style.fontKerning='normal';
   editor.style.lineHeight=String(e.lineHeight||1.15);editor.style.letterSpacing=(e.letterSpacing||0)+'px';
   editor.style.transformOrigin='0 0';
   // Translate around the layer centre before applying rotation and document zoom.
@@ -2553,10 +2560,20 @@ function decorationButton(key,mobile=false){
  const state=textDecorationState(key),label=key==='underline'?'Подчёркивание':'Зачёркивание',letter=key==='underline'?'<u>U</u>':'<s>S</s>';
  return `<button type="button" class="${mobile?'mp-choice mp-format-btn':'linebtn text-decoration-btn'} ${state===true?'active':''} ${state==='mixed'?'mixed':''}" data-text-decoration="${key}" ${mobile?`data-mp-format="${key==='underline'?'underline':'strike'}"`:''} aria-label="${label}" aria-pressed="${state}" title="${label}${state==='mixed'?' · Mixed':''}">${letter}<span class="decoration-mixed" aria-hidden="true">${state==='mixed'?'Mixed':''}</span></button>`;
 }
-function textDecorationControls(){
+function syncTextAutoFontControls(e){
+ const toggle=$('#inspector [data-text-auto-font]');
+ if(toggle)toggle.checked=!!e.autoFontSize;
+ if(e.autoFontSize){
+  const size=$('#inspector [data-key=fontSize]');
+  if(size&&document.activeElement!==size)size.value=String(e.fontSize);
+ }
+}
+function textDecorationControls(e){
  const enabled=canOpenUnderline();
  const trigger=underlineDesktop()?`<button type="button" class="linebtn underline-settings" data-underline-open aria-label="Настройки подчёркивания" aria-haspopup="dialog" aria-expanded="${!!underlinePanel}" aria-controls="underlinePanel" ${enabled?'':'disabled'} title="${enabled?'Настройки подчёркивания':underlineUnavailable}">${uiIcon('chevronDown')}</button>`:'';
- return `<div class="action-row text-decoration-controls">${decorationButton('underline')}${trigger}${decorationButton('strikethrough')}</div>`;
+ const label='Автоподбор размера текста под рамку';
+ const auto=e?`<label class="linebtn text-auto-font" title="${label}"><input type="checkbox" data-text-auto-font aria-label="${label}" ${e.autoFontSize?'checked':''} ${!supportsHorizontalTextLayout(e)||isLayerLocked(e)?'disabled':''}>${uiIcon('textFit')}</label>`:'';
+ return `<div class="action-row text-decoration-controls">${decorationButton('underline')}${trigger}${decorationButton('strikethrough')}${auto}</div>`;
 }
 let underlinePanel=null;
 const underlineStyles={solid:'Сплошное',dotted:'Точечное',wavy:'Волнистое'};
@@ -3471,6 +3488,7 @@ document.addEventListener('pointerdown',ev=>{if(!app.editingId)return;app.inline
 document.addEventListener('mousedown',ev=>{
  if(!app.editingId||ev.button!==0||!ev.target.closest(inlineFormattingRoots))return;
  app.inlineToolPointer=true;rememberInlineCaret();
+ if(document.activeElement===$('#inlineWysiwyg')&&ev.target.matches('#inspector [data-text-auto-font]')){ev.preventDefault();return;}
  // Buttons can operate on the focused selection. Inputs/selects must retain
  // native focus, keyboard and text-selection behavior on desktop and Android.
  if((!mobileV36Small()&&document.activeElement===$('#inlineText')||app.wysiwyg&&(active()?.textAlign==='justify'&&ev.target.closest('[data-fill-open]')||ev.target.closest('[data-baseline-shift],[data-text-case],[data-list-kind],[data-list-settings],[data-list-marker],[data-text-decoration],[data-align=left],[data-align=hcenter],[data-align=right],[data-align=justify],[data-align=top],[data-align=vcenter],[data-align=bottom]')))&&ev.target.closest('button'))ev.preventDefault();
@@ -4445,6 +4463,7 @@ function sfntNames(buffer){try{const d=new DataView(buffer),len=d.byteLength;if(
  for(let i=0;i<count;i++){const p=offset+6+i*12;if(p+12>len)break;const platform=d.getUint16(p),nameId=d.getUint16(p+6),n=d.getUint16(p+8),start=storage+d.getUint16(p+10);if(![1,2,16,17].includes(nameId)||start+n>len||names[nameId])continue;let str='';if(platform===0||platform===3){for(let j=0;j+1<n;j+=2)str+=String.fromCharCode(d.getUint16(start+j))}else {for(let j=0;j<n;j++)str+=String.fromCharCode(d.getUint8(start+j))}if(str.trim())names[nameId]=str.trim()}
  return {family:names[16]||names[1],subfamily:names[17]||names[2]};}catch{return{}}}
 async function zipOriginal_importFontFiles(files,fromFolder=false){const list=[...files].filter(file=>/\.(ttf|otf|woff2?)$/i.test(file.name));if(!list.length){toast('В папке нет подходящих шрифтов');return}
+ const loadedFamilies=new Set(),targetDocument=app.doc;
  let added=0,duplicates=0;for(const file of list){try{
  const path=file.webkitRelativePath||'';const folder=file.__importFamily||(path?path.split('/')[0]:'');
  const guessed=inferFontMeta(file.name,fromFolder?folder:'');const names=sfntNames(await file.arrayBuffer());
@@ -4453,8 +4472,21 @@ async function zipOriginal_importFontFiles(files,fromFolder=false){const list=[.
  const weight=guessed.weight!==400?guessed.weight:(names.subfamily?styleInfo.weight:guessed.weight),style=guessed.style==='italic'?'italic':(names.subfamily?styleInfo.style:guessed.style);
  if(app.fonts.some(f=>normaliseFont(f).family.toLowerCase()===family.toLowerCase()&&f.weight===weight&&f.style===style)){duplicates++;continue}
  const entry={id:uid(),name:file.name.replace(/\.(ttf|otf|woff2?)$/i,''),family,weight,style,data:await readDataURL(file)};
- await loadFontFace(entry);await dbOp('fonts','readwrite',s=>s.put(entry));app.fonts.push(entry);added++;
+ const loaded=await loadFontFace(entry);await dbOp('fonts','readwrite',s=>s.put(entry));app.fonts.push(entry);added++;
+ if(loaded)loadedFamilies.add(family.toLowerCase());
  }catch(err){console.warn('Шрифт пропущен:',file.name,err)}}
+ if(loadedFamilies.size&&targetDocument&&app.doc===targetDocument&&!homeVisible()){
+  richTextEngine.invalidate();
+  let changed=false;
+  for(const e of app.doc.elements){
+   if(e.type!=='text'||!e.autoFontSize||!e.text||isLayerLocked(e)||!supportsHorizontalTextLayout(e))continue;
+   if(![e.fontFamily,...(e.textRuns||[]).map(run=>run.style?.fontFamily)].some(name=>name&&loadedFamilies.has(name.toLowerCase())))continue;
+   if(app.wysiwyg?.owns(e)){
+    if(app.wysiwyg.clean())app.wysiwyg.applyLayerStyle({},{key:'fontFamily',final:true});
+   }else if(autoFitTextFont(e,{preserveSizeBase:true}))changed=true;
+  }
+  if(changed)commit('Автоподбор после загрузки шрифтов');
+ }
  renderFonts();refreshInspector();paint();toast(`Загружено начертаний: ${added}${duplicates?`; пропущено дублей: ${duplicates}`:''}`);
 }
 async function readDataURL(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)})}
@@ -4570,7 +4602,7 @@ function alignPicked(action,scope='all'){
    if(!fallbackInlineWysiwyg('WYSIWYG для выравнивания по ширине отключён в текущем режиме'))return;
   }
   if(app.inlineSession)recordInlineSession();
-  for(const text of texts)text[key]=value;
+  for(const text of texts){text[key]=value;if(horizontal&&supportsHorizontalTextLayout(text))autoFitTextFont(text,{preserveSizeBase:true})}
   if(app.inlineSession){app.inlineSession.formatted=true;recordInlineSession();positionInlineText();restoreInlineCaret();paint();syncTextAlignmentButtons();updateHistoryButtons();}
   else {commit();refreshInspector();}
   return;
@@ -4596,7 +4628,7 @@ document.addEventListener('contextmenu',ev=>{const layer=ev.target.closest('[dat
 function bindInspectorNumericEvents(root){
 // Figma-style Alt + drag on numeric fields (horizontal scrub).
 root.addEventListener('pointerdown',ev=>{const field=ev.target.closest('input[type="number"]');if(!field||!ev.altKey||ev.button!==0)return;
- ev.preventDefault();const base=Number(field.value),step=Number(field.step)||1;if(!Number.isFinite(base))return;
+ ev.preventDefault();const base=Number(field.value),step=Number(field.getAttribute('data-step-amount'))||Number(field.step)||1;if(!Number.isFinite(base))return;
  app.scrub={field,x:ev.clientX,base,step,pointerId:ev.pointerId};field.setPointerCapture(ev.pointerId);field.classList.add('scrubbing')
 });
 root.addEventListener('pointermove',ev=>{const a=app.scrub;if(!a||ev.pointerId!==a.pointerId)return;const delta=ev.clientX-a.x;let n=a.base+Math.round(delta/4)*a.step;const min=Number(a.field.min),max=Number(a.field.max);
@@ -4643,7 +4675,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&regionEffectsRequest()){e.preventDefault();cancelRegionEffects();if(matchMedia('(max-width:760px)').matches)mobileV36Close();refreshInspector();return}
  if(input)return;
  if(e.key==='Escape'&&app.inkDraft){e.preventDefault();inkCancel();return}
- if(e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]'))return;
+ if(e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-text-auto-font],[data-align],[data-underline-open],#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]'))return;
  if(e.code==='Space'){e.preventDefault();closeToolPopovers();app.spaceDown=true;$('#stageScroller').classList.add('hand-mode');toolDockState();return}
  if(!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.repeat){
   if(e.code==='KeyV'){e.preventDefault();activateMove();return}
@@ -4671,7 +4703,7 @@ window.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&app.pixelSelection){e.preventDefault();clearPixelSelection();return}if(e.key==='Escape'&&app.penDraft){e.preventDefault();app.penDraft=null;app.drag=null;updateHistoryButtons();paint();return}if(e.key==='Escape'&&app.penTool){e.preventDefault();setPenMode(false);return}if(e.key==='Escape'){hideContextMenu();if(app.cropMode)exitCrop(false);else if(app.groupIsolation){const el=app.doc.elements.find(x=>x.id===app.groupIsolation);setSelected(el?.groupId?groupMembers(el.groupId).map(x=>x.id):[])}else {closeDialogs();hideInspector();setSelected([])}return}
  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)&&picked().length){e.preventDefault();const st=e.shiftKey?10:1;for(const el of picked().filter(v=>!isLayerLocked(v))){if(e.key==='ArrowLeft')el.x-=st;if(e.key==='ArrowRight')el.x+=st;if(e.key==='ArrowUp')el.y-=st;if(e.key==='ArrowDown')el.y+=st}commit();refreshInspector()}
 });
-window.addEventListener('keyup',e=>{if(e.key==='Alt'){app.altDown=false;document.body.classList.remove('alt-held');paint()}if(e.code==='Space'&&!e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-align],[data-underline-open],#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]')){e.preventDefault();app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()}});
+window.addEventListener('keyup',e=>{if(e.key==='Alt'){app.altDown=false;document.body.classList.remove('alt-held');paint()}if(e.code==='Space'&&!e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-text-auto-font],[data-align],[data-underline-open],#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]')){e.preventDefault();app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()}});
 window.addEventListener('blur',()=>{document.body.classList.remove('alt-held');app.altDown=false;app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()});
 window.addEventListener('resize',()=>{if(!matchMedia('(max-width:760px)').matches&&!app.editingId&&!app.drag&&!homeVisible())fitCanvas()});
 window.addEventListener('beforeunload',()=>{if(app.wysiwyg)closeInlineText();if(app.doc)flushSave()});
@@ -6114,6 +6146,18 @@ mobileV36.addEventListener('keydown',ev=>{
 // the next arrow key moves the selected layer rather than stepping the input.
 const numericEditLastValue=new WeakMap();
 // Step mismatch is intentional: manual numeric values may be fractional even when slider/arrow steps are whole numbers.
+// Manual size controls step by 1px from the current (possibly fractional)
+ // value. Auto-fit still uses its own independent 0.1px search grid.
+function stepInspectorFontSize(field,direction){
+ const layer=active()||picked()[0];
+ if(!layer||field.disabled||field.readOnly)return false;
+ const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:
+  (inlineStyleRange()?inlineSelectionStyle():richTextSpans(layer)[0]?.style||resolveRichTextStyle(layer)).fontSize;
+ if(!Number.isFinite(base))return false;
+ const next=clamp(base+direction,Number(field.min)||1,Number(field.max)||100000);
+ field.value=String(Number(next.toFixed(8)));
+ return true;
+}
 const numericEditValid=field=>field.value.trim()!==''&&Number.isFinite(field.valueAsNumber)&&!field.validity.badInput&&!field.validity.rangeUnderflow&&!field.validity.rangeOverflow;
 for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),mobileV36]){
  root.addEventListener('focusin',ev=>{const field=ev.target;if(field.matches?.('input[type="number"]'))numericEditLastValue.set(field,field.value)});
@@ -6137,6 +6181,15 @@ for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),
  root.addEventListener('keydown',ev=>{
   const field=ev.target;
   if(ev.isComposing||!field.matches?.('input[type="number"]'))return;
+  if(field.dataset.key==='fontSize'&&field.hasAttribute('data-step-amount')&&['ArrowUp','ArrowDown'].includes(ev.key)){
+   ev.preventDefault();ev.stopPropagation();
+   const previous=field.value;
+   if(stepInspectorFontSize(field,ev.key==='ArrowUp'?1:-1)&&field.value!==previous){
+    field.dispatchEvent(new Event('input',{bubbles:true}));
+    if(field.isConnected)field.dispatchEvent(new Event('change',{bubbles:true}));
+   }
+   return;
+  }
   if(field.dataset.key==='lineHeight'&&['ArrowUp','ArrowDown'].includes(ev.key)&&field.value===''&&active()?.type==='text'){
    ev.preventDefault();ev.stopPropagation();
    const base=inlineStyleRange()?inlineSelectionStyle().lineHeight:resolveRichTextStyle(active()).lineHeight;
@@ -6192,7 +6245,9 @@ document.addEventListener('click',ev=>{
  try{
   // Mixed range typography starts at the effective first character, not empty -> 0.
   // Add the step directly so a fractional origin is not snapped to a grid.
-  if(field.id==='cpAlphaInput'&&pickerRangeAlpha()&&inlineStyleRange()){
+  if(field.dataset.key==='fontSize'&&field.hasAttribute('data-step-amount')){
+   if(!stepInspectorFontSize(field,button.dataset.numDirection==='up'?1:-1))return;
+  }else if(field.id==='cpAlphaInput'&&pickerRangeAlpha()&&inlineStyleRange()){
    const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:inlineSelectionStyle()[pickerAlphaKey()];
    field.value=String(clamp(base+(button.dataset.numDirection==='up'?1:-1)*(Number(field.step)||1),0,100));
   }else if((field.dataset.key==='letterSpacing'&&inlineStyleRange())||(field.dataset.key==='lineHeight'&&active()?.type==='text')||(field.dataset.key==='strokeWidth'&&(active()||picked()[0])?.type==='text')){

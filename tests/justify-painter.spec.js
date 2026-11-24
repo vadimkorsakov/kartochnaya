@@ -109,7 +109,7 @@ test('justify textarea fallback, undo/redo, closing painter and zoom/mobile expo
 test('real Canvas geometry: hanging spaces cannot shrink auto-fit or enlarge content sizing',async({page},info)=>{
  await seed(page);
  const source=await fs.readFile(path.join(__dirname,'../src/editor.js'),'utf8');
- const fit=source.slice(source.indexOf('function autoFitTextFont('),source.indexOf('function setTextAutoFont('));
+  const fit=source.slice(source.indexOf('function autoFitTextFont('),source.indexOf('function setTextAutoFont('));
  const results=await page.evaluate(async fit=>{
   const {createRichTextLayoutEngine,supportsHorizontalTextLayout,retainRichTextSizeBase,richTextFont,resolveRichTextStyle}=await import('/__shipping/render/rich-text-layout.mjs');
   const c=document.createElement('canvas').getContext('2d'),engine=createRichTextLayoutEngine(c,document.fonts);
@@ -118,9 +118,13 @@ test('real Canvas geometry: hanging spaces cannot shrink auto-fit or enlarge con
   for(const text of ['AA   BB CC DD EE','AA BB\n\nCC DD\r\n','A\tB C\u00a0D EE','ABCDEFGHIJKLMNO','AV fi é 👩‍💻 AA BB'])for(const letterSpacing of [-1,0,2]){
    const e={type:'text',text,w:105,h:180,fontFamily:'Arial',fontSize:20,lineHeight:1.2,letterSpacing,autoFontSize:true,textAlign:'justify'},before=structuredClone(e);
    const natural=engine.layout({...e,textAlign:'left'}),projected=engine.layoutJustified(e);
+   const manual=engine.layoutJustified({...e,autoFontSize:false});
    const left={...e,textAlign:'left'};run.autoFitTextFont(left);run.autoFitTextFont(e);
    const sized={...before},sizedLeft={...before,textAlign:'left'};run.fitTextBoxToContent(sized);run.fitTextBoxToContent(sizedLeft);
-   cases.push({text,letterSpacing,fontSize:e.fontSize,leftSize:left.fontSize,box:[sized.w,sized.h],leftBox:[sizedLeft.w,sizedLeft.h],hanging:projected.rows.some(r=>r.width>before.w+.001&&Math.abs(r.justification.contentWidth-before.w)<.001),wraps:projected.rows.map(r=>[r.start,r.end]),naturalWraps:natural.rows.map(r=>[r.start,r.end]),sourcePreserved:e.text===before.text});
+   const hanging=row=>row.width>before.w+.001&&Math.abs(row.justification.contentWidth-before.w)<.001;
+   cases.push({text,letterSpacing,fontSize:e.fontSize,leftSize:left.fontSize,box:[sized.w,sized.h],leftBox:[sizedLeft.w,sizedLeft.h],
+    manualHanging:manual.rows.some(hanging),autoHanging:projected.rows.some(hanging),hidden:projected.rows.some(r=>r.hiddenSeparator),
+    wraps:projected.rows.map(r=>[r.start,r.end]),naturalWraps:natural.rows.map(r=>[r.start,r.end]),sourcePreserved:e.text===before.text});
   }
   c.font='20px Arial';c.fontKerning='normal';c.letterSpacing='0px';const boundary=c.measureText('AA BB CC').width;
   const edge=[-.1,0,.1].map(d=>engine.layoutJustified({text:'AA BB CC',w:boundary+d,h:100,fontSize:20}).rows.length);
@@ -133,10 +137,49 @@ test('real Canvas geometry: hanging spaces cannot shrink auto-fit or enlarge con
   return {cases,boundary,edge,listFit:[items.fontSize,spaced.fontSize],listHeightIncrease:sizedSpaced.h-sized.h};
  },fit);
  for(const c of results.cases){expect(c.fontSize).toBe(c.leftSize);expect(c.box).toEqual(c.leftBox);expect(c.wraps).toEqual(c.naturalWraps);expect(c.sourcePreserved).toBe(true)}
- expect(results.cases.some(c=>c.hanging)).toBe(true);expect(results.edge[0]).toBeGreaterThan(results.edge[1]);expect(results.edge[1]).toBe(results.edge[2]);
+ expect(results.cases.some(c=>c.manualHanging)).toBe(true);
+ expect(results.cases.some(c=>c.hidden)).toBe(true);
+ expect(results.cases.some(c=>c.autoHanging)).toBe(false);
+ expect(results.edge[0]).toBeGreaterThan(results.edge[1]);expect(results.edge[1]).toBe(results.edge[2]);
  expect(results.listFit[1]).toBeLessThan(results.listFit[0]);
  expect(results.listHeightIncrease).toBe(24);
  await info.attach('geometry.json',{body:JSON.stringify(results,null,2),contentType:'application/json'});
+});
+
+test('real Canvas auto-fit agrees with an exhaustive scan of tenths',async({page},info)=>{
+ await seed(page);
+ const results=await page.evaluate(async()=>{
+  const {createRichTextLayoutEngine}=await import('/__shipping/render/rich-text-layout.mjs');
+  const engine=createRichTextLayoutEngine(document.createElement('canvas').getContext('2d'),document.fonts);
+  const paragraph='При вставке большого объёма текста автоматический подбор иногда выбирает неоправданно маленький размер шрифта. В нижней части текстовой рамки остаётся много свободного места.';
+  const text=Array(5).fill(paragraph).join('\n\n');
+  const list='Пункт 1\nДлинный второй пункт\nТретий пункт';
+  const paragraphRuns=[0,8,29].map((start,index)=>({start,style:{
+   listKind:'ordered',...(index===0?{listStart:9}:{}),listIndent:10,listGap:7,listItemSpacing:9,listMarkerScale:140,
+  }}));
+  const examples=[
+   {text,w:120,h:490,max:56},
+   {text,w:220,h:490,max:56},
+   {text,w:360,h:490,max:56},
+   {text:'Тест автоматического подбора размера текста.',w:180,h:110,max:100},
+   {text:list,w:133,h:105,max:106,paragraphRuns,textAlign:'justify',
+    textRuns:[{start:11,end:18,style:{fontSize:30,fontWeight:'700',baselineShift:'super'}}]},
+  ];
+  return examples.map(({max,...example})=>{
+   const layer={type:'text',autoFontSize:true,fontFamily:'Arial',fontSize:20,textRunsBaseFontSize:20,lineHeight:1.1,...example};
+   const layout=fontSize=>layer.textAlign==='justify'?engine.layoutJustified({...layer,fontSize}):engine.layout({...layer,fontSize});
+   let expected=1;
+   for(let tick=10;tick<=max*10;tick++)if(layout(tick/10).fits)expected=tick/10;
+   const actual=engine.fitFontSize(layer), block=layout(actual);
+   return {w:layer.w,h:layer.h,actual,expected,height:block.height,rows:block.rows.length,nextFits:layout((Math.round(actual*10)+1)/10).fits};
+  });
+ });
+ for(const item of results){
+  expect(item.actual,JSON.stringify(item)).toBe(item.expected);
+  expect(item.height).toBeLessThanOrEqual(item.h);
+  expect(item.nextFits).toBe(false);
+ }
+ await info.attach('autofit-oracle.json',{body:JSON.stringify(results,null,2),contentType:'application/json'});
 });
 
 test('justify retains contextual glyph origin across stroke and opacity run boundaries',async({page})=>{

@@ -15,6 +15,8 @@ export const usesRichTextLayout = e => supportsHorizontalTextLayout(e) &&
 
 const positive = (n, fallback) => Number.isFinite(Number(n)) && Number(n) > 0 ? Number(n) : fallback;
 const spacing = n => Number.isFinite(Number(n)) ? Number(n) : 0;
+const fitEpsilon = 1e-7;
+const breakableWhitespace = /^[\u1680\u2000-\u2006\u2008-\u200a\u205f\u3000]+$/u;
 const genericFamilies = new Set(['serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui', 'ui-serif', 'ui-sans-serif', 'ui-monospace', 'ui-rounded', 'emoji', 'math', 'fangsong']);
 // Gecko Canvas quantizes font sizes to seven significant binary bits while
 // CSS retains finer sizes (28.3125 -> 28.25, 39.75 -> 40, 129 -> 128).
@@ -97,7 +99,8 @@ export function createRichTextLayoutEngine(context, fontSet) {
       });
     }finally{context.restore();}
   }
-  const layouts = new Map(), metrics = new Map(), caseProjections = new Map();
+  const layouts = new Map(), metrics = new Map(), caseProjections = new Map(), sourceClusters = new Map();
+  const displaySizes = new WeakMap(), justifiedLayouts = new WeakMap();
   let fontCount = fontSet?.size;
   const invalidate = () => { layouts.clear(); metrics.clear(); };
   fontSet?.addEventListener('loadingdone', invalidate);
@@ -107,6 +110,8 @@ export function createRichTextLayoutEngine(context, fontSet) {
     if (cache.size >= limit) cache.delete(cache.keys().next().value);
     cache.set(key, value); return value;
   };
+  const segmentsFor = text => sourceClusters.get(text) ??
+    boundedSet(sourceClusters, text, [...segmenter.segment(text)], 16);
   function caseProjectionFor(text, spans) {
     if (!spans.some(span => span.textCase !== 'original')) return null;
     const modes = [];
@@ -135,16 +140,17 @@ export function createRichTextLayoutEngine(context, fontSet) {
       inkDescent: m.actualBoundingBoxDescent ?? m.fontBoundingBoxDescent ?? glyphFontSize(style) * .2,
     }, 4096);
   }
-  function layout(e) {
+  function layout(e, measuring = false) {
     if (fontCount !== fontSet?.size) { invalidate(); fontCount = fontSet?.size; }
     const spans = richTextSpans(e), base = resolveRichTextStyle(e);
     const solid = (e.fillType || 'solid') === 'solid';
     const width = Math.max(1, Number(e.w) || 1), height = Math.max(0, Number(e.h) || 0);
     const horizontal = supportsHorizontalTextLayout(e);
+    const wholeWords = horizontal && e.autoFontSize === true;
     const text = String(e.text ?? '');
     const paragraphRuns = horizontal ? normalizeParagraphRuns(text,e.paragraphRuns) : [];
-    const key = JSON.stringify([spans, base, solid, width, height, e.textAlign, e.verticalAlign, fontSet?.size, horizontal, paragraphRuns]);
-    if (layouts.has(key)) return layouts.get(key);
+    const key = measuring ? null : JSON.stringify([spans, base, solid, width, height, e.textAlign, e.verticalAlign, fontSet?.size, horizontal, wholeWords, paragraphRuns]);
+    if (!measuring && layouts.has(key)) return layouts.get(key);
     // Segment the source as a whole: run boundaries cannot split emoji/combining
     // clusters. If a run starts inside a cluster, its first character owns it.
     const clusters = []; let spanIndex = 0;
@@ -156,10 +162,10 @@ export function createRichTextLayoutEngine(context, fontSet) {
       clusters.push({ text: segment === '\r\n' ? '\n' : segment, start: index, end, style: spans[spanIndex]?.style || base });
     }
     if (projected) for (const part of projected) addCluster(part.projectedText, part.sourceStart, part.sourceEnd);
-    else for (const {segment,index} of segmenter.segment(text)) addCluster(segment,index,index+segment.length);
+    else for (const {segment,index} of segmentsFor(text)) addCluster(segment,index,index+segment.length);
     // Use the same whole-grapheme ownership as glyph painting. A saved run
     // boundary inside a combining/ZWJ cluster cannot paint a partial glyph line.
-    const advancedUnderline = spans.some(({style}) => style.underline && style.underlineDetails);
+    const advancedUnderline = !measuring && spans.some(({style}) => style.underline && style.underlineDetails);
     function collectDecorationSpans(withDetails) {
       const result = [];
       for (const cluster of clusters) {
@@ -173,10 +179,10 @@ export function createRichTextLayoutEngine(context, fontSet) {
       }
       return result;
     }
-    const legacySpans = collectDecorationSpans(false);
+    const legacySpans = !measuring && spans.some(({style}) => style.underline || style.strikethrough) ? collectDecorationSpans(false) : [];
     const underlineSpans = advancedUnderline ? collectDecorationSpans(true) : [];
     const rows = []; let fragments = [], rowWidth = 0, rowStart = 0, emptyStyle = base;
-    let previousDescent = 0, edgeLeading = 0;
+    let previousDescent = 0, edgeLeading = 0, textOverflow = false;
     const baseMarker = {...base, baselineShift:'normal', underline:false, strikethrough:false};
     const paragraphs = paragraphRuns.length ? projectParagraphLists(text, paragraphRuns) : [];
     const columns = new Map();
@@ -205,7 +211,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
     }
     let paragraphIndex = 0;
     const paragraphForRow = () => paragraphs[paragraphIndex];
-    const availableWidth = () => Math.max(1, width - (paragraphForRow()?.hangingIndent ?? 0));
+    const availableWidth = () => Math.max(wholeWords ? 0 : 1, width - (paragraphForRow()?.hangingIndent ?? 0));
     // Decoration and leading boundaries never split glyph painting (including ligatures).
     const styleKey = ({ underline, underlineDetails, strikethrough, lineHeight, ...paint }) => {
       if (!solid) delete paint.fillOpacity;
@@ -216,15 +222,23 @@ export function createRichTextLayoutEngine(context, fontSet) {
     // split preserves the advance of the full contiguous font/spacing sequence,
     // while keeping separate fragments for per-range drawing and ink bounds.
     const geometryKey = ({ textColor, fillOpacity, strokeWidth, stroke, strokeOpacity, strokeStyle, underline, underlineDetails, strikethrough, lineHeight, ...geometry }) => JSON.stringify(geometry);
+    const styleKeys = new WeakMap();
+    function keysFor(style) {
+      let keys = styleKeys.get(style);
+      if (!keys) {
+        keys = {id:styleKey(style), geometry:geometryKey(style)};
+        styleKeys.set(style, keys);
+      }
+      return keys;
+    }
     const requiredHeight = part => part.requiredHeight ?? part.style.fontSize * part.style.lineHeight;
     function append(parts, cluster) {
-      const last = parts.at(-1), id = styleKey(cluster.style);
-      const geometry = geometryKey(cluster.style);
+      const last = parts.at(-1), {id, geometry} = keysFor(cluster.style);
       const sameGeometry = last?.geometry === geometry;
       const previousShapeWidth = sameGeometry ? last.shapeWidth : 0;
       const shapeText = sameGeometry ? last.shapeText + cluster.text : cluster.text;
       const shapeWidth = measure(shapeText, cluster.style).width;
-      if (last?.id === id) {
+      if (last?.id === id && !last.tabs && !cluster.tabs) {
         const next = { ...last, text: last.text + cluster.text, end: cluster.end,
           metrics: measure(last.text + cluster.text, last.style),
           requiredHeight: Math.max(requiredHeight(last), requiredHeight(cluster)), shapeText, shapeWidth };
@@ -235,7 +249,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       }
       return shapeWidth - previousShapeWidth;
     }
-    function finish(breakCluster, final = false) {
+    function finish(breakCluster, final = false, hiddenSeparator) {
       // Empty rows historically use layer font metrics, including in mixed
       // fontSize documents. Only their LF's leading is a new range property.
       const blankStyle = {...base, baselineShift:'normal', lineHeight:(breakCluster?.style || emptyStyle).lineHeight};
@@ -247,10 +261,14 @@ export function createRichTextLayoutEngine(context, fontSet) {
         const nominal = offset ? measure(part.text, {...part.style, baselineShift:'normal'}) : part.metrics;
         ascent = Math.max(ascent, nominal.ascent, part.metrics.ascent - offset);
         descent = Math.max(descent, nominal.descent, part.metrics.descent + offset);
+        if (wholeWords) {
+          ascent = Math.max(ascent, part.metrics.inkAscent - offset);
+          descent = Math.max(descent, part.metrics.inkDescent + offset);
+        }
       }
       // Leading belongs to source fragments, independently of glyph coalescing.
       // Max font metrics keep one baseline safe for mixed families and sizes.
-      let leading = Math.max(...samples.map(requiredHeight));
+      let leading = samples.reduce((max, part) => Math.max(max, requiredHeight(part)), 0);
       if (paragraph?.marker && rowStart === paragraph.start) {
         const {markerStyle, markerMetrics:ink, style} = paragraph;
         paragraph.markerOffset = 0;
@@ -259,6 +277,10 @@ export function createRichTextLayoutEngine(context, fontSet) {
           ascent = Math.max(ascent, ink.ascent);
           descent = Math.max(descent, ink.descent);
           leading = Math.max(leading, markerStyle.fontSize * markerStyle.lineHeight);
+          if (wholeWords) {
+            ascent = Math.max(ascent, ink.inkAscent);
+            descent = Math.max(descent, ink.inkDescent);
+          }
         } else {
           const bullet = style.listKind === 'bullet';
           if (bullet || markerStyle.fontSize !== baseMarker.fontSize) {
@@ -280,53 +302,117 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const spacingBefore = rowStart === paragraph?.start ? paragraph.spacingBefore ?? 0 : 0;
       const y = previous ? previous.y + previous.height + spacingBefore : 0;
       const baseline = previous ? previous.baseline + Math.max(rowHeight, previousDescent + ascent) + spacingBefore : ascent + edgeLeading;
+      if (wholeWords) {
+        const {left, right} = horizontalBounds(fragments, rowWidth);
+        textOverflow ||= right - left > availableWidth() + fitEpsilon ||
+          (paragraph?.hangingIndent ?? 0) > width + fitEpsilon;
+        // A completed row's bottom cannot move up when we append more rows.
+        if (measuring && (textOverflow || baseline + descent > height + fitEpsilon)) return false;
+      }
       // Layout ignores obsolete textLayoutMode; no old-baseline branch remains.
       // Source intervals are UTF-16, independent of rendered geometry. Hard
       // breaks are excluded from end and owned by [end, nextStart). A trailing
       // empty row has start=end=text.length. Legacy ignored CRs retain offsets.
-      const end = breakCluster?.start ?? (final ? text.length : fragments.at(-1)?.end ?? rowStart);
+      const end = breakCluster?.start ?? (final ? text.length : hiddenSeparator?.end ?? fragments.at(-1)?.end ?? rowStart);
       const nextStart = breakCluster?.end ?? end;
       rows.push({ start: rowStart, end, nextStart, softWrap: !breakCluster && !final,
         fragments, emptyStyle: fragments.length ? undefined : {...blankStyle, underline:false, strikethrough:false}, width: rowWidth,
         y, height: baseline + descent - y, baseline, ...(paragraph?.marker ? {paragraph} : {}),
+        ...(hiddenSeparator ? {hiddenSeparator} : {}),
         ...(spacingBefore ? {spacingBefore} : {}) });
       previousDescent = descent;
       if (breakCluster) { emptyStyle = breakCluster.style; paragraphIndex++; }
       rowStart = nextStart;
       fragments = []; rowWidth = 0;
+      return true;
     }
-    // Words span style changes. Keep whitespace as source content, including at
-    // wrap boundaries; oversized words/spaces fall back to whole graphemes.
-    for (let i = 0; i < clusters.length;) {
-      if (clusters[i].text === '\n') { finish(clusters[i]); i++; continue; }
-      const blank = /^\s+$/u.test(clusters[i].text); let end = i + 1;
-      while (end < clusters.length && clusters[end].text !== '\n' && /^\s+$/u.test(clusters[end].text) === blank) end++;
+    function tokenParts(start, end, tabs = false) {
       const token = [];
-      // Group first so measuring a long word is linear on the common path.
-      for (let j = i; j < end; j++) {
-        const ch = clusters[j], last = token.at(-1), id = styleKey(ch.style);
-        if (last?.id === id) { last.text += ch.text; last.end = ch.end; last.requiredHeight = Math.max(requiredHeight(last), requiredHeight(ch)); } else token.push({ ...ch, id, requiredHeight: requiredHeight(ch) });
+      for (let j = start; j < end; j++) {
+        const ch = clusters[j], last = token.at(-1), {id} = keysFor(ch.style);
+        if (last?.id === id) { last.text += ch.text; last.end = ch.end; last.requiredHeight = Math.max(requiredHeight(last), requiredHeight(ch)); } else token.push({ ...ch, id, tabs, requiredHeight: requiredHeight(ch) });
       }
+      return token;
+    }
+    function appendToken(token) {
       const trial = fragments.slice(); let trialWidth = rowWidth;
       for (const part of token) trialWidth += append(trial, part);
-      if (!blank && fragments.length && trialWidth > availableWidth()) finish();
-      const next = fragments.slice(); let nextWidth = rowWidth;
-      for (const part of token) nextWidth += append(next, part);
-      if (nextWidth <= availableWidth()) { fragments = next; rowWidth = nextWidth; }
-      else for (let j = i; j < end; j++) {
-        let candidate = fragments.slice(), candidateWidth = rowWidth + append(candidate, clusters[j]);
-        if (fragments.length && candidateWidth > availableWidth()) {
-          finish(); candidate = []; candidateWidth = append(candidate, clusters[j]);
-        }
-        fragments = candidate; rowWidth = candidateWidth;
-      }
-      i = end;
+      return {parts:trial, width:trialWidth};
     }
-    finish(undefined, true);
+    function useToken(token) {
+      fragments = token.parts;
+      rowWidth = token.width;
+    }
+    function horizontalBounds(parts, advance) {
+      let left = 0, right = Math.max(0, advance), x = 0, last = null;
+      for (const part of parts) {
+        left = Math.min(left, x - part.metrics.inkLeft);
+        right = Math.max(right, x + part.metrics.inkRight);
+        x += part.shapeWidth - (last?.geometry === part.geometry ? last.shapeWidth : 0);
+        last = part;
+      }
+      return {left, right};
+    }
+    if (wholeWords) {
+      // Defer plain spaces until their following token. Only a separator
+      // consumed by a soft wrap loses its advance. Source still owns it.
+      const kind = text => text === '\n' ? 'lf' : text === ' ' ? 'space' : text === '\t' ? 'tab' : breakableWhitespace.test(text) ? 'gap' : 'word';
+      let pending = null;
+      for (let i = 0; i < clusters.length;) {
+        const type = kind(clusters[i].text);
+        if (type === 'lf') {
+          if (pending) useToken(appendToken(pending.parts));
+          pending = null;
+          if (!finish(clusters[i++])) return {fits:false};
+          continue;
+        }
+        let end = i + 1;
+        while (end < clusters.length && kind(clusters[end].text) === type) end++;
+        const parts = tokenParts(i, end, type === 'tab');
+        if (type === 'space') {
+          pending = {parts, start:clusters[i].start, end:clusters[end-1].end};
+        } else {
+          let trial = appendToken(pending ? [...pending.parts, ...parts] : parts);
+          const {left, right} = horizontalBounds(trial.parts, trial.width);
+          if (fragments.length && right - left > availableWidth() + fitEpsilon) {
+            if (!finish(undefined, false, pending && {start:pending.start, end:pending.end})) return {fits:false};
+            trial = appendToken(parts);
+          }
+          useToken(trial);
+          pending = null;
+        }
+        i = end;
+      }
+      if (pending) useToken(appendToken(pending.parts));
+    } else {
+      // Fixed-size text retains its whitespace grouping and grapheme fallback.
+      for (let i = 0; i < clusters.length;) {
+        if (clusters[i].text === '\n') { finish(clusters[i]); i++; continue; }
+        const blank = /^\s+$/u.test(clusters[i].text); let end = i + 1;
+        while (end < clusters.length && clusters[end].text !== '\n' && /^\s+$/u.test(clusters[end].text) === blank) end++;
+        const token = tokenParts(i, end);
+        const trial = appendToken(token);
+        if (!blank && fragments.length && trial.width > availableWidth()) finish();
+        const next = appendToken(token);
+        if (next.width <= availableWidth()) useToken(next);
+        else for (let j = i; j < end; j++) {
+          let candidate = appendToken([clusters[j]]);
+          if (fragments.length && candidate.width > availableWidth()) {
+            finish(); candidate = appendToken([clusters[j]]);
+          }
+          useToken(candidate);
+        }
+        i = end;
+      }
+    }
+    if (!finish(undefined, true)) return {fits:false};
     // Row boxes end at their glyph bounds, except for the terminal block
     // padding. Item spacing lies outside the two adjoining line boxes.
     rows.at(-1).height += edgeLeading;
     const blockHeight = rows.reduce((sum, row) => sum + (row.spacingBefore ?? 0) + row.height, 0);
+    const naturalWidth = rows.reduce((max, row) => Math.max(max, row.width + (row.paragraph?.hangingIndent ?? 0)), 0);
+    if (measuring && (blockHeight > height + fitEpsilon || naturalWidth > width + fitEpsilon))
+      return {height:blockHeight, width:naturalWidth, fits:false};
     const y = e.verticalAlign === 'middle' ? Math.max(0, (height - blockHeight) / 2) :
       e.verticalAlign === 'bottom' ? Math.max(0, height - blockHeight) : 0;
     // Align the whole item (and the ordered column) as a block, so continuation
@@ -338,6 +424,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const key = p.sequenceStart ?? p.start;
       blockWidths.set(key, Math.max(blockWidths.get(key) ?? 0, row.width + p.hangingIndent));
     }
+    const inkGroups = new Map();
     for (const [rowIndex, row] of rows.entries()) {
       const p = row.paragraph;
       const alignedWidth = p ? blockWidths.get(p.sequenceStart ?? p.start) : row.width;
@@ -370,7 +457,7 @@ export function createRichTextLayoutEngine(context, fontSet) {
       // decoration intervals retain the original full-string measurements.
       for(let i=0;i<row.fragments.length;){
         let end=i+1;
-        while(end<row.fragments.length&&geometryKey(row.fragments[end].style)===geometryKey(row.fragments[i].style)&&row.fragments[end].style.textColor===row.fragments[i].style.textColor)end++;
+        while(end<row.fragments.length&&keysFor(row.fragments[end].style).geometry===keysFor(row.fragments[i].style).geometry&&row.fragments[end].style.textColor===row.fragments[i].style.textColor)end++;
         const group=row.fragments.slice(i,end);
         if(new Set(group.map(p=>JSON.stringify([p.style.strokeWidth,p.style.stroke,p.style.strokeWidth?p.style.strokeOpacity:100,p.style.strokeWidth?p.style.strokeStyle:'solid',solid?p.style.fillOpacity:100]))).size>1){
           const text=group.map(p=>p.text).join(''),origin=group[0].x,total=measure(text,group[0].style).width;
@@ -378,6 +465,21 @@ export function createRichTextLayoutEngine(context, fontSet) {
           for(const part of group){part.logicalX=part.x;part.x=origin+total-measure(text.slice(offset),part.style).width;offset+=part.text.length;}
         }
         i=end;
+      }
+      if (wholeWords) {
+        let left = p ? Math.min(0, row.x) : row.x, right = row.x + row.width;
+        for (const part of row.marker ? [row.marker, ...row.fragments] : row.fragments) {
+          const ink = measure(part.text, part.style);
+          left = Math.min(left, part.x - ink.inkLeft);
+          right = Math.max(right, part.x + ink.inkRight);
+        }
+        const groupKey = p ? (p.sequenceStart ?? p.start) : row;
+        const group = inkGroups.get(groupKey) ?? {left, right, rows:[]};
+        group.left = Math.min(group.left, left);
+        group.right = Math.max(group.right, right);
+        group.rows.push(row);
+        inkGroups.set(groupKey, group);
+        row.inkRight = right;
       }
       // Decorations use source intervals and the same contextual advances as
       // glyphs. They never contribute to metrics, shaping, wrapping or auto-fit.
@@ -402,20 +504,39 @@ export function createRichTextLayoutEngine(context, fontSet) {
         if (advancedUnderline) addDecorations(part, underlineSpans, 'underline');
       }
     }
+    let fits = !textOverflow && blockHeight <= height + fitEpsilon && naturalWidth <= width + fitEpsilon;
+    for (const {left, right, rows:groupRows} of inkGroups.values()) {
+      if (right - left > width + fitEpsilon) fits = false;
+      // Keep glyph bearings in the frame, shifting a list column as a unit.
+      const shift = Math.max(-left, Math.min(0, width - right));
+      for (const row of groupRows) {
+        row.inkRight += shift;
+        if (!shift) continue;
+        row.x += shift;
+        for (const part of row.fragments) {
+          part.x += shift;
+          if (part.logicalX !== undefined) part.logicalX += shift;
+        }
+        if (row.marker) { row.marker.x += shift; row.marker.columnX += shift; row.paragraph.contentX += shift; }
+        for (const rect of row.decorations) rect.x += shift;
+      }
+    }
     let inkOverflow=0;
     for(const row of rows)if(row.y<=height)for(const part of row.marker ? [row.marker, ...row.fragments] : row.fragments){
       const m=measure(part.text,part.style);
       inkOverflow=Math.max(inkOverflow,m.inkLeft-part.x,m.inkAscent-part.y,part.x+m.inkRight-width,part.y+m.inkDescent-height);
     }
-    return boundedSet(layouts, key, { rows, width: Math.max(...rows.map(r => r.width + (r.paragraph?.hangingIndent ?? 0))), height: blockHeight, inkOverflow,
-      ...(projected ? {caseProjection} : {}), ...(paragraphs.length ? {paragraphs} : {}) }, 128);
+    if (wholeWords && inkOverflow > fitEpsilon) fits = false;
+    const result = {rows, width:naturalWidth, height:blockHeight, inkOverflow, ...(wholeWords ? {fits} : {}),
+      ...(projected ? {caseProjection} : {}), ...(paragraphs.length ? {paragraphs} : {})};
+    return measuring ? result : boundedSet(layouts, key, result, 128);
   }
   /** Horizontal justify projection. Reuse shared rows and metrics;
    * only U+0020 spaces between words on soft-wrapped rows receive extra advance.
    * Hard-break and terminal rows (each paragraph's last row) stay natural.
    */
-  function layoutJustified(e) {
-    const natural = layout({...e, textAlign:'left'});
+  function layoutJustified(e, natural = layout(e.textAlign === 'justify' ? e : {...e, textAlign:'left'})) {
+    if (justifiedLayouts.has(natural)) return justifiedLayouts.get(natural);
     const sourceText = String(e.text ?? '');
     const projection = natural.caseProjection;
     const containsCR = sourceText.includes('\r');
@@ -461,13 +582,14 @@ export function createRichTextLayoutEngine(context, fontSet) {
       }
       // Preserved trailing spaces hang after the frame; the final word's
       // logical advance, rather than invisible trailing content, meets its edge.
-      const extra = row.softWrap && spaces.length ? Math.max(0, frameWidth - contentWidth) / spaces.length : 0;
-      const shift = offset => {
+      const paintedWidth = row.inkRight === undefined ? contentWidth : Math.max(contentWidth, row.inkRight);
+      let extra = row.softWrap && spaces.length ? Math.max(0, frameWidth - paintedWidth) / spaces.length : 0;
+      const spacesBefore = offset => {
         let low=0, high=spaces.length;
         while(low<high){const mid=(low+high)>>>1;if(spaces[mid]<offset)low=mid+1;else high=mid;}
-        return low*extra;
+        return low;
       };
-      const carets = [], fragments = [];
+      const carets = [], splitFragments = [];
       for (const [p,part] of row.fragments.entries()) {
         // Contextual prefix advances retain shaping inside words, including at
         // paint-only run boundaries. Never split a source grapheme for a run.
@@ -475,28 +597,44 @@ export function createRichTextLayoutEngine(context, fontSet) {
         offsets.set(part.text.length,part.end);
         const cuts = new Set([0, part.text.length]);
         for (const {segment,index,offset} of segments[p]) {
-          carets.push({offset, x:(part.logicalX ?? part.x) + prefix(part,index) + shift(offset)});
+          carets.push({offset, x:(part.logicalX ?? part.x) + prefix(part,index)});
           if (/^\s+$/u.test(segment)) { cuts.add(index); cuts.add(index + segment.length); }
         }
-        carets.push({offset:part.end, x:(part.logicalX ?? part.x) + part.width + shift(part.end)});
+        carets.push({offset:part.end, x:(part.logicalX ?? part.x) + part.width});
         const boundaries = [...cuts].sort((a,b) => a-b);
         for (let i=1; i<boundaries.length; i++) {
           const a=boundaries[i-1], b=boundaries[i], start=offsets.get(a), end=offsets.get(b);
           // Keep the shared painter's contextual glyph origin separate from
           // logical advances (opacity/stroke boundaries can kern inside a word).
-          const logicalX=(part.logicalX ?? part.x)+prefix(part,a)+shift(start);
-          const x=part.x+prefix(part,a)+shift(start);
-          fragments.push({...part, text:part.text.slice(a,b), start, end, x,
-            logicalX, width:prefix(part,b)-prefix(part,a)+shift(end)-shift(start)});
+          const logicalX=(part.logicalX ?? part.x)+prefix(part,a);
+          const x=part.x+prefix(part,a);
+          splitFragments.push({...part, text:part.text.slice(a,b), start, end, x,
+            logicalX, width:prefix(part,b)-prefix(part,a)});
         }
       }
+      if (row.inkRight !== undefined && extra) {
+        // Canvas can give a word different bearings when it is painted
+        // separately. Cap expansion by the parts that will actually paint.
+        for (const part of splitFragments) {
+          const right = part.x + measure(part.text, part.style).inkRight;
+          const count = spacesBefore(part.start);
+          if (right > frameWidth + fitEpsilon) { extra = 0; break; }
+          if (count) extra = Math.min(extra, Math.max(0, frameWidth - right) / count);
+        }
+        if (splitFragments.some(part => part.x + spacesBefore(part.start)*extra - measure(part.text,part.style).inkLeft < -fitEpsilon)) extra = 0;
+      }
+      const shift = offset => spacesBefore(offset) * extra;
+      const fragments = row.inkRight !== undefined && !extra ? row.fragments : splitFragments.map(part => {
+        const left = shift(part.start), right = shift(part.end);
+        return {...part, x:part.x+left, logicalX:part.logicalX+left, width:part.width+right-left};
+      });
       const decorations = row.decorations.map(rect => ({...rect,
         x:rect.x+shift(rect.start), width:rect.width+shift(rect.end)-shift(rect.start)}));
       return {...row, fragments, decorations, width:row.width+spaces.length*extra,
         justification:{naturalWidth:row.width, contentWidth:contentWidth+spaces.length*extra, extraPerSpace:extra, spaces:extra ? spaces : []},
         // Duplicate offsets at paint boundaries have the same logical advance.
         // LF/soft-wrap affinity is represented by the owning row, as before.
-        carets:carets.length ? [...new Map(carets.map(c => [c.offset,c])).values()] : [{offset:row.start,x:row.x}]};
+        carets:carets.length ? [...new Map(carets.map(({offset,x}) => [offset,{offset,x:x+shift(offset)}])).values()] : [{offset:row.start,x:row.x}]};
     });
     let inkOverflow=0;
     const frameHeight=Math.max(0,Number(e.h)||0);
@@ -504,7 +642,95 @@ export function createRichTextLayoutEngine(context, fontSet) {
       const m=measure(part.text,part.style);
       inkOverflow=Math.max(inkOverflow,m.inkLeft-part.x,m.inkAscent-part.y,part.x+m.inkRight-frameWidth,part.y+m.inkDescent-frameHeight);
     }
-    return {...natural, rows, width:Math.max(...rows.map(row=>row.width + (row.paragraph?.hangingIndent ?? 0))), inkOverflow};
+    const result = {...natural, rows, width:rows.reduce((max,row)=>Math.max(max,row.width + (row.paragraph?.hangingIndent ?? 0)),0), inkOverflow,
+      ...(natural.fits === undefined ? {} : {fits:natural.fits && inkOverflow <= fitEpsilon})};
+    justifiedLayouts.set(natural, result);
+    return result;
   }
-  return { layout, layoutJustified, invalidate };
+  function fitFontSize(e, ceiling = 500) {
+    const text = String(e.text ?? '');
+    if (!text || !supportsHorizontalTextLayout(e)) return e.fontSize;
+    const sample = {...e, autoFontSize:true};
+    retainRichTextSizeBase(sample);
+    const min = 10, max = Math.floor(ceiling * 10), checked = new Map();
+    const mixedHeight = sample.textRuns?.some(({style}) => style?.fontSize !== undefined || style?.lineHeight !== undefined);
+    // With constant leading, every baseline interval after the first row
+    // requires at least that leading, regardless of glyph descent.
+    let leading;
+    if (mixedHeight) {
+      // Every visible run belongs to a row. Rows after the first each own
+      // a complete baseline interval. Use their leading without assuming
+      // which words will share a row or whether separators will be hidden.
+      let largest = 0, total = 0, paragraph = 0, first = true;
+      const spans = richTextSpans({...sample, fontSize:1});
+      let span = 0;
+      for (const {segment,index} of segmentsFor(text)) {
+        if (segment.endsWith('\n')) {
+          if (!first) total += paragraph;
+          first = false; paragraph = 0;
+        } else if (segment !== ' ' && segment !== '\r') {
+          while (span + 1 < spans.length && spans[span].end <= index) span++;
+          const {fontSize, lineHeight} = spans[span].style;
+          paragraph = Math.max(paragraph, fontSize * lineHeight);
+          largest = Math.max(largest, paragraph);
+        }
+      }
+      leading = Math.max(largest, total + (first ? 0 : paragraph));
+    } else {
+      const intervals = Math.max(1, text.split('\n').length - 1);
+      leading = positive(e.lineHeight, 1.15) * intervals;
+    }
+    const heightLimit = leading > 0 ? Math.floor((Math.max(0, Number(e.h) || 0) + fitEpsilon) * 10 / leading) : max;
+    const upper = Math.max(min, Math.min(max, heightLimit));
+    function fits(tick) {
+      if (!checked.has(tick)) {
+        sample.fontSize = tick / 10;
+        const natural = layout(sample, true);
+        checked.set(tick, natural.fits && (sample.textAlign !== 'justify' || layoutJustified(sample, natural).fits));
+      }
+      return checked.get(tick);
+    }
+    function boundary(low, high) {
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        if (fits(mid)) low = mid;
+        else high = mid - 1;
+      }
+      return low;
+    }
+    let best = boundary(min, upper);
+    // A changed wrap can regroup mixed-height fragments. Metric hinting and
+    // negative tracking can also break monotonicity near a size boundary.
+    // Probe beyond the binary bracket on mixed geometry, then check nearby
+    // tenths individually. Keep the probe budget independent of text length.
+    if (sample.textRuns?.length || sample.paragraphRuns?.length || sample.letterSpacing < 0) {
+      const stride = Math.max(1, Math.ceil((upper - best) / 8));
+      for (let tick = upper; tick > best; tick -= stride) {
+        if (!fits(tick)) continue;
+        best = boundary(tick, Math.min(upper, tick + stride - 1));
+        break;
+      }
+    }
+    for (let tick = Math.min(upper, best + 8); tick > best; tick--) {
+      if (fits(tick)) { best = tick; break; }
+    }
+    return best / 10;
+  }
+  function displaySample(e) {
+    if (e.autoFontSize !== true || !e.text || !(e.fontSize > 1) || !supportsHorizontalTextLayout(e)) return e;
+    const natural = layout(e);
+    if (!displaySizes.has(natural)) {
+      const fits = natural.fits && (e.textAlign !== 'justify' || layoutJustified(e, natural).fits);
+      // Persisted auto layers can carry a size chosen under grapheme wrapping.
+      // Derive a safe display size until a normal edit stores a new fit.
+      displaySizes.set(natural, fits ? e.fontSize : fitFontSize(e, Math.min(500, e.fontSize)));
+    }
+    const fontSize = displaySizes.get(natural);
+    if (fontSize === e.fontSize) return e;
+    const sample = {...e};
+    retainRichTextSizeBase(sample);
+    sample.fontSize = fontSize;
+    return sample;
+  }
+  return { layout, layoutJustified, fitFontSize, displaySample, invalidate };
 }

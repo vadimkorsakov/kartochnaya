@@ -52,9 +52,10 @@ async function align(page,value){
 }
 async function geometry(page){return page.locator(surface).evaluate(host=>{
  const h=host.getBoundingClientRect(),scale=h.width/parseFloat(host.style.width);
+ const ctx=document.createElement('canvas').getContext('2d');
  return [...host.querySelectorAll('[data-wysiwyg-row]')].map(row=>({
   y:(row.getBoundingClientRect().y-h.y)/scale,
-  parts:[...row.children].map(span=>{
+  parts:[...row.querySelectorAll('[data-wysiwyg-fragment]')].map(span=>{
    const r=span.getBoundingClientRect(),text=span.textContent.replace(/\n$/,'');
    // Independently measure the browser's inline alphabetic baseline; a Range
    // rectangle alone reports the glyph box, not the Canvas baseline.
@@ -63,7 +64,12 @@ async function geometry(page){return page.locator(surface).evaluate(host=>{
    copy.style.position='static';copy.style.marginLeft='0';copy.style.verticalAlign='baseline';copy.append(document.createTextNode(text||'Mg'));
    marker.style.cssText='display:inline-block;width:0;height:0;padding:0;margin:0;border:0;vertical-align:baseline';copy.append(marker);probe.append(copy);document.body.append(probe);
    const baseline=marker.getBoundingClientRect().top-copy.getBoundingClientRect().top;probe.remove();
-   return {text,x:(r.x-h.x)/scale,y:(r.y-h.y)/scale+baseline,width:r.width/scale};
+   const css=getComputedStyle(span);
+   ctx.font=[css.fontStyle,css.fontWeight,css.fontSize,css.fontFamily].join(' ');
+   ctx.fontKerning='normal';ctx.letterSpacing=css.letterSpacing==='normal'?'0px':css.letterSpacing;
+   const m=ctx.measureText(text);
+   return {text,x:(r.x-h.x)/scale,y:(r.y-h.y)/scale+baseline,width:r.width/scale,
+    advance:m.width,inkLeft:m.actualBoundingBoxLeft,inkRight:m.actualBoundingBoxRight};
   })
  }));
 })}
@@ -139,8 +145,32 @@ for(const [name,patch] of [
  for(const textAlign of ['left','center','right']){
   await edit(page);await align(page,textAlign);const e=await model(page),rows=await geometry(page);
   if(name.startsWith('wrap threshold'))expect(rows).toHaveLength(name.endsWith('below')?2:1);
+  if(patch.autoFontSize){
+   // Hidden separators are source text, not painted fragments. Verify both
+   // contracts independently rather than comparing them with fillText calls.
+   expect(await page.locator(surface).textContent()).toBe(e.text);
+   const hidden=await page.locator(surface).locator('[data-wysiwyg-separator]').evaluateAll(nodes=>nodes.map(node=>{
+    const r=document.createRange();r.selectNodeContents(node);
+    const host=node.closest('#inlineWysiwyg'),scale=host.getBoundingClientRect().width/parseFloat(host.style.width);
+    return {text:node.textContent,width:r.getBoundingClientRect().width/scale};
+   }));
+   for(const part of hidden){expect(part.text).toMatch(/^ +$/u);expect(part.width).toBeLessThan(.5);}
+  }
   for(const row of rows){
-   const width=row.parts.reduce((n,p)=>n+p.width,0),expected=textAlign==='center'?(e.w-width)/2:textAlign==='right'?e.w-width:0;
+   // The original fixed-size contract aligns logical advances. Auto-fit
+   // additionally keeps the actual painted glyph bearings inside the frame.
+   // Measure them independently with Canvas, not with the layout under test.
+   const width=row.parts.reduce((n,p)=>n+(patch.autoFontSize?p.advance:p.width),0);
+   let expected=textAlign==='center'?(e.w-width)/2:textAlign==='right'?e.w-width:0;
+   if(patch.autoFontSize){
+    let x=expected,left=x,right=x+width;
+    for(const part of row.parts){
+     left=Math.min(left,x-part.inkLeft);right=Math.max(right,x+part.inkRight);x+=part.advance;
+     expect(part.x-part.inkLeft).toBeGreaterThanOrEqual(-.25);
+     expect(part.x+part.inkRight).toBeLessThanOrEqual(e.w+.25);
+    }
+    expected+=Math.max(-left,Math.min(0,e.w-right));
+   }
    expect(Math.abs(row.parts[0].x-expected)).toBeLessThan(.25);
   }
   // Home/End must select the actual start/end of every visual row, including

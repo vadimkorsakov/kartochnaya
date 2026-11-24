@@ -105,7 +105,7 @@ test('auto-fit scales the font while middle-row leading still owns only the prec
  expect(fitted.textRuns).toEqual([{start:2,end:3,style:{lineHeight:2.2}}]);
  expect(Math.abs(gaps(rows)[0]-fitted.fontSize*2.2)).toBeLessThan(.12);
  expect(Math.abs(gaps(rows)[1]-fitted.fontSize*1.2)).toBeLessThan(.12);
- expect(rows.reduce((sum,r)=>sum+r.height,0)).toBeLessThanOrEqual(fitted.h-1);
+ expect(rows.reduce((sum,r)=>sum+r.height,0)).toBeLessThanOrEqual(fitted.h+1e-7);
 });
 
 test('mixed real font metrics keep glyphs safe and middle leading out of the following gap',async({page})=>{
@@ -136,7 +136,7 @@ for(const autoFontSize of [false,true])test(`range lineHeight input, Mixed arrow
  else {
   const fitted=await model(page),widths=await page.evaluate(({e,rows})=>{const ctx=document.createElement('canvas').getContext('2d');ctx.font=`${e.fontSize}px Arial`;ctx.fontKerning='normal';ctx.letterSpacing='0px';return rows.map(r=>ctx.measureText(r.parts.map(p=>p.text).join('')).width)},{e:fitted,rows:after});
   for(let i=0;i<after.length;i++)expect(Math.abs(after[i].parts.reduce((sum,p)=>sum+p.width,0)-widths[i])).toBeLessThan(.12);
-  expect(after.reduce((sum,r)=>sum+r.height,0)).toBeLessThanOrEqual(fitted.h-1);
+  expect(after.reduce((sum,r)=>sum+r.height,0)).toBeLessThanOrEqual(fitted.h+1e-7);
   // First-row half-leading at the top; its other half belongs to the block end.
   const h=Math.max(fitted.fontSize*2.2,ascent(after[0])+descent(after[0]));
   expect(after[0].height).toBeCloseTo((h+ascent(after[0])+descent(after[0]))/2,5);

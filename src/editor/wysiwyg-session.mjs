@@ -128,8 +128,8 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   const canvasInk=needsCanvasInk(projection);
   const nodes=[],boundaries=new WeakMap();
   const display=projection.caseProjection;
-  const lengthChanges=display?.intervals.filter(p=>p.displayEnd-p.displayStart!==p.sourceEnd-p.sourceStart) || [];
-  let sourceEnd=0, lengthChange=0;
+  const atomicHits=display?.intervals.filter(p=>p.atomic||p.displayEnd-p.displayStart!==p.sourceEnd-p.sourceStart) || [];
+  let sourceEnd=0, atomicHit=0;
   for(const [rowIndex,row] of projection.rows.entries()){
    const rowNode=document.createElement('span');rowNode.dataset.wysiwygRow='';
    Object.assign(rowNode.style,{position:'absolute',display:'inline-block',left:'0px',top:row.y+'px',height:row.height+'px',whiteSpace:'pre',fontSize:'0px',lineHeight:'0px'});
@@ -148,7 +148,7 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
     if(display){
      if(start!==sourceEnd||end<start||display.text.slice(displayStart,sourceToDisplay(display,end))!==part.text)throw Error('Invalid text projection coverage');
      sourceEnd=end;
-     while(lengthChanges[lengthChange]?.sourceStart<end)atomicIntervals.push(lengthChanges[lengthChange++]);
+     while(atomicHits[atomicHit]?.sourceStart<end)atomicIntervals.push(atomicHits[atomicHit++]);
     }
     if(before||after||atomicIntervals.length)boundaries.set(span,{part,rowIndex,before,after,displayStart,atomicIntervals});
     const offset=unifiedDOMOffset(part.style,{height:row.height,baseline:(part.y??row.baseline)-row.y},part.text,baselineOffsets);

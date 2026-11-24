@@ -14,12 +14,12 @@ export function projectText(source, spans, typography, styleBoundaries = []) {
   }));
   const intervals = [];
   let displayEnd = 0, index = 0, boundary = 0, accepted = false;
-  function append(sourceStart, sourceEnd, projectedText) {
+  function append(sourceStart, sourceEnd, projectedText, atomic) {
     const displayStart = displayEnd;
     displayEnd += projectedText.length;
-    intervals.push({sourceStart, sourceEnd, displayStart, displayEnd, projectedText});
+    intervals.push({sourceStart, sourceEnd, displayStart, displayEnd, projectedText, ...(atomic ? {atomic:true} : {})});
   }
-  for (const {start, end, replacement} of edits) {
+  for (const {start, end, replacement, atomic} of edits) {
     while (graphemes[index]?.sourceEnd <= start) {
       const part = graphemes[index++];
       append(part.sourceStart, part.sourceEnd, part.projectedText);
@@ -29,7 +29,7 @@ export function projectText(source, spans, typography, styleBoundaries = []) {
     let next = index;
     while (graphemes[next]?.sourceEnd < end) next++;
     if (graphemes[next]?.sourceEnd !== end || /[\r\n]/u.test(source.slice(start,end))) continue;
-    append(start, end, replacement);
+    append(start, end, replacement, atomic);
     index = next + 1;
     accepted = true;
   }

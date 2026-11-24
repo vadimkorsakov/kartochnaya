@@ -11,9 +11,9 @@ const layer=(page,id='title')=>page.locator(`#layers [data-layer="${id}"]`);
 const selectLayer=(page,id)=>layer(page,id).locator('.layer-name').click();
 const press=async(page,...keys)=>{for(const key of keys)await page.keyboard.press(key);};
 const pause=page=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-const allRules=Object.fromEntries(['quotes','nestedQuotes','emDash','minus','multiply','marks','fractions','nbsp'].map(key=>[key,true]));
-const source='"Голос “да”" -- -25 °C; 3 * 4; (tm); 1/2; в доме.\nStraße';
-const projected='«ГОЛОС „ДА“»\u00a0— −25\u00a0°C; 3 × 4; ™; ½; В\u00a0ДОМЕ.\nSTRASSE';
+const allRules=Object.fromEntries(['quotes','nestedQuotes','emDash','minus','multiply','marks','fractions','nbsp','timeColon'].map(key=>[key,true]));
+const source='"Голос “да”" -- -25 °C; 3 * 4; (tm); 1/2, 7/12; в доме.\nStraße 09.05';
+const projected='«ГОЛОС „ДА“»\u00a0— −25\u00a0°C; 3 × 4; ™; ½, ⁷⁄₁₂; В\u00a0ДОМЕ.\nSTRASSE 09:05';
 
 async function finishEdit(page){
  await host(page).focus();
@@ -49,9 +49,13 @@ test('panel stays in place, targets one layer, preserves canonical runs and pers
  await expect(trigger(page)).toHaveAttribute('aria-expanded','true');
  expect(await model(page)).toEqual(before);
  await master(page).check();
+ await expect(rule(page,'fractions')).toHaveAccessibleName('Типографские дроби');
+ await expect(rule(page,'timeColon')).toHaveAccessibleName('Время через двоеточие');
+ await expect(rule(page,'timeColon')).not.toBeChecked();
  for(const key of ['multiply','marks','fractions'])await rule(page,key).check();
+ await rule(page,'timeColon').check();
  await expect(trigger(page)).toHaveClass(/active/);
- await expect(trigger(page)).toHaveAttribute('title',/8$/);
+ await expect(trigger(page)).toHaveAttribute('title',/9$/);
  await panel(page).locator('summary').click();
  await expect(panel(page).locator('[data-typography-nbsp]:visible')).toHaveCount(7);
  const buttonImage=info.outputPath('typography-button.png'),panelImage=info.outputPath('typography-panel.png');
@@ -68,11 +72,19 @@ test('panel stays in place, targets one layer, preserves canonical runs and pers
  const backward=await selection(page);
  await rule(page,'fractions').uncheck();
  await expect(host(page)).toContainText('1/2');
+ await expect(host(page)).toContainText('09:05');
  await host(page).focus();
  const after=await selection(page);
  expect(after.anchor-after.focus).toBe(backward.anchor-backward.focus);
  await press(page,'Control+z');expect(await host(page).textContent()).toBe(projected);
  await press(page,'Control+Shift+z');await expect(host(page)).toContainText('1/2');
+ await press(page,'Control+z');
+ await rule(page,'timeColon').uncheck();
+ await expect(host(page)).toContainText('09.05');
+ await expect(host(page)).toContainText('⁷⁄₁₂');
+ await host(page).focus();
+ await press(page,'Control+z');expect(await host(page).textContent()).toBe(projected);
+ await press(page,'Control+Shift+z');await expect(host(page)).toContainText('09.05');
  await press(page,'Control+z');
  await master(page).uncheck();
  expect(await host(page).textContent()).toBe(source.toUpperCase());
@@ -90,6 +102,8 @@ test('panel stays in place, targets one layer, preserves canonical runs and pers
  await page.locator('#inspector [data-action=duplicate]').click();
  const duplicate=(await exportedDocument(page)).elements.find(e=>e.id!=='title');
  expect(duplicate.typography).toEqual(saved.typography);
+ await rule(page,'timeColon').uncheck();
+ expect((await exportedDocument(page)).elements.find(e=>e.id===duplicate.id).typography.rules.timeColon).toBe(false);
  await expect(panel(page).locator('#typographyTarget')).not.toHaveText('Весь слой · '+before.name);
  await master(page).uncheck();
  expect((await model(page)).typography).toEqual(saved.typography);
@@ -103,6 +117,7 @@ test('panel stays in place, targets one layer, preserves canonical runs and pers
  expect((await model(page)).typography).toEqual(saved.typography);
  await panel(page).locator('[data-typography-reset]').click();
  await expect(rule(page,'fractions')).not.toBeChecked();
+ await expect(rule(page,'timeColon')).not.toBeChecked();
  await press(page,'Control+z');
  await expect(rule(page,'fractions')).toBeChecked();
  await selectLayer(page);
@@ -123,6 +138,8 @@ test('panel stays in place, targets one layer, preserves canonical runs and pers
  await page.reload();await openLibraryDocument(page,doc.id);await selectLayer(page);
  await expect(trigger(page)).toHaveClass(/active/);
  await expect(panel(page)).toBeHidden();
+ await trigger(page).click();
+ await expect(rule(page,'timeColon')).toBeChecked();
 });
 
 test('contractions and expansions are atomic for arrows, backward drag, delete and clipboard, with safe IME recovery',async({page})=>{
@@ -168,17 +185,72 @@ test('contractions and expansions are atomic for arrows, backward drag, delete a
  expect((await model(page)).text).toBe('ß "word"\n"test"');
 });
 
+test('equal-length compound fraction is atomic for native click, backward drag, navigation and clipboard',async({page})=>{
+ const text='До 125/256 после';
+ await seed(page,{text,fontSize:28,typography:{enabled:true,rules:{fractions:true}}});
+ await edit(page);
+ expect(await host(page).textContent()).toBe('До ¹²⁵⁄₂₅₆ после');
+ const first=await glyphBox(page,3),last=await glyphBox(page,9),space=await glyphBox(page,10);
+ const y=first.y+first.height/2;
+ await page.mouse.click(first.x+first.width*.8,y);
+ await expect.poll(()=>selection(page)).toEqual({anchor:3,focus:3});
+ await press(page,'ArrowRight');
+ expect(await selection(page)).toEqual({anchor:10,focus:10});
+ await page.mouse.click(last.x+last.width*.2,y);
+ await expect.poll(()=>selection(page)).toEqual({anchor:10,focus:10});
+ await press(page,'ArrowLeft','Delete');
+ expect((await model(page)).text).toBe('До  после');
+ await press(page,'Control+z');
+ expect((await model(page)).text).toBe(text);
+ await press(page,'Home');
+ expect(await selection(page)).toEqual({anchor:0,focus:0});
+ await press(page,'End');
+ expect(await selection(page)).toEqual({anchor:text.length,focus:text.length});
+ await page.mouse.move(space.x+space.width*.1,y);
+ await page.mouse.down();
+ await page.mouse.move(first.x+first.width*.7,y,{steps:10});
+ await page.mouse.up();
+ await expect.poll(()=>selection(page)).toEqual({anchor:10,focus:3});
+ expect(await page.evaluate(()=>getSelection().toString())).toBe('¹²⁵⁄₂₅₆');
+ await press(page,'Control+c','End','Enter','Control+v');
+ expect((await model(page)).text).toBe(text+'\n125/256');
+ await press(page,'End','Backspace');
+ expect((await model(page)).text).toBe(text+'\n');
+ await press(page,'Control+z');
+ expect((await model(page)).text).toBe(text+'\n125/256');
+ await press(page,'End','Shift+ArrowLeft','Control+x');
+ expect((await model(page)).text).toBe(text+'\n');
+ await press(page,'Control+v');
+ expect((await model(page)).text).toBe(text+'\n125/256');
+});
+
 test('glued text, custom list decoration and PNG agree at fixed size and auto-fit',async({page})=>{
- const text='Первая строка 10 кг в доме и 1/2 возле окна\nВторая -- строка.';
+ const text='Первая строка 10 кг в доме и 1/2; 125/256 возле окна\nВторая -- строка. 09.00–18.00; 7/12';
+ const split=text.lastIndexOf('7/12')+2;
  await seed(page,{text,w:163,h:150,fontSize:23,textAlign:'justify',
   typography:{enabled:true,rules:allRules},
-  textRuns:[{start:0,end:6,style:{underline:true,strokeWidth:1,baselineShift:'super'}}],
+  textRuns:[{start:0,end:6,style:{underline:true,strokeWidth:1,baselineShift:'super'}},
+   {start:split,end:split+2,style:{textColor:'#a32832'}}],
   paragraphRuns:[{start:0,style:{listKind:'bullet',listMarker:'◆',listIndent:6}}]});
  await edit(page);
  const rows=()=>host(page).locator('[data-wysiwyg-row]').allTextContents();
- expect((await rows()).some(row=>row.includes('10\u00a0кг'))).toBe(true);
- expect((await rows()).some(row=>row.includes('в\u00a0доме'))).toBe(true);
- expect((await rows()).some(row=>row.includes('½'))).toBe(true);
+ const fixedRows=await rows(),fraction='¹²⁵⁄₂₅₆';
+ expect(fixedRows.some(row=>row.includes('10\u00a0кг'))).toBe(true);
+ expect(fixedRows.some(row=>row.includes('в\u00a0доме'))).toBe(true);
+ expect(fixedRows.some(row=>row.includes('½'))).toBe(true);
+ const fractionRow=fixedRows.findIndex(row=>row.includes(fraction));
+ expect(fractionRow).toBeGreaterThan(0);
+ expect(await host(page).textContent()).toContain('09:00–18:00; 7/12');
+ const rowStart=fixedRows.slice(0,fractionRow).join('').length;
+ const fractionStart=rowStart+fixedRows[fractionRow].indexOf(fraction);
+ const box=await glyphBox(page,fractionStart);
+ await page.mouse.click(box.x+box.width*.75,box.y+box.height/2);
+ await expect.poll(()=>selection(page)).toEqual({anchor:fractionStart,focus:fractionStart});
+ const rowEnd=rowStart+fixedRows[fractionRow].replace(/\n$/u,'').length;
+ await press(page,'End');
+ expect(await selection(page)).toEqual({anchor:rowEnd,focus:rowEnd});
+ await press(page,'Home');
+ expect(await selection(page)).toEqual({anchor:0,focus:0});
  await finishEdit(page);
  const fixed=await model(page);
  const originalPNG=(await exportPNG(page)).image.data;
@@ -193,6 +265,7 @@ test('glued text, custom list decoration and PNG agree at fixed size and auto-fi
  expect((await host(page).locator('[data-wysiwyg-separator]').allTextContents()).every(value=>/^ +$/u.test(value))).toBe(true);
  const autoRows=await rows();
  expect(autoRows.some(row=>row.includes('10\u00a0кг'))).toBe(true);
+ expect(autoRows.some(row=>row.includes('¹²⁵⁄₂₅₆'))).toBe(true);
  await press(page,'Control+Home','ArrowDown','End','ArrowLeft','Home');
  await expect(host(page)).toBeFocused();
  await finishEdit(page);
@@ -231,7 +304,7 @@ test('mobile Canvas and PNG keep identical projection while native textarea edit
  await pause(page);
  await expect(trigger(page)).toHaveCount(0);
  const draws=await page.evaluate(()=>window.drawnText.join(''));
- for(const value of ['−25','™','½','STRASSE','\u00a0'])expect(draws).toContain(value);
+ for(const value of ['−25','™','½','⁷⁄₁₂','STRASSE','09:05','\u00a0'])expect(draws).toContain(value);
  expect((await exportPNG(page)).image.data.equals(desktop)).toBe(true);
  const p=await canvasPoint(page,50,34);
  await page.mouse.dblclick(p.x,p.y);

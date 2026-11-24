@@ -2624,12 +2624,12 @@ function positionUnderlinePanel(){
  const bounds=$('#rightPanel').getBoundingClientRect(),p=underlinePanelNode;
  positionInspectorSurface(p,bounds, b.top);
 }
-function positionInspectorSurface(p,anchor,top){
+function positionInspectorSurface(p,anchor,top,minTop=55){
  const margin=12,gap=8,width=p.offsetWidth,dock=$('.floating-docks').getBoundingClientRect();
  const x=clamp(anchor.left-width-gap,margin,Math.max(margin,innerWidth-width-margin));
  const bottom=x<dock.right&&x+width>dock.left&&dock.height?Math.min(dock.top-gap,innerHeight-margin):innerHeight-margin;
- p.style.maxHeight=Math.max(0,Math.min(bottom-55,720))+'px';
- p.style.left=x+'px';p.style.top=clamp(top,55,Math.max(55,bottom-p.offsetHeight))+'px';
+ p.style.maxHeight=Math.max(0,Math.min(bottom-minTop,720))+'px';
+ p.style.left=x+'px';p.style.top=clamp(top,minTop,Math.max(minTop,bottom-p.offsetHeight))+'px';
 }
 function paintUnderlineSample(state){
  const canvas=$('#underlineSample');
@@ -3186,10 +3186,11 @@ function positionListStylePanel(){
  if(!trigger)return;
  const bounds=$('#rightPanel').getBoundingClientRect(),anchor=trigger.getBoundingClientRect();
  const stage=$('#stageScroller').getBoundingClientRect();
- // Keep the center of the canvas and the floating tool dock accessible.
+ // Keep the canvas center, floating docks and the stage's top toolbar
+ // accessible even while the user leaves this panel open for editing.
  const minLeft=(stage.left+stage.right)/2+8;
  const left=Math.max(bounds.left,minLeft+listPanelNode.offsetWidth+8);
- positionInspectorSurface(listPanelNode,{left},anchor.top);
+ positionInspectorSurface(listPanelNode,{left},anchor.top,Math.max(55,stage.top+8));
  if(currentPickerKey()==='_listMarker')repositionFillPopover();
 }
 function cancelListPreview(cancelGesture=true){

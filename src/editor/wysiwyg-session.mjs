@@ -211,7 +211,12 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
      return {span,offset:(projection.rows[i].fragments[j]?.x??projection.rows[i].x)-actual};
     });
    });
-   for(const {span,offset} of positions)if(Math.abs(offset)>=1/64)span.style.left=offset+'px';
+   for(const {span,offset} of positions){
+    // Quantize the new auto-fit correction to CSS layout subpixels, so a
+    // focus/paint-only change cannot perturb geometry by floating-point noise.
+    const correction=value.autoFontSize?Math.round(offset*64)/64:offset;
+    if(Math.abs(correction)>=1/64)span.style.left=correction+'px';
+   }
   }
   confirmedSource=layer.text;caseProjection=display||null;confirmedHTML=host.innerHTML;
   syncOverlay();
@@ -341,9 +346,10 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    if(!['textAlign','verticalAlign'].includes(key))retainRichTextSizeBase(next);Object.assign(next,patch);
   }
   if(key==='fontSize')next.autoFontSize=false;
-  // Alignment preserves the size base. Auto-fit rechecks horizontal ink.
+  // Alignment changes row origins, not the saved size or run-size base.
+  // displaySample still guards ink overflow for old auto-fit documents.
   if(!['textAlign','verticalAlign'].includes(key))retainRichTextSizeBase(next);
-  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle','verticalAlign'].includes(key))fit(next,{preserveSizeBase:true});
+  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle','textAlign','verticalAlign'].includes(key))fit(next,{preserveSizeBase:true});
   if(!compatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}

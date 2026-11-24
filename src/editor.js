@@ -304,7 +304,7 @@ function inspectorNumericTextStyle(e,key,fallback){
 }
 function fontSizeField(e,label='Размер, px'){
  const size=inspectorFontSize(e);
- return `<label>${label}<input data-key="fontSize" type="number" value="${size===null?'':fmt(size)}" min="1" max="100000" step=".1"${size===null?' placeholder="Mixed"':''}></label>`;
+ return `<label>${label}<input data-key="fontSize" type="number" value="${size===null?'':fmt(size)}" min="1" max="100000" step="any" data-step-amount="1"${size===null?' placeholder="Mixed"':''}></label>`;
 }
 function letterSpacingField(e){
  const spacing=inspectorLetterSpacing(e);
@@ -4628,7 +4628,7 @@ document.addEventListener('contextmenu',ev=>{const layer=ev.target.closest('[dat
 function bindInspectorNumericEvents(root){
 // Figma-style Alt + drag on numeric fields (horizontal scrub).
 root.addEventListener('pointerdown',ev=>{const field=ev.target.closest('input[type="number"]');if(!field||!ev.altKey||ev.button!==0)return;
- ev.preventDefault();const base=Number(field.value),step=Number(field.step)||1;if(!Number.isFinite(base))return;
+ ev.preventDefault();const base=Number(field.value),step=Number(field.getAttribute('data-step-amount'))||Number(field.step)||1;if(!Number.isFinite(base))return;
  app.scrub={field,x:ev.clientX,base,step,pointerId:ev.pointerId};field.setPointerCapture(ev.pointerId);field.classList.add('scrubbing')
 });
 root.addEventListener('pointermove',ev=>{const a=app.scrub;if(!a||ev.pointerId!==a.pointerId)return;const delta=ev.clientX-a.x;let n=a.base+Math.round(delta/4)*a.step;const min=Number(a.field.min),max=Number(a.field.max);
@@ -6146,6 +6146,18 @@ mobileV36.addEventListener('keydown',ev=>{
 // the next arrow key moves the selected layer rather than stepping the input.
 const numericEditLastValue=new WeakMap();
 // Step mismatch is intentional: manual numeric values may be fractional even when slider/arrow steps are whole numbers.
+// Manual size controls step by 1px from the current (possibly fractional)
+ // value. Auto-fit still uses its own independent 0.1px search grid.
+function stepInspectorFontSize(field,direction){
+ const layer=active()||picked()[0];
+ if(!layer||field.disabled||field.readOnly)return false;
+ const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:
+  (inlineStyleRange()?inlineSelectionStyle():richTextSpans(layer)[0]?.style||resolveRichTextStyle(layer)).fontSize;
+ if(!Number.isFinite(base))return false;
+ const next=clamp(base+direction,Number(field.min)||1,Number(field.max)||100000);
+ field.value=String(Number(next.toFixed(8)));
+ return true;
+}
 const numericEditValid=field=>field.value.trim()!==''&&Number.isFinite(field.valueAsNumber)&&!field.validity.badInput&&!field.validity.rangeUnderflow&&!field.validity.rangeOverflow;
 for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),mobileV36]){
  root.addEventListener('focusin',ev=>{const field=ev.target;if(field.matches?.('input[type="number"]'))numericEditLastValue.set(field,field.value)});
@@ -6169,6 +6181,15 @@ for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),
  root.addEventListener('keydown',ev=>{
   const field=ev.target;
   if(ev.isComposing||!field.matches?.('input[type="number"]'))return;
+  if(field.dataset.key==='fontSize'&&field.hasAttribute('data-step-amount')&&['ArrowUp','ArrowDown'].includes(ev.key)){
+   ev.preventDefault();ev.stopPropagation();
+   const previous=field.value;
+   if(stepInspectorFontSize(field,ev.key==='ArrowUp'?1:-1)&&field.value!==previous){
+    field.dispatchEvent(new Event('input',{bubbles:true}));
+    if(field.isConnected)field.dispatchEvent(new Event('change',{bubbles:true}));
+   }
+   return;
+  }
   if(field.dataset.key==='lineHeight'&&['ArrowUp','ArrowDown'].includes(ev.key)&&field.value===''&&active()?.type==='text'){
    ev.preventDefault();ev.stopPropagation();
    const base=inlineStyleRange()?inlineSelectionStyle().lineHeight:resolveRichTextStyle(active()).lineHeight;
@@ -6224,7 +6245,9 @@ document.addEventListener('click',ev=>{
  try{
   // Mixed range typography starts at the effective first character, not empty -> 0.
   // Add the step directly so a fractional origin is not snapped to a grid.
-  if(field.id==='cpAlphaInput'&&pickerRangeAlpha()&&inlineStyleRange()){
+  if(field.dataset.key==='fontSize'&&field.hasAttribute('data-step-amount')){
+   if(!stepInspectorFontSize(field,button.dataset.numDirection==='up'?1:-1))return;
+  }else if(field.id==='cpAlphaInput'&&pickerRangeAlpha()&&inlineStyleRange()){
    const base=Number.isFinite(field.valueAsNumber)?field.valueAsNumber:inlineSelectionStyle()[pickerAlphaKey()];
    field.value=String(clamp(base+(button.dataset.numDirection==='up'?1:-1)*(Number(field.step)||1),0,100));
   }else if((field.dataset.key==='letterSpacing'&&inlineStyleRange())||(field.dataset.key==='lineHeight'&&active()?.type==='text')||(field.dataset.key==='strokeWidth'&&(active()||picked()[0])?.type==='text')){

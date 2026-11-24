@@ -54,7 +54,7 @@ async function geometry(page){return page.locator(surface).evaluate(host=>{
  const h=host.getBoundingClientRect(),scale=h.width/parseFloat(host.style.width);
  return [...host.querySelectorAll('[data-wysiwyg-row]')].map(row=>({
   y:(row.getBoundingClientRect().y-h.y)/scale,
-  parts:[...row.children].map(span=>{
+  parts:[...row.querySelectorAll('[data-wysiwyg-fragment]')].map(span=>{
    const r=span.getBoundingClientRect(),text=span.textContent.replace(/\n$/,'');
    // Independently measure the browser's inline alphabetic baseline; a Range
    // rectangle alone reports the glyph box, not the Canvas baseline.
@@ -139,6 +139,17 @@ for(const [name,patch] of [
  for(const textAlign of ['left','center','right']){
   await edit(page);await align(page,textAlign);const e=await model(page),rows=await geometry(page);
   if(name.startsWith('wrap threshold'))expect(rows).toHaveLength(name.endsWith('below')?2:1);
+  if(patch.autoFontSize){
+   // Hidden separators are source text, not painted fragments. Verify both
+   // contracts independently rather than comparing them with fillText calls.
+   expect(await page.locator(surface).textContent()).toBe(e.text);
+   const hidden=await page.locator(surface).locator('[data-wysiwyg-separator]').evaluateAll(nodes=>nodes.map(node=>{
+    const r=document.createRange();r.selectNodeContents(node);
+    const host=node.closest('#inlineWysiwyg'),scale=host.getBoundingClientRect().width/parseFloat(host.style.width);
+    return {text:node.textContent,width:r.getBoundingClientRect().width/scale};
+   }));
+   for(const part of hidden){expect(part.text).toMatch(/^ +$/u);expect(part.width).toBeLessThan(.5);}
+  }
   for(const row of rows){
    const width=row.parts.reduce((n,p)=>n+p.width,0),expected=textAlign==='center'?(e.w-width)/2:textAlign==='right'?e.w-width:0;
    expect(Math.abs(row.parts[0].x-expected)).toBeLessThan(.25);

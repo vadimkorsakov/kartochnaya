@@ -732,12 +732,27 @@ test('emergency action is usable on phone with unavailable IndexedDB; cancel and
       if (value?.format === 'kartochnaya-project-v1') throw Error('Synthetic JSON failure');
       return stringify(value, ...args);
     };
-    console.error = error => { window.emergencyError = error.message; };
+    const report = console.error;
+    console.error = function (error, ...args) {
+      if (error?.message === 'Synthetic JSON failure') window.emergencyError = error.message;
+      return report.call(this, error, ...args);
+    };
+    // A pending IndexedDB write may report its own failure immediately after
+    // the export toast. Capture each actual toast text rather than assuming
+    // the export owns the shared notification surface indefinitely.
+    window.emergencyToasts = [];
+    const toast = document.querySelector('#toast');
+    new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if (node.textContent) window.emergencyToasts.push(node.textContent);
+      }
+    }).observe(toast, { childList: true });
   });
   page.once('dialog', dialog => dialog.accept());
   await button.click();
-  await expect(page.locator('#toast')).toHaveText('Ошибка подготовки JSON: Synthetic JSON failure');
-  expect(await page.evaluate(() => emergencyError)).toBe('Synthetic JSON failure');
+  await expect.poll(() => page.evaluate(() => window.emergencyToasts)).toContain('Ошибка подготовки JSON: Synthetic JSON failure');
+  expect(await page.evaluate(() => window.emergencyError)).toBe('Synthetic JSON failure');
+  expect(await page.evaluate(() => window.emergencyToasts)).not.toContain('Аварийный JSON проекта подготовлен');
   expect(downloads).toBe(1);
 });
 

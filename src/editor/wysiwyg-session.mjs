@@ -161,11 +161,28 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
     Object.assign(span.style,{position:'relative',display:'inline-block',verticalAlign:'top',marginLeft:part.x-advance+'px',top:offset+'px',height:row.height+'px',
      font:richTextFont(part.style),fontKerning:'normal',lineHeight:row.height+'px',letterSpacing:part.style.letterSpacing+'px',
      color:part.style.textColor,whiteSpace:'pre',overflowWrap:'normal'});
+    if(value.autoFontSize&&/^\t+$/u.test(part.text))span.style.tabSize=Math.max(0,part.width/part.text.length)+'px';
     span.style.setProperty('--wysiwyg-ink',part.style.textColor);
     rowNode.append(span);ctx.font=richTextFont(part.style);ctx.letterSpacing=part.style.letterSpacing+'px';ctx.fontKerning='normal';const naturalWidth=ctx.measureText(part.text).width;
     const expanded=part.text===' '&&row.justification?.spaces.includes(part.start);
     if(expanded)span.style.wordSpacing=(part.width-naturalWidth)+'px';
-    advance=part.x+(expanded?part.width:naturalWidth);
+    advance=part.x+(expanded||span.style.tabSize?part.width:naturalWidth);
+   }
+   if(row.hiddenSeparator){
+    const {start,end}=row.hiddenSeparator;
+    if(display&&start!==sourceEnd)throw Error('Invalid separator projection coverage');
+    const separator=document.createElement('span'), last=row.fragments.at(-1);
+    const left=(last.logicalX??last.x)+last.width;
+    const top=unifiedDOMOffset(last.style,{height:row.height,baseline:last.y-row.y},last.text,baselineOffsets);
+    separator.dataset.wysiwygSeparator='';
+    separator.append(document.createTextNode(display?
+     display.text.slice(sourceToDisplay(display,start),sourceToDisplay(display,end)):value.text.slice(start,end)));
+    ctx.font=richTextFont(last.style);ctx.letterSpacing='0px';ctx.fontKerning='normal';
+    Object.assign(separator.style,{position:'absolute',left:left+'px',top:top+'px',width:'0px',
+     font:richTextFont(last.style),fontKerning:'normal',lineHeight:row.height+'px',letterSpacing:'0px',
+     wordSpacing:-ctx.measureText(' ').width+'px',whiteSpace:'pre',color:'transparent'});
+    rowNode.append(separator);
+    sourceEnd=end;
    }
   }
   if(display&&sourceEnd!==value.text.length)throw Error('Incomplete case projection coverage');
@@ -183,13 +200,13 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
   host.replaceChildren(...nodes);
   if(!host.childNodes.length)host.append(document.createTextNode(''));
   if(!layer.text||layer.text.endsWith('\n')){const br=document.createElement('br');br.dataset.caretSentinel='';nodes.at(-1).lastChild.append(br);}
-  if(display||projection.paragraphs){
+  if(display||projection.paragraphs||value.autoFontSize){
    // Inline boxes preserve native caret affinity. Correct subpixel
    // accumulation across the independently rounded margins of long rows.
    const positions=nodes.flatMap((node,i)=>{
     const box=node.getBoundingClientRect(), scale=box.width/value.w;
     if(!(scale>0))return [];
-    return Array.from(node.children,(span,j)=>{
+    return Array.from(node.querySelectorAll('[data-wysiwyg-fragment]'),(span,j)=>{
      const actual=(span.getBoundingClientRect().left-box.left)/scale;
      return {span,offset:(projection.rows[i].fragments[j]?.x??projection.rows[i].x)-actual};
     });
@@ -324,9 +341,9 @@ export function createWysiwygSession({host, element, history, onChange, onFallba
    if(!['textAlign','verticalAlign'].includes(key))retainRichTextSizeBase(next);Object.assign(next,patch);
   }
   if(key==='fontSize')next.autoFontSize=false;
-  // Alignment changes row origins only; preserve all existing size metadata.
+  // Alignment preserves the size base. Auto-fit rechecks horizontal ink.
   if(!['textAlign','verticalAlign'].includes(key))retainRichTextSizeBase(next);
-  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle','textAlign','verticalAlign'].includes(key))fit(next);
+  if(next.autoFontSize&&!['underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle','verticalAlign'].includes(key))fit(next,{preserveSizeBase:true});
   if(!compatible(next))return false;
   // project preflights fonts and metrics; a failure leaves layer/history intact.
   try{project(next,selection);}catch{return false;}

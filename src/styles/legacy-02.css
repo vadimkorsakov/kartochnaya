@@ -24,6 +24,14 @@
 [data-text-decoration][aria-pressed="mixed"] { border-style:dashed; }
 .decoration-mixed { font-size:10px; margin-left:4px; }
 [data-text-decoration]:focus-visible, [data-baseline-shift]:focus-visible, [data-text-case]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.inspector .text-decoration-controls .text-auto-font { position:relative; width:36px; min-height:30px; margin:0; }
+.text-auto-font input { position:absolute; inset:0; height:100%; margin:0; opacity:0; cursor:pointer; }
+.text-auto-font svg { pointer-events:none; }
+.inspector .text-decoration-controls .text-auto-font:has(input:checked) { background:var(--accent); color:#fff; }
+.inspector .text-decoration-controls .text-auto-font:has(input:checked:hover:not(:disabled)) { background:var(--accent-dark); }
+.text-auto-font:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:2px; }
+.text-auto-font:has(input:disabled) { opacity:.4; }
+.text-auto-font input:disabled { cursor:not-allowed; }
 
 .baseline-shift-controls, .text-case-controls { align-items:center; }
 .baseline-shift-controls button, .text-case-controls button { min-width:36px; font-weight:600; }

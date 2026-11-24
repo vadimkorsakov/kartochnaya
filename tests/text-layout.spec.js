@@ -65,7 +65,7 @@ async function assertDrawing(page, nativeRows, layer, exported = false) {
    (exported ? !d.canvas && d.width===320 && d.height===240 : d.canvas==='canvas')),
   {fontSize:layer.fontSize,exported});
  expect(draws.length).toBeGreaterThan(0);
- expect(draws.map(d=>d.text).join('')).toBe(layer.text.replace(/\r?\n/g,''));
+ if(!layer.autoFontSize)expect(draws.map(d=>d.text).join('')).toBe(layer.text.replace(/\r?\n/g,''));
  const rows=[];
  for(const d of draws){
   expect(Number.isFinite(d.x)&&Number.isFinite(d.y)&&Number.isFinite(d.advance)).toBe(true);
@@ -78,6 +78,22 @@ async function assertDrawing(page, nativeRows, layer, exported = false) {
  for(const row of rows){
   for(let i=1;i<row.parts.length;i++)
    expect(row.parts[i].x).toBeGreaterThanOrEqual(row.parts[i-1].x);
+ }
+ if(layer.autoFontSize){
+  // The next visual row may follow a real LF or hidden U+0020 separators.
+  // Visible row content remains an exact ordered slice of the input.
+  let remaining=layer.text;
+  for(const [i,row] of rows.entries()){
+   if(i&&remaining.startsWith('\n'))remaining=remaining.replace(/^(?:\r?\n)+/,'');
+   else if(i){
+    expect(remaining).toMatch(/^ +\S/);
+    remaining=remaining.replace(/^ +/,'');
+   }
+   const visible=row.parts.map(part=>part.text).join('');
+   expect(remaining.startsWith(visible),JSON.stringify({visible,remaining})).toBe(true);
+   remaining=remaining.slice(visible.length);
+  }
+  expect(remaining).toBe('');
  }
  const geometry=draws.map(({text,x,y,font,advance})=>({text,x,y,font,advance}));
  if(exported){

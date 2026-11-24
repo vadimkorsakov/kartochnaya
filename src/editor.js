@@ -3120,7 +3120,7 @@ function listPanelState(owner=listPanel){
  const starts=new Set(paragraphRangeForSelection(element.text,owner.range).map(p=>p.start));
  const emoji=owner.mode==='bullet'&&normalizeParagraphRuns(element.text,element.paragraphRuns).some(({start,style})=>
   starts.has(start)&&(!onlyKind||style.listKind===onlyKind)&&isEmojiListMarker(style.listMarker));
- return {...state,hasTarget:!!selected&&(!owner.existingModes||state.listKind!=='none'),solid,emoji,
+ return {...state,hasTarget:!!selected&&state.listKind!=='none',solid,emoji,
   color:state.listMarkerColor==='inherit'?base.textColor:state.listMarkerColor,
   opacity:state.listMarkerOpacity==='inherit'?base.fillOpacity:state.listMarkerOpacity};
 }
@@ -3206,7 +3206,7 @@ function closeListStylePanel(restoreFocus=false){
  const owner=listPanel;if(!owner||owner.closing)return;
  // Automatic lifecycle calls only cancel any preview. Visibility is a user
  // decision: the × button and Escape explicitly pass restoreFocus=true.
- if(!restoreFocus){if(owner.draft)cancelListPreview();return;}
+ if(!restoreFocus){if(owner.draft)cancelListPreview();else syncListStylePanel();return;}
  owner.closing=true;
  if(currentPickerKey()==='_listMarker')closeFillPopover();
  cancelListPreview();

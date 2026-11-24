@@ -361,7 +361,7 @@ function changeGraphemeStyle(apply,value){
 
 // Correct native clicks at expanded spaces and shared offsets between glyphs
 // on different baselines. The editable nodes and native Selection own the caret.
-let pointerEpoch=0,pointerGesture=null,listDrag=null,selectingWithPointer=false;
+let pointerEpoch=0,pointerGesture=null,listDrag=null,selectingWithPointer=false,pointerRefocus=false;
 const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;listDrag=null;if(p?.task!==undefined)clearTimeout(p.task);};
 // Register for the session lifetime. Each projection invalidates pending clicks.
 {
@@ -441,6 +441,10 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;listDr
  }
  listen('pointerdown',event=>{
   clearPointerGesture();
+  // A real click chooses a NEW caret. In Firefox the host can gain focus
+  // after hit-testing; restoring the previously saved range would undo it.
+  // Programmatic and keyboard focus still restore the saved selection.
+  pointerRefocus=event.isTrusted&&event.pointerType==='mouse'&&event.isPrimary&&event.button===0;
   if(!event.isTrusted||event.pointerType!=='mouse'||!event.isPrimary||event.button!==0||event.altKey||event.ctrlKey||event.metaKey)return;
   const list=layer.paragraphRuns?.length&&clean()&&listHit(event.clientX,event.clientY);
   if(list){
@@ -461,6 +465,7 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;listDr
  watch(doc,'pointerdown',event=>{if(!host.contains(event.target))clearPointerGesture()},true);
  watch(doc,'pointermove',event=>{dragFromList(event);const p=pointerGesture;if(p&&!p.clicked&&p.id===event.pointerId&&(event.clientX!==p.x||event.clientY!==p.y))clearPointerGesture()},true);
  watch(doc,'pointerup',event=>{
+  pointerRefocus=false;
   if(listDrag?.id===event.pointerId){dragFromList(event);listDrag=null;}
   if(selectingWithPointer){
    selectingWithPointer=false;
@@ -470,7 +475,7 @@ const clearPointerGesture=()=>{const p=pointerGesture;pointerGesture=null;listDr
   if(!host.contains(event.target)||event.clientX!==p.x||event.clientY!==p.y){clearPointerGesture();return}
   p.up=true;
  },true);
- watch(doc,'pointercancel',()=>{selectingWithPointer=false;clearPointerGesture();normalizeNativeSelection()},true);
+ watch(doc,'pointercancel',()=>{pointerRefocus=false;selectingWithPointer=false;clearPointerGesture();normalizeNativeSelection()},true);
  listen('dragstart',clearPointerGesture);
  listen('focusout',()=>{selectingWithPointer=false;clearPointerGesture()});
  watch(window,'blur',()=>{selectingWithPointer=false;clearPointerGesture()});
@@ -685,7 +690,7 @@ function restoreSavedSelection(){
  setSelection(anchor,focus,f<0?null:f,a<0?null:a);
 }
 listen('focusout',()=>{if(selectionInside()&&clean()){try{saveNativeSelection();}catch{}}});
-listen('focus',()=>{if(validSelection(savedSelection)&&clean())restoreSavedSelection();});
+listen('focus',()=>{if(!pointerRefocus&&validSelection(savedSelection)&&clean())restoreSavedSelection();});
 listen('beforeinput',e=>{
  finishPreview();
  if(inactive){if(e.cancelable&&!composing&&!e.isComposing)e.preventDefault();return;}

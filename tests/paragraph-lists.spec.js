@@ -138,7 +138,15 @@ test('Inspector icons, persistent gallery, Mixed, numeric controls, history and 
  await done(page);
  await expect.poll(async()=>(await records(page,'docs')).find(d=>d.id===id)?.elements[0]).toEqual(expected);
  await page.reload();await openLibraryDocument(page,id);await edit(page);
- await press(page,'Control+Home');await kind(page,'none').click();
+ await press(page,'Control+Home');
+ // Reload starts with the panel closed. Once explicitly opened, removing the
+ // list must not dismiss the panel.
+ await expect(panel(page)).toBeHidden();
+ await configure(page).click();
+ await expect(panel(page)).toBeVisible();
+ await kind(page,'none').click();
+ await expect(panel(page)).toBeVisible();
+ await panel(page).locator('[data-list-close]').click();
  await expect(panel(page)).toBeHidden();
  await host(page).focus();await press(page,'Escape');
  expect(await model(page)).toEqual(expected);
@@ -243,14 +251,81 @@ test('switching the layer or document discards an unconfirmed spacing gesture',a
  };
  await begin();
  await copy.evaluate(button=>button.click());
- await page.mouse.up();await expect(panel(page)).toBeHidden();
+ await page.mouse.up();await expect(panel(page)).toBeVisible();
  expect((await exportedDocument(page)).elements).toEqual(before);
  await begin();
- // Programmatic activation bypasses the outside-pointer dismissal and exercises tab ownership.
+ // Switching documents must cancel drafts, but the settings panel stays visible.
  await page.locator(`[data-tab-id="${otherId}"]`).evaluate(button=>button.click());
- await page.mouse.up();await expect(panel(page)).toBeHidden();
+ await page.mouse.up();await expect(panel(page)).toBeVisible();
  expect((await exportedDocument(page)).id).toBe(otherId);
  await tab.click();expect((await exportedDocument(page)).elements).toEqual(before);
+});
+
+test('list settings stay visible when the selected layer enters and exits WYSIWYG',async({page})=>{
+ const text='Title\nFirst\nSecond';
+ const first=text.indexOf('First'),second=text.indexOf('Second');
+ await seed(page,{text,paragraphRuns:[run(first,{listKind:'bullet'}),run(second,{listKind:'bullet'})]});
+ await page.locator('#layers .layer-name').filter({hasText:'List sample'}).click();
+ await configure(page).click();
+ const settings=panel(page);
+ await expect(settings).toBeVisible();
+ // This used to close the floating menu through openInlineText -> hideInspector.
+ await edit(page);
+ await expect(settings).toBeVisible();
+ await press(page,'Control+Home','ArrowDown','Home');
+ await expect(settings.locator('[data-list-target-note]')).toBeHidden();
+ await preset(page,'◆').click();
+ expect((await model(page)).paragraphRuns).toEqual([
+  autoRun(first,{listKind:'bullet',listMarker:'◆'}),run(second,{listKind:'bullet'}),
+ ]);
+ await done(page);
+ await expect(settings).toBeVisible();
+ // Even leaving the entire text layer selected must not implicitly dismiss it.
+ const empty=await canvasPoint(page,5,430,width,height);
+ await page.mouse.click(empty.x,empty.y);
+ await expect(settings).toBeVisible();
+ await settings.locator('[data-list-close]').click();
+ await expect(settings).toBeHidden();
+});
+
+test('list settings stay open across real caret clicks and retarget only existing list paragraphs',async({page})=>{
+ const text='Title\nAlpha\nPlain\nBeta';
+ const alpha=text.indexOf('Alpha'),beta=text.indexOf('Beta');
+ const original=[run(alpha,{listKind:'bullet'}),run(beta,{listKind:'bullet'})];
+ await seed(page,{text,paragraphRuns:original});
+ await edit(page);await press(page,'Control+Home','ArrowDown','Home');
+ await configure(page).click();
+ await expect(panel(page)).toBeVisible();
+
+ const clickRow=async index=>{
+  const rect=await host(page).locator('[data-wysiwyg-row]').nth(index)
+   .locator('[data-wysiwyg-fragment]').first().boundingBox();
+  await page.mouse.click(rect.x+Math.min(12,rect.width/2),rect.y+rect.height/2);
+ };
+ await clickRow(3);
+ await expect(panel(page)).toBeVisible();
+ const [anchor,focus]=await selection(page);
+ expect(anchor).toBe(focus);
+ expect(anchor).toBeGreaterThanOrEqual(beta);
+ await preset(page,'◆').click();
+ expect((await model(page)).paragraphRuns).toEqual([
+  run(alpha,{listKind:'bullet'}),autoRun(beta,{listKind:'bullet',listMarker:'◆'}),
+ ]);
+ await clickRow(2);
+ await expect(panel(page)).toBeVisible();
+ await expect(panel(page).locator('[data-list-target-note]')).toBeVisible();
+ await expect(preset(page,'◇')).toBeDisabled();
+ expect((await model(page)).paragraphRuns).toEqual([
+  run(alpha,{listKind:'bullet'}),autoRun(beta,{listKind:'bullet',listMarker:'◆'}),
+ ]);
+ await clickRow(1);
+ await expect(panel(page).locator('[data-list-target-note]')).toBeHidden();
+ await preset(page,'◇').click();
+ expect((await model(page)).paragraphRuns).toEqual([
+  autoRun(alpha,{listKind:'bullet',listMarker:'◇'}),autoRun(beta,{listKind:'bullet',listMarker:'◆'}),
+ ]);
+ await press(page,'Escape');
+ await expect(panel(page)).toBeHidden();
 });
 
 test('settings retain the backward WYSIWYG range and isolate mixed list kinds and plain paragraphs',async({page})=>{
@@ -272,9 +347,11 @@ test('settings retain the backward WYSIWYG range and isolate mixed list kinds an
  await expect(field(page,'listIndent')).not.toHaveValue('0');
  await host(page).focus();await press(page,'Control+End');
  await page.mouse.up();
- await expect(panel(page)).toBeHidden();
+ await expect(panel(page)).toBeVisible();
+ await expect(panel(page).locator('[data-list-target-note]')).toBeVisible();
  expect((await model(page)).paragraphRuns).toEqual(original);
  await press(page,'Control+Shift+Home');expect(await selection(page)).toEqual([text.length,0]);
+ await expect(panel(page).locator('[data-list-target-note]')).toBeHidden();
  const mode=key=>panel(page).locator(`[data-list-mode=${key}]`);
  await configure(page).click();await expect(mode('bullet')).toBeFocused();
  await expect(field(page,'listItemSpacing')).toHaveAttribute('placeholder','Mixed');
@@ -542,7 +619,7 @@ test('list panel keeps its owner, scroll and focus through sizing, palette and m
  await done(page);
  await expect.poll(async()=>(await records(page,'docs')).find(doc=>doc.id===id)?.elements[0]).toEqual(formatted);
 });
-test('list settings reject stale, composing and locked targets, and discard canceled gestures',async({page})=>{
+test('list settings survive caret moves but reject composing and locked targets and cancel gestures',async({page})=>{
  const original=[autoRun(0,{listKind:'bullet'})];
  await seed(page,{paragraphRuns:original});
  await edit(page);await press(page,'Control+Home');
@@ -558,7 +635,9 @@ test('list settings reject stale, composing and locked targets, and discard canc
  expect((await model(page)).paragraphRuns).toEqual(original);
  await host(page).focus();
  await press(page,'Control+End');
- await expect(panel(page)).toBeHidden();
+ await expect(panel(page)).toBeVisible();
+ await expect(panel(page).locator('[data-list-target-note]')).toBeVisible();
+ await expect(preset(page,'◆')).toBeDisabled();
  await preset(page,'◆').dispatchEvent('click');
  expect((await model(page)).paragraphRuns).toEqual(original);
  await kind(page,'bullet').click();
@@ -567,11 +646,11 @@ test('list settings reject stale, composing and locked targets, and discard canc
  await custom.dispatchEvent('compositionstart');await expect(apply).toBeDisabled();
  await custom.dispatchEvent('compositionend');await expect(apply).toBeEnabled();
  await host(page).dispatchEvent('compositionstart');
- await expect(panel(page)).toBeHidden();await expect(kind(page,'ordered')).toBeDisabled();
+ await expect(panel(page)).toBeVisible();await expect(kind(page,'ordered')).toBeDisabled();
  await expect(configure(page)).toBeDisabled();
  await configure(page).dispatchEvent('click');
  await apply.dispatchEvent('click');
- await expect(panel(page)).toBeHidden();
+ await expect(panel(page)).toBeVisible();
  await kind(page,'ordered').dispatchEvent('click');
  expect((await model(page)).paragraphRuns.at(-1)).toEqual(autoRun(11,{listKind:'bullet'}));
  await host(page).dispatchEvent('compositionend');
@@ -580,7 +659,7 @@ test('list settings reject stale, composing and locked targets, and discard canc
  await kind(page,'bullet').click();
  const lock=page.locator('#inspector [data-action=lock]');
  await lock.click();
- await expect(panel(page)).toBeHidden();await expect(kind(page,'ordered')).toBeDisabled();
+ await expect(panel(page)).toBeVisible();await expect(kind(page,'ordered')).toBeDisabled();
  await expect(configure(page)).toBeDisabled();
  const locked=await model(page);
  await kind(page,'ordered').dispatchEvent('click');

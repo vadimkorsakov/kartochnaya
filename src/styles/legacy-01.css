@@ -1961,6 +1961,7 @@ html,body{background:#1e1f27!important;}
 .paragraph-list-controls :focus-visible,.list-style-panel :focus-visible{outline:2px solid #b4a8e4;outline-offset:-2px}
 
 .list-style-panel{width:308px;max-width:calc(100vw - 24px)}
+.list-style-target-note{margin:0 12px 10px;color:#d3cfde;font-size:12px;line-height:1.4}
 .list-style-panel .list-style-body{display:block;overscroll-behavior:contain;scrollbar-width:thin}
 .list-style-panel [hidden]{display:none!important}
 .list-style-panel .linebtn{min-height:30px;padding:4px 7px;color:inherit;background:#383740;border:1px solid #514d5b;border-radius:7px;cursor:pointer;font-size:12px}

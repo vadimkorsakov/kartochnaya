@@ -112,29 +112,30 @@ test('actual mobile case uses the saved canonical text and the five nondestructi
     mobileRawTextRuns:[run(0,3,{underline:true})],textRuns:[run(1,2,{bold:true}),run(5,10,{italic:true})]};
   const {format,notices}=await mobileFormatCommand(e);
   const raw=e.text,runs=structuredClone(e.textRuns);
-  const expected=['ASS Я\nHELLO. МИР ΣΟΣ','aß я\nhello. мир σος','Aß Я\nHello. Мир Σος','Aß я\nHello. Мир σος',raw];
+  const expected=[raw,'ASS Я\nHELLO. МИР ΣΟΣ','aß я\nhello. мир σος','Aß Я\nHello. Мир Σος','Aß я\nHello. Мир σος'];
   for(const [i,value] of expected.entries()){
-    format('case');assert.equal(e.text,raw);assert.deepEqual(e.textRuns,runs);
-    assert.equal(effectiveTextCase(e),textCaseValues[(i+1)%5]);assert.equal(projectTextCase(e.text,richTextSpans(e)).text,value);
+    format('textCase',textCaseValues[i]);assert.equal(e.text,raw);assert.deepEqual(e.textRuns,runs);
+    assert.equal(effectiveTextCase(e),textCaseValues[i]);assert.equal(projectTextCase(e.text,richTextSpans(e)).text,value);
     assert.equal(e.mobileRawText,'stale');canonical(e);
   }
-  format('case');
+  format('textCase','upper');
   Object.assign(e,replaceText(e,e.text.length,e.text.length,' Hello'));
-  for(let i=0;i<4;i++)format('case');
+  format('textCase','original');
   assert.equal(e.text,raw+' Hello');assert.equal(e.textCase,undefined);assert.equal(notices.length,0);
 });
 async function mobileFormatCommand(e){
   const {readFile}=await import('node:fs/promises'),vm=await import('node:vm');
   const source=await readFile(new URL('../src/editor.js',import.meta.url),'utf8');
-  const body=source.slice(source.indexOf('function mobileV36Format(key)'),source.indexOf('function mobileV36ApplyEffect(type)'));
+  const body=source.slice(source.indexOf('function mobileV36ApplyTypography('),source.indexOf('function mobileV36CasePanel()'));
   const notices=[];
   const restoreTextRuns=(layer,runs)=>{if(runs===undefined)delete layer.textRuns;else layer.textRuns=structuredClone(runs)};
-  const context={app:{},active:()=>e,rejectMobileTextTarget:()=>false,
-    restoreTextRuns,applyTextCase,effectiveTextCase,textCaseValues,supportsHorizontalTextLayout,toast:value=>notices.push(value),
-    mobileTextFinishGesture(){},recordInlineSession(){},restoreInlineElement(layer,value){Object.assign(layer,value);restoreTextRuns(layer,value.textRuns);if(!value.textCase)delete layer.textCase},
-    mobileV36Commit(){},mobileV36Render(){}};
+  const context={app:{},active:()=>e,mobileV36Small:()=>true,mobileTextPanelOwner:{},
+    mobileV36State:{tool:'format'},mobileTextTarget:()=>({kind:'layer'}),
+    applyTextCase,toast:value=>notices.push(value),pauseInlineTextInput(){},
+    restoreInlineElement(layer,value){Object.assign(layer,value);restoreTextRuns(layer,value.textRuns);if(!value.textCase)delete layer.textCase},
+    rememberLayerSelection(){},commit(){},restoreSelectionWithoutFocus(){},mobileV36SyncTextStyle(){}};
   vm.createContext(context);vm.runInContext(body,context);
-  return {format:context.mobileV36Format,notices};
+  return {format:context.mobileV36ApplyTypography,notices};
 }
 test('case changes only effective case overrides, preserving gaps, overlap and unrelated fields',()=>{
   const text='aß👩‍💻İz',base={text,textCase:'upper',fontSize:32,metadata:{keep:true},textRuns:[
@@ -208,7 +209,7 @@ test('actual mobile target adapter refuses sessionless, stale, locked and unsupp
  const source=await readFile(new URL('../src/editor.js',import.meta.url),'utf8');
  const adapter=source.slice(source.indexOf('let mobileTextSession=null'),source.indexOf('function inlineStyleRange()'));
  const e={id:'one',text:'Привет 👨‍👩‍👧‍👦',type:'text',textAlign:'left',fontWeight:'400'};
- const editor={value:e.text},doc={id:'doc',elements:[e]},app={doc,editingId:e.id,inlineSession:{}};
+ const editor={value:e.text},doc={id:'doc',elements:[e]},app={doc,editingId:e.id,inlineSession:{},selectedIds:[e.id]};
  let selected=e,notices=[];
  const horizontal=e=>!e.textMode||e.textMode==='horizontal';
  const context={app,document:{activeElement:null},active:()=>selected,$:()=>editor,mobileV36Small:()=>true,isLayerLocked:e=>e.locked,
@@ -217,6 +218,17 @@ test('actual mobile target adapter refuses sessionless, stale, locked and unsupp
  const reset=()=>vm.runInContext(`mobileTextSession={doc:app.doc,element:active(),text:active().text,revision:1,caret:{start:0,end:6,direction:'backward'}};mobileTextPanelOwner={doc:app.doc,element:active(),session:mobileTextSession,revision:1}`,context);
  const target=key=>JSON.parse(JSON.stringify(context.mobileTextTarget(key)));
  reset();assert.deepEqual(target('bold'),{kind:'range',elementId:'one',revision:1,start:0,end:6,direction:'backward'});
+ for(const key of ['textCase','baselineShift'])assert.deepEqual(target(key),target('bold'));
+ assert.equal(target('typography').kind,'layer');
+ for(const key of ['textCase','baselineShift','typography']){
+  for(const unsupported of [{rotation:10},{textPathId:'path'},{mobileArcRadius:10}]){
+   Object.assign(e,unsupported);assert.equal(target(key).kind,'unsupported');delete e[Object.keys(unsupported)[0]];
+  }
+  app.selectedIds=[e.id,'two'];assert.equal(target(key).kind,'unsupported');app.selectedIds=[e.id];
+  vm.runInContext('mobileTextSession.caret={start:4,end:4,direction:"none"}',context);
+  assert.equal(target(key).kind,'layer');
+  vm.runInContext('mobileTextSession.caret=null',context);assert.equal(target(key).kind,'unsupported');reset();
+ }
  assert.equal(target('textAlign').kind,'layer');assert.equal(target('opacity').kind,'layer');
  e.textAlign='justify';assert.equal(target('bold').kind,'range');e.textAlign='left';
  Object.assign(editor,{selectionStart:0,selectionEnd:0,selectionDirection:'none'});context.document.activeElement=editor;

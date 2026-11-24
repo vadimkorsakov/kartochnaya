@@ -121,14 +121,18 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
  test('case projection preserves the current native selection for the next range command',async({page})=>{
   const text='Привет ß семья 😀';
   await open(page,{text});await select(page);await panel(page,'format');
+  const before=await element(page);
+  await page.locator('[data-mp-format=case]').tap();
+  expect(await element(page)).toEqual(before);
   for(const mode of ['upper','lower']){
-   await page.locator('[data-mp-format=case]').tap();
-   expect(await element(page)).toMatchObject({text,textCase:mode});
+   await page.locator(`[data-mp-text-case=${mode}]`).tap();
+   expect(await element(page)).toEqual({...before,textRuns:[{start:0,end:6,style:{textCase:mode}}]});
    await expect(page.locator('#inlineText')).toHaveValue(text);
    expect(await caret(page)).toEqual([0,6,'backward']);
   }
+  await page.locator('#mobilePropertyUI [data-mp-action=back]').tap();
   await page.locator('[data-mp-format=bold]').tap();
-  expect(await element(page)).toMatchObject({text,textCase:'lower',textRuns:[{start:0,end:6,style:{fontWeight:'700'}}]});
+  expect(await element(page)).toEqual({...before,textRuns:[{start:0,end:6,style:{fontWeight:'700',textCase:'lower'}}]});
  });
  test('old panel after native text revision refuses command until reopened',async({page})=>{
   await open(page);await select(page);await panel(page,'format');await page.locator('#inlineText').tap({position:{x:5,y:12}});await page.keyboard.insertText('Новое');const before=await element(page),h=await history(page);

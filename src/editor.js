@@ -714,7 +714,18 @@ function describeChange(before,after){try{const a=JSON.parse(before),b=JSON.pars
 function resetHistory(){if(!app.doc)return;const initial=snapshot();app.historyBase=initial;app.historyPreviewOriginal=false;app.history=[initial];app.historyNames=['Исходное состояние'];app.historyIndex=0;updateHistoryButtons()}
 // Existing property controls join the active inline session; its finalizer releases ownership before committing.
 function commit(label){if(!app.doc)return;if(app.editingId&&(app.inlineSession||matchMedia('(max-width:760px)').matches)){recordInlineSession();const e=app.doc.elements.find(x=>x.id===app.editingId),edit=$('#inlineText');if(e&&edit.value!==e.text){edit.value=e.text;restoreInlineCaret(false)}positionInlineText();paint();return;}boundarySyncDoc(app.doc);syncCurrentSlide();syncAutoCardTitle();const state=snapshot(),previous=app.history[app.historyIndex];if(previous!==state){app.history=app.history.slice(0,app.historyIndex+1);app.historyNames=(app.historyNames||[]).slice(0,app.historyIndex+1);app.history.push(state);app.historyNames.push(typeof label==='string'?label:describeChange(previous,state));if(app.history.length>51){const n=app.history.length-51;app.history.splice(1,n);app.historyNames.splice(1,n);}app.historyIndex=app.history.length-1;app.historyPreviewOriginal=false}updateHistoryButtons();const save=saveState(app.doc.id),key=JSON.stringify(app.doc);if(key!==save.saved&&key!==save.pending?.key)app.doc.updatedAt=Date.now();saveSoon();paint();renderSlideStrip()}
-function historyGo(index){closeListStylePanel();closeUnderlinePanel();inkCancel();if(app.editingId)closeInlineText();if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;app.historyIndex=index;const state=JSON.parse(app.history[index]);const storedSelection=state.selection,storedLayers=state.layerSelection;delete state.selection;delete state.layerSelection;Object.assign(app.doc,state);boundaryRememberDoc(app.doc);ensureGroupData(app.doc);if(app.doc.type==='card')ensureCardSlides(app.doc);app.selectedGroupIds=[];app.focusGroupId=null;app.selectedIds=[];app.selected=null;app.guides=app.doc.rulers||[];restoreSelectionFromHistory(storedSelection);restoreLayerSelection(storedLayers);if(oldSlide!==app.doc.activeSlideIndex){$('#sizeLabel').textContent=`${app.doc.width} × ${app.doc.height} px`;applyZoom()}updateHistoryButtons();updateProjectBadge();refreshLayers();refreshInspector();refreshMobileTools();paint();renderSlideStrip();app.historyPreviewOriginal=index===0&&app.history.length>1;if(app.historyPreviewOriginal){clearTimeout(app.saveTimer);app.saveTimer=null;$('#saveStatus').textContent='Исходное состояние · предпросмотр';}else saveSoon()}
+function historyGo(index){closeListStylePanel();closeUnderlinePanel();inkCancel();if(app.editingId)closeInlineText();if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;
+ const owner=mobileTextPanelOwner;
+ const restoreFormatOwner=mobileV36State.tool==='format'&&owner?.doc===app.doc&&
+  owner.element===active()&&!owner.session;
+ app.historyIndex=index;const state=JSON.parse(app.history[index]);const storedSelection=state.selection,storedLayers=state.layerSelection;delete state.selection;delete state.layerSelection;Object.assign(app.doc,state);boundaryRememberDoc(app.doc);ensureGroupData(app.doc);if(app.doc.type==='card')ensureCardSlides(app.doc);app.selectedGroupIds=[];app.focusGroupId=null;app.selectedIds=[];app.selected=null;app.guides=app.doc.rulers||[];restoreSelectionFromHistory(storedSelection);restoreLayerSelection(storedLayers);
+ // Undo/Redo replaces layer objects. A current layer panel can follow the
+ // same layer on the same slide without reusing any native selection.
+ if(restoreFormatOwner&&oldSlide===app.doc.activeSlideIndex&&owner.element?.id===app.selected)
+  mobileTextPanelOwner={...owner,element:active()};
+ if(oldSlide!==app.doc.activeSlideIndex){$('#sizeLabel').textContent=`${app.doc.width} × ${app.doc.height} px`;applyZoom()}updateHistoryButtons();updateProjectBadge();refreshLayers();refreshInspector();refreshMobileTools();
+ if(restoreFormatOwner)mobileV36SyncTextStyle();
+ paint();renderSlideStrip();app.historyPreviewOriginal=index===0&&app.history.length>1;if(app.historyPreviewOriginal){clearTimeout(app.saveTimer);app.saveTimer=null;$('#saveStatus').textContent='Исходное состояние · предпросмотр';}else saveSoon()}
 function undo(dir){closeListStylePanel();cancelUnderlineGesture();mobileTextFinishGesture();if(app.wysiwyg){app.wysiwyg.travel(dir);return}if(app.inlineSession?.formatted){inlineHistoryGo(dir);return}if(app.editingId)closeInlineText();if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
 function renderHistoryList(){const root=$('#historyEntries');if(!root)return;root.innerHTML=(app.history||[]).map((_,i)=>`<button type="button" class="history-entry ${i===app.historyIndex?'active':''}" data-history-index="${i}" ${i===app.historyIndex?'aria-current="step"':''}><span class="history-step">${i===0?'●':i}</span><span>${html(app.historyNames?.[i]||'Изменение макета')}</span></button>`).join('');const current=root.querySelector('.history-entry.active');if(current&&!$('#historyPopover').classList.contains('hidden'))current.scrollIntoView({block:'nearest'})}
 function updateHistoryButtons(){if(app.inlineSession?.formatted){$('#undoBtn').disabled=app.inlineSession.index===0;$('#redoBtn').disabled=app.inlineSession.index===app.inlineSession.states.length-1;return}const draft=app.penDraft;$('#undoBtn').disabled=draft?!draft.undoStack?.length:app.historyIndex===0;$('#redoBtn').disabled=draft?!draft.redoStack?.length:app.historyIndex===app.history.length-1;renderHistoryList()}
@@ -2339,7 +2350,7 @@ function closeInlineText(cancel=false){
   }
   commit('Изменение текста');
  }else{paint();updateHistoryButtons();}
- refreshInspector();mobileV36SyncSelectionLabel();updateQuickBubble();
+ refreshInspector();mobileV36SyncSelectionLabel();mobileV36SyncTypographyControls();updateQuickBubble();
 }
 for(const type of ['compositionstart','compositionend'])$('#inlineText').addEventListener(type,()=>{if(type==='compositionstart')mobileTextCancelGesture(false);if(mobileTextSession)mobileTextSession.composing=type==='compositionstart'});
 $('#inlineText').addEventListener('beforeinput',ev=>{mobileTextCancelGesture(false);if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
@@ -2472,23 +2483,22 @@ function mobileV36SyncTextStyle(){
  }
  for(const button of mobileV36.querySelectorAll('[data-mp-format]')){
   const key={strike:'strikethrough'}[button.dataset.mpFormat]||button.dataset.mpFormat;
-  if(key==='case'){
-   const {icon,label,pressed,disabled}=mobileTextCaseControl(active());
-   if(button.textContent!==icon)button.textContent=icon;
-   button.title=label;button.setAttribute('aria-label',label);button.setAttribute('aria-pressed',String(pressed));
-   button.classList.toggle('active',pressed===true);button.classList.toggle('mixed',pressed==='mixed');button.disabled=disabled;
-   continue;
-  }
   if(key==='bullet'||key==='number'){
    const {pressed,disabled,label}=mobileListControl(active(),key);
    button.setAttribute('aria-pressed',String(pressed));button.setAttribute('aria-label',label);button.title=label;
    button.classList.toggle('active',pressed===true);button.classList.toggle('mixed',pressed==='mixed');button.disabled=disabled;
    continue;
   }
+  if(['left','center','right','justify'].includes(key)){
+   const pressed=active().textAlign===key;
+   button.setAttribute('aria-pressed',String(pressed));button.classList.toggle('active',pressed);
+   continue;
+  }
   if(!['bold','italic','underline','strikethrough'].includes(key))continue;
   const state=mobileV36Style(key),pressed=['underline','strikethrough'].includes(key)?textDecorationState(key):state.kind==='mixed'?'mixed':state.kind==='value'&&state.value===true;
   button.setAttribute('aria-pressed',String(pressed));button.classList.toggle('active',pressed===true);button.classList.toggle('mixed',pressed==='mixed');
  }
+ mobileV36SyncTypographyControls();
  for(const button of mobileV36.querySelectorAll('[data-mp-swatch]'))button.classList.toggle('active',mobileV36StyleValue('textColor')===button.dataset.mpSwatch.toLowerCase());
  for(const button of mobileV36.querySelectorAll('[data-mp-font]'))button.classList.toggle('active',mobileV36StyleValue('fontFamily')===button.dataset.mpFont);
  for(const button of mobileV36.querySelectorAll('[data-mp-variant]'))button.classList.toggle('active',mobileV36StyleValue('fontVariant')===button.dataset.mpVariant);
@@ -2499,7 +2509,7 @@ function mobileV36StyleAttributes(key){const state=mobileV36Style(key);return `d
 // Native mobile selection belongs to one document, element and editing lifetime.
 // These references/revisions are transient; never part of a document snapshot.
 let mobileTextSession=null,mobileTextPanelOwner=null;
-const mobileRangeKeys=new Set(['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle']);
+const mobileRangeKeys=new Set(['fontFamily','fontVariant','fontWeight','fontStyle','bold','italic','fontSize','textColor','letterSpacing','lineHeight','underline','strikethrough','strokeWidth','stroke','fillOpacity','strokeOpacity','strokeStyle','textCase','baselineShift']);
 function rememberMobileTextTarget(capture=false){
  if(!mobileV36Small()||app.wysiwyg||!mobileTextSession)return;
  const owner=mobileTextSession,e=active(),editor=$('#inlineText');
@@ -2515,30 +2525,38 @@ function confirmMobileTextRevision(e){
 }
 function mobileTextTarget(key,allowLocked=false){
  const e=active(),owner=mobileTextSession,list=key==='bullet'||key==='number';
+ const typography=key==='typography',character=key==='textCase'||key==='baselineShift';
  const unsupported=reason=>({kind:'unsupported',reason});
  if(!e)return unsupported('Слой больше не выбран. Откройте панель заново.');
  if(!allowLocked&&isLayerLocked(e))return unsupported('Слой заблокирован.');
  if(list&&!supportsParagraphLists(e))return unsupported('Списки доступны для горизонтального текста.');
- if(key==='case'&&(e.type!=='text'||!supportsHorizontalTextLayout(e)))return unsupported('Регистр доступен для горизонтального текста.');
+ if((character||typography)&&(e.type!=='text'||app.selectedIds.length!==1||app.maskEditId||
+    !supportsHorizontalTextLayout(e)||e.rotation||e.textPathId||e.flipX||e.flipY))
+  return unsupported('Выберите один незаблокированный слой горизонтального текста без поворота, отражения или контура.');
  if(mobileTextPanelOwner&&(mobileTextPanelOwner.doc!==app.doc||mobileTextPanelOwner.element!==e||mobileTextPanelOwner.session!==owner||mobileTextPanelOwner.revision!==(owner?.revision||0)))return unsupported('Цель форматирования устарела. Откройте панель заново.');
  if(app.editingId){
   if(!owner||owner.doc!==app.doc||owner.element!==e||app.editingId!==e.id)return unsupported('Сессия редактирования изменилась. Выделите текст заново.');
   if(owner.text!==e.text||$('#inlineText').value!==e.text)return unsupported('Текст изменился. Откройте редактирование заново.');
   if(owner.composing)return unsupported('Завершите ввод текста перед форматированием.');
+  if((character||typography)&&!app.inlineSession)return unsupported('В этом режиме форматирование текста недоступно.');
  }
  const editor=$('#inlineText'),revision=owner?.revision||0,c=app.editingId&&!owner?.formatting&&document.activeElement===editor?{start:editor.selectionStart,end:editor.selectionEnd,direction:editor.selectionDirection}:owner?.caret;
  if(list&&app.editingId){
   if(!app.inlineSession||!c||!Number.isInteger(c.start)||!Number.isInteger(c.end)||c.start<0||c.end>e.text.length||c.end<c.start)return unsupported('Выделение устарело. Выделите текст заново.');
   return {kind:'paragraph',elementId:e.id,revision,...c};
  }
- if(mobileRangeKeys.has(key)&&app.editingId&&!c)return unsupported('Выделение не подтверждено. Выделите текст заново.');
- if(!mobileRangeKeys.has(key)||!app.editingId||c.start===c.end)return {kind:'layer',elementId:e.id,revision};
- if(!app.inlineSession||!supportsHorizontalTextLayout(e)||e.mobileArcRadius||['strokeOpacity','strokeStyle'].includes(key))return unsupported('Форматирование выделенного диапазона недоступно в текущем режиме. Снимите выделение для изменения всего слоя.');
+ const layer={kind:'layer',elementId:e.id,revision};
+ if(!app.editingId||!mobileRangeKeys.has(key)&&!typography)return layer;
+ if(!c)return unsupported('Выделение не подтверждено. Выделите текст заново.');
  if(!Number.isInteger(c.start)||!Number.isInteger(c.end)||c.start<0||c.end>e.text.length||c.end<c.start)return unsupported('Выделение устарело. Выделите текст заново.');
+ if(c.start===c.end)return layer;
+ if(!app.inlineSession||!supportsHorizontalTextLayout(e)||e.mobileArcRadius||['strokeOpacity','strokeStyle'].includes(key))return unsupported('Форматирование выделенного диапазона недоступно в текущем режиме. Снимите выделение для изменения всего слоя.');
  // Refuse partial graphemes rather than silently extending UTF-16 offsets.
  if(typeof Intl.Segmenter!=='function')return unsupported('Безопасное форматирование выделения недоступно в этом браузере.');
- const boundaries=new Set([e.text.length,...Array.from(new Intl.Segmenter('ru',{granularity:'grapheme'}).segment(e.text),part=>part.index)]);
- if(!boundaries.has(c.start)||!boundaries.has(c.end))return unsupported('Выделите символ целиком, включая emoji и составные символы.');
+ const graphemes=new Intl.Segmenter('ru',{granularity:'grapheme'}).segment(e.text);
+ if(![c.start,c.end].every(offset=>offset===e.text.length||graphemes.containing(offset)?.index===offset))
+  return unsupported('Выделите символ целиком, включая emoji и составные символы.');
+ if(typography)return layer;
  return {kind:'range',elementId:e.id,revision,...c};
 }
 function rejectMobileTextTarget(key,allowLocked=false){
@@ -2597,12 +2615,14 @@ const typographyGroupLabels={
  shortWords:'Предлоги и союзы',particles:'Частицы',units:'Числа с единицами, валютой и %',
  initials:'Инициалы',dates:'Даты и сокращения',designations:'Номера и обозначения',dash:'Перед тире',
 };
-$('#typographyRules').innerHTML=Object.entries(typographyLabels).map(([key,[label,example,hint]])=>
+const typographyRuleRows=Object.entries(typographyLabels).map(([key,[label,example,hint]])=>
  `<label class="typography-rule"${hint?' title="'+html(hint)+'"':''}><input type="checkbox" data-typography-rule="${key}"><span>${label}<small aria-hidden="true">${html(example)}</small></span></label>`
 ).join('');
-$('#typographyNbspRules').innerHTML=Object.entries(typographyGroupLabels).map(([key,label])=>
+const typographyGroupRows=Object.entries(typographyGroupLabels).map(([key,label])=>
  `<label class="typography-rule"><input type="checkbox" data-typography-nbsp="${key}"><span>${label}</span></label>`
 ).join('');
+$('#typographyRules').innerHTML=typographyRuleRows;
+$('#typographyNbspRules').innerHTML=typographyGroupRows;
 
 function typographyTarget(e){
  if(!underlineDesktop()||homeVisible()||e?.type!=='text'||e!==active()||app.selectedIds.length!==1||
@@ -2644,12 +2664,15 @@ function syncTypographyPanel(){
  const target=$('#typographyTarget'),label=valid?`Весь слой · ${e.name||'Текст'}`:typographyUnavailable;
  if(target.textContent!==label)target.textContent=label;
  typographyControls.disabled=!valid;
- $('[data-typography-master]').checked=config?.enabled===true&&valid;
- for(const input of typographyPanel.querySelectorAll('[data-typography-rule]'))
-  input.checked=valid&&(config?.rules??typographyDefaults)[input.dataset.typographyRule];
- for(const input of typographyPanel.querySelectorAll('[data-typography-nbsp]'))
-  input.checked=valid&&(config?.nbspRules??nbspDefaults)[input.dataset.typographyNbsp];
+ syncTypographyFields(typographyPanel,config,valid);
  positionTypographyPanel();
+}
+function syncTypographyFields(root,config,valid){
+ root.querySelector('[data-typography-master]').checked=config?.enabled===true&&valid;
+ for(const input of root.querySelectorAll('[data-typography-rule]'))
+  input.checked=valid&&(config?.rules??typographyDefaults)[input.dataset.typographyRule];
+ for(const input of root.querySelectorAll('[data-typography-nbsp]'))
+  input.checked=valid&&(config?.nbspRules??nbspDefaults)[input.dataset.typographyNbsp];
 }
 function openTypographyPanel(){
  if(!typographyTarget(active()))return;
@@ -2666,13 +2689,8 @@ function closeTypographyPanel(){
   else canvas.focus({preventScroll:true});
  }
 }
-function changeTypography(field){
- const owner=typographyOwner,gesture=typographyGesture;
- typographyGesture=null;
- if(!owner||owner.doc!==app.doc||owner.session!==app.wysiwyg||!typographyTarget(owner.element)||
-    gesture?.field===field&&gesture.owner!==owner){syncTypographyPanel();return;}
- const e=owner.element;
- const current=normalizeTypography(e.typography)??normalizeTypography({enabled:false});
+function changedTypography(value,field){
+ const current=normalizeTypography(value)??normalizeTypography({enabled:false});
  const next=structuredClone(current);
  if(field.hasAttribute('data-typography-master'))next.enabled=field.checked;
  else if(Object.hasOwn(next.rules,field.dataset.typographyRule))next.rules[field.dataset.typographyRule]=field.checked;
@@ -2680,7 +2698,15 @@ function changeTypography(field){
  else if(field.hasAttribute('data-typography-reset')){
   next.rules={...typographyDefaults};next.nbspRules={...nbspDefaults};
  }
- if(JSON.stringify(current)!==JSON.stringify(next)){
+ return JSON.stringify(current)===JSON.stringify(next)?null:next;
+}
+function changeTypography(field){
+ const owner=typographyOwner,gesture=typographyGesture;
+ typographyGesture=null;
+ if(!owner||owner.doc!==app.doc||owner.session!==app.wysiwyg||!typographyTarget(owner.element)||
+    gesture?.field===field&&gesture.owner!==owner){syncTypographyPanel();return;}
+ const e=owner.element,next=changedTypography(e.typography,field);
+ if(next){
   if(owner.session){
    owner.session.applyLayerStyle({typography:next},{key:'typography',final:true});
   }else{
@@ -2983,8 +3009,7 @@ function canChangeCharacterStyle(e,validate=false){
  }
  return eligibleWysiwyg(e,false,family=>!v41FontUnavailable(family),supportsWysiwygProjection);
 }
-function baselineShiftState(e){
- const range=app.editingId===e.id?app.inlineCaret:null;
+function baselineShiftState(e,range=app.editingId===e.id?app.inlineCaret:null){
  const spans=richTextSpans(e).filter(p=>!range||range.start===range.end||p.start<range.end&&p.end>range.start);
  const first=spans[0]?.style.baselineShift??resolveRichTextStyle(e).baselineShift;
  return spans.every(p=>p.style.baselineShift===first)?first:'mixed';
@@ -5207,7 +5232,10 @@ function redrawSeriesWorkspace(){const d=app.doc,viewport=$('#stageViewport'),si
 function renderSlideStrip(){const d=app.doc;$('#slideStrip')?.classList.add('hidden');$('#slideAddMenu')?.classList.add('hidden');const side=$('#seriesSidebar');if(!isArtboardSeries()){side.classList.add('hidden');$('#mobileSeriesToggle').classList.add('hidden');$('#mobileSeriesSheet').classList.add('hidden');redrawSeriesWorkspace();return}ensureCardSlides(d);syncCurrentSlide(d);side.classList.remove('hidden');$('#seriesSidebarCount').textContent=String(d.slides.length);$('#mobileSeriesToggle').classList.remove('hidden');const list=$('#seriesSidebarList');list.innerHTML='';$('#mobileSeriesList').replaceChildren();d.slides.forEach((s,i)=>{const btn=document.createElement('button');btn.type='button';btn.className='series-sidebar-row'+(i===d.activeSlideIndex?' active':'');btn.dataset.sideSlide=String(i);btn.innerHTML=`<span class="series-mini"></span><span class="series-sidebar-info"><strong>Холст ${i+1}</strong><small>${s.width} × ${s.height}</small></span>${d.slides.length>1?'<span class="series-remove" title="Удалить этот холст" data-side-remove="'+i+'">×</span>':''}`;list.appendChild(btn);const mob=btn.cloneNode(true);$('#mobileSeriesList').appendChild(mob);const mc=document.createElement('canvas');mob.querySelector('.series-mini').appendChild(mc);try{drawBoardCanvas(mc,slideAsDoc(d,i))}catch(e){console.warn(e)}const c=document.createElement('canvas');btn.querySelector('.series-mini').appendChild(c);try{drawBoardCanvas(c,slideAsDoc(d,i))}catch(e){console.warn(e)}});redrawSeriesWorkspace()}
 function seriesFocus(index,behavior='smooth'){const geometry=seriesLocations().list[index],sc=$('#stageScroller');if(!geometry)return;const left=stagePanRoom.left+geometry.x+geometry.w/2-sc.clientWidth/2,top=stagePanRoom.top+geometry.y+geometry.h/2-sc.clientHeight/2;sc.scrollTo({left:Math.max(0,left),top:Math.max(0,top),behavior});ensureStagePanRoom()}
 function changeSlide(index,scrollToBoard=false){const d=app.doc;if(!isArtboardSeries())return;ensureCardSlides(d);if(index<0||index>=d.slides.length)return;const changed=index!==d.activeSlideIndex;
- if(changed){inkCancel();if(app.cropMode)exitCrop(true);syncCurrentSlide(d);applySlideToRoot(d,index);app.penDraft=null;app.pixelSelection=null;updateHistoryButtons();$('#sizeLabel').textContent=`${d.width} × ${d.height} px`;app.guides=[];app.selectedIds=[];app.selected=null;app.selectedGroupIds=[];app.focusGroupId=null;refreshLayers();refreshInspector();refreshMobileTools();}
+ if(changed){
+  if(app.editingId)closeInlineText();
+  inkCancel();if(app.cropMode)exitCrop(true);syncCurrentSlide(d);applySlideToRoot(d,index);app.penDraft=null;app.pixelSelection=null;updateHistoryButtons();$('#sizeLabel').textContent=`${d.width} × ${d.height} px`;app.guides=[];app.selectedIds=[];app.selected=null;app.selectedGroupIds=[];app.focusGroupId=null;refreshLayers();refreshInspector();refreshMobileTools();
+ }
  // Retain shared zoom and pan across artboards.
  applyZoom();renderSlideStrip();if(scrollToBoard)seriesFocus(index);if(changed)saveSoon();}
 // Extend the scrollable workspace on demand. Space/hand dragging, trackpads and
@@ -5907,7 +5935,14 @@ function mobileV36Open(tool,expanded){
  mobileV36Render();
 }
 function mobileV36Expand(){mobileV36State.expanded=true;mobileV36Render()}
-function mobileV36Back(){mobileTextFinishGesture();if(mobileV36State.sub==='colorEdit'){mobileV36State.sub='';mobileV36State.fxColor=null;mobileV36State.expanded=true;mobileV36Render()}else if(mobileV36State.expanded&&['font','color'].includes(mobileV36State.tool)){mobileV36State.expanded=false;mobileV36State.sub='';mobileV36Render()}else mobileV36Close()}
+function mobileV36Back(){
+ mobileTextFinishGesture();
+ const s=mobileV36State;
+ if(s.tool==='format'&&s.sub){s.sub='';mobileV36Render()}
+ else if(s.sub==='colorEdit'){s.sub='';s.fxColor=null;s.expanded=true;mobileV36Render()}
+ else if(s.expanded&&['font','color'].includes(s.tool)){s.expanded=false;s.sub='';mobileV36Render()}
+ else mobileV36Close();
+}
 function mobileV36Property(key,val,done=false){if(!active()||rejectMobileTextTarget(key))return;changeProperty(key,val,done);}
 function mobileV36Commit(){commit();refreshLayers()}
 function mobileV36FontChip(f){return `<button class="mp-font-chip ${mobileV36StyleValue('fontFamily')===f?'active':''}" data-mp-font="${mobileV36Escape(f)}" style="font-family:${mobileV36Escape(JSON.stringify(f))}">${mobileV36Escape(f)}</button>`}
@@ -5924,7 +5959,7 @@ function mobileV36SizePosition(value){return value<=100?(value-1)*4:396+(value-1
 function mobileV36SizeValue(position){return Math.round(position<=396?1+position/4:100+(position-396)*4)}
 function mobileV36Slider(key,val,min,max,step){if(key==='fontSize')return `<input data-mp-key="fontSize" data-mp-size-scale="1" type="range" min="0" max="496" step="1" value="${mobileV36SizePosition(Number(val)||24)}" aria-label="Размер" aria-valuetext="${val===''?'Смешано':val+' px'}" ${mobileV36StyleAttributes(key)}>`;return `<input data-mp-key="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${val}" aria-label="${mobileV36Label[key]||key}" ${mobileRangeKeys.has(key)?mobileV36StyleAttributes(key):''} aria-valuetext="${val===''?'Смешано':val}">`}
 function mobileV36Pill(content){return `<div class="mp-pill">${content}</div>`}
-function mobileV36Sheet(title,content,opts={}){return `<section class="mp-sheet ${title==='Шрифт'?'mp-font-sheet':title==='Формат'?'mp-format-sheet':title==='Расположение'?'mp-position-sheet':title==='Интервалы'?'mp-spacing-sheet':title==='Обводка'?'mp-stroke-sheet':(opts.colorEditor?'mp-color-editor':'')}" role="dialog" aria-label="${mobileV36Escape(title)}"><div class="mp-grab"></div><div class="mp-head"><button data-mp-action="back" aria-label="Назад">${opts.back?'←':''}</button><strong>${mobileV36Escape(title)}</strong><button data-mp-action="done" aria-label="Готово">✓</button></div><div class="mp-body">${content}</div></section>`}
+function mobileV36Sheet(title,content,opts={}){return `<section class="mp-sheet ${opts.className||(title==='Шрифт'?'mp-font-sheet':title==='Формат'?'mp-format-sheet':title==='Расположение'?'mp-position-sheet':title==='Интервалы'?'mp-spacing-sheet':title==='Обводка'?'mp-stroke-sheet':(opts.colorEditor?'mp-color-editor':''))}" role="dialog" aria-label="${mobileV36Escape(title)}"><div class="mp-grab"></div><div class="mp-head"><button data-mp-action="back" aria-label="Назад">${opts.back?'←':''}</button><strong>${mobileV36Escape(title)}</strong><button data-mp-action="done" aria-label="Готово">✓</button></div><div class="mp-body">${content}</div></section>`}
 function mobileV36Tabs(options,selected){return `<div class="mp-tabs">${options.map(([id,label])=>`<button data-mp-tab="${id}" class="${id===selected?'active':''}">${label}</button>`).join('')}</div>`}
 // Height gestures are confined to the font sheet handle and never reserve canvas space.
 function mobileFontHeight(){
@@ -5992,9 +6027,103 @@ function mobileV36PositionPanel(){const e=active();const tab=mobileV36State.tab;
  if(tab==='align')content=`<div class="mp-grid two">${a('По верхнему краю','atop','↟')}${a('По левому краю','aleft','⇤')}${a('По центру (гориз.)','ahcenter','↔')}${a('По центру (вертик.)','avcenter','↕')}${a('По нижнему краю','abottom','↡')}${a('По правому краю','aright','⇥')}</div>`;
  if(tab==='advanced')content=`<div class="mp-grid three">${[['Ширина','w',e.w],['Высота','h',e.h],['Соотношение','aspect',0],['X','x',e.x],['Y','y',e.y],['Повернуть, °','rotation',e.rotation||0]].map(([label,key,val])=>key==='aspect'?`<label class="mp-field">Соотношение<button class="mp-ratio ${mobileV36State.aspectLock?'active':''}" data-mp-action="aspect">${mobileV36State.aspectLock?'🔒':'🔓'}</button></label>`:`<label class="mp-field">${label}<input type="number" data-mp-key="${key}" value="${Math.round(val*10)/10}" step="1" inputmode="decimal"></label>`).join('')}</div>`;
  return mobileV36Sheet('Расположение',`${content}${mobileV36Tabs([['sort','Сортировка'],['align','Выровнять'],['advanced','Расширенные']],tab)}`)}
-function mobileTextCaseControl(e){
- const target=mobileTextTarget('case'),mode=effectiveTextCase(e),[icon,name]=textCaseOptions[mode]||['Aa','Mixed'];
- return {icon,label:target.reason||'Регистр · Весь слой · '+name,pressed:mode==='mixed'?'mixed':mode!=='original',disabled:target.kind==='unsupported'};
+function mobileV36SyncTypographyControls(){
+ if(mobileV36State.tool!=='format')return;
+ const e=active(),sub=mobileV36State.sub;
+ if(sub!=='typography'){
+  const target=mobileTextTarget('textCase'),valid=target.kind!=='unsupported';
+  const mode=valid?effectiveTextCase(e,target.kind==='range'?target:null):null;
+  const trigger=mobileV36.querySelector('[data-mp-format=case]');
+  if(trigger){
+   trigger.disabled=!valid;
+   trigger.classList.toggle('active',valid&&mode!=='original'&&mode!=='mixed');
+   trigger.title=target.reason||'Регистр текста · '+(textCaseOptions[mode]?.[1]||'Mixed');
+   trigger.setAttribute('aria-description',valid?(textCaseOptions[mode]?.[1]||'Mixed'):target.reason);
+   trigger.querySelector('.decoration-mixed').textContent=mode==='mixed'?'Mixed':'';
+   trigger.classList.toggle('mixed',mode==='mixed');
+  }
+  const mixed=mobileV36.querySelector('[data-mp-case-mixed]');
+  if(mixed)mixed.textContent=mode==='mixed'?'Mixed':'';
+  for(const button of mobileV36.querySelectorAll('[data-mp-text-case]')){
+   button.disabled=!valid;
+   button.title=target.reason||'';
+   button.setAttribute('aria-pressed',String(button.dataset.mpTextCase===mode));
+  }
+ }
+ if(!sub){
+  const target=mobileTextTarget('baselineShift'),valid=target.kind!=='unsupported';
+  const mode=valid?baselineShiftState(e,target.kind==='range'?target:null):null;
+  const mixed=mobileV36.querySelector('[data-mp-baseline-mixed]');
+  if(mixed)mixed.textContent=mode==='mixed'?'Индексы · Mixed':'';
+  for(const button of mobileV36.querySelectorAll('[data-mp-baseline-shift]')){
+   button.disabled=!valid;
+   button.title=target.reason||button.getAttribute('aria-label');
+   button.setAttribute('aria-pressed',String(button.dataset.mpBaselineShift===mode));
+  }
+ }
+ const typography=mobileV36.querySelector('[data-mp-format=typography],.mp-typography-panel fieldset');
+ if(!typography)return;
+ const target=mobileTextTarget('typography'),valid=target.kind==='layer';
+ const config=normalizeTypography(e?.typography);
+ typography.disabled=!valid;
+ if(sub==='typography')syncTypographyFields(typography,config,valid);
+ else{
+  const count=typographyCount(config);
+  typography.classList.toggle('active',count>0);
+  typography.title=target.reason||`${typographyTitle} · Активных правил: ${count}`;
+  typography.setAttribute('aria-description',target.reason||`Активных правил: ${count}`);
+ }
+}
+function mobileV36ApplyTypography(key,value){
+ if(!mobileV36Small()||app.wysiwyg||!mobileTextPanelOwner||mobileV36State.tool!=='format')return;
+ // Resolve again after the native handoff and any pending preview.
+ pauseInlineTextInput();
+ const target=mobileTextTarget(key);
+ if(target.kind==='unsupported'){toast(target.reason);mobileV36SyncTextStyle();return;}
+ const e=active(),range=target.kind==='range'?target:null;
+ let next,label;
+ if(key==='typography'){
+  const typography=changedTypography(e.typography,value);
+  if(!typography)return;
+  next={...e,typography};label=typographyTitle;
+ }else if(key==='baselineShift'){
+  if(baselineShiftState(e,range)===value)return;
+  next=applyBaselineShift(e,value,range);label='Положение символов';
+ }else{
+  next=applyTextCase(e,value,range);label='Регистр текста';
+ }
+ if(next===e)return;
+ if(key!=='typography'&&next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
+ const session=app.inlineSession;
+ if(session){
+  if(range)app.inlineCaret={start:range.start,end:range.end,direction:range.direction};
+  recordInlineSession();
+  session.states[session.index].caret=clone(app.inlineCaret);
+  session.formatted=true;
+ }else rememberLayerSelection();
+ restoreInlineElement(e,next);
+ commit(label);
+ if(session)saveSoon();
+ restoreSelectionWithoutFocus();
+ mobileV36SyncTextStyle();
+}
+function mobileV36CasePanel(){
+ return mobileV36Sheet('Регистр текста',`<div class="mp-format-target"><span class="mp-text-selection" data-mp-format-target role="status"></span><span data-mp-case-mixed role="status"></span></div>
+ <div class="mp-case-options" role="group" aria-label="Режимы регистра">
+ ${textCaseValues.map(mode=>{
+  const [sample,label]=textCaseOptions[mode];
+  return `<button type="button" data-mp-text-case="${mode}"><span aria-hidden="true">${sample}</span>${label}</button>`;
+ }).join('')}
+ </div>`,{back:true,className:'mp-case-panel'});
+}
+function mobileV36TypographyPanel(){
+ return mobileV36Sheet(typographyTitle,`<p class="mp-text-selection" role="status">Весь слой</p>
+ <fieldset aria-label="Настройки слоя">
+  <label class="typography-rule typography-master"><input type="checkbox" data-typography-master><span>Включить типографику</span></label>
+  <div role="group" aria-label="Правила">${typographyRuleRows}</div>
+  <details><summary>Группы неразрывных пробелов</summary>${typographyGroupRows}</details>
+  <button type="button" data-typography-reset>По умолчанию</button>
+ </fieldset>`,{back:true,className:'mp-typography-panel'});
 }
 function mobileListControl(e,key){
  const target=mobileTextTarget(key);
@@ -6007,14 +6136,17 @@ function mobileListControl(e,key){
 }
 function mobileV36FormatPanel(){const e=active();
  const btn=(key,content,on,description,disabled=false)=>`<button class="mp-choice mp-format-btn ${on===true?'active':''} ${on==='mixed'?'mixed':''}" aria-pressed="${on}" data-mp-format="${key}" title="${description}" aria-label="${description}" ${disabled?'disabled':''}>${content}</button>`;
- const textCase=mobileTextCaseControl(e);
  const align=(key,label,on)=>btn(key,mobileV37AlignIcon(key),on,label+' · Весь слой');
- return mobileV36Sheet('Формат',`<div class="mp-format-layout"><div class="mp-grid five mp-format-styles">
+ return mobileV36Sheet('Формат',`<div class="mp-format-target"><span class="mp-text-selection" data-mp-format-target role="status"></span><span data-mp-baseline-mixed role="status"></span></div>
+ <div class="mp-format-layout"><div class="mp-grid five mp-format-styles">
  ${btn('bold','<b>B</b>',(mobileV36Style('bold').kind==='mixed'?'mixed':mobileV36StyleValue('bold',false)),'Жирный')}
  ${btn('italic','<i>I</i>',(mobileV36Style('italic').kind==='mixed'?'mixed':mobileV36StyleValue('italic',false)),'Курсив')}
  ${decorationButton('underline',true)}
  ${decorationButton('strikethrough',true)}
- ${btn('case',textCase.icon,textCase.pressed,textCase.label,textCase.disabled)}
+ <button type="button" class="mp-choice mp-format-btn" data-mp-format="case" aria-label="Регистр текста" aria-haspopup="dialog">Aa<span class="decoration-mixed" aria-hidden="true"></span></button>
+ </div><div class="mp-grid four" role="group" aria-label="Индексы и типографика">
+ ${baselineShiftOptions.map(([mode,icon,label])=>`<button type="button" class="mp-choice mp-format-btn" data-mp-baseline-shift="${mode}" aria-label="${label}">${icon}</button>`).join('')}
+ <button type="button" class="mp-choice mp-format-btn" data-mp-format="typography" aria-label="${typographyTitle}" aria-haspopup="dialog">${uiIcon('typography')}</button>
  </div><div class="mp-format-align">
  ${align('left','По левому краю',e.textAlign==='left')}
  ${align('center','По центру',e.textAlign==='center')}
@@ -6050,9 +6182,16 @@ function mobileV36MorePanel(){
 // UTF-16 target, never guessed Canvas geometry or a second selection engine.
 function mobileV36SyncSelectionLabel(){
  let label=mobileV36.querySelector('[data-mobile-text-selection]');
- if(!app.editingId||app.wysiwyg){label?.remove();return;}
- const target=mobileTextTarget('bold');
- if(target.kind!=='range'){label?.remove();return;}
+ const formatTarget=mobileV36.querySelector('[data-mp-format-target]');
+ const key=mobileV36State.sub==='textCase'?'textCase':'bold';
+ const target=app.editingId&&!app.wysiwyg?mobileTextTarget(key):null;
+ if(formatTarget){
+  formatTarget.toggleAttribute('data-mobile-text-selection',target?.kind==='range');
+  if(target?.kind!=='range'){
+   formatTarget.textContent=target?.reason||'Весь слой';formatTarget.title=target?.reason||'';return;
+  }
+  formatTarget.title='';label=formatTarget;
+ }else if(target?.kind!=='range'||mobileV36State.sub==='typography'){label?.remove();return;}
  const host=mobileV36.querySelector('.mp-body,.mp-pill');if(!host)return;
  if(!label){label=document.createElement('div');label.dataset.mobileTextSelection='';label.className='mp-text-selection';label.setAttribute('role','status');host.prepend(label);}
  const text=active().text.slice(target.start,Math.min(target.end,target.start+256)).replace(/\s+/g,' ');
@@ -6073,7 +6212,7 @@ function mobileV36Render(){
  }else{
   if(t==='font')content=mobileV36FontPanel();
   else if(t==='color')content=mobileV36ColorPanel();
-  else if(t==='format')content=mobileV36FormatPanel();
+  else if(t==='format')content=s.sub==='textCase'?mobileV36CasePanel():s.sub==='typography'?mobileV36TypographyPanel():mobileV36FormatPanel();
   else if(t==='spacing')content=mobileV36SpacingPanel();
    else if(t==='effects')content=s.sub==='colorEdit'?mobileV36ColorEditor():mobileV36EffectPanel();
    else if(t==='stroke')content=mobileV36StrokePanel();
@@ -6088,7 +6227,15 @@ function mobileV36Render(){
  // or a different category (a different list of rows).
  const previousFontList=mobileV36.querySelector('.mp-font-scroll');
  const previousFontScroll=previousFontList?{scope:previousFontList.dataset.mpFontScope,top:previousFontList.scrollTop}:null;
+ const previousTypography=mobileV36.querySelector('.mp-typography-panel .mp-body');
+ const typographyScroll=previousTypography?.scrollTop;
+ const typographyGroupsOpen=previousTypography?.querySelector('details').open;
  mobileV36.innerHTML=content;mobileV36.className='mp-open';mobileV36SyncSelectionLabel();
+ mobileV36SyncTypographyControls();
+ const nextTypography=mobileV36.querySelector('.mp-typography-panel .mp-body');
+ if(previousTypography&&nextTypography){
+  nextTypography.querySelector('details').open=typographyGroupsOpen;nextTypography.scrollTop=typographyScroll;
+ }
  document.querySelectorAll('#mobileContext button').forEach(b=>b.classList.toggle('mobile-active',b.dataset.mobile===t));
  mobileFontHeight();
  const nextFontList=mobileV36.querySelector('.mp-font-scroll');
@@ -6102,17 +6249,11 @@ function mobileV36Format(key){const e=active();if(!e||rejectMobileTextTarget(key
  if(key==='bold')e.fontWeight=Number(e.fontWeight)>=600?'400':'700';
  if(key==='italic')e.fontStyle=e.fontStyle==='italic'?'normal':'italic';
  if(key==='underline'||key==='strike'){toggleTextDecoration(key==='underline'?'underline':'strikethrough');mobileV36Render();resumeInlineTextFromButton();return}
- if(key==='case'){
-  if(!supportsHorizontalTextLayout(e)||e.type!=='text')return;
-  mobileTextFinishGesture();
-  const mode=effectiveTextCase(e);
-  const next=applyTextCase(e,textCaseValues[(textCaseValues.indexOf(mode)+1)%textCaseValues.length]);
-  if(next===e)return;
-  recordInlineSession();
-  if(next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
-  restoreInlineElement(e,next);
-  if(app.inlineSession){app.inlineSession.formatted=true;saveSoon()}
-  mobileV36Commit();mobileV36Render();return;
+ if(key==='case'||key==='typography'){
+  const sub=key==='case'?'textCase':'typography';
+  pauseInlineTextInput();
+  if(rejectMobileTextTarget(sub))return;
+  mobileV36State.sub=sub;mobileV36Render();return;
  }
  if(['left','right','center','justify'].includes(key))e.textAlign=key;
  if(key==='bullet'||key==='number'){
@@ -6202,7 +6343,7 @@ function mobileV36StartNudge(ev){
  return true;
 }
 for(const root of [mobileV36,mobileNudge]){
- for(const type of ['contextmenu','selectstart','dragstart'])root.addEventListener(type,ev=>{if(ev.target.closest('[data-mp-nudge]'))ev.preventDefault()});
+ for(const type of ['contextmenu','selectstart','dragstart'])root.addEventListener(type,ev=>{if(ev.target.closest?.('[data-mp-nudge]'))ev.preventDefault()});
  root.addEventListener('click',ev=>{const arrow=ev.target.closest('[data-mp-nudge]');if(!arrow||!ev.isTrusted||ev.detail!==0||arrow.disabled)return;ev.preventDefault();if(mobileV36Interaction)return;if(mobileV36Nudge(arrow.dataset.mpNudge)){mobileV36Commit();mobileNudgeMeasureTimer=setTimeout(()=>{mobileNudgeClearMeasurements();paint()},850)}});
 }
 mobileNudge.addEventListener('pointerdown',mobileV36StartNudge);
@@ -6247,6 +6388,9 @@ mobileV36.addEventListener('click',ev=>{
  if(b.dataset.mpTab){if(mobileV36State.tool==='color'&&mobileV36State.sub==='colorEdit'){mobileV36State.colorTab=b.dataset.mpTab;const e=active();e.fillType=mobileV36State.colorTab==='gradient'?'gradient':'solid';if(e.fillType==='gradient'&&!e.gradientStops)e.gradientStops=[{pos:0,color:e.fill||'#7857de',alpha:100},{pos:100,color:e.fill2||'#78b0ef',alpha:100}];if(e.fillType==='gradient'){gradientStops(e);gradientGeometry(e)}mobileV36Commit()}
   else mobileV36State.tab=b.dataset.mpTab;mobileV36Render();return}
  if(b.dataset.mpFormat){mobileV36Format(b.dataset.mpFormat);return}
+ if(b.dataset.mpBaselineShift){mobileV36ApplyTypography('baselineShift',b.dataset.mpBaselineShift);return}
+ if(b.dataset.mpTextCase){mobileV36ApplyTypography('textCase',b.dataset.mpTextCase);return}
+ if(b.hasAttribute('data-typography-reset')){mobileV36ApplyTypography('typography',b);return}
  if(b.dataset.mpValign){mobileV36Property('verticalAlign',b.dataset.mpValign,true);mobileV36Render();return}
  if(b.dataset.mpArrange){if(b.dataset.mpArrange.startsWith('a'))mobileV36AlignLayer(b.dataset.mpArrange);else{arrangeLayer(b.dataset.mpArrange);mobileV36Render()}return}
  if(b.dataset.mpFxPick){mobileV36State.fxColor={type:b.dataset.mpFxPick,key:b.dataset.mpColorKey||'color'};mobileV36State.colorTab='solid';mobileV36State.sub='colorEdit';mobileV36State.expanded=true;mobileV36InitColor();mobileV36Render();return}
@@ -6265,7 +6409,11 @@ mobileV36.addEventListener('input',ev=>{
  if(t.dataset.mpEffectKey){const e=active(),f=e.effects?.find(x=>x.type===t.dataset.mpEffectType);if(f)f[t.dataset.mpEffectKey]=Number(t.value);else e[t.dataset.mpEffectKey]=Number(t.value);paint();saveSoon();const sibling=[...mobileV36.querySelectorAll(`[data-mp-effect-key="${t.dataset.mpEffectKey}"]`)].find(x=>x!==t);if(sibling)sibling.value=t.value;return}
  if(t.dataset.mpKey){const key=t.dataset.mpKey;if(mobileV36State.aspectLock&&['w','h'].includes(key)&&!t.dataset.mpAspectStart){t.dataset.mpAspectStart=JSON.stringify({w:active().w,h:active().h})}const value=t.dataset.mpSizeScale?mobileV36SizeValue(Number(t.value)):t.value;mobileV36Property(key,value,false);t.setAttribute('aria-valuetext',String(value));const sibling=[...mobileV36.querySelectorAll(`[data-mp-key="${key}"]`)].find(x=>x!==t);if(sibling){sibling.value=sibling.dataset.mpSizeScale?mobileV36SizePosition(Number(value)):value;sibling.dataset.styleState='value'}return}
 });
-mobileV36.addEventListener('change',ev=>{const t=ev.target;if(t.dataset.mpCanceled||t.dataset.mpAborted){delete t.dataset.mpCanceled;return}if(rejectMobileTextTarget('panel'))return;
+mobileV36.addEventListener('change',ev=>{const t=ev.target;
+ if(t.matches('[data-typography-master],[data-typography-rule],[data-typography-nbsp]')){
+  mobileV36FinishInteraction();mobileTextFinishGesture();mobileV36ApplyTypography('typography',t);return;
+ }
+ if(t.dataset.mpCanceled||t.dataset.mpAborted){delete t.dataset.mpCanceled;return}if(rejectMobileTextTarget('panel'))return;
  if(t.matches('[data-text-auto-font]')){setTextAutoFont(t.checked);return}
  if(t.matches('[data-mp-font-category]')){mobileV36State.fontCategory=t.value;mobileV36Render();mobileV36.querySelector('[data-mp-font-category]')?.focus();return}
  if(t.dataset.mpHue||t.dataset.mpHex){const color=t.dataset.mpHex?t.value:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value);mobileV36ApplyColor(color,true);requestAnimationFrame(()=>mobileV36Render());return}
@@ -6439,6 +6587,7 @@ function mobileBack(){mobileTextFinishGesture();
  if(mobileImeVisible){mobileImeVisible=false;const focused=document.activeElement;if(focused?.matches('input,textarea,select'))focused.blur();return true}
  const panel=mobileTopPanel();
  if(panel&&(!$('#documentTabsMenu').classList.contains('hidden')||$$('.dialog:not(.hidden)').length)){panel();return true}
+ if(panel&&mobileV36State.tool==='format'&&mobileV36State.sub){panel();return true}
  if(app.editingId)closeInlineText();
  if(panel){panel();return true}
  if(app.selectedIds.length){setSelected([]);return true}

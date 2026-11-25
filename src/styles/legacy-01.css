@@ -1243,12 +1243,12 @@ body{padding-top:var(--document-tab-height)}
   #mobilePropertyUI .mp-font-sheet .mp-variant-inline{display:flex;gap:5px;flex-wrap:wrap;padding:5px 3px 7px}
   #mobilePropertyUI .mp-font-sheet .mp-variant-inline button{min-height:29px;padding:3px 9px;font-size:11px;border-radius:8px}
   #mobilePropertyUI .mp-font-sheet .mp-variant-title,#mobilePropertyUI .mp-font-sheet .mp-variants{display:none!important}
-  #mobilePropertyUI .mp-format-sheet .mp-body{overflow:hidden!important;padding-top:5px!important;padding-bottom:5px!important}
   #mobilePropertyUI .mp-format-layout{display:grid;gap:8px}
-  #mobilePropertyUI .mp-format-btn{height:38px!important;min-height:38px!important;padding:2px!important;font-size:21px!important;display:flex!important;align-items:center!important;justify-content:center!important;line-height:1!important}
+  #mobilePropertyUI .mp-format-btn{height:44px;min-height:44px;padding:2px;font-size:21px;display:flex;align-items:center;justify-content:center;line-height:1}
+  #mobilePropertyUI .mp-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}
   #mobilePropertyUI .mp-format-btn svg{width:20px!important;height:20px!important}
-  #mobilePropertyUI .mp-format-align{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;height:36px;background:#32303b;border:1px solid #514d5a;border-radius:11px;overflow:hidden}
-  #mobilePropertyUI .mp-format-align .mp-format-btn{height:36px!important;min-height:36px!important;background:transparent;border:none;border-right:1px solid #514d5a;border-radius:0!important}
+  #mobilePropertyUI .mp-format-align{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;background:#32303b;border:1px solid #514d5a;border-radius:11px;overflow:hidden}
+  #mobilePropertyUI .mp-format-align .mp-format-btn{background:transparent;border:none;border-right:1px solid #514d5a;border-radius:0!important}
   #mobilePropertyUI .mp-format-align .mp-format-btn:last-child{border-right:0}
   #mobilePropertyUI .mp-format-align .mp-format-btn.active{background:#51436f!important}
   #mobilePropertyUI .mp-position-sheet .mp-body{padding-top:5px!important;overflow:hidden!important}
@@ -1922,6 +1922,31 @@ html,body{background:#1e1f27!important;}
  #mobilePropertyUI .mp-text-selection{flex:0 0 auto;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c7c2d5;font-size:11px;line-height:18px;margin-bottom:4px}
  #mobilePropertyUI .mp-pill:has([data-mobile-text-selection]){flex-wrap:wrap;height:auto!important;border-radius:18px;row-gap:0!important}
  #mobilePropertyUI .mp-pill>[data-mobile-text-selection]{flex-basis:100%}
+ #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel){--mp-format-max-height:min(49dvh,440px);max-height:var(--mp-format-max-height)!important}
+ body.karto-keyboard-open #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel){max-height:min(var(--mp-format-max-height),max(80px,calc(var(--v41-visual-height) - 204px)))!important}
+ #mobilePropertyUI .mp-case-panel{--mp-format-max-height:min(52dvh,440px)}
+ #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel) .mp-head{height:44px!important;min-height:44px!important}
+ #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel) .mp-head button{width:44px!important;min-width:44px!important;height:44px!important}
+ #mobilePropertyUI :is(.mp-format-sheet,.mp-case-panel,.mp-typography-panel) .mp-body{touch-action:pan-y}
+ #mobilePropertyUI .mp-format-target{display:flex;justify-content:space-between;gap:8px;color:#dacaff;font-size:11px;line-height:18px}
+ #mobilePropertyUI .mp-format-target .mp-text-selection{flex:1}
+ #mobilePropertyUI .mp-format-target [role=status]:last-child{flex-shrink:0}
+ /* Keep all five 44px choices visible on short phones without depending on
+    platform font line-height or taking more than the stage's height budget. */
+ #mobilePropertyUI .mp-case-panel .mp-body{padding:4px 12px!important}
+ #mobilePropertyUI .mp-case-options{display:grid;gap:3px}
+ #mobilePropertyUI .mp-case-options button{display:grid;grid-template-columns:62px minmax(0,1fr);align-items:center;min-height:44px;padding:3px 8px;text-align:left;font:inherit;line-height:18px}
+ #mobilePropertyUI .mp-case-options button span{font-size:16px;font-weight:650}
+ #mobilePropertyUI :is(.mp-format-btn,.mp-case-options button):disabled,#mobilePropertyUI .mp-typography-panel fieldset:disabled{opacity:.45}
+ #mobilePropertyUI .mp-typography-panel .mp-text-selection{margin:0 0 4px}
+ #mobilePropertyUI .mp-typography-panel fieldset{border:0;margin:0;padding:0;min-width:0}
+ #mobilePropertyUI .mp-typography-panel .typography-rule{display:flex;align-items:center;gap:10px;min-height:48px;padding:4px 8px;cursor:pointer}
+ #mobilePropertyUI .mp-typography-panel .typography-rule input{flex:0 0 18px;width:18px;height:18px;margin:0;accent-color:#b29aff}
+ #mobilePropertyUI .mp-typography-panel .typography-rule small{display:block;color:#c7c2d5;font-size:11px;overflow-wrap:anywhere}
+ #mobilePropertyUI .mp-typography-panel .typography-master,#mobilePropertyUI .mp-typography-panel details{border-bottom:1px solid #54505d}
+ #mobilePropertyUI .mp-typography-panel summary{min-height:44px;padding:12px 8px;cursor:pointer}
+ #mobilePropertyUI .mp-typography-panel details .typography-rule{padding-left:20px}
+ #mobilePropertyUI .mp-typography-panel [data-typography-reset]{width:100%;min-height:44px;margin-top:6px;font:inherit}
 }
 
 .text-decoration-controls .underline-settings{flex:0 0 30px;min-width:30px;padding:4px;margin-left:-5px}

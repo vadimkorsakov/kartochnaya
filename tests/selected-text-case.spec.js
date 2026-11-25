@@ -286,7 +286,7 @@ for(const patch of [{locked:true},{textMode:'vertical'},{rotation:12}])test(`cas
  expect(await model(page)).toEqual(before);
 });
 
-test('the mobile case cycle keeps the native source and Canvas/PNG display',async({page},info)=>{
+test('the mobile case panel keeps native source and renders range and layer case in Canvas/PNG',async({page},info)=>{
  await page.setViewportSize({width:390,height:844});
  const text='Straße. второе слово';
  await seed(page,{text,w:410,h:270,mobileCase:1,mobileRawText:'stale'});
@@ -294,21 +294,31 @@ test('the mobile case cycle keeps the native source and Canvas/PNG display',asyn
  await page.locator('#mobileLayerList .layer-name').filter({hasText:'Case sample'}).click();
  await page.locator('#mobileLayersClose').click();
  await page.locator('#mobileContext [data-mobile=edit]').click();
- const input=page.locator('#inlineText'),cycle=page.locator('[data-mp-format=case]');
+ const input=page.locator('#inlineText'),options=page.getByRole('dialog',{name:'Регистр текста',exact:true});
  await expect(input).toBeFocused();await expect(host(page)).toBeHidden();
  await press(page,'Control+Home','Shift+ArrowRight');
  await page.locator('#mobileContext [data-mobile=format]').click();
- await cycle.click();await expect(cycle).toHaveText('AA');
- await page.locator('#undoBtn').click();await expect(cycle).toHaveText('Aa');
- await page.locator('#redoBtn').click();await expect(cycle).toHaveText('AA');
- for(const [mode,label] of [
-  ['lower','aa'],['title','Ab Cd'],['sentence','Ab. Cd.'],['original','Aa'],['upper','AA'],
- ]){
-  await cycle.click();await expect(cycle).toHaveText(label);
+ const before=await model(page);
+ await page.locator('[data-mp-format=case]').click();await expect(options).toBeVisible();
+ expect(await model(page)).toEqual(before);
+ const modeButton=mode=>options.locator(`[data-mp-text-case=${mode}]`);
+ await modeButton('upper').click();await expect(modeButton('upper')).toHaveAttribute('aria-pressed','true');
+ await page.locator('#undoBtn').click();await expect(modeButton('original')).toHaveAttribute('aria-pressed','true');
+ await page.locator('#redoBtn').click();await expect(modeButton('upper')).toHaveAttribute('aria-pressed','true');
+ for(const mode of ['lower','title','sentence','original','upper']){
+  await modeButton(mode).click();await expect(modeButton(mode)).toHaveAttribute('aria-pressed','true');
   await expect(input).toHaveValue(text);
-  expect((await model(page)).textCase??'original').toBe(mode);
+  expect(await model(page)).toEqual(mode==='original'?before:{...before,textRuns:[{start:0,end:1,style:{textCase:mode}}]});
   expect(await input.evaluate(el=>[el.selectionStart,el.selectionEnd])).toEqual([0,1]);
+  await expect(input).not.toBeFocused();
  }
+ await page.locator('#mobileContext [data-mobile=edit]').click();
+ await press(page,'Control+End');
+ await page.locator('#mobileContext [data-mobile=format]').click();
+ await page.locator('[data-mp-format=case]').click();
+ await modeButton('upper').click();
+ expect(await model(page)).toEqual({...before,textCase:'upper'});
+ await options.getByRole('button',{name:'Готово'}).click();
  await page.locator('#mobileContext [data-mobile=edit]').click();
  await press(page,'Control+End');await page.keyboard.insertText(' world');
  await expect(input).toHaveValue(text+' world');

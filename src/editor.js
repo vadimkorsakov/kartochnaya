@@ -1,4 +1,5 @@
 import {mobileTextStyle} from './editor/mobile-text-style.mjs';
+import {createMobileListSettings, mobileListSettingsContent} from './editor/mobile-list-settings.mjs';
 import { nextZoom, parseZoomPercent } from './core/zoom.mjs';
 import {eligibleWysiwyg, justifyWysiwygEnabled, createWysiwygSession} from './editor/wysiwyg-session.mjs';
 import {paintHorizontalTextPass, hasHorizontalTextStroke} from './render/text-stroke.mjs';
@@ -894,6 +895,7 @@ function syncInspectorTransformDuringDrag(){
  }
 }
 function refreshInspector(){
+ mobileListSettings.sync();
  if(typographyOpen)queueMicrotask(syncTypographyPanel);
  if(listPanel&&!listPanel.applying&&!listOwnerValid(listPanel))closeListStylePanel();
  if(underlinePanel&&!underlineOwnerValid())closeUnderlinePanel();
@@ -2316,6 +2318,7 @@ function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editi
 }
 function closeInlineText(cancel=false){
  if(!app.editingId)return;
+ mobileListSettings.cancel();
  closeListStylePanel();closeUnderlinePanel();
  if(cancel)mobileTextCancelGesture();
  // A numeric property input may own the IME; settle its change while the session still owns history.
@@ -2352,8 +2355,8 @@ function closeInlineText(cancel=false){
  }else{paint();updateHistoryButtons();}
  refreshInspector();mobileV36SyncSelectionLabel();mobileV36SyncTypographyControls();updateQuickBubble();
 }
-for(const type of ['compositionstart','compositionend'])$('#inlineText').addEventListener(type,()=>{if(type==='compositionstart')mobileTextCancelGesture(false);if(mobileTextSession)mobileTextSession.composing=type==='compositionstart'});
-$('#inlineText').addEventListener('beforeinput',ev=>{mobileTextCancelGesture(false);if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
+for(const type of ['compositionstart','compositionend'])$('#inlineText').addEventListener(type,()=>{if(type==='compositionstart')mobileTextCancelGesture(false);if(mobileTextSession)mobileTextSession.composing=type==='compositionstart';mobileListSettings.sync()});
+$('#inlineText').addEventListener('beforeinput',ev=>{mobileTextCancelGesture(false);mobileListSettings.cancel();if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
 $('#inlineText').addEventListener('input',ev=>{mobileTextCancelGesture(false);const e=app.doc?.elements.find(x=>x.id===app.editingId);if(e){if(app.inlineRichHistory&&!app.inlineSession?.formatted){const result=editTextWithHistory(e,app.inlineRichHistory,ev.target.value,{selection:app.inlineInputSelection,inputType:ev.inputType});app.inlineRichHistory=result.history;e.text=result.element.text;restoreTextRuns(e,result.element.textRuns);if(result.element.paragraphRuns)e.paragraphRuns=result.element.paragraphRuns;else delete e.paragraphRuns}else setTextValue(e,ev.target.value,app.inlineInputSelection);app.inlineInputSelection=null;confirmMobileTextRevision(e);if(autoFitTextFont(e))positionInlineText();syncAutoCardTitle();rememberInlineCaret();recordInlineSession(ev.inputType);refreshSaveStatus();paint()}});
 $('#inlineText').addEventListener('blur',ev=>{
  // blur has already moved document.activeElement; capture only while input owns the selection.
@@ -2463,6 +2466,9 @@ function mobileTextPreviewGesture(key,value,final,target){
 function mobileV36SyncTextStyle(){
  if(mobileTextGesture||!mobileV36Small()||!mobileV36State.tool||active()?.type!=='text')return;
  mobileV36SyncSelectionLabel();
+ mobileListSettings.sync();
+ const listButton=mobileV36.querySelector('[data-mp-format=listSettings]');
+ if(listButton)listButton.disabled=!mobileListSettingsTarget()?.modes.length;
  for(const input of mobileV36.querySelectorAll('[data-mp-key]')){
   const key=input.dataset.mpKey;if(!mobileRangeKeys.has(key)||input===document.activeElement)continue;
   const state=mobileV36Style(key),value=state.kind==='value'?state.value:'';
@@ -2524,12 +2530,14 @@ function confirmMobileTextRevision(e){
  if(owner&&owner.doc===app.doc&&owner.element===e&&owner.text!==e.text){owner.text=e.text;owner.revision++}
 }
 function mobileTextTarget(key,allowLocked=false){
- const e=active(),owner=mobileTextSession,list=key==='bullet'||key==='number';
+ const e=active(),owner=mobileTextSession,list=key==='bullet'||key==='number'||key==='listSettings';
  const typography=key==='typography',character=key==='textCase'||key==='baselineShift';
  const unsupported=reason=>({kind:'unsupported',reason});
  if(!e)return unsupported('Слой больше не выбран. Откройте панель заново.');
  if(!allowLocked&&isLayerLocked(e))return unsupported('Слой заблокирован.');
  if(list&&!supportsParagraphLists(e))return unsupported('Списки доступны для горизонтального текста.');
+ if(key==='listSettings'&&(app.selectedIds.length!==1||app.maskEditId))
+  return unsupported('Выберите один незаблокированный слой горизонтального текста.');
  if((character||typography)&&(e.type!=='text'||app.selectedIds.length!==1||app.maskEditId||
     !supportsHorizontalTextLayout(e)||e.rotation||e.textPathId||e.flipX||e.flipY))
   return unsupported('Выберите один незаблокированный слой горизонтального текста без поворота, отражения или контура.');
@@ -3090,6 +3098,7 @@ const paragraphListKinds = [
 ];
 const listPanelNode=$('#listStylePanel'),listPanelBody=listPanelNode.querySelector('.list-style-body');
 const listSettingsLabel='Настроить существующий список';
+const listSettingsIcon='<svg viewBox="0 0 24 20" aria-hidden="true" focusable="false"><path d="M4 5h4m4 0h8M4 10h9m4 0h3M4 15h4m4 0h8"/><circle cx="10" cy="5" r="2"/><circle cx="15" cy="10" r="2"/><circle cx="10" cy="15" r="2"/></svg>';
 const listPanelTrigger=owner=>$(owner.existingModes?'#inspector [data-list-settings]':'#inspector [data-list-kind="'+owner.mode+'"]');
 const listPanelControls={};
 let listPanel=null;
@@ -3114,8 +3123,7 @@ function paragraphListControls(e){
    ${state?'':'disabled'}><svg viewBox="0 0 24 20" aria-hidden="true" focusable="false">${icon}</svg></button>`).join('')}
   <button type="button" class="linebtn list-kind-button" data-list-settings aria-label="${listSettingsLabel}" title="${listSettingsLabel}"
    aria-haspopup="dialog" aria-controls="listStylePanel" aria-expanded="${!!listPanel?.existingModes}"
-   ${state&&state.listKind!=='none'?'':'disabled'}><svg viewBox="0 0 24 20" aria-hidden="true" focusable="false">
-   <path d="M4 5h4m4 0h8M4 10h9m4 0h3M4 15h4m4 0h8"/><circle cx="10" cy="5" r="2"/><circle cx="15" cy="10" r="2"/><circle cx="10" cy="15" r="2"/></svg></button>
+   ${state&&state.listKind!=='none'?'':'disabled'}>${listSettingsIcon}</button>
   <span data-list-mixed role="status">${state?.listKind==='mixed'?'Mixed':''}</span>
  </div>`;
 }
@@ -3193,15 +3201,17 @@ const listMarkerApply=listPanelNode.querySelector('[data-list-marker-apply]');
 const listLibraryGrid=listPanelNode.querySelector('[data-list-library]');
 const listLibraryStatus=listPanelNode.querySelector('[data-list-library-status]');
 const listUnsavedMarker=listPanelNode.querySelector('[data-list-unsaved-marker]');
-let listMarkerLibrary=[],listMarkerLibraryPending=false;
+let listMarkerLibrary=[],listMarkerLibraryPending=null;
+const listLibraryMessages={added:'Маркер сохранён.',removed:'Маркер удалён из галереи.',duplicate:'Этот маркер уже есть в галерее.',
+ full:'Галерея заполнена. Удалите один из своих маркеров.',missing:'Маркер уже удалён из галереи.'};
 
 function listMarkerFeedback(node,message='',error=false){
  if(node.textContent!==message)node.textContent=message;
  node.hidden=!message;
  node.dataset.error=String(error);
 }
-function syncCustomListMarker(){
- const marker=listMarkerInput.value,valid=validateListMarker(marker);
+function customListMarkerState(marker){
+ const valid=validateListMarker(marker);
  const invalid=!!marker&&!valid;
  const duplicate=valid&&(isBuiltinListMarker(marker)||listMarkerLibrary.includes(marker));
  const full=listMarkerLibrary.length>=listMarkerLibraryLimit;
@@ -3211,6 +3221,10 @@ function syncCustomListMarker(){
   'Вставьте один видимый символ или эмодзи без пробелов и переносов.';
  else if(duplicate)message='Этот маркер уже есть в галерее.';
  else if(valid&&full)message='Галерея заполнена. Удалите один из своих маркеров.';
+ return {valid,invalid,duplicate,full,message};
+}
+function syncCustomListMarker(){
+ const marker=listMarkerInput.value,{valid,invalid,duplicate,full,message}=customListMarkerState(marker);
  listMarkerFeedback(listMarkerMessage,message,invalid);
  listMarkerInput.setAttribute('aria-invalid',String(invalid));
  listMarkerPreview.textContent=valid?marker:'';
@@ -3242,37 +3256,48 @@ function renderListMarkerLibrary(markers){
  listLibraryGrid.hidden=!markers.length;
  listPanelNode.querySelector('[data-list-library-empty]').hidden=!!markers.length;
 }
+async function changeListMarkerLibrary(action,marker){
+ if(!workspaceInstances.writable()||(action&&replacementSealed))throw Error('Workspace is being replaced');
+ if(listMarkerLibraryPending){
+  if(action)throw Error('List marker library is busy');
+  await listMarkerLibraryPending;
+  return;
+ }
+ const operation=action?updateListMarkers(app.db,action,marker):loadListMarkers(app.db);
+ // Publish only the committed transaction. Workspace backups wait at this barrier.
+ listMarkerLibraryPending=workspaceBarrier.track(operation);
+ try{
+  mobileListSettings.sync();if(listPanel)syncCustomListMarker();
+  const result=await listMarkerLibraryPending;
+  renderListMarkerLibrary(action?result.markers:result);
+  return action?listLibraryMessages[result.status]:'';
+ }finally{
+  listMarkerLibraryPending=null;
+  mobileListSettings.sync();
+  if(listPanel&&listOwnerValid(listPanel))syncListStylePanel();
+ }
+}
 async function refreshListMarkerLibrary(owner,action,marker,button){
- if(listMarkerLibraryPending)return;
- listMarkerLibraryPending=true;
+ if(action&&listMarkerLibraryPending)return;
  if(action){
   if(action==='add'&&document.activeElement===button)listMarkerInput.focus({preventScroll:true});
   listMarkerFeedback(listLibraryStatus);
  }
- syncCustomListMarker();
  const removedIndex=listMarkerLibrary.indexOf(marker);
+ const {doc,slide,element}=owner;
+ const isCurrent=()=>listPanel===owner&&owner.doc===doc&&owner.slide===slide&&owner.element===element;
  try{
-  if(!workspaceInstances.writable()||(action&&replacementSealed))throw Error('Workspace is being replaced');
-  const operation=action?updateListMarkers(app.db,action,marker):loadListMarkers(app.db);
-  // Snapshots wait for the transaction. A rollback leaves no unconfirmed settings in memory.
-  const result=await workspaceBarrier.track(operation);
-  const restoreFocus=action==='remove'&&listPanel===owner&&document.activeElement===button;
-  renderListMarkerLibrary(action?result.markers:result);
+  const focused=document.activeElement===button;
+  const message=await changeListMarkerLibrary(action,marker);
+  const restoreFocus=action==='remove'&&isCurrent()&&focused&&document.activeElement===document.body;
   if(restoreFocus){
    const tile=listLibraryGrid.children[Math.min(removedIndex,listLibraryGrid.children.length-1)];
    (tile?.querySelector('[data-list-marker]')||listMarkerInput).focus({preventScroll:true});
   }
-  if(action&&listPanel===owner){
-   const messages={added:'Маркер сохранён.',removed:'Маркер удалён из галереи.',duplicate:'Этот маркер уже есть в галерее.',
-    full:'Галерея заполнена. Удалите один из своих маркеров.',missing:'Маркер уже удалён из галереи.'};
-   listMarkerFeedback(listLibraryStatus,messages[result.status]);
-  }
+  if(isCurrent())listMarkerFeedback(listLibraryStatus,message);
  }catch(error){
   console.warn('Галерея маркеров:',error);
-  if(listPanel===owner)listMarkerFeedback(listLibraryStatus,action?'Изменение галереи не сохранено.':'Не удалось прочитать галерею маркеров.',true);
- }finally{
-  listMarkerLibraryPending=false;
-  if(listPanel&&listOwnerValid(listPanel))syncListStylePanel();
+  if(isCurrent())listMarkerFeedback(listLibraryStatus,action?'Изменение галереи не сохранено.':'Не удалось прочитать галерею маркеров.',true);
  }
 }
 const listCounters=listPanelNode.querySelector('[data-list-counters]');
@@ -3295,11 +3320,14 @@ function listPanelState(owner=listPanel){
  if(!owner.applying&&!listOwnerValid(owner))
   return {...paragraphListDefaults,hasTarget:false,solid:false,emoji:false,color:'',opacity:100};
  const onlyKind=owner.existingModes?owner.mode:undefined;
- const element=owner.draft||owner.element,selected=paragraphListState(element,owner.range,{onlyKind});
+ return paragraphListAppearance(owner.draft||owner.element,owner.range,owner.mode,onlyKind);
+}
+function paragraphListAppearance(element,range,mode,onlyKind){
+ const selected=paragraphListState(element,range,{onlyKind});
  const state=selected||paragraphListDefaults,base=resolveRichTextStyle(element);
  const solid=(element.fillType||'solid')==='solid';
- const starts=new Set(paragraphRangeForSelection(element.text,owner.range).map(p=>p.start));
- const emoji=owner.mode==='bullet'&&normalizeParagraphRuns(element.text,element.paragraphRuns).some(({start,style})=>
+ const starts=new Set(paragraphRangeForSelection(element.text,range).map(p=>p.start));
+ const emoji=mode==='bullet'&&normalizeParagraphRuns(element.text,element.paragraphRuns).some(({start,style})=>
   starts.has(start)&&(!onlyKind||style.listKind===onlyKind)&&isEmojiListMarker(style.listMarker));
  return {...state,hasTarget:!!selected&&state.listKind!=='none',solid,emoji,
   color:state.listMarkerColor==='inherit'?base.textColor:state.listMarkerColor,
@@ -5894,6 +5922,7 @@ function mobileV36ApplyView(){
  });
 }
 function mobileV36Close(){
+ mobileListSettings.unmount();
  mobileTextFinishGesture();
  cancelRegionEffects(); mobileV36FinishInteraction();
  mobileV36State.fontTall=false;mobileV36State.fontSearch=false;
@@ -5930,12 +5959,13 @@ function mobileV36Open(tool,expanded){
  closeMobileOverlays('mobileProperties');closeToolPopovers();
  if(mobileV36State.tool!==tool){mobileV36State.fontTall=false;mobileV36State.fontSearch=false;mobileV36State.userViewAdjusted=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.effectId=null;mobileV36State.tab=tool==='position'?'sort':'solid'}
  mobileV36State.tool=tool;mobileV36State.elementId=app.selected;
- rememberInlineCaret();pauseInlineTextInput();mobileTextPanelOwner={doc:app.doc,element:active(),session:mobileTextSession,revision:mobileTextSession?.revision||0};
+ rememberInlineCaret();pauseInlineTextInput();mobileTextPanelOwner={doc:app.doc,slide:app.doc.activeSlideIndex,element:active(),session:mobileTextSession,revision:mobileTextSession?.revision||0};
  mobileV36State.expanded=expanded===undefined?!['font','size','color','opacity'].includes(tool):!!expanded;
  mobileV36Render();
 }
 function mobileV36Expand(){mobileV36State.expanded=true;mobileV36Render()}
 function mobileV36Back(){
+ mobileListSettings.cancel();
  mobileTextFinishGesture();
  const s=mobileV36State;
  if(s.tool==='format'&&s.sub){s.sub='';mobileV36Render()}
@@ -6094,6 +6124,9 @@ function mobileV36ApplyTypography(key,value){
  }
  if(next===e)return;
  if(key!=='typography'&&next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
+ commitMobileTextFormat(e,next,range,label);
+}
+function commitMobileTextFormat(e,next,range,label){
  const session=app.inlineSession;
  if(session){
   if(range)app.inlineCaret={start:range.start,end:range.end,direction:range.direction};
@@ -6134,6 +6167,42 @@ function mobileListControl(e,key){
  return {pressed:kind==='mixed'?'mixed':kind===(key==='bullet'?'bullet':'ordered'),disabled:false,
   label:name+' · '+(range?'Абзацы':'Весь слой')};
 }
+function mobileListSettingsTarget(mode){
+ const owner=mobileTextPanelOwner;
+ if(!mobileV36Small()||app.wysiwyg||!owner||owner.doc!==app.doc||owner.slide!==app.doc.activeSlideIndex||
+    mobileV36State.tool!=='format')return null;
+ if(mobileV36State.sub==='listSettings'&&app.editingId&&!mobileTextSession?.formatting)return null;
+ const target=mobileTextTarget('listSettings');
+ if(target.kind==='unsupported')return null;
+ const element=active(),range=target.kind==='paragraph'?target:null;
+ const result={owner,element,range,revision:target.revision};
+ if(mode){
+  const state=paragraphListAppearance(element,range,mode,mode);
+  return state.hasTarget?{...result,state}:null;
+ }
+ const modes=['bullet','ordered'].filter(onlyKind=>paragraphListState(element,range,{onlyKind}));
+ const mixed=paragraphListState(element,range).listKind==='mixed';
+ let label=range?'Абзацы':'Весь слой';
+ if(range){
+  const [paragraph]=paragraphRangeForSelection(element.text,range);
+  const excerpt=mobileTextExcerpt(element.text,range.start===range.end?paragraph:range);
+  if(excerpt)label+=' · «'+excerpt+'»';
+ }
+ if(mixed)label='Mixed · '+label;
+ return {...result,modes,label};
+}
+const mobileListSettings=createMobileListSettings(mobileV36,{
+ readTarget:mobileListSettingsTarget,
+ apply({element,range},mode,key,value){
+  const next=applyParagraphListStyle(element,{[key]:value},range,{onlyKind:mode,useAutoMarkerScale:true});
+  if(next===element)return;
+  if(next.autoFontSize&&key!=='listMarkerColor'&&key!=='listMarkerOpacity')autoFitTextFont(next,{preserveSizeBase:true});
+  commitMobileTextFormat(element,next,range,'Форматирование списка');
+ },
+ library:{state:()=>({markers:listMarkerLibrary,pending:!!listMarkerLibraryPending}),change:changeListMarkerLibrary},
+ validateMarkerInput:customListMarkerState,
+ previewSliderEvents,
+});
 function mobileV36FormatPanel(){const e=active();
  const btn=(key,content,on,description,disabled=false)=>`<button class="mp-choice mp-format-btn ${on===true?'active':''} ${on==='mixed'?'mixed':''}" aria-pressed="${on}" data-mp-format="${key}" title="${description}" aria-label="${description}" ${disabled?'disabled':''}>${content}</button>`;
  const align=(key,label,on)=>btn(key,mobileV37AlignIcon(key),on,label+' · Весь слой');
@@ -6152,11 +6221,13 @@ function mobileV36FormatPanel(){const e=active();
  ${align('center','По центру',e.textAlign==='center')}
  ${align('right','По правому краю',e.textAlign==='right')}
  ${align('justify','По ширине',e.textAlign==='justify')}
- </div><div class="mp-grid two mp-format-lists">
+ </div><div class="mp-grid three mp-format-lists">
  ${['bullet','number'].map(key=>{
   const {pressed,disabled,label}=mobileListControl(e,key);
   return btn(key,key==='bullet'?'<span aria-hidden="true">•≡</span>':'<span aria-hidden="true">1≡</span>',pressed,label,disabled);
  }).join('')}
+ <button type="button" class="mp-choice mp-format-btn" data-mp-format="listSettings" aria-label="${listSettingsLabel}"
+  title="${listSettingsLabel}" aria-haspopup="dialog" ${mobileListSettingsTarget()?.modes.length?'':'disabled'}>${listSettingsIcon}</button>
  </div></div>`)
 }
 function mobileV36SpacingPanel(){const e=active();const row=(label,k,min,max,step)=>`<label class="mp-field">${label}<div class="mp-line">${mobileV36Slider(k,mobileV36StyleValue(k),min,max,step)}<input type="number" data-mp-key="${k}" value="${mobileV36StyleValue(k)}" ${mobileV36StyleAttributes(k)} min="${min}" max="${max}" step="${step}" inputmode="decimal"></div></label>`;
@@ -6191,19 +6262,24 @@ function mobileV36SyncSelectionLabel(){
    formatTarget.textContent=target?.reason||'Весь слой';formatTarget.title=target?.reason||'';return;
   }
   formatTarget.title='';label=formatTarget;
- }else if(target?.kind!=='range'||mobileV36State.sub==='typography'){label?.remove();return;}
+ }else if(target?.kind!=='range'||['typography','listSettings'].includes(mobileV36State.sub)){label?.remove();return;}
  const host=mobileV36.querySelector('.mp-body,.mp-pill');if(!host)return;
  if(!label){label=document.createElement('div');label.dataset.mobileTextSelection='';label.className='mp-text-selection';label.setAttribute('role','status');host.prepend(label);}
- const text=active().text.slice(target.start,Math.min(target.end,target.start+256)).replace(/\s+/g,' ');
+ label.textContent='Выделено: «'+mobileTextExcerpt(active().text,target)+'»';
+}
+function mobileTextExcerpt(source,{start,end}){
+ const text=source.slice(start,Math.min(end,start+256)).replace(/\s+/g,' ');
  const parts=Array.from(new Intl.Segmenter('ru',{granularity:'grapheme'}).segment(text),part=>part.segment);
- const excerpt=parts.slice(0,40).join('')+(parts.length>40||target.end-target.start>256?'…':'');
- label.textContent='Выделено: «'+excerpt+'»';
+ return parts.slice(0,40).join('')+(parts.length>40||end-start>256?'…':'');
 }
 function mobileV36Render(){
  if(mobileTextGesture)return;
  mobileV36FinishInteraction();
  const s=mobileV36State,t=s.tool,e=(t==='effects'&&regionEffectsRequest()?{}:active())||(t==='more'?picked()[0]:null);
  if(!mobileV36Small()||!t||!app.doc||!e){mobileV36Close();return}
+ const listSettings=t==='format'&&s.sub==='listSettings';
+ if(listSettings&&mobileV36.querySelector('.mp-list-settings')){mobileListSettings.sync();return}
+ mobileListSettings.unmount();
  let content='';
  if(!s.expanded){
   if(t==='font')content=mobileV36Pill(`<div class="mp-horizontal">${fontFamilies().map(mobileV36FontChip).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
@@ -6212,7 +6288,10 @@ function mobileV36Render(){
  }else{
   if(t==='font')content=mobileV36FontPanel();
   else if(t==='color')content=mobileV36ColorPanel();
-  else if(t==='format')content=s.sub==='textCase'?mobileV36CasePanel():s.sub==='typography'?mobileV36TypographyPanel():mobileV36FormatPanel();
+  else if(t==='format'){
+   if(listSettings)content=mobileV36Sheet('Настройки списка',mobileListSettingsContent(),{back:true,className:'mp-list-settings'});
+   else content=s.sub==='textCase'?mobileV36CasePanel():s.sub==='typography'?mobileV36TypographyPanel():mobileV36FormatPanel();
+  }
   else if(t==='spacing')content=mobileV36SpacingPanel();
    else if(t==='effects')content=s.sub==='colorEdit'?mobileV36ColorEditor():mobileV36EffectPanel();
    else if(t==='stroke')content=mobileV36StrokePanel();
@@ -6231,6 +6310,7 @@ function mobileV36Render(){
  const typographyScroll=previousTypography?.scrollTop;
  const typographyGroupsOpen=previousTypography?.querySelector('details').open;
  mobileV36.innerHTML=content;mobileV36.className='mp-open';mobileV36SyncSelectionLabel();
+ if(listSettings)mobileListSettings.mount(mobileV36.firstElementChild);
  mobileV36SyncTypographyControls();
  const nextTypography=mobileV36.querySelector('.mp-typography-panel .mp-body');
  if(previousTypography&&nextTypography){
@@ -6245,6 +6325,11 @@ function mobileV36Render(){
 }
 function mobileV36AlignLayer(where){const es=picked().filter(x=>!isLayerLocked(x));for(const e of es){const d=app.doc;if(where==='aleft')e.x=0;if(where==='aright')e.x=d.width-e.w;if(where==='ahcenter')e.x=(d.width-e.w)/2;if(where==='atop')e.y=0;if(where==='abottom')e.y=d.height-e.h;if(where==='avcenter')e.y=(d.height-e.h)/2;}mobileV36Commit();mobileV36Render()}
 function mobileV36Format(key){const e=active();if(!e||rejectMobileTextTarget(key))return;
+ if(key==='listSettings'){
+  pauseInlineTextInput();
+  if(!mobileListSettingsTarget()?.modes.length)return;
+  mobileV36State.sub=key;mobileV36Render();return;
+ }
  if(['bold','italic'].includes(key)&&mobileTextTarget(key).kind==='range'){const state=mobileV36Style(key),value=state.kind!=='value'||state.value!==true;styleInlineSelection(key,value,true);mobileV36Render();resumeInlineTextFromButton();return}
  if(key==='bold')e.fontWeight=Number(e.fontWeight)>=600?'400':'700';
  if(key==='italic')e.fontStyle=e.fontStyle==='italic'?'normal':'italic';
@@ -6365,6 +6450,7 @@ mobileV36.addEventListener('pointermove',ev=>{
 for(const type of ['pointerup','pointercancel','lostpointercapture'])window.addEventListener(type,mobileV36FinishInteraction,true);
 mobileV36.addEventListener('click',ev=>{
  const b=ev.target.closest('button');if(!b||b.dataset.mpNudge)return;
+ if(b.closest('.mp-list-settings .mp-body'))return;
  if(!['done','back','expand','fontSearch','fontSearchClose','fontImport','colorEdit','aspect'].includes(b.dataset.mpAction)&&rejectMobileTextTarget('panel',['lock','copy'].includes(b.dataset.mpMore)))return;
  mobileV36FinishInteraction();mobileTextFinishGesture();
  if(b.dataset.mpAction){const action=b.dataset.mpAction;
@@ -6401,7 +6487,7 @@ mobileV36.addEventListener('click',ev=>{
  if(b.dataset.mpStep){const k=b.dataset.mpStep,step=Number(b.closest('.mp-stepper').querySelector('[data-mp-key]').step)||1;const input=b.closest('.mp-stepper').querySelector('input'),value=mobileRangeKeys.has(k)?mobileV36StyleValue(k,k==='fontSize'?24:0):active()?.[k];const n=Number(value||0)+Number(b.dataset.dir)*step;mobileV36Property(k,clamp(n,Number(input.min),Number(input.max)),true);mobileV36Render();resumeInlineTextFromButton();return}
 });
 mobileV36.addEventListener('input',ev=>{
- const t=ev.target;if(t.dataset.mpAborted||rejectMobileTextTarget('panel'))return;
+ const t=ev.target;if(t.closest('.mp-list-settings')||t.dataset.mpAborted||rejectMobileTextTarget('panel'))return;
  if(t.dataset.mpSearch){mobileV36State.query=t.value;const pos=t.selectionStart;mobileV36Render();const field=mobileV36.querySelector('[data-mp-search]');if(field){field.focus();field.setSelectionRange(pos,pos)}return}
  if(t.dataset.mpHue){mobileV36State.hue=Number(t.value);const hex=mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value);mobileV36ApplyColor(hex,false);const plane=mobileV36.querySelector('[data-mp-plane]');if(plane)plane.style.background=`hsl(${mobileV36State.hue} 100% 50%)`;const field=mobileV36.querySelector('[data-mp-hex]');if(field)field.value=hex;const sw=mobileV36.querySelector('[data-mp-preview]');if(sw)sw.style.background=hex;return}
  if(t.dataset.mpHex){if(/^#[0-9a-fA-F]{6}$/.test(t.value)){mobileV36ApplyColor(t.value,false);mobileV36InitColor();}return}
@@ -6410,6 +6496,7 @@ mobileV36.addEventListener('input',ev=>{
  if(t.dataset.mpKey){const key=t.dataset.mpKey;if(mobileV36State.aspectLock&&['w','h'].includes(key)&&!t.dataset.mpAspectStart){t.dataset.mpAspectStart=JSON.stringify({w:active().w,h:active().h})}const value=t.dataset.mpSizeScale?mobileV36SizeValue(Number(t.value)):t.value;mobileV36Property(key,value,false);t.setAttribute('aria-valuetext',String(value));const sibling=[...mobileV36.querySelectorAll(`[data-mp-key="${key}"]`)].find(x=>x!==t);if(sibling){sibling.value=sibling.dataset.mpSizeScale?mobileV36SizePosition(Number(value)):value;sibling.dataset.styleState='value'}return}
 });
 mobileV36.addEventListener('change',ev=>{const t=ev.target;
+ if(t.closest('.mp-list-settings'))return;
  if(t.matches('[data-typography-master],[data-typography-rule],[data-typography-nbsp]')){
   mobileV36FinishInteraction();mobileTextFinishGesture();mobileV36ApplyTypography('typography',t);return;
  }
@@ -6448,16 +6535,16 @@ function stepInspectorFontSize(field,direction){
 }
 const numericEditValid=field=>field.value.trim()!==''&&Number.isFinite(field.valueAsNumber)&&!field.validity.badInput&&!field.validity.rangeUnderflow&&!field.validity.rangeOverflow;
 for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),mobileV36]){
- root.addEventListener('focusin',ev=>{const field=ev.target;if(field.matches?.('input[type="number"]'))numericEditLastValue.set(field,field.value)});
+ root.addEventListener('focusin',ev=>{const field=ev.target;if(field.matches?.('input[type="number"]:not([data-mp-list-field])'))numericEditLastValue.set(field,field.value)});
  root.addEventListener('input',ev=>{
-  const field=ev.target;if(!field.matches?.('input[type="number"]'))return;
+  const field=ev.target;if(!field.matches?.('input[type="number"]:not([data-mp-list-field])'))return;
   // Empty/partial/out-of-range values must not reach Number('') => 0 in the
   // existing live input handlers. Keep the last accepted live value instead.
   if(!numericEditValid(field)){ev.stopPropagation();return}
   numericEditLastValue.set(field,field.value);
  },true);
  root.addEventListener('change',ev=>{
-  const field=ev.target;if(!field.matches?.('input[type="number"]'))return;
+  const field=ev.target;if(!field.matches?.('input[type="number"]:not([data-mp-list-field])'))return;
   if(!numericEditValid(field)){
    if(field.closest('#mobilePropertyUI')&&mobileTextGestureKeys.has(field.dataset.mpKey)){mobileTextCancelGesture();field.value=mobileV36StyleValue(field.dataset.mpKey);ev.stopImmediatePropagation();return}
    field.value=numericEditLastValue.get(field)??'';
@@ -6468,7 +6555,7 @@ for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),
  },true);
  root.addEventListener('keydown',ev=>{
   const field=ev.target;
-  if(ev.isComposing||!field.matches?.('input[type="number"]'))return;
+  if(ev.isComposing||!field.matches?.('input[type="number"]:not([data-mp-list-field])'))return;
   if(field.dataset.key==='fontSize'&&field.hasAttribute('data-step-amount')&&['ArrowUp','ArrowDown'].includes(ev.key)){
    ev.preventDefault();ev.stopPropagation();
    const previous=field.value;
@@ -6594,6 +6681,7 @@ function mobileBack(){mobileTextFinishGesture();
  return false;
 }
 window.addEventListener('keydown',ev=>{
+ if(ev.key==='Escape'&&mobileListSettings.escape(ev.target)){ev.preventDefault();ev.stopImmediatePropagation();return}
  if(ev.key==='Escape'&&ev.target.closest('#mobilePropertyUI')&&ev.target.matches('[data-mp-key],[data-mp-hex]')){mobileTextCancelGesture();ev.preventDefault();ev.stopImmediatePropagation();ev.target.dataset.mpCanceled='1';ev.target.blur();mobileV36SyncTextStyle();return}
  if(ev.target.id==='zoomInput'||!mobileV36Small()||!['Escape','BrowserBack','GoBack'].includes(ev.key))return;
  if(mobileBack()){ev.preventDefault();ev.stopImmediatePropagation()}

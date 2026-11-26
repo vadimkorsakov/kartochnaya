@@ -541,8 +541,12 @@ test('list panel keeps its owner, scroll and focus through sizing, palette and m
  await capture('list-bullet-panel',settings);
  const bulletDefault=(await markerDraws(page,/^•$/u))[0];
  await page.setViewportSize({width:1210,height:690});
- const resized=await settings.boundingBox();
- expect(resized.y+resized.height).toBeLessThanOrEqual(690);
+ // setViewportSize can resolve before the browser delivers window.resize.
+ // Wait for the actual visible panel to fit; keep the original exact bound.
+ await expect.poll(async()=>{
+  const resized=await settings.boundingBox();
+  return resized?resized.y+resized.height:Number.POSITIVE_INFINITY;
+ }).toBeLessThanOrEqual(690);
  await preset(page,'🔴').scrollIntoViewIfNeeded();
  const galleryScroll=await body.evaluate(el=>el.scrollTop);
  expect(galleryScroll).toBeGreaterThan(0);

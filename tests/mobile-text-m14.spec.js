@@ -256,23 +256,38 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     expect(await element(page)).toEqual(initial);
     await send('touchCancel');
     await expect(hex).toHaveValue('');
-    await send('touchStart',.6,.3);
-    await send('touchMove',.8,.2);
-    const preview = await hex.inputValue();
-    await send('touchEnd');
+    // Chromium 154 can infer a fling from raw CDP move/end events and consume
+    // the next tap to stop it. Generate the completed touch drag without a fling.
+    // Read the preview on the plane before the sheet handles pointerup.
+    await plane.evaluate(node=>{
+      const isTouch = event => event.isTrusted&&event.pointerType==='touch';
+      node.addEventListener('pointermove',event=>{
+        if(isTouch(event)) node.dataset.testMoved = 'true';
+      },{once:true});
+      node.addEventListener('pointerup',event=>{
+        if(isTouch(event)){
+          node.dataset.testPreview = node.closest('.mp-list-settings').querySelector('#mp-list-hex').value;
+        }
+      },{once:true});
+    });
+    await client.send('Input.synthesizeScrollGesture',{
+      x:rect.x+rect.width*.6,y:rect.y+rect.height*.3,
+      xDistance:rect.width*.2,yDistance:-rect.height*.1,
+      gestureSourceType:'touch',preventFling:true,
+    });
     await client.detach();
+    await expect(plane).toHaveAttribute('data-test-moved','true');
+    const preview = await plane.getAttribute('data-test-preview');
+    expect(preview).toMatch(/^#[0-9a-f]{6}$/);
     const confirmed = await element(page);
     expect(confirmed.paragraphRuns[0].style.listMarkerColor).toBe(preview);
-    // Complete the mouse-driven history and Back sequence after the raw CDP
-    // gesture before returning to Playwright touch input. Hidden sibling views
-    // retain their CSS values, so assert the actual screen and visible opener.
-    await page.locator('#undoBtn').click();
+    await undo(page);
     await expect(page.locator('#undoBtn')).toBeDisabled();
     expect(await element(page)).toEqual(initial);
-    await page.locator('#redoBtn').click();
+    await redo(page);
     expect(await element(page)).toEqual(confirmed);
     await nextPaint(page);
-    await sheet(page).getByRole('button',{name:'Назад',exact:true}).click();
+    await back(page);
     await expect(sheet(page)).toHaveAccessibleName('Настройки списка');
     await expect(opener(page,'color')).toBeVisible();
     await expect(opener(page,'color')).toBeFocused();
@@ -280,7 +295,7 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
       'rgb('+preview.slice(1).match(/../g).map(part=>parseInt(part,16)).join(', ')+')');
     expect(await caret(page)).toEqual(given);
     await nextPaint(page);
-    await sheet(page).getByRole('button',{name:'Назад',exact:true}).click();
+    await back(page);
     await expect(sheet(page)).toHaveAccessibleName('Формат');
     await nextPaint(page);
     // Separately verify two actual touch Back actions with each intermediate

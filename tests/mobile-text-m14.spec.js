@@ -260,21 +260,48 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     await send('touchMove',.8,.2);
     const preview = await hex.inputValue();
     await send('touchEnd');
-    expect((await element(page)).paragraphRuns[0].style.listMarkerColor).toBe(preview);
-    // Use a click for history after sending the picker gesture through CDP.
-    // The other scenarios exercise the toolbar with touch.
+    await client.detach();
+    const confirmed = await element(page);
+    expect(confirmed.paragraphRuns[0].style.listMarkerColor).toBe(preview);
+    // Complete the mouse-driven history and Back sequence after the raw CDP
+    // gesture before returning to Playwright touch input. Hidden sibling views
+    // retain their CSS values, so assert the actual screen and visible opener.
     await page.locator('#undoBtn').click();
     await expect(page.locator('#undoBtn')).toBeDisabled();
     expect(await element(page)).toEqual(initial);
     await page.locator('#redoBtn').click();
-    await back(page);
+    expect(await element(page)).toEqual(confirmed);
+    await nextPaint(page);
+    await sheet(page).getByRole('button',{name:'Назад',exact:true}).click();
+    await expect(sheet(page)).toHaveAccessibleName('Настройки списка');
+    await expect(opener(page,'color')).toBeVisible();
+    await expect(opener(page,'color')).toBeFocused();
     await expect(opener(page,'color').locator('[data-mp-list-color-sample]')).toHaveCSS('background-color',
       'rgb('+preview.slice(1).match(/../g).map(part=>parseInt(part,16)).join(', ')+')');
     expect(await caret(page)).toEqual(given);
+    await nextPaint(page);
+    await sheet(page).getByRole('button',{name:'Назад',exact:true}).click();
+    await expect(sheet(page)).toHaveAccessibleName('Формат');
+    await nextPaint(page);
+    // Separately verify two actual touch Back actions with each intermediate
+    // view visible and its changed sheet geometry settled before the next tap.
+    await settings(page).tap();
+    await expect(sheet(page)).toHaveAccessibleName('Настройки списка');
+    await opener(page,'gallery').tap();
+    await expect(sheet(page)).toHaveAccessibleName('Маркеры');
+    await nextPaint(page);
+    await back(page);
+    await expect(sheet(page)).toHaveAccessibleName('Настройки списка');
+    await expect(opener(page,'gallery')).toBeVisible();
+    await expect(opener(page,'gallery')).toBeFocused();
+    await nextPaint(page);
     await back(page);
     await expect(sheet(page)).toHaveAccessibleName('Формат');
+    expect(await caret(page)).toEqual(given);
+    expect(await element(page)).toEqual(confirmed);
     await settings(page).tap();
     await opener(page,'gallery').tap();
+    await expect(sheet(page)).toHaveAccessibleName('Маркеры');
     await sheet(page).getByRole('button',{name:'Готово'}).tap();
     await expect(sheet(page)).toHaveCount(0);
     await expectPaused(page);

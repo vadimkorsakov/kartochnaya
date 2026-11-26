@@ -26,7 +26,9 @@ const mode = (page, kind) => sheet(page).locator(`[data-mp-list-mode=${kind}]`);
 const choice = (page, key, value) => sheet(page).locator(`[data-mp-list-key="${key}"][data-mp-list-value="${value}"]`);
 const note = (page, key) => sheet(page).locator(`[data-mp-list-state="${key}"]`);
 const field = (page, key, type = 'number') => sheet(page).locator(`input[type=${type}][data-mp-list-field="${key}"]`);
-const section = (page, name) => sheet(page).locator('summary').filter({hasText:name});
+const tab = (page, name) => sheet(page).getByRole('tab',{name,exact:true});
+const opener = (page, name) => sheet(page).locator(`[data-mp-list-open=${name}]`);
+const back = page => sheet(page).getByRole('button',{name:'Назад',exact:true}).tap();
 const undo = page => page.locator('#undoBtn').tap();
 const redo = page => page.locator('#redoBtn').tap();
 const element = async page => (await exportedDocument(page)).elements[0];
@@ -99,28 +101,56 @@ async function setField(page, key, value, type){
   await expect(input).not.toBeFocused();
 }
 async function scrollState(page){
-  return sheet(page).locator('.mp-body').evaluate(el => ({top:el.scrollTop, groups:[...el.querySelectorAll('details')].map(node=>node.open)}));
+  return sheet(page).locator('.mp-body').evaluate(el => ({
+    top:el.scrollTop, tab:el.querySelector('[data-mp-list-view=settings] [aria-selected=true]').id,
+  }));
 }
 async function capture(page, info, name, viewport){
+  await nextPaint(page);
   const geometry = await sheet(page).evaluate(el => {
-    const body = el.querySelector('.mp-body'), rect = el.getBoundingClientRect();
+    const rect = el.getBoundingClientRect(), body = el.querySelector('.mp-body'), clip = body.getBoundingClientRect();
+    const stage = document.querySelector('#stageScroller').getBoundingClientRect();
+    const bounds = node => {
+      const {left,right,top,bottom,width,height} = node.getBoundingClientRect();
+      return {left,right,top,bottom,width,height};
+    };
     return {height:rect.height, top:rect.top, width:body.clientWidth, scrollWidth:body.scrollWidth,
       bodyHeight:body.clientHeight, scrollHeight:body.scrollHeight, documentWidth:document.documentElement.scrollWidth,
-      targets:[...el.querySelectorAll('button,input,summary')].filter(node=>node.getClientRects().length)
-        .map(node=>{const {width,height}=node.getBoundingClientRect();return {width,height};})};
+      stage:{width:stage.width,height:stage.height,uncovered:Math.min(stage.bottom,rect.top)-stage.top},
+      properties:[...body.querySelectorAll('[data-mp-list-property]')].filter(node=>node.checkVisibility())
+        .map(node=>{
+          const r = bounds(node);
+          return {key:node.dataset.mpListProperty,height:r.height,visible:r.top>=clip.top&&r.bottom<=clip.bottom};
+        }),
+      targets:[...el.querySelectorAll('button,input')].filter(node=>node.checkVisibility())
+        .map(node=>({name:node.getAttribute('aria-label')||node.textContent.trim()||node.id,
+          type:node.type, markerTile:!!node.closest('.mp-list-tiles:not(.mp-list-counters)'), ...bounds(node)}))};
   });
   expect(geometry.top).toBeGreaterThan(viewport.height*.4);
   expect(geometry.scrollWidth).toBe(geometry.width);
   expect(geometry.documentWidth).toBe(viewport.width);
-  expect(geometry.targets.every(({width,height}) => width >= 44 && height >= 44)).toBe(true);
-  if(name === 'format') {
+  if(name.endsWith('format')) {
+    expect(geometry.targets.every(({width,height}) => width >= 44 && height >= 44)).toBe(true);
     expect(geometry.height).toBe(293);
     expect(geometry.scrollHeight).toBe(geometry.bodyHeight);
-  } else expect(geometry.scrollHeight).toBeGreaterThan(geometry.bodyHeight);
+  } else {
+    expect(geometry.height).toBeLessThanOrEqual(Math.min(.49*viewport.height,440)+.5);
+    expect(geometry.stage.uncovered).toBeGreaterThan(100);
+    for(const [index, a] of geometry.targets.entries()){
+      expect(a.width, a.name).toBeGreaterThanOrEqual(a.markerTile ? 42 : 44);
+      expect(a.height, a.name).toBeGreaterThanOrEqual(a.markerTile ? 40 : 30);
+      if(a.type==='number') expect(a.width).toBeLessThanOrEqual(60);
+      if(a.type==='range') expect(a.height).toBeGreaterThanOrEqual(40);
+      for(const b of geometry.targets.slice(index+1)){
+        expect(Math.min(a.right,b.right)>Math.max(a.left,b.left)&&Math.min(a.bottom,b.bottom)>Math.max(a.top,b.top)).toBe(false);
+      }
+    }
+  }
   const path = info.outputPath(`${name}-${viewport.width}.png`);
   await page.screenshot({path});
   await info.attach(name, {path, contentType:'image/png'});
   await info.attach(name+' measurements', {body:JSON.stringify(geometry), contentType:'application/json'});
+  return geometry;
 }
 async function pngWhileFormatting(page){
   const download = page.waitForEvent('download');
@@ -142,6 +172,115 @@ async function startDrag(page, slider){
 for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.describe(`M1.4 ${viewport.width}`,()=>{
   test.use({viewport,hasTouch:true,isMobile:true});
 
+  test('compact inspector geometry and child navigation preserve selection, values and history', async({page},info)=>{
+    test.setTimeout(50000);
+    await seed(page);
+    const initial = await element(page);
+    const expectAllRows = async(name,keys)=>{
+      const geometry = await capture(page,info,name,viewport);
+      expect(geometry.scrollHeight).toBe(geometry.bodyHeight);
+      expect(geometry.properties.map(({key,visible})=>[key,visible])).toEqual(keys.map(key=>[key,true]));
+    };
+    const appearance = ['style','listMarkerScale','listMarkerColor','listMarkerOpacity'];
+    await tool(page,'format');
+    await capture(page,info,'compact-format',viewport);
+    await settings(page).tap();
+    await expectAllRows('appearance-bullet',appearance);
+    await mode(page,'ordered').tap();
+    await expectAllRows('appearance-ordered',[...appearance,'listStart']);
+    await tab(page,'Интервалы').tap();
+    await expectAllRows('spacing',['listIndent','listGap','listItemSpacing']);
+    await tab(page,'Интервалы').press('Home');
+    await expect(tab(page,'Оформление')).toHaveAttribute('aria-selected','true');
+    expect(await element(page)).toEqual(initial);
+
+    await selectOffsets(page,2,last);
+    const given = await caret(page);
+    const focus = await page.evaluate(()=>m14TextareaFocus);
+    await showSettings(page);
+    const scope = await sheet(page).locator('[data-mp-list-target]').textContent();
+    await field(page,'listMarkerScale').fill('145');
+    await opener(page,'gallery').tap();
+    await expect(sheet(page)).toHaveAccessibleName('Маркеры');
+    await tab(page,'Мои маркеры').tap();
+    const custom = sheet(page).locator('[data-mp-list-custom]');
+    await custom.fill(flag);
+    await back(page);
+    await expect(tab(page,'Оформление')).toHaveAttribute('aria-selected','true');
+    await expect(sheet(page).locator('[data-mp-list-target]')).toHaveText(scope);
+    await expect(field(page,'listMarkerScale')).toHaveValue('100');
+    await expect(choice(page,'listMarkerScale','auto')).toHaveAttribute('aria-pressed','false');
+    await opener(page,'gallery').tap();
+    await expect(tab(page,'Мои маркеры')).toHaveAttribute('aria-selected','true');
+    await expect(custom).toHaveValue(flag);
+    await tab(page,'Стандартные').tap();
+    await expect(choice(page,'listMarker','•')).toBeInViewport({ratio:1});
+    await expect(choice(page,'listMarker','✅')).toBeInViewport({ratio:1});
+    await page.goBack();
+    await expect(sheet(page)).toHaveAccessibleName('Настройки списка');
+    await expect(opener(page,'gallery')).toBeFocused();
+
+    await opener(page,'color').tap();
+    await expect(sheet(page)).toHaveAccessibleName('Цвет маркера');
+    await capture(page,info,'color-editor',viewport);
+    const hex = field(page,'listMarkerColor','text');
+    await hex.focus();
+    // Exercise the existing IME Back branch with a controlled viewport signal.
+    await page.evaluate(()=>{
+      const vv = window.visualViewport;
+      Object.defineProperty(vv,'height',{configurable:true,value:innerHeight-240});
+      vv.dispatchEvent(new Event('resize'));
+    });
+    await page.goBack();
+    await expect(sheet(page)).toHaveAccessibleName('Цвет маркера');
+    await expect(hex).not.toBeFocused();
+    await page.evaluate(()=>{
+      delete window.visualViewport.height;
+      window.visualViewport.dispatchEvent(new Event('resize'));
+    });
+    await page.goBack();
+    await expect(sheet(page)).toHaveAccessibleName('Настройки списка');
+    await expect(opener(page,'color')).toBeFocused();
+    expect(await caret(page)).toEqual(given);
+    expect(await element(page)).toEqual(initial);
+
+    await opener(page,'color').tap();
+    const plane = sheet(page).locator('[data-mp-list-plane]');
+    const rect = await plane.boundingBox();
+    const client = await page.context().newCDPSession(page);
+    const send = (type,x,y)=>client.send('Input.dispatchTouchEvent',{
+      type,touchPoints:x==null?[]:[{x:rect.x+rect.width*x,y:rect.y+rect.height*y}],
+    });
+    await send('touchStart',.6,.3);
+    await send('touchMove',.8,.2);
+    expect(await element(page)).toEqual(initial);
+    await send('touchCancel');
+    await expect(hex).toHaveValue('');
+    await send('touchStart',.6,.3);
+    await send('touchMove',.8,.2);
+    const preview = await hex.inputValue();
+    await send('touchEnd');
+    expect((await element(page)).paragraphRuns[0].style.listMarkerColor).toBe(preview);
+    // Use a click for history after sending the picker gesture through CDP.
+    // The other scenarios exercise the toolbar with touch.
+    await page.locator('#undoBtn').click();
+    await expect(page.locator('#undoBtn')).toBeDisabled();
+    expect(await element(page)).toEqual(initial);
+    await page.locator('#redoBtn').click();
+    await back(page);
+    await expect(opener(page,'color').locator('[data-mp-list-color-sample]')).toHaveCSS('background-color',
+      'rgb('+preview.slice(1).match(/../g).map(part=>parseInt(part,16)).join(', ')+')');
+    expect(await caret(page)).toEqual(given);
+    await back(page);
+    await expect(sheet(page)).toHaveAccessibleName('Формат');
+    await settings(page).tap();
+    await opener(page,'gallery').tap();
+    await sheet(page).getByRole('button',{name:'Готово'}).tap();
+    await expect(sheet(page)).toHaveCount(0);
+    await expectPaused(page);
+    expect(await page.evaluate(()=>m14TextareaFocus)).toBe(focus);
+  });
+
   test('touch caret, exclusive backward range, Mixed, presets, sizes, numbering, focus and reload', async({page},info)=>{
     test.setTimeout(65000);
     const id = await seed(page);
@@ -159,8 +298,10 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     await capture(page,info,'format',viewport);
     await settings(page).tap();
     await expectPaused(page);
-    await expect(mode(page,'ordered')).toBeDisabled();
+    await expect(mode(page,'ordered')).toBeHidden();
+    await expect(sheet(page).locator('[data-mp-list-single-kind]')).toHaveText('Маркированный');
     await expect(sheet(page).locator('[data-mp-list-target]')).toContainText('Первый пункт');
+    await opener(page,'gallery').tap();
     await choice(page,'listMarker','•').tap();
     const first = await element(page);
     expect(first.paragraphRuns).toEqual([{start:0,style:{listKind:'bullet',listMarkerScale:'auto'}},...runs.slice(1)]);
@@ -170,7 +311,9 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     await selectOffsets(page,2,last);
     const given = await caret(page), focus = await page.evaluate(()=>m14TextareaFocus);
     await showSettings(page);
-    await expect(sheet(page).locator('[data-mp-list-target]')).toContainText('Mixed · Абзацы');
+    await expect(sheet(page).locator('[data-mp-list-target]')).toContainText('Разные · Абзацы');
+    await expect(sheet(page).locator('[data-mp-list-style]')).toHaveText('Разные');
+    await opener(page,'gallery').tap();
     await expect(choice(page,'listMarker','●')).toHaveAttribute('aria-pressed','mixed');
     await expect(sheet(page).locator('[data-mp-list-key=listMarker]')).toHaveCount(33);
     await capture(page,info,'lists',viewport);
@@ -190,14 +333,16 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     expect(await element(page)).toEqual(initial);
     await redo(page);
     expect(await element(page)).toEqual(dotted);
-    await section(page,'Размер и цвет').tap();
-    await expect(note(page,'listMarkerScale')).toHaveText('Auto · 72%');
+    await back(page);
+    await expect(note(page,'listMarkerScale')).toHaveText('Авто · 72%');
     await setField(page,'listMarkerScale','135');
     expect((await element(page)).paragraphRuns[0].style.listMarkerScale).toBe(135);
     await choice(page,'listMarkerScale','auto').tap();
-    await expect(note(page,'listMarkerScale')).toHaveText('Auto · 72%');
-    await expect(note(page,'listMarkerColor')).toHaveText('Inherited');
+    await expect(note(page,'listMarkerScale')).toHaveText('Авто · 72%');
+    await expect(note(page,'listMarkerColor')).toHaveText('Как у текста');
+    await opener(page,'color').tap();
     await setField(page,'listMarkerColor','#a13fc2','text');
+    await back(page);
     await setField(page,'listMarkerOpacity','38');
     const colored = await element(page);
     expect(colored.fontSize).toBe(dotted.fontSize);
@@ -206,9 +351,11 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     expect((await element(page)).paragraphRuns[0].style).not.toHaveProperty('listMarkerColor');
     expect((await element(page)).paragraphRuns[0].style.listMarkerOpacity).toBe(38);
     await choice(page,'listMarkerOpacity','inherit').tap();
-    await expect(note(page,'listMarkerOpacity')).toHaveText('Inherited');
-    await section(page,'Эмодзи').tap();
+    await expect(note(page,'listMarkerOpacity')).toHaveText('Как у текста');
+    await opener(page,'gallery').tap();
     await choice(page,'listMarker','🔶').tap();
+    await back(page);
+    await expect(opener(page,'color')).toBeDisabled();
     await expect(field(page,'listMarkerColor','text')).toBeDisabled();
     await expect(field(page,'listMarkerOpacity')).toBeEnabled();
     const bullets = await element(page);
@@ -216,10 +363,11 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     await mode(page,'ordered').tap();
     expect(await element(page)).toEqual(bullets);
     await expect(sheet(page).locator('[data-mp-list-key=listCounterStyle]')).toHaveCount(7);
-    await expect(note(page,'listStart')).toHaveText('Auto');
-    await sheet(page).locator('.mp-body').evaluate(body=>{body.scrollTop=0;});
+    await expect(note(page,'listStart')).toHaveText('Авто');
+    await opener(page,'gallery').tap();
     await capture(page,info,'numbering',viewport);
     await choice(page,'listCounterStyle','roman-lower-dot').tap();
+    await back(page);
     await setField(page,'listStart','18');
     const numbered = await element(page);
     expect(numbered.paragraphRuns.slice(2,4)).toEqual([
@@ -259,9 +407,9 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     const id = await seed(page);
     const initial = await element(page);
     await showSettings(page);
-    await expect(sheet(page).locator('[data-mp-list-target]')).toHaveText('Mixed · Весь слой');
-    await section(page,'Интервалы').tap();
-    await expect(note(page,'listGap')).toHaveText('Mixed');
+    await expect(sheet(page).locator('[data-mp-list-target]')).toHaveText('Разные · Весь слой');
+    await tab(page,'Интервалы').tap();
+    await expect(note(page,'listGap')).toHaveText('Разные');
     await setField(page,'listIndent','24.5');
     const committed = await element(page);
     expect(committed.paragraphRuns.filter(r=>r.style.listKind==='bullet').every(r=>r.style.listIndent===24.5)).toBe(true);
@@ -278,7 +426,7 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     expect((await pngWhileFormatting(page)).equals(beforePNG)).toBe(true);
     await drag.cancel();
     expect(await element(page)).toEqual(committed);
-    await expect(note(page,'listGap')).toHaveText('Mixed');
+    await expect(note(page,'listGap')).toHaveText('Разные');
 
     drag = await startDrag(page,slider);
     const gap = Number(await slider.inputValue());
@@ -326,11 +474,11 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     const gallery = sheet(page).locator('[data-mp-list-gallery]');
     const saved = glyph => gallery.getByRole('button',{name:'Применить маркер '+glyph,exact:true});
     const library = async()=> (await records(page,'settings')).find(row=>row.key==='list-markers-v1');
-    await section(page,'Размер и цвет').tap();
+    await expect(opener(page,'color')).toBeDisabled();
     await expect(field(page,'listMarkerColor','text')).toBeDisabled();
     await expect(field(page,'listMarkerOpacity')).toBeDisabled();
-    await section(page,'Размер и цвет').tap();
-    await section(page,'Мои маркеры').tap();
+    await opener(page,'gallery').tap();
+    await tab(page,'Мои маркеры').tap();
     for(const invalid of ['ab',' ','x'.repeat(33)]){
       await input.fill(invalid);
       await expect(input).toHaveAttribute('aria-invalid','true');
@@ -338,6 +486,10 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}]) test.desc
     }
     await input.dispatchEvent('compositionstart');
     await input.fill(joiner);
+    await expect(preview).toBeEmpty();
+    await expect(add).toBeDisabled();
+    await tab(page,'Стандартные').tap();
+    await tab(page,'Мои маркеры').tap();
     await expect(preview).toBeEmpty();
     await expect(add).toBeDisabled();
     await input.dispatchEvent('compositionend');
@@ -437,7 +589,7 @@ test.describe('M1.4 stale targets on Android-sized Chromium',()=>{
     expect((await element(page)).paragraphRuns).toEqual(runs);
     await selectOffsets(page,1);
     await showSettings(page);
-    await section(page,'Интервалы').tap();
+    await tab(page,'Интервалы').tap();
     const gap = field(page,'listGap');
     await gap.fill('40');
     await editor(page).dispatchEvent('compositionstart');
@@ -462,13 +614,17 @@ test.describe('M1.4 stale targets on Android-sized Chromium',()=>{
     await expectPaused(page);
     expect((await element(page)).paragraphRuns).toEqual(runs);
 
-    await section(page,'Мои маркеры').tap();
+    await tab(page,'Оформление').tap();
+    await opener(page,'gallery').tap();
+    await tab(page,'Мои маркеры').tap();
     const input = sheet(page).locator('[data-mp-list-custom]');
     await input.fill(flag);
     await input.press('Enter');
     await page.evaluate(()=>{window.m14HoldGallery=true;});
     await sheet(page).getByRole('button',{name:'Добавить',exact:true}).tap();
     await expect.poll(()=>page.evaluate(()=>!!window.m14Completion)).toBe(true);
+    await back(page);
+    await tab(page,'Интервалы').tap();
     await gap.fill('57');
     await gap.evaluate(el=>{window.m14OldField=el;});
 
@@ -482,7 +638,8 @@ test.describe('M1.4 stale targets on Android-sized Chromium',()=>{
       window.m14OldField.dispatchEvent(new Event('change',{bubbles:true}));
       window.m14Completion();
     });
-    await section(page,'Мои маркеры').tap();
+    await opener(page,'gallery').tap();
+    await tab(page,'Мои маркеры').tap();
     await expect(sheet(page).getByRole('button',{name:'Применить маркер '+flag,exact:true})).toBeVisible();
     await expect(sheet(page).locator('[data-mp-list-library-note]')).toBeHidden();
     const switched = await exportedDocument(page);
@@ -494,7 +651,7 @@ test.describe('M1.4 stale targets on Android-sized Chromium',()=>{
     await page.locator('#mobileSeriesList [data-side-slide="0"]').tap();
     await selectLayer(page);
     await showSettings(page);
-    await section(page,'Интервалы').tap();
+    await tab(page,'Интервалы').tap();
     await field(page,'listGap').fill('77');
     await field(page,'listGap').evaluate(el=>{window.m14OldField=el;});
     await selectLayer(page,'Соседний слой');
@@ -502,7 +659,7 @@ test.describe('M1.4 stale targets on Android-sized Chromium',()=>{
     await page.evaluate(()=>window.m14OldField.dispatchEvent(new Event('change',{bubbles:true})));
     expect((await exportedDocument(page)).elements.map(layer=>layer.paragraphRuns)).toEqual([runs,runs]);
     await showSettings(page);
-    await section(page,'Интервалы').tap();
+    await tab(page,'Интервалы').tap();
     await field(page,'listGap').fill('44');
     await field(page,'listGap').evaluate(el=>{window.m14OldField=el;});
     await importPayload(page,{format:'kartochnaya-v1',document:fixture.document},'other.json');
@@ -511,5 +668,26 @@ test.describe('M1.4 stale targets on Android-sized Chromium',()=>{
     expect(other.id).not.toBe(id);
     await page.evaluate(()=>window.m14OldField.dispatchEvent(new Event('change',{bubbles:true})));
     expect((await exportedDocument(page)).elements).toEqual(other.elements);
+  });
+});
+
+test.describe('landscape mobile list inspector',()=>{
+  test.use({viewport:{width:640,height:360},hasTouch:true,isMobile:true});
+
+  test('Back returns to the previous scroll position and both header actions stay visible',async({page})=>{
+    await seed(page);
+    await showSettings(page);
+    const scroller = sheet(page).locator('.mp-body');
+    const top = await scroller.evaluate(el=>{el.scrollTop=64;return el.scrollTop;});
+    expect(top).toBeGreaterThan(0);
+    await opener(page,'gallery').tap();
+    await expect(sheet(page)).toHaveAccessibleName('Маркеры');
+    await scroller.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+    for(const name of ['Назад','Готово']){
+      await expect(sheet(page).getByRole('button',{name,exact:true})).toBeInViewport({ratio:1});
+    }
+    await back(page);
+    expect((await scrollState(page)).top).toBe(top);
+    await expect(opener(page,'gallery')).toBeFocused();
   });
 });

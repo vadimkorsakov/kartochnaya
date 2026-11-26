@@ -5968,6 +5968,7 @@ function mobileV36Back(){
  mobileListSettings.cancel();
  mobileTextFinishGesture();
  const s=mobileV36State;
+ if(s.tool==='format'&&s.sub==='listSettings'&&mobileListSettings.back())return;
  if(s.tool==='format'&&s.sub){s.sub='';mobileV36Render()}
  else if(s.sub==='colorEdit'){s.sub='';s.fxColor=null;s.expanded=true;mobileV36Render()}
  else if(s.expanded&&['font','color'].includes(s.tool)){s.expanded=false;s.sub='';mobileV36Render()}
@@ -6188,7 +6189,7 @@ function mobileListSettingsTarget(mode){
   const excerpt=mobileTextExcerpt(element.text,range.start===range.end?paragraph:range);
   if(excerpt)label+=' · «'+excerpt+'»';
  }
- if(mixed)label='Mixed · '+label;
+ if(mixed)label='Разные · '+label;
  return {...result,modes,label};
 }
 const mobileListSettings=createMobileListSettings(mobileV36,{
@@ -6202,6 +6203,9 @@ const mobileListSettings=createMobileListSettings(mobileV36,{
  library:{state:()=>({markers:listMarkerLibrary,pending:!!listMarkerLibraryPending}),change:changeListMarkerLibrary},
  validateMarkerInput:customListMarkerState,
  previewSliderEvents,
+ colorToHSV:mobileV36HexToHSV,
+ hsvToColor:mobileV36HSVToHex,
+ resizeStage:mobileV36ApplyView,
 });
 function mobileV36FormatPanel(){const e=active();
  const btn=(key,content,on,description,disabled=false)=>`<button class="mp-choice mp-format-btn ${on===true?'active':''} ${on==='mixed'?'mixed':''}" aria-pressed="${on}" data-mp-format="${key}" title="${description}" aria-label="${description}" ${disabled?'disabled':''}>${content}</button>`;

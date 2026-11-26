@@ -1950,40 +1950,105 @@ html,body{background:#1e1f27!important;}
  #mobilePropertyUI .mp-format-lists [data-mp-format=listSettings] svg{width:24px;height:20px;fill:none;stroke:currentColor;stroke-width:1.5}
  #mobilePropertyUI .mp-list-settings{--mp-list-max-height:min(49dvh,440px);max-height:var(--mp-list-max-height)!important}
  body.karto-keyboard-open #mobilePropertyUI .mp-list-settings{max-height:min(var(--mp-list-max-height),max(80px,calc(var(--v41-visual-height) - 204px)))!important}
- #mobilePropertyUI .mp-list-settings .mp-head{height:44px!important;min-height:44px!important}
+ #mobilePropertyUI .mp-list-settings .mp-head{height:44px!important;min-height:44px!important;padding-inline:10px!important}
  #mobilePropertyUI .mp-list-settings .mp-head button{width:44px!important;min-width:44px!important;height:44px!important}
- #mobilePropertyUI .mp-list-settings .mp-body{touch-action:pan-y}
+ #mobilePropertyUI .mp-list-settings .mp-body{padding:0 10px 4px!important;touch-action:pan-y}
  #mobilePropertyUI .mp-list-settings [hidden]{display:none!important}
- #mobilePropertyUI .mp-list-settings button:disabled,#mobilePropertyUI .mp-list-controls:disabled{opacity:.55}
- #mobilePropertyUI .mp-list-settings .mp-body :is(input,button,summary){min-width:44px;min-height:44px}
- #mobilePropertyUI .mp-list-settings :is(button,input){font:inherit}
- #mobilePropertyUI .mp-list-settings button[aria-pressed=mixed]{border-style:dashed}
- #mobilePropertyUI .mp-list-settings :is(button,input,summary):focus-visible{outline:2px solid #b29aff;outline-offset:-3px}
- #mobilePropertyUI .mp-list-settings .mp-text-selection{margin:0 0 5px}
- #mobilePropertyUI .mp-list-controls{min-width:0;margin:6px 0 0;padding:0;border:0}
- #mobilePropertyUI .mp-list-controls>details{border-top:1px solid #54505d;padding-bottom:2px}
- #mobilePropertyUI .mp-list-controls summary{padding:12px 8px;font-weight:650;cursor:pointer;overflow-wrap:anywhere}
- #mobilePropertyUI .mp-list-controls summary bdi{float:right;color:#d5c5ff;font-size:12px}
- #mobilePropertyUI .mp-list-controls .mp-list-preset-group summary{font-weight:400;padding-left:18px}
- #mobilePropertyUI .mp-list-presets{display:grid;grid-template-columns:repeat(6,minmax(44px,1fr));gap:4px;padding:0 0 4px}
- #mobilePropertyUI .mp-list-presets button{font-size:19px;padding:0}
- #mobilePropertyUI .mp-list-property{display:grid;gap:4px;margin:5px 0 10px}
- #mobilePropertyUI .mp-list-property-label{display:flex;gap:8px;justify-content:space-between;align-items:baseline;font-weight:500}
- #mobilePropertyUI .mp-list-property-label small{color:#d5c5ff}
- #mobilePropertyUI .mp-list-controls input[type=range]{width:100%;margin:0;padding:0;accent-color:#b29aff;touch-action:none}
- #mobilePropertyUI .mp-list-fields{display:flex;gap:6px;align-items:stretch}
- #mobilePropertyUI .mp-list-fields input{flex:1;width:0;font-size:16px}
- #mobilePropertyUI .mp-list-fields button{padding-inline:10px}
- #mobilePropertyUI .mp-list-swatches span{display:block;margin:auto;width:22px;height:22px;border:1px solid #a6a0b2;border-radius:50%}
- #mobilePropertyUI .mp-list-custom-preview{display:grid;place-items:center;width:44px;border:1px solid #575162;border-radius:8px;font-size:19px}
- #mobilePropertyUI .mp-list-controls p{margin:4px 0;color:#d5cfe3;font-size:12px;overflow-wrap:anywhere}
+ #mobilePropertyUI .mp-list-settings button:disabled,#mobilePropertyUI .mp-list-settings input:disabled{opacity:.55}
+ #mobilePropertyUI .mp-list-settings :is(button,input):focus-visible{outline:2px solid #b29aff;outline-offset:-2px}
+ #mobilePropertyUI .mp-list-controls{min-width:0;margin:0;padding:0;border:0}
+ #mobilePropertyUI .mp-list-meta,#mobilePropertyUI .mp-list-gallery-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:6px;min-height:30px;
+ }
+ #mobilePropertyUI .mp-list-meta [data-mp-list-target]{min-width:0;margin:0;font-size:12px;color:#ded8ed;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ #mobilePropertyUI .mp-list-meta [data-mp-list-single-kind]{flex:none;color:#d5c5ff;font-size:12px}
+ #mobilePropertyUI .mp-list-meta [data-mp-list-single-kind]:empty{display:none}
+ #mobilePropertyUI .mp-list-segmented{display:flex;gap:4px}
+ #mobilePropertyUI .mp-list-segmented button{height:32px;padding:0 8px;border-radius:7px;font-size:13px;white-space:nowrap}
+ #mobilePropertyUI .mp-list-segmented button[role=tab]{flex:1}
+ #mobilePropertyUI .mp-list-segmented button[aria-selected=true]{border-color:#ab90ff;background:#51436f;color:#fff}
+ #mobilePropertyUI .mp-list-meta .mp-list-segmented button{height:30px;padding-inline:6px;font-size:12px}
+ #mobilePropertyUI [data-mp-list-view=settings] > .mp-list-segmented{margin:2px 0}
+ #mobilePropertyUI .mp-list-row{
+  display:grid;grid-template-columns:minmax(90px,116px) minmax(0,1fr) 60px 44px;align-items:center;gap:4px;
+  min-height:36px;font-size:13px;line-height:1.15;box-shadow:inset 0 -1px #45414d;
+ }
+ #mobilePropertyUI .mp-list-range-row{min-height:40px}
+ #mobilePropertyUI [data-mp-list-tabpanel=spacing] .mp-list-row{grid-template-columns:minmax(90px,138px) minmax(0,1fr) 60px}
+ #mobilePropertyUI .mp-list-row:last-child{box-shadow:none}
+ #mobilePropertyUI .mp-list-row label{min-width:0;overflow-wrap:anywhere}
+ #mobilePropertyUI .mp-list-unit{color:#d0c7e1;font-size:12px}
+ #mobilePropertyUI .mp-list-row small{display:block;margin-top:1px;color:#d5c5ff;font-size:11px}
+ #mobilePropertyUI .mp-list-row small:empty{display:none}
+ #mobilePropertyUI .mp-list-row input[type=range],#mobilePropertyUI .mp-list-hue-row input{
+  height:40px;width:100%;min-width:0;margin:0;padding:0;accent-color:#b29aff;touch-action:none;
+ }
+ #mobilePropertyUI .mp-list-row input[type=number]{
+  grid-column:3;width:60px;height:34px;padding:2px;appearance:textfield;font-size:16px;font-variant-numeric:tabular-nums;
+ }
+ #mobilePropertyUI .mp-list-row input[type=number]::-webkit-inner-spin-button,
+ #mobilePropertyUI .mp-list-row input[type=number]::-webkit-outer-spin-button{appearance:none;margin:0}
+ #mobilePropertyUI .mp-list-row .mp-list-shortcut{
+  grid-column:4;display:grid;place-items:center;width:44px;height:36px;padding:0;border-radius:8px;font-size:12px;
+ }
+ #mobilePropertyUI .mp-list-shortcut[aria-pressed=mixed]{border-color:#ab90ff;border-style:dashed}
+ #mobilePropertyUI .mp-list-opener{
+  grid-column:2/-1;justify-self:end;display:flex;align-items:center;justify-content:flex-end;gap:6px;
+  min-width:64px;height:34px;max-width:100%;padding:0 8px;border-radius:8px;color:#e6d9ff;font-size:13px;
+ }
+ #mobilePropertyUI [data-mp-list-open=color]{grid-column:2/4}
+ #mobilePropertyUI [data-mp-list-color-sample]{flex:none}
+ #mobilePropertyUI [data-mp-list-style]{font-size:15px;line-height:1}
+ #mobilePropertyUI .mp-list-chevron{font-size:20px;line-height:1}
+ #mobilePropertyUI #mp-list-color-hint{color:#eee5fc;font-size:12px;line-height:1.1;text-align:left}
+ #mobilePropertyUI .mp-list-gallery-bar{justify-content:flex-start;margin-bottom:4px}
+ #mobilePropertyUI .mp-list-gallery-bar .mp-list-segmented{flex:1}
+ #mobilePropertyUI [data-mp-list-gallery-style]{color:#d5c5ff}
+ #mobilePropertyUI .mp-list-gallery-bar [data-mp-list-gallery-style]{min-width:50px;text-align:right}
+ #mobilePropertyUI .mp-list-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(42px,1fr));gap:4px}
+ #mobilePropertyUI .mp-list-tiles button{height:40px;padding:0;border-radius:7px;font:19px/1 system-ui,sans-serif}
+ #mobilePropertyUI .mp-list-counters{grid-template-columns:repeat(3,minmax(0,1fr))}
+ #mobilePropertyUI .mp-list-counters button{height:44px;font-size:14px}
+ #mobilePropertyUI .mp-list-controls p{margin:4px 0;color:#ded8ed;font-size:12px;overflow-wrap:anywhere}
  #mobilePropertyUI .mp-list-controls p[data-error=true]{color:#ffb4ba}
- #mobilePropertyUI [data-mp-list-gallery]{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
- #mobilePropertyUI .mp-list-library-tile{display:flex;gap:2px}
- #mobilePropertyUI .mp-list-library-tile button{font-size:19px;padding:0}
+ #mobilePropertyUI .mp-list-current-style{display:flex;justify-content:space-between;align-items:center;min-height:24px}
+ #mobilePropertyUI .mp-list-custom-row,#mobilePropertyUI .mp-list-custom-actions,#mobilePropertyUI .mp-list-color-edit{
+  display:flex;align-items:center;gap:6px;
+ }
+ #mobilePropertyUI .mp-list-settings input[type=text]{height:36px;font-size:16px;padding:4px 8px}
+ #mobilePropertyUI .mp-list-custom-row input{flex:1}
+ #mobilePropertyUI .mp-list-custom-preview{display:grid;place-items:center;width:44px;height:36px;border:1px solid #575162;border-radius:8px;font-size:19px}
+ #mobilePropertyUI .mp-list-custom-actions{margin-top:4px}
+ #mobilePropertyUI .mp-list-custom-actions button{flex:1;height:44px;font-size:13px}
+ #mobilePropertyUI [data-mp-list-gallery]{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+ #mobilePropertyUI .mp-list-library-tile{display:flex;gap:4px}
+ #mobilePropertyUI .mp-list-library-tile button{width:44px;height:44px;padding:0;border-radius:8px;font-size:19px}
+ #mobilePropertyUI .mp-list-color-picker .mp-color-plane{height:96px;cursor:crosshair}
+ #mobilePropertyUI .mp-list-color-picker:disabled .mp-color-plane{pointer-events:none;opacity:.55}
+ #mobilePropertyUI .mp-list-hue-row{display:flex;align-items:center;gap:8px}
+ #mobilePropertyUI .mp-list-hue-row input{appearance:none}
+ #mobilePropertyUI .mp-list-hue::-webkit-slider-runnable-track{
+  height:12px;border-radius:8px;background:linear-gradient(to right,red,#ff0,lime,cyan,blue,magenta,red);
+ }
+ #mobilePropertyUI .mp-list-hue::-moz-range-track{
+  height:12px;border-radius:8px;background:linear-gradient(to right,red,#ff0,lime,cyan,blue,magenta,red);
+ }
+ #mobilePropertyUI .mp-list-hue::-webkit-slider-thumb{
+  appearance:none;width:18px;height:18px;margin-top:-3px;border:2px solid #7857de;border-radius:50%;background:#fff;
+ }
+ #mobilePropertyUI .mp-list-hue::-moz-range-thumb{width:14px;height:14px;border:2px solid #7857de;border-radius:50%;background:#fff}
+ #mobilePropertyUI .mp-list-color-edit{gap:4px}
+ #mobilePropertyUI .mp-list-color-edit input[type=text]{flex:1;padding-inline:4px}
+ #mobilePropertyUI .mp-list-swatches{display:flex;gap:4px;margin-top:4px}
+ #mobilePropertyUI .mp-list-swatches button{display:grid;place-items:center;width:44px;height:44px}
+ #mobilePropertyUI .mp-list-swatch{
+  display:block;width:22px;height:22px;border:1px solid #a6a0b2;border-radius:50%;
+  background:repeating-conic-gradient(#7a7188 0% 25%,#3a3443 0% 50%) 0 0 / 8px 8px;
+ }
 }
 @media(max-width:325px){
- #mobilePropertyUI .mp-list-presets{grid-template-columns:repeat(5,minmax(44px,1fr))}
+ #mobilePropertyUI .mp-list-row{grid-template-columns:minmax(82px,101px) minmax(0,1fr) 60px 44px;font-size:12px}
+ #mobilePropertyUI .mp-list-meta .mp-list-segmented button{padding-inline:4px}
 }
 
 .text-decoration-controls .underline-settings{flex:0 0 30px;min-width:30px;padding:4px;margin-left:-5px}

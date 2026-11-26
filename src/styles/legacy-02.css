@@ -1,14 +1,14 @@
-.unified-color-button{display:inline-block;vertical-align:middle;width:35px;height:30px;border:2px solid #706582;border-radius:7px;cursor:pointer;flex-shrink:0}.tf43-color .unified-color-button{width:33px;height:29px}#fillPopover{z-index:600!important}@media(max-width:760px){#fillPopover{position:fixed!important;left:8px!important;right:8px!important;width:auto!important;max-width:none!important;max-height:calc(100dvh - 100px)!important;overflow:auto!important;top:72px!important}.unified-color-button{width:36px;height:36px}}
+.unified-color-button{display:inline-block;vertical-align:middle;width:35px;height:30px;border:2px solid #706582;border-radius:7px;cursor:pointer;flex-shrink:0}.tf43-color .unified-color-button{width:33px;height:29px}#fillPopover{z-index:600!important}@media((max-width:760px) or ((max-width:900px) and (max-height:460px) and (orientation:landscape) and (pointer:coarse))){#fillPopover{position:fixed!important;left:8px!important;right:8px!important;width:auto!important;max-width:none!important;max-height:calc(100dvh - 100px)!important;overflow:auto!important;top:72px!important}.unified-color-button{width:36px;height:36px}}
 /* Emergency recovery remains accessible beside the save status on small screens. */
 .stage-status.has-emergency{display:flex!important;height:auto!important;min-height:40px!important;flex-wrap:wrap;justify-content:flex-end;gap:4px 10px;padding:4px 10px}
 .stage-status.has-emergency #sizeLabel{display:none}
 #emergencyExportBtn{border:1px solid #efb46c;border-radius:6px;background:#fff0d9;color:#703900;padding:6px 10px;font-size:12px;font-weight:700;min-height:32px}
-@media(max-width:760px){.stage-status.has-emergency{flex-direction:column;align-items:flex-end}}
+@media((max-width:760px) or ((max-width:900px) and (max-height:460px) and (orientation:landscape) and (pointer:coarse))){.stage-status.has-emergency{flex-direction:column;align-items:flex-end}}
 
 /* Local touch protection applies to both resident and property-panel arrows. */
 [data-mp-nudge]{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none;}
 #mobileNudge{display:none;}
-@media(max-width:760px){
+@media((max-width:760px) or ((max-width:900px) and (max-height:460px) and (orientation:landscape) and (pointer:coarse))){
  /* Resident nudge strip: fixed rectangular row, full visual viewport width. */
  #mobileNudge:not(.hidden){position:fixed;z-index:55;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:center;gap:6px;box-sizing:border-box;height:50px;min-height:50px;margin:0;padding:2px 6px;border:0;border-top:1px solid #575166;border-radius:0;transform:none;background:#292630;box-shadow:0 -3px 12px #0004;overflow:hidden;}
  #mobileNudge button{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;min-width:0;height:44px;min-height:44px;padding:0;font-size:22px;line-height:1;border:1px solid #575166;border-radius:7px;background:#423b50;color:#fff;touch-action:none;}

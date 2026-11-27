@@ -104,7 +104,19 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
  test('rejected commands leave PNG and document history unchanged after Done',async({page})=>{
   await open(page,{textMode:'vertical',textRuns:[{start:7,end:10,style:{fontStyle:'italic'}}]});const png=(await exportPNG(page)).image.data,h=await history(page);
   await panel(page,'edit');await select(page);const before=await element(page);await panel(page,'format');
-  for(const key of ['bold','italic','underline'])await page.locator(`[data-mp-format=${key}]`).tap();
+  for(const key of ['bold','italic','underline']){
+   const unavailable=page.locator(`[data-mp-format=${key}]`);
+   // M1.6 disables unsupported range controls. Verify the UI contract and
+   // exercise the rejection guard with a synthetic event, as in the
+   // specialized-mode and stale-target tests above/below.
+   await expect(unavailable).toBeDisabled();
+   await expect(unavailable).toHaveAttribute('title',/недоступно/);
+   await unavailable.dispatchEvent('click');
+   await expect(page.locator('#toast')).toContainText('недоступно');
+   expect(await element(page)).toEqual(before);
+   expect(await history(page)).toBe(h);
+   expect(await caret(page)).toEqual([0,6,'backward']);
+  }
   await page.locator('#mobileConfirm').tap();expect(await element(page)).toEqual(before);expect(await history(page)).toBe(h);expect((await exportPNG(page)).image.data.equals(png)).toBe(true);
  });
  test('old panel controls cannot mutate either layer after selection changes',async({page})=>{

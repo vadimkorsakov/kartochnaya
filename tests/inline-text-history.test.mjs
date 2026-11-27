@@ -49,7 +49,7 @@ async function gestureHarness(){
   saveSoon:()=>{},recordInlineSession:()=>{if(!vm.runInContext('mobileTextGesture',context))recordInlineHistory(session,e,app.inlineCaret)}};
  vm.createContext(context);
  vm.runInContext(source.slice(source.indexOf('let mobileTextGesture=null'),source.indexOf('function inlineStyleRange()')),context);
- vm.runInContext('mobileTextSession={doc:app.doc,element:active(),text:active().text,revision:1,caret:{...app.inlineCaret}};mobileTextPanelOwner={doc:app.doc,element:active(),session:mobileTextSession,revision:1}',context);
+ vm.runInContext('mobileTextSession={doc:app.doc,element:active(),text:active().text,revision:1,caret:{...app.inlineCaret}};mobileTextPanelOwner={doc:app.doc,slide:app.doc.activeSlideIndex,element:active(),session:mobileTextSession,revision:1}',context);
  const preview=(key,value,final=false)=>context.mobileTextPreviewGesture(key,value,final,context.mobileTextTarget(key));
  return {context,preview,e,doc,session,app,run:code=>vm.runInContext(code,context)};
 }
@@ -82,7 +82,7 @@ for(const interruption of ['cancel','locked','revision','composition','range','d
 });
 
 test('no-op, invalid numeric/HEX and returning to original preview create no history',async()=>{
- for(const [key,value] of [['fontSize',24],['fontSize',''],['fontSize',501],['fontSize',NaN],['letterSpacing','Смешано'],['textColor','Mixed'],['strokeWidth',0],['stroke','#000000'],['letterSpacing',0],['lineHeight',1.15],['textColor','#000000']]){
+ for(const [key,value] of [['fontSize',24],['fontSize',''],['fontSize',100001],['fontSize',NaN],['letterSpacing','Смешано'],['textColor','Mixed'],['strokeWidth',0],['stroke','#000000'],['letterSpacing',0],['lineHeight',1.15],['textColor','#000000']]){
   const {preview,session}=await gestureHarness();preview(key,value,true);assert.equal(session.states.length,1,`${key} ${value}`);
  }
  const {preview,context:c,e,session}=await gestureHarness(),before=structuredClone(e);
@@ -150,4 +150,24 @@ test('index changes round-trip through history with the backward source selectio
  assert.equal(history.states.length,2);
  assert.deepEqual(moveInlineHistory(history,-1),{element:original,caret});
  assert.deepEqual(moveInlineHistory(history,1),{element:sub,caret});
+});
+
+test('mobile layer opacity previews keep the confirmed snapshot and reject a changed slide owner',async()=>{
+ const {context,preview,e,doc,session,app}=await gestureHarness();
+ const before=structuredClone(e);
+ preview('opacity',63);
+ assert.equal(e.opacity,63);
+ assert.deepEqual(context.mobileTextConfirmedDocument(doc).elements[0],before);
+ context.mobileTextCancelGesture();
+ assert.deepEqual(e,before);
+ preview('opacity',38,true);
+ assert.equal(e.opacity,38);
+ assert.equal(session.states.length,2);
+ assert.deepEqual(app.inlineCaret,{start:0,end:6,direction:'backward'});
+ preview('opacity',52);
+ app.doc.activeSlideIndex=1;
+ context.mobileTextFinishGesture();
+ assert.equal(e.opacity,38);
+ assert.equal(session.states.length,2);
+ assert.equal(context.mobileTextTarget('opacity').kind,'unsupported');
 });

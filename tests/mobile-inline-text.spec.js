@@ -219,7 +219,7 @@ test.describe('mobile inline integration', () => {
     await mockViewport(page, { width: 390, height: 844 });
     await open(page); await edit(page); await page.locator(editor).fill('Сохраняемый текст');
     await page.evaluate(() => imeViewport({ height: 500, offsetTop: 10 })); await visibleExit(page);
-    const h = await history(page);
+    const h = await history(page), confirmedSteps = 6;
     await page.locator(editor).press('Home'); await page.locator(editor).press('ArrowRight');
     const caret = await page.locator(editor).evaluate(el => el.selectionStart);
     await page.locator('#mobileContext [data-mobile=font]').tap();
@@ -241,13 +241,16 @@ test.describe('mobile inline integration', () => {
     await page.locator(done).tap(); await expect(page.locator(editor)).toBeHidden();
     await expect(page.locator('[data-mp-key=fontSize][type=number]')).toBeVisible();
     await expect(page.locator('[data-mp-key=fontSize][type=number]')).not.toBeFocused();
-    await expect(page.locator('#mobileContext [data-mobile=edit]')).toBeVisible(); expect(await history(page)).toBe(h + 1);
+    await expect(page.locator('#mobileContext [data-mobile=edit]')).toBeVisible(); expect(await history(page)).toBe(h + confirmedSteps);
     const e=(await exportedDocument(page)).elements.find(e=>e.id==='title');
     expect(e).toMatchObject({ text: 'Сохраняемый текст', fontFamily: 'Georgia', fontSize: 24, fontWeight: '700', textAlign: 'center', textColor: '#ab92fb' });
     await page.keyboard.press('Escape'); await expect(page.locator('#mobilePropertyUI')).toBeHidden();
     await expect(page.locator('#mobileContext')).toBeVisible(); await page.keyboard.press('Escape'); await expect(page.locator('#mobilePrimary')).toBeVisible();
-    await page.locator('#undoBtn').tap(); expect(text(await exportedDocument(page))).toBe('Graph title');
-    await page.locator('#redoBtn').tap(); expect((await exportedDocument(page)).elements.find(e=>e.id==='title')).toEqual(e);
+    // Native typing plus the five confirmed layer style actions publish separately.
+    for(let i=0;i<confirmedSteps;i++)await page.locator('#undoBtn').tap();
+    expect(text(await exportedDocument(page))).toBe('Graph title');
+    for(let i=0;i<confirmedSteps;i++)await page.locator('#redoBtn').tap();
+    expect((await exportedDocument(page)).elements.find(e=>e.id==='title')).toEqual(e);
   });
   test('mobile Escape saves, another Escape closes properties, then clears text selection', async ({ page }) => {
     await open(page); await edit(page); await page.locator(editor).fill('Back сохраняет');

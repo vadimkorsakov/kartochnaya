@@ -1260,6 +1260,13 @@ function fitTextBoxToContent(e){
 function setTextAutoFont(enabled){
  mobileTextFinishGesture();
  const e=active();if(e?.type!=='text'||isLayerLocked(e)||(e.textMode&&e.textMode!=='horizontal'))return;
+ if(mobileV36Small()&&!app.wysiwyg&&app.inlineSession){
+  const next={...e,autoFontSize:!!enabled};
+  if(e.autoFontSize===next.autoFontSize)return;
+  if(enabled)autoFitTextFont(next);
+  commitMobileTextFormat(e,next,null,'Автоподбор размера текста');
+  return;
+ }
  if(app.wysiwyg?.applyLayerStyle({autoFontSize:!!enabled},{key:'autoFontSize',final:true})){
   syncTextAutoFontControls(e);syncListStylePanel();refreshMobileTools();return;
  }
@@ -1267,7 +1274,7 @@ function setTextAutoFont(enabled){
  e.autoFontSize=!!enabled;if(e.autoFontSize)autoFitTextFont(e);
  if(app.editingId===e.id)positionInlineText();
  commit('Автоподбор размера текста');syncTextAutoFontControls(e);refreshMobileTools();
- if(mobileV36Small()&&mobileV36State.tool==='size')mobileV36Render();
+ if(mobileV36Small()&&mobileV36State.tool==='size')mobileV36SyncTextStyle();
 }
 
 function createTextBoxFromDrag(dr){const p=dr.current||dr.start,mode=dr.mode||'horizontal';let x=Math.min(dr.start.x,p.x),y=Math.min(dr.start.y,p.y),w=Math.abs(p.x-dr.start.x),h=Math.abs(p.y-dr.start.y);
@@ -2400,7 +2407,7 @@ function inlineHistoryGo(dir){
 // gesture so Canvas can paint them. History and every save entry see only the
 // confirmed snapshot until finish; no storage schema or second text model.
 let mobileTextGesture=null;
-const mobileTextGestureKeys=new Set(['fontSize','letterSpacing','lineHeight','strokeWidth','textColor','stroke']);
+const mobileTextGestureKeys=new Set(['fontSize','letterSpacing','lineHeight','strokeWidth','textColor','stroke','opacity']);
 function mobileTextConfirmedDocument(doc){
  const rec=clone(doc),g=mobileTextGesture;if(!g||doc.id!==g.doc.id)return rec;
  const restore=list=>{const e=list?.find(e=>e.id===g.element.id);if(e)for(const key of g.fields){if(Object.hasOwn(g.before,key))e[key]=clone(g.before[key]);else delete e[key]}};
@@ -2410,7 +2417,7 @@ function mobileTextConfirmedDocument(doc){
 function mobileTextGestureValid(g){
  if(app.doc!==g.doc||active()!==g.element||app.inlineSession!==g.session||mobileTextSession!==g.owner||g.owner.revision!==g.target.revision)return false;
  const t=mobileTextTarget(g.key);
- return t.kind==='range'&&t.start===g.target.start&&t.end===g.target.end&&t.direction===g.target.direction;
+ return t.kind===g.target.kind&&(t.kind==='layer'||t.kind==='range'&&t.start===g.target.start&&t.end===g.target.end&&t.direction===g.target.direction);
 }
 function mobileTextCancelGesture(restoreSelection=true){
  const g=mobileTextGesture;if(!g)return;mobileTextGesture=null;
@@ -2426,7 +2433,7 @@ function mobileTextFinishGesture(){
  if(!mobileTextGestureValid(g)){mobileTextCancelGesture();return}
  mobileTextGesture=null;g.session.pendingStyle=null;
  if(JSON.stringify(g.before)!==JSON.stringify(g.element)){
-  g.session.formatted=true;app.inlineCaret={start:g.target.start,end:g.target.end,direction:g.target.direction};
+  g.session.formatted=true;app.inlineCaret=clone(g.caret);
   recordInlineSession();saveSoon();
  }else g.session.formatted=g.formatted;
  updateHistoryButtons();mobileV36SyncTextStyle();
@@ -2435,7 +2442,7 @@ function mobileTextBeginGesture(key,target,control=document.activeElement){
  if(mobileTextGesture)return;
  recordInlineSession();const e=active(),session=app.inlineSession;
  session.states[session.index].caret=clone(app.inlineCaret);
- mobileTextGesture={key,control:control?.matches?.('[data-mp-key],[data-mp-hue],[data-mp-hex],[data-mp-plane]')?control:null,doc:app.doc,element:e,owner:mobileTextSession,session,target:Object.freeze({...target}),before:clone(e),initial:mobileTextStyle(e,target,key),formatted:session.formatted,fields:new Set(),slideIndex:app.doc.activeSlideIndex};
+ mobileTextGesture={key,control:control?.matches?.('[data-mp-key],[data-mp-hue],[data-mp-hex],[data-mp-plane]')?control:null,doc:app.doc,element:e,owner:mobileTextSession,session,target:Object.freeze({...target}),caret:target.kind==='range'?{start:target.start,end:target.end,direction:target.direction}:clone(app.inlineCaret),before:clone(e),initial:mobileTextStyle(e,target,key),formatted:session.formatted,fields:new Set(),slideIndex:app.doc.activeSlideIndex};
 }
 function mobileTextPreviewGesture(key,value,final,target){
  let patch;
@@ -2443,7 +2450,7 @@ function mobileTextPreviewGesture(key,value,final,target){
   if(!/^#[0-9a-fA-F]{6}$/.test(value)){if(final)mobileTextCancelGesture();return true}
   patch={[key]:value};
  }else{
-  const n=Number(value),limits={fontSize:[1,500],letterSpacing:[-20,100],lineHeight:[.05,100],strokeWidth:[0,120]}[key];
+  const n=Number(value),limits={fontSize:[1,100000],letterSpacing:[-Infinity,Infinity],lineHeight:[.05,Infinity],strokeWidth:[0,120],opacity:[0,100]}[key];
   if(String(value).trim()===''||!Number.isFinite(n)||n<limits[0]||n>limits[1]){if(final)mobileTextCancelGesture();return true}
   patch={[key]:n};
  }
@@ -2453,6 +2460,11 @@ function mobileTextPreviewGesture(key,value,final,target){
  if(!mobileTextGestureValid(g)){mobileTextCancelGesture();return true}
  try{
   const base=g.before;
+  if(key==='opacity'){
+   if((base.opacity??100)!==patch.opacity){g.fields.add(key);g.element.opacity=patch.opacity;}
+   else if(g.fields.has(key)){if(Object.hasOwn(base,key))g.element.opacity=base.opacity;else delete g.element.opacity;}
+   paint();if(final)mobileTextFinishGesture();return true;
+  }
   if(key==='fontSize')patch.fontSize*= (base.textRunsBaseFontSize||base.fontSize)/base.fontSize;
   const unchanged=g.initial.kind==='value'&&g.initial.value===(['textColor','stroke'].includes(key)?value.toLowerCase():Number(value))&&!(key==='fontSize'&&base.autoFontSize);
   const next=unchanged?base:applyTextStyle(base,g.target.start,g.target.end,patch);
@@ -2480,15 +2492,16 @@ function mobileV36SyncTextStyle(){
  for(const input of mobileV36.querySelectorAll('[data-mp-key]')){
   const key=input.dataset.mpKey;if(!mobileRangeKeys.has(key)||input===document.activeElement)continue;
   const state=mobileV36Style(key),value=state.kind==='value'?state.value:'';
-  input.dataset.styleState=state.kind;input.placeholder=state.kind==='mixed'?'Смешано':'';
-  if(input.type==='range'){input.value=input.dataset.mpSizeScale?mobileV36SizePosition(value||24):value||input.min;input.setAttribute('aria-valuetext',state.kind==='mixed'?'Смешано':String(value))}
+  input.dataset.styleState=state.kind;input.placeholder=state.kind==='mixed'?'Разные':state.kind==='unsupported'?'Недоступно':'';
+  input.disabled=state.kind==='unsupported';input.title=state.reason||'';
+  if(input.type==='range'){input.value=input.dataset.mpSizeScale?mobileV36SizePosition(value===''?24:value):value===''?input.min:value;input.setAttribute('aria-valuetext',state.kind==='mixed'?'Разные':String(value))}
   else input.value=value;
  }
  if(mobileV36State.tool==='color'&&mobileV36State.sub==='colorEdit'&&!mobileV36State.fxColor&&mobileV36State.colorTab!=='gradient'){
   const state=mobileV36Style('textColor'),hex=mobileV36.querySelector('[data-mp-hex]');
   if(hex&&hex!==document.activeElement){
-   hex.value=state.kind==='value'?state.value:'';hex.placeholder=state.kind==='mixed'?'Смешано':'';
-   const title=mobileV36.querySelector('.mp-head strong');if(title)title.textContent=state.kind==='mixed'?'Смешано':hex.value;
+   hex.value=state.kind==='value'?state.value:'';hex.placeholder=state.kind==='mixed'?'Разные':'';
+   const title=mobileV36.querySelector('.mp-head strong');if(title&&!mobileV36.querySelector('.mp-text-color-editor'))title.textContent=state.kind==='mixed'?'Разные':hex.value;
    if(state.kind==='value'){
     mobileV36InitColor();const plane=mobileV36.querySelector('[data-mp-plane]'),cursor=mobileV36.querySelector('.mp-color-cursor'),hue=mobileV36.querySelector('[data-mp-hue]'),swatch=mobileV36.querySelector('[data-mp-preview]');
     if(plane)plane.style.background=`hsl(${mobileV36State.hue} 100% 50%)`;if(cursor){cursor.style.left=mobileV36State.sat*100+'%';cursor.style.top=(1-mobileV36State.value)*100+'%'}if(hue)hue.value=mobileV36State.hue;if(swatch)swatch.style.background=state.value;
@@ -2504,22 +2517,58 @@ function mobileV36SyncTextStyle(){
    continue;
   }
   if(['left','center','right','justify'].includes(key)){
-   const pressed=active().textAlign===key;
-   button.setAttribute('aria-pressed',String(pressed));button.classList.toggle('active',pressed);
+   const pressed=(active().textAlign||'left')===key;
+   button.setAttribute('aria-pressed',String(pressed));button.classList.toggle('active',pressed);button.disabled=isLayerLocked(active());
    continue;
   }
   if(!['bold','italic','underline','strikethrough'].includes(key))continue;
   const state=mobileV36Style(key),pressed=['underline','strikethrough'].includes(key)?textDecorationState(key):state.kind==='mixed'?'mixed':state.kind==='value'&&state.value===true;
   button.setAttribute('aria-pressed',String(pressed));button.classList.toggle('active',pressed===true);button.classList.toggle('mixed',pressed==='mixed');
+  button.disabled=state.kind==='unsupported';button.title=state.reason||button.getAttribute('aria-label');
+  const mixed=button.querySelector('.decoration-mixed');if(mixed)mixed.textContent=pressed==='mixed'?'Разные':'';
  }
+ for(const button of mobileV36.querySelectorAll('[data-mp-valign]')){
+  const pressed=(active().verticalAlign||'top')===button.dataset.mpValign;
+  button.setAttribute('aria-pressed',String(pressed));button.classList.toggle('active',pressed);button.disabled=isLayerLocked(active());
+ }
+ const opacity=Number(active().opacity??100);
+ for(const field of mobileV36.querySelectorAll('[data-mp-key=opacity]')){
+  if(field!==document.activeElement)field.value=opacity;
+  field.disabled=isLayerLocked(active());
+  if(field.type==='range')field.setAttribute('aria-valuetext',opacity+'%');
+ }
+ const auto=mobileV36.querySelector('.mp-auto-font input');
+ if(auto){auto.checked=!!active().autoFontSize;auto.disabled=isLayerLocked(active())}
  mobileV36SyncTypographyControls();
- for(const button of mobileV36.querySelectorAll('[data-mp-swatch]'))button.classList.toggle('active',mobileV36StyleValue('textColor')===button.dataset.mpSwatch.toLowerCase());
- for(const button of mobileV36.querySelectorAll('[data-mp-font]'))button.classList.toggle('active',mobileV36StyleValue('fontFamily')===button.dataset.mpFont);
- for(const button of mobileV36.querySelectorAll('[data-mp-variant]'))button.classList.toggle('active',mobileV36StyleValue('fontVariant')===button.dataset.mpVariant);
+ if(mobileV36State.tool==='color'){
+  const state=mobileV36Style('textColor');
+  for(const button of mobileV36.querySelectorAll('[data-mp-swatch]')){
+   const pressed=(active().fillType||'solid')==='solid'&&state.value===button.dataset.mpSwatch.toLowerCase();
+   button.classList.toggle('active',pressed);button.setAttribute('aria-pressed',String(pressed));button.disabled=state.kind==='unsupported';
+  }
+ }
+ const fonts=mobileV36.querySelectorAll('[data-mp-font]');
+ const family=fonts.length?mobileV36Style('fontFamily'):null;
+ for(const button of fonts){
+  const pressed=family.value===button.dataset.mpFont;
+  button.classList.toggle('active',pressed);button.setAttribute('aria-pressed',String(pressed));
+  button.disabled=family.kind==='unsupported'||v41FontUnavailable(button.dataset.mpFont);
+ }
+ const fontStatus=mobileV36.querySelector('[data-mp-font-state]');
+ if(fontStatus){
+  const variant=mobileV36Style('fontVariant');
+  fontStatus.textContent=variant.reason||(family?.kind==='mixed'||variant.kind==='mixed'?'Разные':'');
+  fontStatus.hidden=!fontStatus.textContent;
+  for(const button of mobileV36.querySelectorAll('[data-mp-variant]')){
+   const pressed=variant.value===button.dataset.mpVariant;
+   button.classList.toggle('active',pressed);button.setAttribute('aria-pressed',String(pressed));
+   button.disabled=variant.kind==='unsupported';
+  }
+ }
 }
 function mobileV36Style(key){return mobileTextStyle(active(),mobileTextTarget(key),key)}
 function mobileV36StyleValue(key,fallback=''){const state=mobileV36Style(key);return state.kind==='value'?state.value:fallback}
-function mobileV36StyleAttributes(key){const state=mobileV36Style(key);return `data-style-state="${state.kind}" ${state.kind==='unsupported'?'placeholder="Недоступно"':state.kind==='mixed'?'placeholder="Смешано"':''}`}
+function mobileV36StyleAttributes(key){const state=mobileV36Style(key);return `data-style-state="${state.kind}" ${state.kind==='unsupported'?'placeholder="Недоступно"':state.kind==='mixed'?'placeholder="Разные"':''}`}
 // Native mobile selection belongs to one document, element and editing lifetime.
 // These references/revisions are transient; never part of a document snapshot.
 let mobileTextSession=null,mobileTextPanelOwner=null;
@@ -2549,7 +2598,7 @@ function mobileTextTarget(key,allowLocked=false){
  if((character||typography)&&(e.type!=='text'||app.selectedIds.length!==1||app.maskEditId||
     !supportsHorizontalTextLayout(e)||e.rotation||e.textPathId||e.flipX||e.flipY))
   return unsupported('Выберите один незаблокированный слой горизонтального текста без поворота, отражения или контура.');
- if(mobileTextPanelOwner&&(mobileTextPanelOwner.doc!==app.doc||mobileTextPanelOwner.element!==e||mobileTextPanelOwner.session!==owner||mobileTextPanelOwner.revision!==(owner?.revision||0)))return unsupported('Цель форматирования устарела. Откройте панель заново.');
+ if(mobileTextPanelOwner&&(mobileTextPanelOwner.doc!==app.doc||mobileTextPanelOwner.slide!==app.doc.activeSlideIndex||mobileTextPanelOwner.element!==e||mobileTextPanelOwner.session!==owner||mobileTextPanelOwner.revision!==(owner?.revision||0)))return unsupported('Цель форматирования устарела. Откройте панель заново.');
  if(app.editingId){
   if(!owner||owner.doc!==app.doc||owner.element!==e||app.editingId!==e.id)return unsupported('Сессия редактирования изменилась. Выделите текст заново.');
   if(owner.text!==e.text||$('#inlineText').value!==e.text)return unsupported('Текст изменился. Откройте редактирование заново.');
@@ -2566,6 +2615,8 @@ function mobileTextTarget(key,allowLocked=false){
  if(!c)return unsupported('Выделение не подтверждено. Выделите текст заново.');
  if(!Number.isInteger(c.start)||!Number.isInteger(c.end)||c.start<0||c.end>e.text.length||c.end<c.start)return unsupported('Выделение устарело. Выделите текст заново.');
  if(c.start===c.end)return layer;
+ if(key==='textColor'&&(e.fillType||'solid')!=='solid')
+  return unsupported('Цвет выделения доступен при сплошной заливке. Снимите выделение для смены заливки слоя.');
  if(!app.inlineSession||!supportsHorizontalTextLayout(e)||e.mobileArcRadius||['strokeOpacity','strokeStyle'].includes(key))return unsupported('Форматирование выделенного диапазона недоступно в текущем режиме. Снимите выделение для изменения всего слоя.');
  // Refuse partial graphemes rather than silently extending UTF-16 offsets.
  if(typeof Intl.Segmenter!=='function')return unsupported('Безопасное форматирование выделения недоступно в этом браузере.');
@@ -2593,8 +2644,9 @@ function textDecorationState(key){
  return values.every(v=>v===values[0])?values[0]:'mixed';
 }
 function decorationButton(key,mobile=false){
+ const mixed=mobile?'Разные':'Mixed';
  const state=textDecorationState(key),label=key==='underline'?'Подчёркивание':'Зачёркивание',letter=key==='underline'?'<u>U</u>':'<s>S</s>';
- return `<button type="button" class="${mobile?'mp-choice mp-format-btn':'linebtn text-decoration-btn'} ${state===true?'active':''} ${state==='mixed'?'mixed':''}" data-text-decoration="${key}" ${mobile?`data-mp-format="${key==='underline'?'underline':'strike'}"`:''} aria-label="${label}" aria-pressed="${state}" title="${label}${state==='mixed'?' · Mixed':''}">${letter}<span class="decoration-mixed" aria-hidden="true">${state==='mixed'?'Mixed':''}</span></button>`;
+ return `<button type="button" class="${mobile?'mp-choice mp-format-btn':'linebtn text-decoration-btn'} ${state===true?'active':''} ${state==='mixed'?'mixed':''}" data-text-decoration="${key}" ${mobile?`data-mp-format="${key==='underline'?'underline':'strike'}"`:''} aria-label="${label}" aria-pressed="${state}" title="${label}${state==='mixed'?' · Mixed':''}">${letter}<span class="decoration-mixed" aria-hidden="true">${state==='mixed'?mixed:''}</span></button>`;
 }
 function syncTextAutoFontControls(e){
  const toggle=$('#inspector [data-text-auto-font]');
@@ -5871,7 +5923,7 @@ function drawMobileNudgeMeasurements(c){
 const mobileV36Text=()=>active()?.type==='text';
 const mobileV36Icons={edit:'✎',font:'Ff',size:'aA',color:'A̲',format:'B≡',paint:'A̰',spacing:'↕T',effects:'✧',opacity:'◐',layers:'▤',position:'▦',more:'•••',fit:'▣',crop:'▧',replace:'▤',stroke:'▱',round:'◜',settings:'⚙'};
 const mobileV36Label={edit:'Править',font:'Шрифт',size:'Размер',color:'Цвет',format:'Формат',paint:'Оформл.',spacing:'Интервал',effects:'Эффекты',opacity:'Прозрачн.',layers:'Слои',position:'Расположение',more:'Ещё',fit:'Размещение',crop:'Обрезка',replace:'Заменить',stroke:'Обводка',round:'Скругление',settings:'Свойства'};
-const mobileV36OrderText=['edit','font','size','color','format','spacing','paint','effects','opacity','layers','position','more'];
+const mobileV36OrderText=['edit','font','size','color','format','spacing','paint','effects','position','layers','more'];
 const mobileV36OrderOther=['color','opacity','effects','layers','position','more'];
 const mobileV36Escape=s=>html(String(s??''));
 function mobileV36RefreshTools(){
@@ -5880,9 +5932,18 @@ function mobileV36RefreshTools(){
  const kind=mobileV36Text()?'text':active()?.type==='image'||(active()?.fillType==='image'&&active()?.imageSrc)?'image':has?'shape':'none';
  $('#mobileContext').classList.toggle('hidden',!has);$('#mobilePrimary').classList.toggle('hidden',has);
  let order=kind==='text'?mobileV36OrderText:kind==='image'?['replace','crop','effects','opacity','layers','position','more']:kind==='shape'?['color','stroke','effects','opacity','layers','position','more']:[];
- const oldScroll=$('#mobileContext').scrollLeft;
- $('#mobileContext').innerHTML=order.map(key=>`<button type="button" class="${mobileV36State.tool===key?'mobile-active':''}" data-mobile="${key}" title="${key==='paint'?'Оформление текста':mobileV36Label[key]}" ${key==='paint'?'aria-label="Оформление текста"':''}><span class="mp-action-symbol">${mobileV36Icons[key]||'⌁'}</span><span>${mobileV36Label[key]}</span></button>`).join('');
- $('#mobileContext').scrollLeft=oldScroll;
+ const context=$('#mobileContext'),orderKey=order.join(' ');
+ context.classList.toggle('mp-text-context',kind==='text');
+ if(context.dataset.toolOrder!==orderKey){
+  context.dataset.toolOrder=orderKey;
+  context.innerHTML=order.map(key=>{
+   const label=key==='position'&&kind==='text'?'Слой':mobileV36Label[key];
+   const name=key==='paint'?'Оформление текста':label;
+   return `<button type="button" data-mobile="${key}" title="${name}" aria-label="${name}"><span class="mp-action-symbol" aria-hidden="true">${mobileV36Icons[key]||'⌁'}</span><span>${label}</span></button>`;
+  }).join('');
+  context.scrollLeft=0;
+ }
+ for(const button of context.children)button.classList.toggle('mobile-active',button.dataset.mobile===mobileV36State.tool);
  $$('#mobilePrimary button').forEach(b=>{const key=b.dataset.mobile;const k={text:'font',image:'replace',shapes:'fill',layers:'layers',settings:'settings'}[key]||'more';const ico=b.querySelector('b');if(ico)ico.innerHTML=uiIcon(k)});
  if(!has&&mobileV36State.tool)mobileV36Close();
  const bubble=$('#quickBubble');bubble.dataset.mobileV36='true';if(!bubble.querySelector('[data-quick=more]'))bubble.insertAdjacentHTML('beforeend','<button type="button" data-quick="more" aria-label="Ещё">•••</button>');
@@ -5966,7 +6027,7 @@ function mobileV36Open(tool,expanded){
  if(mobileTextSession?.composing){toast('Завершите ввод текста перед форматированием.');return}
  if(mobileV36State.tool===tool&&expanded===undefined){mobileV36Close();return}
  closeMobileOverlays('mobileProperties');closeToolPopovers();
- if(mobileV36State.tool!==tool){mobileV36State.fontTall=false;mobileV36State.fontSearch=false;mobileV36State.userViewAdjusted=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.effectId=null;mobileV36State.tab=tool==='position'?'sort':'solid'}
+ if(mobileV36State.tool!==tool){mobileV36State.colorTab='solid';mobileV36State.activeStop=0;mobileV36State.fontVariantFamily=null;mobileV36State.colorBodyScroll=0;mobileV36State.effectScroll=0;mobileV36State.fontTall=false;mobileV36State.fontSearch=false;mobileV36State.userViewAdjusted=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.effectId=null;mobileV36State.tab=tool==='position'?'sort':'solid'}
  mobileV36State.tool=tool;mobileV36State.elementId=app.selected;
  rememberInlineCaret();pauseInlineTextInput();mobileTextPanelOwner={doc:app.doc,slide:app.doc.activeSlideIndex,element:active(),session:mobileTextSession,revision:mobileTextSession?.revision||0};
  mobileV36State.expanded=expanded===undefined?!['font','size','color','opacity'].includes(tool):!!expanded;
@@ -5980,13 +6041,20 @@ function mobileV36Back(){
  if(s.tool==='format'&&s.sub==='listSettings'&&mobileListSettings.back())return;
  if(mobileTextPaintTitles[s.sub]&&mobileTextPaint.back())return;
  if(['format','paint'].includes(s.tool)&&s.sub){s.sub='';mobileV36Render()}
- else if(s.sub==='colorEdit'){s.sub='';s.fxColor=null;s.expanded=true;mobileV36Render()}
+ else if(s.sub==='colorEdit'){
+  s.sub='';s.fxColor=null;s.colorTab='solid';s.expanded=!s.colorFromPill;mobileV36Render();
+  const body=mobileV36.querySelector('.mp-text-palette .mp-body');if(body)body.scrollTop=s.colorBodyScroll;
+ }
  else if(s.expanded&&['font','color'].includes(s.tool)){s.expanded=false;s.sub='';mobileV36Render()}
  else mobileV36Close();
 }
-function mobileV36Property(key,val,done=false){if(!active()||rejectMobileTextTarget(key))return;changeProperty(key,val,done);}
+function mobileV36Property(key,val,done=false){
+ if(!active()||rejectMobileTextTarget(key))return;
+ if(key==='opacity'&&mobileV36Text()&&app.inlineSession){mobileTextPreviewGesture(key,val,done,mobileTextTarget(key));return}
+ changeProperty(key,val,done);
+}
 function mobileV36Commit(){commit();refreshLayers()}
-function mobileV36FontChip(f){return `<button class="mp-font-chip ${mobileV36StyleValue('fontFamily')===f?'active':''}" data-mp-font="${mobileV36Escape(f)}" style="font-family:${mobileV36Escape(JSON.stringify(f))}">${mobileV36Escape(f)}</button>`}
+function mobileV36FontChip(f){return `<button class="mp-font-chip" data-mp-font="${mobileV36Escape(f)}" style="font-family:${mobileV36Escape(JSON.stringify(f))}">${mobileV36Escape(f)}</button>`}
 function mobileV36Colors(){const vals=[];const add=c=>{if(typeof c==='string'&&/^#[0-9a-fA-F]{6}$/.test(c)&&!vals.some(v=>v.toLowerCase()===c.toLowerCase()))vals.push(c)};
  (app.doc?.elements||[]).forEach(e=>{add(e.textColor);add(e.fill);add(e.fill2);add(e.stroke);(e.gradientStops||[]).forEach(s=>add(s.color))});
  (app.doc?.palette||[]).forEach(p=>add(typeof p==='string'?p:p.color));
@@ -5994,14 +6062,14 @@ function mobileV36Colors(){const vals=[];const add=c=>{if(typeof c==='string'&&/
  return vals.slice(0,40)
 }
 function mobileV36ColorKey(){return mobileV36Text()?'textColor':'fill'}
-function mobileV36Swatch(c,key='color'){const e=active();const color=e?.type==='text'?mobileV36StyleValue('textColor'):e?.[mobileV36ColorKey()]||'#000000';return `<button class="mp-swatch ${color.toLowerCase()===c.toLowerCase()?'active':''}" data-mp-swatch="${mobileV36Escape(c)}" title="${mobileV36Escape(c)}" style="background:${mobileV36Escape(c)}"></button>`}
-function mobileV36Stepper(key,val,min,max,step){return `<div class="mp-stepper"><button data-mp-step="${key}" data-dir="-1" title="Уменьшить">−</button><input data-mp-key="${key}" aria-label="Значение" type="number" inputmode="decimal" value="${val}" ${mobileRangeKeys.has(key)?mobileV36StyleAttributes(key):''} min="${min}" max="${max}" step="${step}"><button data-mp-step="${key}" data-dir="1" title="Увеличить">+</button></div>`}
-function mobileV36SizePosition(value){return value<=100?(value-1)*4:396+(value-100)*.25}
+function mobileV36Swatch(c){const e=active(),color=e?.type==='text'?'':e?.[mobileV36ColorKey()]||'#000000';return `<button class="mp-swatch ${color.toLowerCase()===c.toLowerCase()?'active':''}" data-mp-swatch="${mobileV36Escape(c)}" title="${mobileV36Escape(c)}" style="background:${mobileV36Escape(c)}"></button>`}
+function mobileV36Stepper(key,val,min,max,step){return `<div class="mp-stepper"><button data-mp-step="${key}" data-dir="-1" title="Уменьшить">−</button><input data-mp-key="${key}" aria-label="${key==='fontSize'?'Размер, px':'Прозрачность, %'}" enterkeyhint="done" type="number" inputmode="decimal" value="${val}" ${mobileRangeKeys.has(key)?mobileV36StyleAttributes(key):''} min="${min}" max="${max}" step="${step}"><button data-mp-step="${key}" data-dir="1" title="Увеличить">+</button></div>`}
+function mobileV36SizePosition(value){value=clamp(value,1,500);return value<=100?(value-1)*4:396+(value-100)*.25}
 function mobileV36SizeValue(position){return Math.round(position<=396?1+position/4:100+(position-396)*4)}
-function mobileV36Slider(key,val,min,max,step){if(key==='fontSize')return `<input data-mp-key="fontSize" data-mp-size-scale="1" type="range" min="0" max="496" step="1" value="${mobileV36SizePosition(Number(val)||24)}" aria-label="Размер" aria-valuetext="${val===''?'Смешано':val+' px'}" ${mobileV36StyleAttributes(key)}>`;return `<input data-mp-key="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${val}" aria-label="${mobileV36Label[key]||key}" ${mobileRangeKeys.has(key)?mobileV36StyleAttributes(key):''} aria-valuetext="${val===''?'Смешано':val}">`}
+function mobileV36Slider(key,val,min,max,step,label=mobileV36Label[key]||key){if(key==='fontSize')return `<input data-mp-key="fontSize" data-mp-size-scale="1" type="range" min="0" max="496" step="1" value="${mobileV36SizePosition(Number(val)||24)}" aria-label="Размер" aria-valuetext="${val===''?'Разные':val+' px'}" ${mobileV36StyleAttributes(key)}>`;return `<input data-mp-key="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${val}" aria-label="${label}" ${mobileRangeKeys.has(key)?mobileV36StyleAttributes(key):''} aria-valuetext="${val===''?'Разные':val}">`}
 function mobileV36Pill(content){return `<div class="mp-pill">${content}</div>`}
-function mobileV36Sheet(title,content,opts={}){return `<section class="mp-sheet ${opts.className||(title==='Шрифт'?'mp-font-sheet':title==='Формат'?'mp-format-sheet':title==='Расположение'?'mp-position-sheet':title==='Интервалы'?'mp-spacing-sheet':title==='Обводка'?'mp-stroke-sheet':(opts.colorEditor?'mp-color-editor':''))}" role="dialog" aria-label="${mobileV36Escape(title)}"><div class="mp-grab"></div><div class="mp-head"><button data-mp-action="back" aria-label="Назад">${opts.back?'←':''}</button><strong>${mobileV36Escape(title)}</strong><button data-mp-action="done" aria-label="Готово">✓</button></div><div class="mp-body">${content}</div></section>`}
-function mobileV36Tabs(options,selected){return `<div class="mp-tabs">${options.map(([id,label])=>`<button data-mp-tab="${id}" class="${id===selected?'active':''}">${label}</button>`).join('')}</div>`}
+function mobileV36Sheet(title,content,opts={}){return `<section class="mp-sheet ${opts.className||(title==='Шрифт'?'mp-font-sheet':title==='Формат'?'mp-format-sheet':title==='Расположение'?'mp-position-sheet':title==='Интервалы'?'mp-spacing-sheet':title==='Обводка'?'mp-stroke-sheet':(opts.colorEditor?'mp-color-editor':''))}" role="dialog" aria-label="${mobileV36Escape(title)}"><div class="mp-grab"></div><div class="mp-head">${opts.back?'<button data-mp-action="back" aria-label="Назад">←</button>':'<span aria-hidden="true"></span>'}<strong>${mobileV36Escape(title)}</strong><button data-mp-action="done" aria-label="Готово">✓</button></div><div class="mp-body">${content}</div></section>`}
+function mobileV36Tabs(options,selected){return `<div class="mp-tabs">${options.map(([id,label])=>`<button data-mp-tab="${id}" class="${id===selected?'active':''}" aria-pressed="${id===selected}">${label}</button>`).join('')}</div>`}
 // Height gestures are confined to the font sheet handle and never reserve canvas space.
 function mobileFontHeight(){
  const sheet=mobileV36.querySelector('.mp-font-sheet');if(!sheet)return;
@@ -6022,23 +6090,49 @@ mobileV36.addEventListener('keydown',ev=>{if(ev.target.matches('.mp-font-sheet .
 window.visualViewport?.addEventListener('resize',mobileFontHeight);
 window.visualViewport?.addEventListener('scroll',mobileFontHeight);
 window.addEventListener('resize',mobileFontHeight);
-function mobileV36FontPanel(){const e=active(),category=mobileV36State.fontCategory||'all',filter=mobileV36State.query.toLowerCase().trim();
- const renderList=list=>list.filter(x=>x.toLowerCase().includes(filter)).map(f=>`<button class="mp-font-row ${mobileV36StyleValue('fontFamily')===f?'active':''}" data-mp-font="${mobileV36Escape(f)}"><span><strong class="mp-previewfont" style="font-family:${mobileV36Escape(JSON.stringify(f))}">${mobileV36Escape(f)}</strong></span>${v41FontUnavailable(f)?'<small>Недоступен</small>':mobileV36StyleValue('fontFamily')===f?'✓':'›'}</button>${!v41FontUnavailable(f)&&mobileV36State.fontVariantFamily===f?`<div class="mp-variant-inline">${fontVariants(f).map(([v,n])=>`<button data-mp-variant="${mobileV36Escape(v)}" class="${mobileV36StyleValue('fontVariant')===v?'active':''}">${mobileV36Escape(n)}</button>`).join('')}</div>`:''}`).join('')||'<div class="mp-dim">В этой категории нет шрифтов</div>';
- return mobileV36Sheet('Шрифт',`${mobileV36Style('fontFamily').kind==='mixed'||mobileV36Style('fontVariant').kind==='mixed'?'<div class="mp-dim">Смешано</div>':''}<div class="mp-source mp-font-categories">${mobileV36State.fontSearch?`<input data-mp-search="font" type="search" aria-label="Поиск шрифта" placeholder="Поиск шрифта…" value="${mobileV36Escape(mobileV36State.query)}"><button data-mp-action="fontSearchClose" aria-label="Закрыть поиск">×</button>`:`<select data-mp-font-category="1" aria-label="Категория шрифтов">${v41FontCategories.map(([id,label])=>`<option value="${id}" ${category===id?'selected':''}>${label}</option>`).join('')}</select><button data-mp-action="fontSearch" aria-label="Поиск шрифта">${uiIcon('search')}</button>`}<button data-mp-action="fontImport" aria-label="Загрузить шрифт">+</button></div><div class="mp-font-scroll" data-mp-font-scope="${mobileV36Escape(JSON.stringify([category,filter]))}">${renderList(v41FontsByCategory(category))}</div>`,{back:true})
+function mobileV36FontRows(category,filter){
+ const family=mobileV36StyleValue('fontFamily');
+ return v41FontsByCategory(category).filter(x=>x.toLowerCase().includes(filter)).map(f=>`<button class="mp-font-row ${family===f?'active':''}" data-mp-font="${mobileV36Escape(f)}"><span><strong class="mp-previewfont" style="font-family:${mobileV36Escape(JSON.stringify(f))}">${mobileV36Escape(f)}</strong></span>${v41FontUnavailable(f)?'<span class="mp-font-indicator">Недоступен</span>':`<span class="mp-font-indicator" aria-hidden="true">${family===f?'✓':'›'}</span>`}</button>${!v41FontUnavailable(f)&&mobileV36State.fontVariantFamily===f?`<div class="mp-variant-inline">${fontVariants(f).map(([v,n])=>`<button data-mp-variant="${mobileV36Escape(v)}">${mobileV36Escape(n)}</button>`).join('')}</div>`:''}`).join('')||'<div class="mp-dim">В этой категории нет шрифтов</div>';
 }
+function mobileV36FontPanel(){
+ const category=mobileV36State.fontCategory||'all',filter=mobileV36State.query.toLowerCase().trim();
+ return mobileV36Sheet('Шрифт',`<div class="mp-text-status" data-mp-font-state role="status" hidden></div><div class="mp-source mp-font-categories">${mobileV36State.fontSearch?`<input data-mp-search="font" type="search" aria-label="Поиск шрифта" placeholder="Поиск шрифта…" value="${mobileV36Escape(mobileV36State.query)}"><button data-mp-action="fontSearchClose" aria-label="Закрыть поиск">×</button>`:`<select data-mp-font-category="1" aria-label="Категория шрифтов">${v41FontCategories.map(([id,label])=>`<option value="${id}" ${category===id?'selected':''}>${label}</option>`).join('')}</select><button data-mp-action="fontSearch" aria-label="Поиск шрифта">${uiIcon('search')}</button>`}<button data-mp-action="fontImport" aria-label="Загрузить шрифт">+</button></div><div class="mp-font-scroll" data-mp-font-scope="${mobileV36Escape(JSON.stringify([category,filter]))}">${mobileV36FontRows(category,filter)}</div>`,{back:true})
+}
+const mobileV36ColorPresets=['#000000','#232323','#545454','#858585','#bababa','#ffffff','#ff4545','#ff849d','#ff76a8','#ad77ef','#7956eb','#4720ce','#0086c3','#04bce2','#69deed','#a4e8f2','#006b64','#16b38b','#46d47e','#b3ea2f','#d4fc15','#f3e43c','#ffbb43','#fa823b'];
 function mobileV36ColorPanel(){if(mobileV36State.sub==='colorEdit')return mobileV36ColorEditor();
- const presets=['#000000','#232323','#545454','#858585','#bababa','#ffffff','#ff4545','#ff849d','#ff76a8','#ad77ef','#7956eb','#4720ce','#0086c3','#04bce2','#69deed','#a4e8f2','#006b64','#16b38b','#46d47e','#b3ea2f','#d4fc15','#f3e43c','#ffbb43','#fa823b'];
+ if(mobileV36Text())return mobileV36TextPalette();
  const photocolors=mobileV36PhotoColors();
- return mobileV36Sheet('Цвет текста',`<input data-mp-search="color" type="search" placeholder="Поиск цвета или #HEX" value="${mobileV36Escape(mobileV36State.query)}"><div class="mp-subtitle">Цвета в этом дизайне</div><div class="mp-swatches" style="flex-wrap:wrap;overflow:visible">${mobileV36Colors().filter(c=>!mobileV36State.query||c.toLowerCase().includes(mobileV36State.query.toLowerCase())).map(mobileV36Swatch).join('')}</div><div class="mp-subtitle">Цвета с фото</div><div class="mp-swatches" style="flex-wrap:wrap;overflow:visible">${photocolors.length?photocolors.map(mobileV36Swatch).join(''):'<span class="mp-dim">Нет загруженных фото для извлечения оттенков</span>'}</div><div class="mp-subtitle">Готовые цвета</div><div class="mp-swatches" style="flex-wrap:wrap;overflow:visible">${presets.map(mobileV36Swatch).join('')}</div><div class="mp-subtitle">Градиенты</div><div class="mp-horizontal">${[['#7956eb','#48bcef'],['#f36b9a','#facb48'],['#74e2dd','#1663c9'],['#f8f4f5','#554c6b']].map(([a,b])=>`<button class="mp-gradient-chip" data-mp-gradient="${a},${b}" style="background:linear-gradient(110deg,${a},${b})"></button>`).join('')}</div><button data-mp-action="colorEdit" class="mp-btn-wide">✚ Настроить свой цвет / градиент</button>`,{back:true})}
+ return mobileV36Sheet('Цвет текста',`<input data-mp-search="color" type="search" placeholder="Поиск цвета или #HEX" value="${mobileV36Escape(mobileV36State.query)}"><div class="mp-subtitle">Цвета в этом дизайне</div><div class="mp-swatches" style="flex-wrap:wrap;overflow:visible">${mobileV36Colors().filter(c=>!mobileV36State.query||c.toLowerCase().includes(mobileV36State.query.toLowerCase())).map(mobileV36Swatch).join('')}</div><div class="mp-subtitle">Цвета с фото</div><div class="mp-swatches" style="flex-wrap:wrap;overflow:visible">${photocolors.length?photocolors.map(mobileV36Swatch).join(''):'<span class="mp-dim">Нет загруженных фото для извлечения оттенков</span>'}</div><div class="mp-subtitle">Готовые цвета</div><div class="mp-swatches" style="flex-wrap:wrap;overflow:visible">${mobileV36ColorPresets.map(mobileV36Swatch).join('')}</div><div class="mp-subtitle">Градиенты</div><div class="mp-horizontal">${[['#7956eb','#48bcef'],['#f36b9a','#facb48'],['#74e2dd','#1663c9'],['#f8f4f5','#554c6b']].map(([a,b])=>`<button class="mp-gradient-chip" data-mp-gradient="${a},${b}" style="background:linear-gradient(110deg,${a},${b})"></button>`).join('')}</div><button data-mp-action="colorEdit" class="mp-btn-wide">✚ Настроить свой цвет / градиент</button>`,{back:true})}
+function mobileV36TextPalette(){
+ const photos=mobileV36PhotoColors(),state=mobileV36Style('textColor');
+ const swatches=(label,values)=>values.length?`<div class="mp-subtitle">${label}</div><div class="mp-swatches" role="group" aria-label="${label}">${values.map(mobileV36Swatch).join('')}</div>`:'';
+ return mobileV36Sheet('Цвет текста',`
+ <button type="button" class="mp-btn-wide" data-mp-action="colorEdit">Свой цвет или градиент</button>
+ ${state.reason?`<div class="mp-text-status" role="status">${mobileV36Escape(state.reason)}</div>`:''}
+ ${swatches('Цвета дизайна',mobileV36Colors())}${swatches('Цвета с фото',photos)}${swatches('Готовые цвета',mobileV36ColorPresets)}
+ <div class="mp-subtitle">Градиенты · Весь слой</div><div class="mp-horizontal" role="group" aria-label="Градиенты · Весь слой">${[['#7956eb','#48bcef'],['#f36b9a','#facb48'],['#74e2dd','#1663c9'],['#f8f4f5','#554c6b']].map(([a,b])=>`<button class="mp-gradient-chip" data-mp-gradient="${a},${b}" aria-label="Градиент ${a} → ${b} · Весь слой" style="background:linear-gradient(110deg,${a},${b})"></button>`).join('')}</div>`,{back:true,className:'mp-text-compact mp-text-palette'});
+}
 function mobileV36HexToHSV(hex){const n=parseInt(hex.replace('#',''),16),r=(n>>16)/255,g=((n>>8)&255)/255,b=(n&255)/255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b),diff=mx-mn;let h=0;if(diff){if(mx===r)h=((g-b)/diff)%6;else if(mx===g)h=(b-r)/diff+2;else h=(r-g)/diff+4;h=(h*60+360)%360}return [h,mx?diff/mx:0,mx]}
 function mobileV36HSVToHex(h,s,v){const c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c;let [r,g,b]=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];return '#'+[r+m,g+m,b+m].map(z=>Math.round(z*255).toString(16).padStart(2,'0')).join('').toUpperCase()}
-function mobileV36InitColor(){const target=mobileV36State.fxColor;const hsv=mobileV36HexToHSV((target?effectColorBinding(target.type,target.key).color:null)||(active()?.type==='text'?mobileV36StyleValue('textColor'):active()?.[mobileV36ColorKey()])||'#7857DE');[mobileV36State.hue,mobileV36State.sat,mobileV36State.value]=hsv}
-function mobileV36ColorEditor(){const state=mobileV36State,e=active();const hex=mobileV36HSVToHex(state.hue,state.sat,state.value);const gradient=!state.fxColor&&state.colorTab==='gradient',styleState=!gradient&&!state.fxColor&&e.type==='text'?mobileV36Style('textColor'):null,mixed=styleState?.kind==='mixed';const swatches=mobileV36Colors();
- const color=gradient?`<div class="mp-subtitle">Цвета градиента</div><div class="mp-line">${(e.gradientStops?.length?e.gradientStops:[{pos:0,color:e.fill||'#7857de'},{pos:100,color:e.fill2||'#2c4fea'}]).map((s,i)=>`<button class="mp-swatch ${state.activeStop===i?'active':''}" data-mp-stop="${i}" style="background:${s.color}"></button>`).join('')}<button class="mp-circle" data-mp-action="addStop">+</button></div><div class="mp-subtitle">Стиль</div><div class="mp-horizontal">${[['0','↔'],['90','↕'],['45','⤡'],['135','⤢'],['radial','◉']].map(([v,label])=>`<button class="mp-gradient-chip ${(v==='radial'?e.gradientMode==='radial':e.gradientAngle===Number(v))?'active':''}" data-mp-gradient-style="${v}" style="font-size:23px;color:white;text-shadow:0 1px 4px #222;background:${v==='radial'?`radial-gradient(circle,${e.fill||'#7857de'},${e.fill2||'#bcb9fe'})`:`linear-gradient(${Number(v)}deg,${e.fill||'#7857de'},${e.fill2||'#bcb9fe'})`}">${label}</button>`).join('')}</div>`:'';
- return mobileV36Sheet(gradient?'Редактор градиента':mixed?'Смешано':hex,`${mobileColorFields({
+function mobileV36InitColor(){
+ const s=mobileV36State,e=active(),fx=s.fxColor;
+ const color=fx?effectColorBinding(fx.type,fx.key).color:
+  s.colorTab==='gradient'&&e?.type==='text'?(e.gradientStops?.[s.activeStop]?.color||(s.activeStop?e.fill2:e.fill)):
+  e?.type==='text'?mobileV36StyleValue('textColor'):e?.[mobileV36ColorKey()];
+ [s.hue,s.sat,s.value]=mobileV36HexToHSV(color||'#7857DE');
+}
+function mobileV36ColorEditor(){const state=mobileV36State,e=active();const hex=mobileV36HSVToHex(state.hue,state.sat,state.value);const gradient=!state.fxColor&&state.colorTab==='gradient',styleState=!gradient&&!state.fxColor&&e.type==='text'?mobileV36Style('textColor'):null,mixed=styleState?.kind==='mixed',unavailable=styleState?.reason,textEditor=!state.fxColor&&e.type==='text';
+ const color=gradient?`<div class="mp-subtitle">Цвета градиента</div><div class="mp-line">${(e.gradientStops?.length?e.gradientStops:[{pos:0,color:e.fill||'#7857de'},{pos:100,color:e.fill2||'#2c4fea'}]).map((s,i)=>`<button class="mp-swatch ${state.activeStop===i?'active':''}" data-mp-stop="${i}" aria-label="Точка ${i+1} · ${s.color}" style="background:${s.color}"></button>`).join('')}<button class="mp-circle" data-mp-action="addStop">+</button></div><div class="mp-subtitle">Стиль</div><div class="mp-horizontal">${[['0','↔'],['90','↕'],['45','⤡'],['135','⤢'],['radial','◉']].map(([v,label])=>`<button class="mp-gradient-chip ${(v==='radial'?e.gradientMode==='radial':e.gradientAngle===Number(v))?'active':''}" data-mp-gradient-style="${v}" style="font-size:23px;color:white;text-shadow:0 1px 4px #222;background:${v==='radial'?`radial-gradient(circle,${e.fill||'#7857de'},${e.fill2||'#bcb9fe'})`:`linear-gradient(${Number(v)}deg,${e.fill||'#7857de'},${e.fill2||'#bcb9fe'})`}">${label}</button>`).join('')}</div>`:'';
+ const fields=mobileColorFields({
    plane:'data-mp-plane="1"',hue:'data-mp-hue="1"',hex:'data-mp-hex="1"',preview:'data-mp-preview="1"'
- },[state.hue,state.sat,state.value],mixed?'':hex,mixed?'Смешано':'',
- `<button class="mp-circle" data-mp-action="eyedropper" title="Пипетка">${uiIcon('pipette')}</button>`)}${color}${state.fxColor?'':mobileV36Tabs([['solid','Цвет'],['gradient','Градиент']],state.colorTab)}`,{back:true,colorEditor:true})}
+ },[state.hue,state.sat,state.value],mixed?'':hex,mixed?'Разные':'#RRGGBB',
+ `<button class="mp-circle" data-mp-action="eyedropper" aria-label="Пипетка" title="Пипетка">${uiIcon('pipette')}</button>`);
+ if(!textEditor)return mobileV36Sheet(gradient?'Редактор градиента':hex,fields+color+(state.fxColor?'':mobileV36Tabs([['solid','Цвет'],['gradient','Градиент']],state.colorTab)),{back:true,colorEditor:true});
+ const tabs=mobileV36Tabs([['solid','Цвет'],['gradient','Градиент · Весь слой']],state.colorTab);
+ return mobileV36Sheet(gradient?'Редактор градиента':'Свой цвет',`${tabs}
+ ${unavailable?`<div class="mp-text-status" role="status">${mobileV36Escape(unavailable)}</div>`:`<div class="mp-text-color-fields">${fields}</div>`}
+ ${color}`,{back:true,className:'mp-text-compact mp-text-color-editor'});
+}
 function mobileV36PhotoColors(){const colors=[];try{
  for(const e of app.doc.elements.filter(x=>(x.type==='image'||x.imageSrc)&&x.imageSrc).slice(0,5)){
   const im=getImage(e.imageSrc);if(!im||!im.complete||!im.naturalWidth)continue;
@@ -6065,12 +6159,16 @@ function mobileV37LayerIcon(kind){
  const align={forward:'M12 19V5m-5 5 5-5 5 5',backward:'M12 5v14m-5-5 5 5 5-5',front:'M12 19V5m-5 5 5-5 5 5',back:'M12 5v14m-5-5 5 5 5-5',atop:'M4 4h16M12 20V7m-5 5 5-5 5 5',abottom:'M4 20h16M12 4v13m-5-5 5 5 5-5',aleft:'M4 4v16M20 12H7m5-5-5 5 5 5',aright:'M20 4v16M4 12h13m-5-5 5 5-5 5',ahcenter:'M12 2v20M4 12h16',avcenter:'M2 12h20M12 4v16'}[kind]||'M5 12h14';
  return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="8" height="6" rx="1" opacity=".36"/><rect x="12" y="14" width="8" height="6" rx="1" opacity=".36"/><path d="${align}"/></svg>`;
 }
-function mobileV36PositionPanel(){const e=active();const tab=mobileV36State.tab;
+function mobileV36PositionPanel(){const e=active(),text=e.type==='text';const tab=mobileV36State.tab;
  let content='';const a=(name,id,icon)=>`<button class="mp-choice mp-arrange" data-mp-arrange="${id}">${mobileV37LayerIcon(id)}<span>${name}</span></button>`;
  if(tab==='sort')content=`<div class="mp-grid two">${a('Вперёд','forward','↑')}${a('Назад','backward','↓')}${a('Спереди','front','⇈')}${a('Сзади','back','⇊')}</div>`;
  if(tab==='align')content=`<div class="mp-grid two">${a('По верхнему краю','atop','↟')}${a('По левому краю','aleft','⇤')}${a('По центру (гориз.)','ahcenter','↔')}${a('По центру (вертик.)','avcenter','↕')}${a('По нижнему краю','abottom','↡')}${a('По правому краю','aright','⇥')}</div>`;
  if(tab==='advanced')content=`<div class="mp-grid three">${[['Ширина','w',e.w],['Высота','h',e.h],['Соотношение','aspect',0],['X','x',e.x],['Y','y',e.y],['Повернуть, °','rotation',e.rotation||0]].map(([label,key,val])=>key==='aspect'?`<label class="mp-field">Соотношение<button class="mp-ratio ${mobileV36State.aspectLock?'active':''}" data-mp-action="aspect">${mobileV36State.aspectLock?'🔒':'🔓'}</button></label>`:`<label class="mp-field">${label}<input type="number" data-mp-key="${key}" value="${Math.round(val*10)/10}" step="1" inputmode="decimal"></label>`).join('')}</div>`;
- return mobileV36Sheet('Расположение',`${content}${mobileV36Tabs([['sort','Сортировка'],['align','Выровнять'],['advanced','Расширенные']],tab)}`)}
+ const tabs=mobileV36Tabs([['sort',text?'Слой':'Сортировка'],['align','Выровнять'],['advanced',text?'Геометрия':'Расширенные']],tab);
+ if(!text)return mobileV36Sheet('Расположение',`${content}${tabs}`);
+ const opacity=tab==='sort'?mobileV36NumericRow('Прозрачность, %','opacity',e.opacity??100,[0,100,1]):'';
+ return mobileV36Sheet('Слой',`${tabs}${opacity}${content}`,{className:'mp-position-sheet mp-text-compact'});
+}
 function mobileV36SyncTypographyControls(){
  if(mobileV36State.tool!=='format')return;
  const e=active(),sub=mobileV36State.sub;
@@ -6081,13 +6179,13 @@ function mobileV36SyncTypographyControls(){
   if(trigger){
    trigger.disabled=!valid;
    trigger.classList.toggle('active',valid&&mode!=='original'&&mode!=='mixed');
-   trigger.title=target.reason||'Регистр текста · '+(textCaseOptions[mode]?.[1]||'Mixed');
-   trigger.setAttribute('aria-description',valid?(textCaseOptions[mode]?.[1]||'Mixed'):target.reason);
-   trigger.querySelector('.decoration-mixed').textContent=mode==='mixed'?'Mixed':'';
+   trigger.title=target.reason||'Регистр текста · '+(textCaseOptions[mode]?.[1]||'Разные');
+   trigger.setAttribute('aria-description',valid?(textCaseOptions[mode]?.[1]||'Разные'):target.reason);
+   trigger.querySelector('.decoration-mixed').textContent=mode==='mixed'?'Разные':'';
    trigger.classList.toggle('mixed',mode==='mixed');
   }
   const mixed=mobileV36.querySelector('[data-mp-case-mixed]');
-  if(mixed)mixed.textContent=mode==='mixed'?'Mixed':'';
+  if(mixed)mixed.textContent=mode==='mixed'?'Разные':'';
   for(const button of mobileV36.querySelectorAll('[data-mp-text-case]')){
    button.disabled=!valid;
    button.title=target.reason||'';
@@ -6098,7 +6196,7 @@ function mobileV36SyncTypographyControls(){
   const target=mobileTextTarget('baselineShift'),valid=target.kind!=='unsupported';
   const mode=valid?baselineShiftState(e,target.kind==='range'?target:null):null;
   const mixed=mobileV36.querySelector('[data-mp-baseline-mixed]');
-  if(mixed)mixed.textContent=mode==='mixed'?'Индексы · Mixed':'';
+  if(mixed)mixed.textContent=mode==='mixed'?'Индексы · Разные':'';
   for(const button of mobileV36.querySelectorAll('[data-mp-baseline-shift]')){
    button.disabled=!valid;
    button.title=target.reason||button.getAttribute('aria-label');
@@ -6260,7 +6358,7 @@ function mobileTextPaintTarget(tool){
   if(result.state.stroke!=='mixed')result.state.strokeEffective=result.state.stroke;
  }else{
   result.state={fillOpacity:fill==='solid'?same(styles.map(style=>style.fillOpacity)):element.fillOpacity??100};
-  result.hint=fill==='solid'?'Заливка текста. Общая прозрачность слоя — в меню «Прозрачн.».':'Прозрачность всей заливки, включая её градиент или изображение.';
+  result.hint=fill==='solid'?'Заливка текста. Общая прозрачность находится в панели «Слой».':'Прозрачность всей заливки, включая её градиент или изображение.';
  }
  return result;
 }
@@ -6329,19 +6427,33 @@ function mobileV36FormatPanel(){const e=active();
 function mobileV36PaintMenu(){
  return mobileV36Sheet('Оформление текста',`<div class="mp-grid three mp-paint-entries" role="group" aria-label="Оформление текста">
  ${Object.entries(mobileTextPaintTitles).map(([key,label])=>`<button type="button" class="mp-choice" data-mp-format="${key}" aria-label="${label}${key==='underlineSettings'?' · настройки':''}" aria-haspopup="dialog">${{underlineSettings:'Подчёркивание',strokeSettings:'Обводка',fillSettings:'Прозр. заливки'}[key]}</button>`).join('')}
- </div>`,{back:true});
+ </div>`,{className:'mp-text-compact mp-paint-menu'});
 }
-function mobileV36SpacingPanel(){const e=active();const row=(label,k,min,max,step)=>`<label class="mp-field">${label}<div class="mp-line">${mobileV36Slider(k,mobileV36StyleValue(k),min,max,step)}<input type="number" data-mp-key="${k}" value="${mobileV36StyleValue(k)}" ${mobileV36StyleAttributes(k)} min="${min}" max="${max}" step="${step}" inputmode="decimal"></div></label>`;
- return mobileV36Sheet('Интервалы',`${row('Межбуквенный интервал','letterSpacing',-20,100,.5)}${row('Расстояние между строками','lineHeight',.5,4,.05)}<div class="mp-subtitle">Закрепить поле · Весь слой</div><div class="mp-grid three">${[['top','По верху'],['middle','По центру'],['bottom','По низу']].map(([id,label])=>`<button class="mp-choice mp-valign-btn ${e.verticalAlign===id?'active':''}" data-mp-valign="${id}" title="${label}" aria-label="${label}"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="1" stroke-opacity=".4"/><path d="${id==='top'?'M7 7h10M7 10h10':id==='middle'?'M7 10h10M7 13h10':'M7 14h10M7 17h10'}"/></svg></button>`).join('')}</div>`)}
+function mobileV36NumericRow(label,key,value,[min,max,step],[numberMin,numberMax]=[min,max]){
+ const id='mp-number-'+key;
+ return `<div class="mp-text-number">
+  <label for="${id}">${label}</label>${mobileV36Slider(key,value,min,max,step,label)}
+  <input id="${id}" type="number" data-mp-key="${key}" value="${value}" ${mobileRangeKeys.has(key)?mobileV36StyleAttributes(key):''} ${Number.isFinite(numberMin)?'min="'+numberMin+'"':''} ${Number.isFinite(numberMax)?'max="'+numberMax+'"':''} step="any" inputmode="decimal" enterkeyhint="done">
+ </div>`;
+}
+function mobileV36SpacingPanel(){
+ const e=active();
+ return mobileV36Sheet('Интервалы',`
+ ${mobileV36NumericRow('Трекинг, px','letterSpacing',mobileV36StyleValue('letterSpacing'),[-20,100,.5],[-Infinity,Infinity])}
+ ${mobileV36NumericRow('Интерлиньяж','lineHeight',mobileV36StyleValue('lineHeight'),[.5,4,.05],[.05,Infinity])}
+ <div class="mp-text-number mp-vertical-align"><span>По высоте<small>Весь слой</small></span><div class="mp-format-align" role="group" aria-label="Выравнивание по высоте · Весь слой">
+ ${[['top','По верху'],['middle','По центру'],['bottom','По низу']].map(([id,label])=>`<button class="mp-choice mp-format-btn" data-mp-valign="${id}" title="${label}" aria-label="${label}" aria-pressed="${(e.verticalAlign||'top')===id}"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="1" stroke-opacity=".4"/><path d="${id==='top'?'M7 7h10M7 10h10':id==='middle'?'M7 10h10M7 13h10':'M7 14h10M7 17h10'}"/></svg></button>`).join('')}
+ </div></div>`,{className:'mp-spacing-sheet mp-text-compact'});
+}
 function mobileV36StrokePanel(){const e=active(),color=e.type==='text'?mobileV36StyleValue('stroke'):e.stroke||'#7857de';return mobileV36Sheet('Обводка',`<div class="mp-field">Толщина обводки<div class="mp-line">${mobileV36Slider('strokeWidth',mobileV36StyleValue('strokeWidth'),0,120,1)}<input type="number" data-mp-key="strokeWidth" value="${mobileV36StyleValue('strokeWidth')}" ${mobileV36StyleAttributes('strokeWidth')} min="0" max="120"></div></div><div class="mp-subtitle">Цвет обводки</div><div class="mp-swatches" style="flex-wrap:wrap;overflow:visible">${[color,...mobileV36Colors()].filter((v,i,a)=>v&&a.indexOf(v)===i).slice(0,18).map(c=>`<button class="mp-swatch ${c===color?'active':''}" data-mp-stroke-color="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div>`)}
-function mobileV36EffectPanel(){const e=regionEffectsRequest()?{}:active(),effects=e.effects||[];const defs=[['none','Без эффекта','Ag'],['dropShadow','Падающая тень','Ag'],['innerShadow','Внутренняя тень','Ag'],['glow','Подсветка / Неон','Ag'],['outline','Контур','Ag'],['background','Фон-плашка','Ag'],['curve','Изогнуть по дуге','Ag'],['gaussianBlur','По Гауссу','Ag'],['pixelate','Пикселизация','▦'],['noise','Шум','Ag'],['textGlow','Подсветка','Ag'],['textEcho','Эхо','Ag'],['textBackdrop','Фон','Ag'],['textCombine','Совмещение','Ag'],['textGlitch','Искажение','Ag']].filter(([id])=>textFxAllowed(id,e)&&(!regionEffectsRequest()||FX_TYPES[id]));
- const selected=mobileV36State.effectId;const cards=defs.map(([id,label,icon])=>{const on=id==='outline'?Number(e.strokeWidth)>0:id==='glow'?!!e.mobileGlow:id==='background'?!!e.mobileBackground:id==='curve'?!!e.mobileArcRadius:id==='none'?!effects.length&&!e.mobileGlow&&!e.mobileBackground&&!e.mobileArcRadius&&!e.strokeWidth:effects.some(x=>x.type===id&&x.enabled!==false);return `<button class="mp-effect-tile ${on?'active':''}" data-mp-effect="${id}" aria-pressed="${on}"><strong class="${TEXT_FX_IDS.has(id)?`tf43-preview tf43-${id}`:``}">${icon}</strong>${mobileV36Escape(label)}${on?'<span class="mp-config">☷</span>':''}</button>`}).join('');
+function mobileV36EffectPanel(){const e=regionEffectsRequest()?{}:active(),effects=e.effects||[];const defs=[['none','Без эффекта','Ag'],['dropShadow','Падающая тень','Ag'],['innerShadow','Внутренняя тень','Ag'],['glow','Подсветка / Неон','Ag'],['outline','Контур','Ag'],['background','Фон-плашка','Ag'],['curve','Изогнуть по дуге','Ag'],['gaussianBlur','По Гауссу','Ag'],['pixelate','Пикселизация','▦'],['noise','Шум','Ag'],['textGlow','Подсветка','Ag'],['textEcho','Эхо','Ag'],['textBackdrop','Фон','Ag'],['textCombine','Совмещение','Ag'],['textGlitch','Искажение','Ag']].filter(([id])=>textFxAllowed(id,e)&&(e.type!=='text'||id!=='outline')&&(!regionEffectsRequest()||FX_TYPES[id]));
+ const selected=mobileV36State.effectId;const cards=defs.map(([id,label,icon])=>{const on=id==='outline'?Number(e.strokeWidth)>0:id==='glow'?!!e.mobileGlow:id==='background'?!!e.mobileBackground:id==='curve'?!!e.mobileArcRadius:id==='none'?!effects.length&&!e.mobileGlow&&!e.mobileBackground&&!e.mobileArcRadius&&(e.type==='text'||!e.strokeWidth):effects.some(x=>x.type===id&&x.enabled!==false);return `<button class="mp-effect-tile ${on?'active':''}" data-mp-effect="${id}" aria-pressed="${on}"><strong class="${TEXT_FX_IDS.has(id)?`tf43-preview tf43-${id}`:``}">${icon}</strong>${mobileV36Escape(label)}${on?'<span class="mp-config">☷</span>':''}</button>`}).join('');
  let controls='';
  if(mobileV36State.editEffect&&selected){
   const fx=effects.find(x=>x.type===selected);let defs2=TEXT_FX_IDS.has(selected)?(selected==='textGlow'?[['Интенсивность','intensity',0,100,1],['Радиус','radius',1,90,1]]:selected==='textEcho'?[['Направление','direction',-180,180,1],['Смещение','distance',0,160,1]]:selected==='textBackdrop'?[['Округлость','roundness',0,100,1],['Распространение','spread',0,90,1],['Непрозрачность','opacity',0,100,1]]:selected==='textCombine'?[['Толщина','thickness',0,30,1],['Смещение','distance',0,100,1],['Направление','direction',-180,180,1]]:[['Направление','direction',-180,180,1],['Смещение','distance',0,100,1]]):selected==='pixelate'?[['Размер блока, px','blockSize',2,160,1]]:selected==='curve'?[['Радиус изгиба','mobileArcRadius',-250,250,1]]:selected==='outline'?[['Толщина контура','strokeWidth',0,70,1]]:selected==='glow'?[['Свечение, px','mobileGlow',0,90,1]]:selected==='background'?[['Отступ, px','mobileBackgroundPadding',0,80,1]]:selected==='noise'?[['Плотность','density',0,100,1],['Сила','amount',0,100,1]]:selected==='dropShadow'||selected==='innerShadow'?[['Смещение X','x',-200,200,1],['Смещение Y','y',-200,200,1],['Размытие','radius',0,150,1],['Непрозрачность','opacity',0,100,1]]:[['Размытие, px','radius',0,300,1]];
-  controls=`<div class="mp-divider"></div><div class="mp-subtitle">Настройки · ${mobileV36Escape(defs.find(x=>x[0]===selected)?.[1]||selected)}</div>${defs2.map(([label,k,min,max,step])=>{const value=fx?.[k]??e[k]??0;return `<label class="mp-field">${label}<div class="mp-line"><input type="range" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"><input type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"></div></label>`}).join('')}${selected==='pixelate'?'':`<div class="mp-line"><label>Цвет эффекта <input data-mp-effect-color="${selected}" data-mp-color-key="color" type="color" value="${effectColorBinding(selected,'color').color||'#7857de'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color" aria-label="Редактор цвета эффекта">◉ HEX</button></label>${selected==='textGlitch'?`<label>Второй цвет <input data-mp-effect-color="${selected}" data-mp-color-key="color2" type="color" value="${fx?.color2||'#00f0f0'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color2" aria-label="Редактор второго цвета эффекта">◉ HEX</button></label>`:''}</div>`}`;
+  controls=`<div class="mp-divider"></div><div class="mp-subtitle">Настройки · ${mobileV36Escape(defs.find(x=>x[0]===selected)?.[1]||selected)}</div>${defs2.map(([label,k,min,max,step])=>{const value=fx?.[k]??e[k]??0;return `<div class="${e.type==='text'?'mp-text-number':'mp-field'}"><label for="mp-fx-${k}">${label}</label><div class="mp-line"><input type="range" aria-label="${label}, ползунок" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"><input id="mp-fx-${k}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}" inputmode="decimal" enterkeyhint="done"></div></div>`}).join('')}${selected==='pixelate'?'':`<div class="mp-line"><label>Цвет эффекта <input data-mp-effect-color="${selected}" data-mp-color-key="color" type="color" value="${effectColorBinding(selected,'color').color||'#7857de'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color" aria-label="Редактор цвета эффекта">◉ HEX</button></label>${selected==='textGlitch'?`<label>Второй цвет <input data-mp-effect-color="${selected}" data-mp-color-key="color2" type="color" value="${fx?.color2||'#00f0f0'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color2" aria-label="Редактор второго цвета эффекта">◉ HEX</button></label>`:''}</div>`}`;
  }
- return mobileV36Sheet('Эффекты',`<div class="mp-tile-scroll">${cards}</div>${controls}<div class="mp-dim">Весь слой. Первый тап применяет эффект, второй открывает параметры. Эффекты входят в историю действий.</div>`)}
+ return mobileV36Sheet('Эффекты',`<div class="mp-text-status">Весь слой</div><div class="mp-tile-scroll">${cards}</div>${controls}`,e.type==='text'?{className:'mp-text-compact mp-text-effects'}:{})}
 function mobileV36MorePanel(){
  const e=active(),elements=picked(),a=(id,label)=>`<button data-mp-more="${id}" class="mp-btn-wide">${label}</button>`;
  // Batch actions use the full selection; single-layer controls need active().
@@ -6356,7 +6468,8 @@ function mobileV36SyncSelectionLabel(){
  let label=mobileV36.querySelector('[data-mobile-text-selection]');
  const formatTarget=mobileV36.querySelector('[data-mp-format-target]');
  const key=mobileV36State.sub==='textCase'?'textCase':'bold';
- const target=app.editingId&&!app.wysiwyg?mobileTextTarget(key):null;
+ const rangeTool=['font','size','format','spacing'].includes(mobileV36State.tool)||mobileV36State.tool==='color'&&mobileV36State.colorTab!=='gradient';
+ const target=rangeTool&&app.editingId&&!app.wysiwyg?mobileTextTarget(mobileV36State.tool==='color'?'textColor':key):null;
  if(formatTarget){
   formatTarget.toggleAttribute('data-mobile-text-selection',target?.kind==='range');
   if(target?.kind!=='range'){
@@ -6385,9 +6498,9 @@ function mobileV36Render(){
  mobileListSettings.unmount();mobileTextPaint.unmount();editorPaintProjection(false);
  let content='';
  if(!s.expanded){
-  if(t==='font')content=mobileV36Pill(`<div class="mp-horizontal">${fontFamilies().map(mobileV36FontChip).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
-  if(t==='size'||t==='opacity'){const key=t==='size'?'fontSize':'opacity',val=(t==='size'?mobileV36StyleValue(key):e[key])??100,min=t==='size'?1:0,max=t==='size'?500:100;content=mobileV36Pill(`${mobileV36Slider(key,val,min,max,1)}${mobileV36Stepper(key,val,min,max,1)}${t==='size'&&e.type==='text'&&(!e.textMode||e.textMode==='horizontal')?`<label class="mp-auto-font" title="Подбирать размер под рамку"><input type="checkbox" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Авто · Весь слой</span></label>`:''}`)}
-  if(t==='color')content=mobileV36Pill(`<button class="mp-circle mp-rainbow" data-mp-action="colorEdit">＋</button><div class="mp-swatches">${mobileV36Colors().map(mobileV36Swatch).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
+  if(t==='font')content=mobileV36Pill(`<div class="mp-horizontal">${fontFamilies().map(mobileV36FontChip).join('')}</div><button class="mp-expand" data-mp-action="expand" aria-label="Шрифты и начертания">↑</button>`);
+  if(t==='size'||t==='opacity'){const key=t==='size'?'fontSize':'opacity',val=(t==='size'?mobileV36StyleValue(key):e[key])??100,min=t==='size'?1:0,max=t==='size'?100000:100;content=mobileV36Pill(`${mobileV36Slider(key,val,min,max,1)}${mobileV36Stepper(key,val,min,max,1)}${t==='size'&&e.type==='text'&&supportsHorizontalTextLayout(e)?`<label class="mp-auto-font" title="Подбирать размер под рамку"><input type="checkbox" aria-label="Автоподбор размера · Весь слой" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Авто<small>Слой</small></span></label>`:''}`)}
+  if(t==='color')content=mobileV36Pill(`<button class="mp-circle mp-rainbow" data-mp-action="colorEdit" aria-label="Свой цвет или градиент">＋</button><div class="mp-swatches">${mobileV36Colors().map(mobileV36Swatch).join('')}</div><button class="mp-expand" data-mp-action="expand" aria-label="Палитра">↑</button>`);
  }else{
   if(t==='font')content=mobileV36FontPanel();
   else if(t==='color')content=mobileV36ColorPanel();
@@ -6412,6 +6525,8 @@ function mobileV36Render(){
  // or a different category (a different list of rows).
  const previousFontList=mobileV36.querySelector('.mp-font-scroll');
  const previousFontScroll=previousFontList?{scope:previousFontList.dataset.mpFontScope,top:previousFontList.scrollTop}:null;
+ const priorEffectList=t==='effects'&&mobileV36.querySelector('.mp-tile-scroll');
+ if(priorEffectList)s.effectScroll=priorEffectList.scrollLeft;
  const previousTypography=mobileV36.querySelector('.mp-typography-panel .mp-body');
  const typographyScroll=previousTypography?.scrollTop;
  const typographyGroupsOpen=previousTypography?.querySelector('details').open;
@@ -6421,7 +6536,15 @@ function mobileV36Render(){
   mobileTextPaint.mount(mobileV36.firstElementChild,s.sub);
   editorPaintProjection(!!app.editingId&&supportsHorizontalTextLayout(e)&&mobileTextSession?.formatting===true);
  }
- mobileV36SyncTypographyControls();
+ if(e.type==='text'){
+  mobileV36SyncTextStyle();
+  if(isLayerLocked(e)){
+   const status=document.createElement('div');status.className='mp-text-status';status.setAttribute('role','status');status.textContent='Слой заблокирован';
+   mobileV36.querySelector('.mp-body,.mp-pill')?.prepend(status);
+  }
+ }
+ const effectList=t==='effects'&&mobileV36.querySelector('.mp-tile-scroll');
+ if(effectList)effectList.scrollLeft=s.effectScroll;
  const nextTypography=mobileV36.querySelector('.mp-typography-panel .mp-body');
  if(previousTypography&&nextTypography){
   nextTypography.querySelector('details').open=typographyGroupsOpen;nextTypography.scrollTop=typographyScroll;
@@ -6432,6 +6555,14 @@ function mobileV36Render(){
  if(previousFontScroll&&nextFontList?.dataset.mpFontScope===previousFontScroll.scope)nextFontList.scrollTop=previousFontScroll.top;
  if(s.expanded||app.editingId)mobileV36ApplyView();else mobileV36ResetView();
  if(app.editingId){positionInlineText();requestAnimationFrame(revealInlineText)}
+}
+function mobileV36AlignText(key,value){
+ if(rejectMobileTextTarget(key))return;
+ const e=active(),current=e[key]||(key==='textAlign'?'left':'top');
+ if(current===value)return;
+ const next={...e,[key]:value};
+ if(key==='textAlign'&&next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
+ commitMobileTextFormat(e,next,null,'Выравнивание текста');
 }
 function mobileV36AlignLayer(where){const es=picked().filter(x=>!isLayerLocked(x));for(const e of es){const d=app.doc;if(where==='aleft')e.x=0;if(where==='aright')e.x=d.width-e.w;if(where==='ahcenter')e.x=(d.width-e.w)/2;if(where==='atop')e.y=0;if(where==='abottom')e.y=d.height-e.h;if(where==='avcenter')e.y=(d.height-e.h)/2;}mobileV36Commit();mobileV36Render()}
 function mobileV36Format(key){const e=active();if(!e||rejectMobileTextTarget(key))return;
@@ -6444,17 +6575,19 @@ function mobileV36Format(key){const e=active();if(!e||rejectMobileTextTarget(key
   if(!mobileListSettingsTarget()?.modes.length)return;
   mobileV36State.sub=key;mobileV36Render();return;
  }
- if(['bold','italic'].includes(key)&&mobileTextTarget(key).kind==='range'){const state=mobileV36Style(key),value=state.kind!=='value'||state.value!==true;styleInlineSelection(key,value,true);mobileV36Render();resumeInlineTextFromButton();return}
- if(key==='bold')e.fontWeight=Number(e.fontWeight)>=600?'400':'700';
- if(key==='italic')e.fontStyle=e.fontStyle==='italic'?'normal':'italic';
- if(key==='underline'||key==='strike'){toggleTextDecoration(key==='underline'?'underline':'strikethrough');mobileV36Render();resumeInlineTextFromButton();return}
+ if(['bold','italic'].includes(key)&&mobileTextTarget(key).kind==='range'){const state=mobileV36Style(key),value=state.kind!=='value'||state.value!==true;styleInlineSelection(key,value,true);mobileV36SyncTextStyle();resumeInlineTextFromButton();return}
+ if(key==='bold'||key==='italic'){
+  const next=key==='bold'?{...e,fontWeight:Number(e.fontWeight)>=600?'400':'700'}:{...e,fontStyle:e.fontStyle==='italic'?'normal':'italic'};
+  commitMobileTextFormat(e,next,null,key==='bold'?'Жирность':'Курсив');return;
+ }
+ if(key==='underline'||key==='strike'){toggleTextDecoration(key==='underline'?'underline':'strikethrough');mobileV36SyncTextStyle();resumeInlineTextFromButton();return}
  if(key==='case'||key==='typography'){
   const sub=key==='case'?'textCase':'typography';
   pauseInlineTextInput();
   if(rejectMobileTextTarget(sub))return;
   mobileV36State.sub=sub;mobileV36Render();return;
  }
- if(['left','right','center','justify'].includes(key))e.textAlign=key;
+ if(['left','right','center','justify'].includes(key)){mobileV36AlignText('textAlign',key);return}
  if(key==='bullet'||key==='number'){
   mobileTextFinishGesture();
   const target=mobileTextTarget(key);
@@ -6469,17 +6602,15 @@ function mobileV36Format(key){const e=active();if(!e||rejectMobileTextTarget(key
    if(app.inlineSession){app.inlineSession.formatted=true;saveSoon();}
    mobileV36Commit();
   }
-  mobileV36Render();
-  return;
+  mobileV36SyncTextStyle();
  }
- mobileV36Commit();mobileV36Render();
 }
 function mobileV36ApplyEffect(type){
  if(regionEffectsRequest()){if(!FX_TYPES[type])return;fxAdd(type);mobileV36Open('effects',true);mobileV36State.effectId=type;mobileV36Render();return}
  const e=active();if(!e)return;
  const s=mobileV36State,found=(e.effects||[]).find(x=>x.type===type&&x.enabled!==false);
  if(s.effectId===type&&s.editEffect===false){s.editEffect=true;mobileV36Render();return}
- if(type==='none'){e.effects=[];e.mobileGlow=0;e.mobileBackground=false;e.mobileArcRadius=0;e.strokeWidth=0;}
+ if(type==='none'){e.effects=[];e.mobileGlow=0;e.mobileBackground=false;e.mobileArcRadius=0;if(e.type!=='text')e.strokeWidth=0;}
  else if(type==='glow'){e.mobileGlow=e.mobileGlow||22;e.mobileGlowColor=e.mobileGlowColor||'#7857de'}
  else if(type==='outline'){e.strokeWidth=e.strokeWidth||3;e.stroke=e.stroke||'#7857de'}
  else if(type==='background'){e.mobileBackground=true;e.mobileBackgroundColor=e.mobileBackgroundColor||'#7857de';e.mobileBackgroundPadding=e.mobileBackgroundPadding??8}
@@ -6552,7 +6683,7 @@ mobileV36.addEventListener('pointerdown',ev=>{
  if(mobileV36StartNudge(ev))return;
  const field=ev.target.closest('[data-mp-key],[data-mp-hue],[data-mp-hex]');if(field){delete field.dataset.mpAborted;delete field.dataset.mpCanceled}
  const range=ev.target.closest('input[type=range][data-mp-key],input[data-mp-hue]');
- if(range&&(!range.dataset.mpHue||!mobileV36State.fxColor&&mobileV36State.colorTab!=='gradient')&&mobileTextTarget(range.dataset.mpKey||'textColor').kind==='range')mobileV36BeginInteraction('textRange',ev,range);
+ if(range&&(!range.dataset.mpHue||!mobileV36State.fxColor&&mobileV36State.colorTab!=='gradient')&&(mobileTextTarget(range.dataset.mpKey||'textColor').kind==='range'||range.dataset.mpKey==='opacity'&&mobileV36Text()&&app.inlineSession))mobileV36BeginInteraction('textRange',ev,range);
  const plane=ev.target.closest('[data-mp-plane]');
  if(plane){ev.preventDefault();if(mobileV36BeginInteraction('plane',ev,plane))mobileV36UpdatePlane({clientX:ev.clientX,clientY:ev.clientY,currentTarget:plane})}
 });
@@ -6573,35 +6704,73 @@ mobileV36.addEventListener('click',ev=>{
   if(action==='expand'){mobileV36Expand();return}
   if(action==='fontSearch'||action==='fontSearchClose'){mobileV36State.fontSearch=action==='fontSearch';mobileV36Render();mobileV36.querySelector(mobileV36State.fontSearch?'[data-mp-search=font]':'[data-mp-font-category]')?.focus();return}
   if(action==='fontImport'){$('#fontInput').click();return}
-  if(action==='colorEdit'){mobileV36State.sub='colorEdit';mobileV36State.expanded=true;mobileV36InitColor();mobileV36Render();return}
+  if(action==='colorEdit'){
+   const s=mobileV36State;s.colorFromPill=!s.expanded&&mobileV36Text();
+   s.colorBodyScroll=mobileV36.querySelector('.mp-text-palette .mp-body')?.scrollTop||0;
+   if(mobileV36Text()&&s.tool==='color'){
+    s.colorTab=active().fillType==='gradient'&&mobileTextTarget('bold').kind==='layer'?'gradient':'solid';
+    s.activeStop=0;
+   }
+   s.sub='colorEdit';s.expanded=true;mobileV36InitColor();mobileV36Render();return;
+  }
   if(action==='aspect'){mobileV36State.aspectLock=!mobileV36State.aspectLock;mobileV36Render();return}
-  if(action==='addStop'){const e=active();e.gradientStops||=[{pos:0,color:e.fill||'#7857de',alpha:100},{pos:100,color:e.fill2||'#ffffff',alpha:100}];gradientStops(e);gradientGeometry(e);if(e.gradientStops.length>=12){toast('Максимум 12 точек');return};const stop={id:uid(),pos:50,color:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value),alpha:100};e.gradientStops.push(stop);gradientStops(e);mobileV36State.activeStop=e.gradientStops.indexOf(stop);mobileV36Commit();mobileV36Render();return}
+  if(action==='addStop'){const e=active();if(e.gradientStops?.length>=12){toast('Максимум 12 точек');return}e.fillType='gradient';e.gradientStops||=[{pos:0,color:e.fill||'#7857de',alpha:100},{pos:100,color:e.fill2||'#ffffff',alpha:100}];gradientStops(e);gradientGeometry(e);const stop={id:uid(),pos:50,color:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value),alpha:100};e.gradientStops.push(stop);gradientStops(e);mobileV36State.activeStop=e.gradientStops.indexOf(stop);mobileV36Commit();mobileV36Render();return}
   if(action==='eyedropper'){mobileV36State.picking=true;mobileV36.className='';mobileV36.innerHTML='';mobileV36ResetView();toast('Пипетка: коснись нужного цвета на холсте');return}
  }
  if(b.dataset.mpFont){const f=b.dataset.mpFont,same=active()?.fontFamily===f;if(v41FontUnavailable(f)){toast('Шрифт недоступен на этом устройстве');return}if(!same||mobileTextTarget('fontFamily').kind!=='layer')applyFontFamily(f);mobileV36State.fontVariantFamily=(same&&mobileV36State.fontVariantFamily===f)?null:f;mobileV36Render();resumeInlineTextFromButton();return}
- if(b.dataset.mpVariant){mobileV36Property('fontVariant',b.dataset.mpVariant,true);mobileV36Render();resumeInlineTextFromButton();return}
- if(b.dataset.mpSwatch){mobileV36ApplyColor(b.dataset.mpSwatch,true);mobileV36Render();resumeInlineTextFromButton();return}
+ if(b.dataset.mpVariant){mobileV36Property('fontVariant',b.dataset.mpVariant,true);mobileV36SyncTextStyle();resumeInlineTextFromButton();return}
+ if(b.dataset.mpSwatch){
+  if(mobileV36State.tool==='color')mobileV36State.colorTab='solid';
+  mobileV36ApplyColor(b.dataset.mpSwatch,true);
+  if(mobileV36Text())mobileV36SyncTextStyle();else mobileV36Render();
+  resumeInlineTextFromButton();return;
+ }
  if(b.dataset.mpStrokeColor){mobileV36Property('stroke',b.dataset.mpStrokeColor,true);mobileV36Render();return}
- if(b.dataset.mpGradient){const e=active();[e.fill,e.fill2]=b.dataset.mpGradient.split(',');e.fillType='gradient';e.gradientAngle=90;e.gradientMode='linear';e.gradientStops=[{pos:0,color:e.fill,alpha:100},{pos:100,color:e.fill2,alpha:100}];gradientStops(e);gradientGeometry(e);mobileV36Commit();mobileV36Render();return}
- if(b.dataset.mpGradientStyle){const e=active();if(b.dataset.mpGradientStyle==='radial')e.gradientMode='radial';else{e.gradientMode='linear';e.gradientAngle=Number(b.dataset.mpGradientStyle);delete e.gradientStart;delete e.gradientEnd}gradientStops(e);gradientGeometry(e);mobileV36Commit();mobileV36Render();return}
+ if(b.dataset.mpGradient){
+  const e=active(),[fill,fill2]=b.dataset.mpGradient.split(',');
+  const next={...e,fill,fill2,fillType:'gradient',gradientAngle:90,gradientMode:'linear',
+   gradientStops:[{pos:0,color:fill,alpha:100},{pos:100,color:fill2,alpha:100}]};
+  delete next.gradientStart;delete next.gradientEnd;
+  gradientStops(next);gradientGeometry(next);
+  if(e.type==='text')commitMobileTextFormat(e,next,null,'Градиент текста');
+  else {restoreInlineElement(e,next);mobileV36Commit()}
+  mobileV36Render();return;
+ }
+ if(b.dataset.mpGradientStyle){
+  const e=active(),next={...e,fillType:'gradient'};
+  if(e.gradientStops)next.gradientStops=clone(e.gradientStops);
+  if(b.dataset.mpGradientStyle==='radial')next.gradientMode='radial';
+  else{next.gradientMode='linear';next.gradientAngle=Number(b.dataset.mpGradientStyle);delete next.gradientStart;delete next.gradientEnd}
+  gradientStops(next);gradientGeometry(next);
+  if(e.type==='text')commitMobileTextFormat(e,next,null,'Направление градиента');
+  else {restoreInlineElement(e,next);mobileV36Commit()}
+  mobileV36Render();return;
+ }
  if(b.dataset.mpStop){mobileV36State.activeStop=Number(b.dataset.mpStop);const stop=active().gradientStops?.[mobileV36State.activeStop];if(stop){[mobileV36State.hue,mobileV36State.sat,mobileV36State.value]=mobileV36HexToHSV(stop.color)}mobileV36Render();return}
- if(b.dataset.mpTab){if(mobileV36State.tool==='color'&&mobileV36State.sub==='colorEdit'){mobileV36State.colorTab=b.dataset.mpTab;const e=active();e.fillType=mobileV36State.colorTab==='gradient'?'gradient':'solid';if(e.fillType==='gradient'&&!e.gradientStops)e.gradientStops=[{pos:0,color:e.fill||'#7857de',alpha:100},{pos:100,color:e.fill2||'#78b0ef',alpha:100}];if(e.fillType==='gradient'){gradientStops(e);gradientGeometry(e)}mobileV36Commit()}
+ if(b.dataset.mpTab){if(mobileV36State.tool==='color'&&mobileV36State.sub==='colorEdit'){mobileV36State.colorTab=b.dataset.mpTab;const e=active();
+  if(e.type==='text'){mobileV36State.activeStop=0;mobileV36InitColor();mobileV36Render();return}
+  e.fillType=mobileV36State.colorTab==='gradient'?'gradient':'solid';if(e.fillType==='gradient'&&!e.gradientStops)e.gradientStops=[{pos:0,color:e.fill||'#7857de',alpha:100},{pos:100,color:e.fill2||'#78b0ef',alpha:100}];if(e.fillType==='gradient'){gradientStops(e);gradientGeometry(e)}mobileV36Commit()}
   else mobileV36State.tab=b.dataset.mpTab;mobileV36Render();return}
  if(b.dataset.mpFormat){mobileV36Format(b.dataset.mpFormat);return}
  if(b.dataset.mpBaselineShift){mobileV36ApplyTypography('baselineShift',b.dataset.mpBaselineShift);return}
  if(b.dataset.mpTextCase){mobileV36ApplyTypography('textCase',b.dataset.mpTextCase);return}
  if(b.hasAttribute('data-typography-reset')){mobileV36ApplyTypography('typography',b);return}
- if(b.dataset.mpValign){mobileV36Property('verticalAlign',b.dataset.mpValign,true);mobileV36Render();return}
+ if(b.dataset.mpValign){mobileV36AlignText('verticalAlign',b.dataset.mpValign);return}
  if(b.dataset.mpArrange){if(b.dataset.mpArrange.startsWith('a'))mobileV36AlignLayer(b.dataset.mpArrange);else{arrangeLayer(b.dataset.mpArrange);mobileV36Render()}return}
- if(b.dataset.mpFxPick){mobileV36State.fxColor={type:b.dataset.mpFxPick,key:b.dataset.mpColorKey||'color'};mobileV36State.colorTab='solid';mobileV36State.sub='colorEdit';mobileV36State.expanded=true;mobileV36InitColor();mobileV36Render();return}
+ if(b.dataset.mpFxPick){mobileV36State.colorFromPill=false;mobileV36State.fxColor={type:b.dataset.mpFxPick,key:b.dataset.mpColorKey||'color'};mobileV36State.colorTab='solid';mobileV36State.sub='colorEdit';mobileV36State.expanded=true;mobileV36InitColor();mobileV36Render();return}
  if(b.dataset.mpEffect){mobileV36ApplyEffect(b.dataset.mpEffect);return}
  if(b.dataset.mpMore){const id=b.dataset.mpMore;if(id==='copy')copyLayers();if(id==='paste')pasteLayers();if(id==='delete'){deleteElement();mobileV36Close();return}if(id==='lock')contextAction('lock');if(id==='group'){if(isOneGroup())ungroupSelected();else groupSelected()};if(id==='title'){const e=active();if(e.type==='text'){for(const x of app.doc.elements)if(x.type==='text')x.isTitleLayer=false;e.isTitleLayer=true;syncAutoCardTitle();commit()}}if(id==='saveShape')openSaveSelectedShape();mobileV36Render();return}
  if(b.dataset.mpTextmode){const mode=b.dataset.mpTextmode,e=active();if(mode==='path'&&(!e.textPathPoints||e.textPathPoints.length<2)){e.textPathPoints=[{x:0,y:.72},{x:.25,y:.15},{x:.5,y:.15},{x:.75,y:.72},{x:1,y:.72}];e.textPathOffset=0;e.textPathSide='above'}mobileV36Property('textMode',mode,true);mobileV36Render();return}
  if(b.dataset.mpBlend){mobileV36Property('blendMode',b.dataset.mpBlend,true);mobileV36Render();return}
- if(b.dataset.mpStep){const k=b.dataset.mpStep,step=Number(b.closest('.mp-stepper').querySelector('[data-mp-key]').step)||1;const input=b.closest('.mp-stepper').querySelector('input'),value=mobileRangeKeys.has(k)?mobileV36StyleValue(k,k==='fontSize'?24:0):active()?.[k];const n=Number(value||0)+Number(b.dataset.dir)*step;mobileV36Property(k,clamp(n,Number(input.min),Number(input.max)),true);mobileV36Render();resumeInlineTextFromButton();return}
+ if(b.dataset.mpStep){const k=b.dataset.mpStep,step=Number(b.closest('.mp-stepper').querySelector('[data-mp-key]').step)||1;const input=b.closest('.mp-stepper').querySelector('input'),value=mobileRangeKeys.has(k)?mobileV36StyleValue(k,k==='fontSize'?24:0):active()?.[k];const n=Number(value||0)+Number(b.dataset.dir)*step;mobileV36Property(k,clamp(n,Number(input.min),Number(input.max)),true);mobileV36SyncTextStyle();if(!mobileV36Text())mobileV36Render();resumeInlineTextFromButton();return}
 });
 mobileV36.addEventListener('input',ev=>{
  const t=ev.target;if(t.closest('.mp-list-settings')||t.dataset.mpAborted||rejectMobileTextTarget('panel'))return;
+ if(t.dataset.mpSearch==='font'){
+  const list=mobileV36.querySelector('.mp-font-scroll'),category=mobileV36State.fontCategory||'all',filter=t.value.toLowerCase().trim();
+  mobileV36State.query=t.value;list.innerHTML=mobileV36FontRows(category,filter);
+  list.dataset.mpFontScope=JSON.stringify([category,filter]);list.scrollTop=0;mobileV36SyncTextStyle();return;
+ }
  if(t.dataset.mpSearch){mobileV36State.query=t.value;const pos=t.selectionStart;mobileV36Render();const field=mobileV36.querySelector('[data-mp-search]');if(field){field.focus();field.setSelectionRange(pos,pos)}return}
  if(t.dataset.mpHue){mobileV36State.hue=Number(t.value);const hex=mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value);mobileV36ApplyColor(hex,false);const plane=mobileV36.querySelector('[data-mp-plane]');if(plane)plane.style.background=`hsl(${mobileV36State.hue} 100% 50%)`;const field=mobileV36.querySelector('[data-mp-hex]');if(field)field.value=hex;const sw=mobileV36.querySelector('[data-mp-preview]');if(sw)sw.style.background=hex;return}
  if(t.dataset.mpHex){if(/^#[0-9a-fA-F]{6}$/.test(t.value)){mobileV36ApplyColor(t.value,false);mobileV36InitColor();}return}
@@ -6615,19 +6784,38 @@ mobileV36.addEventListener('change',ev=>{const t=ev.target;
   mobileV36FinishInteraction();mobileTextFinishGesture();mobileV36ApplyTypography('typography',t);return;
  }
  if(t.dataset.mpCanceled||t.dataset.mpAborted){delete t.dataset.mpCanceled;return}if(rejectMobileTextTarget('panel'))return;
- if(t.matches('[data-text-auto-font]')){setTextAutoFont(t.checked);return}
+ if(t.matches('[data-text-auto-font]')){setTextAutoFont(t.checked);mobileV36SyncTextStyle();return}
  if(t.matches('[data-mp-font-category]')){mobileV36State.fontCategory=t.value;mobileV36Render();mobileV36.querySelector('[data-mp-font-category]')?.focus();return}
- if(t.dataset.mpHue||t.dataset.mpHex){const color=t.dataset.mpHex?t.value:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value);mobileV36ApplyColor(color,true);requestAnimationFrame(()=>mobileV36Render());return}
+ if(t.dataset.mpHue||t.dataset.mpHex){
+  const color=t.dataset.mpHex?t.value:mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value);
+  mobileV36ApplyColor(color,true);
+  if(!mobileV36.querySelector('.mp-text-color-editor'))requestAnimationFrame(()=>mobileV36Render());
+  else if(mobileV36State.colorTab==='gradient'){
+   const index=mobileV36State.activeStop,stop=active()?.gradientStops?.[index],button=mobileV36.querySelector(`[data-mp-stop="${index}"]`);
+   if(stop&&button){button.style.backgroundColor=stop.color;button.setAttribute('aria-label',`Точка ${index+1} · ${stop.color}`)}
+   if(t.dataset.mpHex&&stop)t.value=stop.color;
+  }else queueMicrotask(mobileV36SyncTextStyle);
+  return;
+ }
  if(t.dataset.mpEffectColor||t.dataset.mpEffectKey){mobileV36Commit();return}
- if(t.dataset.mpKey){const e=active(),k=t.dataset.mpKey;let n=Number(t.value);if(mobileV36State.aspectLock&&['w','h'].includes(k)){let before;try{before=JSON.parse(t.dataset.mpAspectStart)}catch{before=null}if(before){const factor=n/Math.max(1,before[k]),other=k==='w'?'h':'w';e[other]=Math.max(1,Math.round(before[other]*factor*100)/100)}}mobileV36Property(k,t.dataset.mpSizeScale?mobileV36SizeValue(Number(t.value)):t.value,true);if(['w','h','x','y','rotation'].includes(k))requestAnimationFrame(()=>mobileV36Render());return}
+ if(t.dataset.mpKey){const e=active(),k=t.dataset.mpKey;let n=Number(t.value);if(mobileV36State.aspectLock&&['w','h'].includes(k)){let before;try{before=JSON.parse(t.dataset.mpAspectStart)}catch{before=null}if(before){const factor=n/Math.max(1,before[k]),other=k==='w'?'h':'w';e[other]=Math.max(1,Math.round(before[other]*factor*100)/100)}}mobileV36Property(k,t.dataset.mpSizeScale?mobileV36SizeValue(Number(t.value)):t.value,true);if(['w','h','x','y','rotation'].includes(k))requestAnimationFrame(()=>mobileV36Render());else if(mobileV36Text())mobileV36SyncTextStyle();return}
 });
 mobileV36.addEventListener('focusin',ev=>{if(ev.target.dataset){delete ev.target.dataset.mpAborted;delete ev.target.dataset.mpCanceled}});
-mobileV36.addEventListener('focusout',ev=>{if(ev.target.matches('[data-mp-key],[data-mp-hex]'))mobileTextFinishGesture()});
+mobileV36.addEventListener('focusout',ev=>{
+ if(ev.target.matches('[data-mp-key],[data-mp-hex]')){
+  mobileTextFinishGesture();
+  if(mobileV36Text())queueMicrotask(mobileV36SyncTextStyle);
+ }
+});
 mobileV36.addEventListener('keydown',ev=>{
  if(ev.isComposing)return;
  if(ev.target.matches('[data-mp-size-scale]')&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.key)){ev.preventDefault();const delta=['ArrowRight','ArrowUp'].includes(ev.key)?1:-1,value=clamp(Number(mobileV36StyleValue('fontSize',24))+delta,1,500);ev.target.value=mobileV36SizePosition(value);ev.target.dispatchEvent(new Event('input',{bubbles:true}));ev.target.dispatchEvent(new Event('change',{bubbles:true}));return}
  if(ev.key==='Escape'&&ev.target.matches('[data-mp-key],[data-mp-hex]')){mobileTextCancelGesture();ev.preventDefault();ev.stopPropagation();mobileV36Render();return}
- if(ev.key==='Enter'&&ev.target.matches('[data-mp-hex]')){ev.preventDefault();ev.target.dispatchEvent(new Event('change',{bubbles:true}));ev.target.blur();resumeInlineTextFromButton()}
+ if(ev.key==='Enter'&&ev.target.matches('[data-mp-hex]')){
+  ev.preventDefault();
+  if(!mobileV36.querySelector('.mp-text-color-editor'))ev.target.dispatchEvent(new Event('change',{bubbles:true}));
+  ev.target.blur();resumeInlineTextFromButton();
+ }
  if(ev.key==='Enter'&&ev.target.matches('[data-mp-search]')){ev.preventDefault();ev.target.blur();restoreSelectionWithoutFocus()}
 },true);
 // Numeric property edits use native change-on-blur to finalize their existing
@@ -6660,7 +6848,7 @@ for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),
  root.addEventListener('change',ev=>{
   const field=ev.target;if(!field.matches?.('input[type="number"]:not([data-mp-list-field],[data-mp-paint-field])'))return;
   if(!numericEditValid(field)){
-   if(field.closest('#mobilePropertyUI')&&mobileTextGestureKeys.has(field.dataset.mpKey)){mobileTextCancelGesture();field.value=mobileV36StyleValue(field.dataset.mpKey);ev.stopImmediatePropagation();return}
+   if(field.closest('#mobilePropertyUI')&&mobileTextGestureKeys.has(field.dataset.mpKey)){mobileTextCancelGesture();field.value=field.dataset.mpKey==='opacity'?(active()?.opacity??100):mobileV36StyleValue(field.dataset.mpKey);ev.stopImmediatePropagation();return}
    field.value=numericEditLastValue.get(field)??'';
    // An effective run value is not necessarily the layer default. Rejecting
    // invalid leading input must not write that displayed value to the layer.
@@ -6686,7 +6874,7 @@ for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),
    field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));return;
   }
   if(ev.key!=='Enter')return;
-  if(field.closest('#mobilePropertyUI')&&mobileTextGestureKeys.has(field.dataset.mpKey)&&!numericEditValid(field)){mobileTextCancelGesture();ev.preventDefault();ev.stopPropagation();field.dataset.mpCanceled='1';field.value=mobileV36StyleValue(field.dataset.mpKey);field.blur();if(app.editingId)restoreInlineCaret();return}
+  if(field.closest('#mobilePropertyUI')&&mobileTextGestureKeys.has(field.dataset.mpKey)&&!numericEditValid(field)){mobileTextCancelGesture();ev.preventDefault();ev.stopPropagation();field.dataset.mpCanceled='1';field.value=field.dataset.mpKey==='opacity'?(active()?.opacity??100):mobileV36StyleValue(field.dataset.mpKey);field.blur();if(app.editingId)restoreInlineCaret();return}
   ev.preventDefault();ev.stopPropagation();
   if(!numericEditValid(field)&&field.dataset.key!=='lineHeight')field.value=numericEditLastValue.get(field)??'';
   // Invalid leading must reach the rejecting change guard before restoration.
@@ -6788,7 +6976,7 @@ function mobileBack(){mobileTextFinishGesture();
  if(mobileImeVisible){mobileTextPaint.cancel();mobileImeVisible=false;const focused=document.activeElement;if(focused?.matches('input,textarea,select'))focused.blur();return true}
  const panel=mobileTopPanel();
  if(panel&&(!$('#documentTabsMenu').classList.contains('hidden')||$$('.dialog:not(.hidden)').length)){panel();return true}
- if(panel&&(mobileV36State.tool==='paint'||mobileV36State.tool==='format'&&mobileV36State.sub)){panel();return true}
+ if(panel&&(mobileV36State.sub==='colorEdit'||mobileV36State.tool==='paint'||mobileV36State.tool==='format'&&mobileV36State.sub)){panel();return true}
  if(app.editingId)closeInlineText();
  if(panel){panel();return true}
  if(app.selectedIds.length){setSelected([]);return true}

@@ -1,4 +1,5 @@
 import {mobileTextStyle} from './editor/mobile-text-style.mjs';
+import {createMobileTextPaint, mobileTextPaintTitles, mobileTextPaintContent, mobileColorFields} from './editor/mobile-text-paint.mjs';
 import {createMobileListSettings, mobileListSettingsContent} from './editor/mobile-list-settings.mjs';
 import { nextZoom, parseZoomPercent } from './core/zoom.mjs';
 import {eligibleWysiwyg, justifyWysiwygEnabled, createWysiwygSession} from './editor/wysiwyg-session.mjs';
@@ -31,6 +32,8 @@ import { createLayerMasks } from './render/layer-masks.mjs';
 import { createGradientModel, readGradientStops, readGradientGeometry } from './core/gradient-model.mjs';
 
 (()=>{'use strict';
+const mobileMediaQuery=matchMedia('((max-width:760px) or ((max-width:900px) and (max-height:460px) and (orientation:landscape) and (pointer:coarse)))');
+function mobileV36Small(){return mobileMediaQuery.matches}
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const uid=()=>globalThis.crypto?.randomUUID?.()||('id-'+Date.now()+'-'+Math.random().toString(36).slice(2));
 const { gradientStops, gradientGeometry, gradientSample, addGradientStop } = createGradientModel(uid);
@@ -682,7 +685,7 @@ iconPaths.sliders='M4 7h4 M12 7h8 M4 17h8 M16 17h4 M8 4v6 M16 14v6';
 iconPaths.fit='M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5';
 iconPaths.pipette='M2 22l1-5L15 3a3 3 0 0 1 4 4L7 21z M14 5l5 5 M5 17l2 2 M11 7l6 6';
 function uiIcon(name){return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${iconPaths[name]||iconPaths.more}"/></svg>`}
-function refreshMobileTools(){if(matchMedia('(max-width:760px)').matches){mobileV36RefreshTools();return}
+function refreshMobileTools(){if(mobileV36Small()){mobileV36RefreshTools();return}
  const has=app.selectedIds.length>0;$('#mobileContext').classList.toggle('hidden',!has);$('#mobilePrimary').classList.toggle('hidden',has);updateQuickBubble();
 }
 function renderMobilePane(){const root=$('#inspector'),es=picked(),e=es[0],d=app.doc,mode=app.mobilePane;
@@ -714,10 +717,10 @@ function snapshot(){syncCurrentSlide();const d=app.doc;return JSON.stringify({ha
 function describeChange(before,after){try{const a=JSON.parse(before),b=JSON.parse(after);if(JSON.stringify(a.selection)!==JSON.stringify(b.selection))return 'Изменение выделения';if(a.title!==b.title)return 'Переименование документа';if(a.width!==b.width||a.height!==b.height)return 'Изменение размеров холста';if(a.background!==b.background||a.backgroundAlpha!==b.backgroundAlpha)return 'Изменение фона холста';if(JSON.stringify(a.palette||[])!==JSON.stringify(b.palette||[]))return 'Изменение палитры';if((a.slides?.length||0)!==(b.slides?.length||0))return (b.slides?.length||0)>(a.slides?.length||0)?'Добавление холста':'Удаление холста';if((a.groups?.length||0)!==(b.groups?.length||0))return (b.groups?.length||0)>(a.groups?.length||0)?'Группировка слоёв':'Разгруппировка слоёв';if(JSON.stringify(a.groups)!==JSON.stringify(b.groups))return 'Изменение состояния группы';if((a.rulers?.length||0)!==(b.rulers?.length||0))return 'Изменение направляющих';if(a.elements.length!==b.elements.length)return b.elements.length>a.elements.length?'Добавление объекта':'Удаление объекта';const aa=new Map(a.elements.map(e=>[e.id,e]));for(const e of b.elements){const prev=aa.get(e.id);if(!prev)return 'Замена слоя';if(prev.text!==e.text)return 'Изменение текста';if(prev.name!==e.name)return 'Переименование слоя';if(prev.x!==e.x||prev.y!==e.y)return 'Перемещение слоя';if(prev.w!==e.w||prev.h!==e.h||prev.rotation!==e.rotation)return 'Трансформация слоя';if(JSON.stringify(prev.effects)!==JSON.stringify(e.effects))return 'Изменение эффектов';if(prev.fill!==e.fill||prev.fillType!==e.fillType||prev.opacity!==e.opacity||prev.stroke!==e.stroke||prev.strokeWidth!==e.strokeWidth)return 'Изменение оформления';if(prev.fontFamily!==e.fontFamily||prev.fontSize!==e.fontSize||prev.fontWeight!==e.fontWeight)return 'Изменение типографики';}if(a.elements.some((e,i)=>e.id!==b.elements[i]?.id))return 'Изменение порядка слоёв';if(JSON.stringify(a.slides)!==JSON.stringify(b.slides))return 'Изменение холста серии';return 'Изменение свойств';}catch{return 'Изменение макета'}}
 function resetHistory(){if(!app.doc)return;const initial=snapshot();app.historyBase=initial;app.historyPreviewOriginal=false;app.history=[initial];app.historyNames=['Исходное состояние'];app.historyIndex=0;updateHistoryButtons()}
 // Existing property controls join the active inline session; its finalizer releases ownership before committing.
-function commit(label){if(!app.doc)return;if(app.editingId&&(app.inlineSession||matchMedia('(max-width:760px)').matches)){recordInlineSession();const e=app.doc.elements.find(x=>x.id===app.editingId),edit=$('#inlineText');if(e&&edit.value!==e.text){edit.value=e.text;restoreInlineCaret(false)}positionInlineText();paint();return;}boundarySyncDoc(app.doc);syncCurrentSlide();syncAutoCardTitle();const state=snapshot(),previous=app.history[app.historyIndex];if(previous!==state){app.history=app.history.slice(0,app.historyIndex+1);app.historyNames=(app.historyNames||[]).slice(0,app.historyIndex+1);app.history.push(state);app.historyNames.push(typeof label==='string'?label:describeChange(previous,state));if(app.history.length>51){const n=app.history.length-51;app.history.splice(1,n);app.historyNames.splice(1,n);}app.historyIndex=app.history.length-1;app.historyPreviewOriginal=false}updateHistoryButtons();const save=saveState(app.doc.id),key=JSON.stringify(app.doc);if(key!==save.saved&&key!==save.pending?.key)app.doc.updatedAt=Date.now();saveSoon();paint();renderSlideStrip()}
-function historyGo(index){closeListStylePanel();closeUnderlinePanel();inkCancel();if(app.editingId)closeInlineText();if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;
+function commit(label){if(!app.doc)return;if(app.editingId&&(app.inlineSession||mobileV36Small())){recordInlineSession();const e=app.doc.elements.find(x=>x.id===app.editingId),edit=$('#inlineText');if(e&&edit.value!==e.text){edit.value=e.text;restoreInlineCaret(false)}positionInlineText();paint();return;}boundarySyncDoc(app.doc);syncCurrentSlide();syncAutoCardTitle();const state=snapshot(),previous=app.history[app.historyIndex];if(previous!==state){app.history=app.history.slice(0,app.historyIndex+1);app.historyNames=(app.historyNames||[]).slice(0,app.historyIndex+1);app.history.push(state);app.historyNames.push(typeof label==='string'?label:describeChange(previous,state));if(app.history.length>51){const n=app.history.length-51;app.history.splice(1,n);app.historyNames.splice(1,n);}app.historyIndex=app.history.length-1;app.historyPreviewOriginal=false}updateHistoryButtons();const save=saveState(app.doc.id),key=JSON.stringify(app.doc);if(key!==save.saved&&key!==save.pending?.key)app.doc.updatedAt=Date.now();saveSoon();paint();renderSlideStrip()}
+function historyGo(index){mobileTextPaint.cancel();closeListStylePanel();closeUnderlinePanel();inkCancel();if(app.editingId)closeInlineText();if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;
  const owner=mobileTextPanelOwner;
- const restoreFormatOwner=mobileV36State.tool==='format'&&owner?.doc===app.doc&&
+ const restoreFormatOwner=['format','paint'].includes(mobileV36State.tool)&&owner?.doc===app.doc&&
   owner.element===active()&&!owner.session;
  app.historyIndex=index;const state=JSON.parse(app.history[index]);const storedSelection=state.selection,storedLayers=state.layerSelection;delete state.selection;delete state.layerSelection;Object.assign(app.doc,state);boundaryRememberDoc(app.doc);ensureGroupData(app.doc);if(app.doc.type==='card')ensureCardSlides(app.doc);app.selectedGroupIds=[];app.focusGroupId=null;app.selectedIds=[];app.selected=null;app.guides=app.doc.rulers||[];restoreSelectionFromHistory(storedSelection);restoreLayerSelection(storedLayers);
  // Undo/Redo replaces layer objects. A current layer panel can follow the
@@ -727,7 +730,7 @@ function historyGo(index){closeListStylePanel();closeUnderlinePanel();inkCancel(
  if(oldSlide!==app.doc.activeSlideIndex){$('#sizeLabel').textContent=`${app.doc.width} × ${app.doc.height} px`;applyZoom()}updateHistoryButtons();updateProjectBadge();refreshLayers();refreshInspector();refreshMobileTools();
  if(restoreFormatOwner)mobileV36SyncTextStyle();
  paint();renderSlideStrip();app.historyPreviewOriginal=index===0&&app.history.length>1;if(app.historyPreviewOriginal){clearTimeout(app.saveTimer);app.saveTimer=null;$('#saveStatus').textContent='Исходное состояние · предпросмотр';}else saveSoon()}
-function undo(dir){closeListStylePanel();cancelUnderlineGesture();mobileTextFinishGesture();if(app.wysiwyg){app.wysiwyg.travel(dir);return}if(app.inlineSession?.formatted){inlineHistoryGo(dir);return}if(app.editingId)closeInlineText();if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
+function undo(dir){mobileTextPaint.cancel();closeListStylePanel();cancelUnderlineGesture();mobileTextFinishGesture();if(app.wysiwyg){app.wysiwyg.travel(dir);return}if(app.inlineSession?.formatted){inlineHistoryGo(dir);return}if(app.editingId)closeInlineText();if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
 function renderHistoryList(){const root=$('#historyEntries');if(!root)return;root.innerHTML=(app.history||[]).map((_,i)=>`<button type="button" class="history-entry ${i===app.historyIndex?'active':''}" data-history-index="${i}" ${i===app.historyIndex?'aria-current="step"':''}><span class="history-step">${i===0?'●':i}</span><span>${html(app.historyNames?.[i]||'Изменение макета')}</span></button>`).join('');const current=root.querySelector('.history-entry.active');if(current&&!$('#historyPopover').classList.contains('hidden'))current.scrollIntoView({block:'nearest'})}
 function updateHistoryButtons(){if(app.inlineSession?.formatted){$('#undoBtn').disabled=app.inlineSession.index===0;$('#redoBtn').disabled=app.inlineSession.index===app.inlineSession.states.length-1;return}const draft=app.penDraft;$('#undoBtn').disabled=draft?!draft.undoStack?.length:app.historyIndex===0;$('#redoBtn').disabled=draft?!draft.redoStack?.length:app.historyIndex===app.history.length-1;renderHistoryList()}
 // Revisions describe edits; snapshots describe writes; app.docs contains confirmed records.
@@ -837,16 +840,16 @@ const collapsedInspectorSections=(()=>{
  }catch{return new Set()}
 })();
 const propertySection=(title,inside,icon='settings')=>{
- if(matchMedia('(max-width:760px)').matches)return `<section class="ins-section"><div class="ins-section-head">${uiIcon(icon)}<strong>${title}</strong></div><div class="ins-section-body">${inside}</div></section>`;
+ if(mobileV36Small())return `<section class="ins-section"><div class="ins-section-head">${uiIcon(icon)}<strong>${title}</strong></div><div class="ins-section-body">${inside}</div></section>`;
  const expanded=!collapsedInspectorSections.has(title);
  return `<section class="ins-section${expanded?'':' ins-section-collapsed'}"><button type="button" class="ins-section-head ins-section-toggle" data-ins-section="${html(title)}" aria-expanded="${expanded}">${uiIcon(icon)}<strong>${title}</strong><span class="ins-section-arrow" aria-hidden="true"></span></button><div class="ins-section-body"${expanded?'':' hidden'}>${inside}</div></section>`;
 };
 for(const type of ['keydown','keyup'])$('#inspector').addEventListener(type,ev=>{
- if(ev.target.closest('button[data-ins-section]')&&['Enter',' '].includes(ev.key)&&matchMedia('(min-width:761px)').matches)ev.stopPropagation();
+ if(ev.target.closest('button[data-ins-section]')&&['Enter',' '].includes(ev.key)&&!mobileV36Small())ev.stopPropagation();
 });
 $('#inspector').addEventListener('click',ev=>{
  const button=ev.target.closest('button[data-ins-section]');
- if(!button||matchMedia('(max-width:760px)').matches)return;
+ if(!button||mobileV36Small())return;
  const expanded=button.getAttribute('aria-expanded')!=='true',section=button.closest('.ins-section');
  button.setAttribute('aria-expanded',String(expanded));
  section.classList.toggle('ins-section-collapsed',!expanded);
@@ -895,13 +898,13 @@ function syncInspectorTransformDuringDrag(){
  }
 }
 function refreshInspector(){
- mobileListSettings.sync();
+ mobileListSettings.sync();mobileTextPaint.sync();
  if(typographyOpen)queueMicrotask(syncTypographyPanel);
  if(listPanel&&!listPanel.applying&&!listOwnerValid(listPanel))closeListStylePanel();
  if(underlinePanel&&!underlineOwnerValid())closeUnderlinePanel();
  if(app.maskEditId&&app.doc?.elements.find(e=>e.id===app.maskEditId)){const el=app.doc.elements.find(e=>e.id===app.maskEditId);$('#inspector').innerHTML=`<div class="ins-object-title">◩ Маска · ${html(el.name)}</div><section class="ins-section"><p class="layer-mask-edit-note">Режим маски: кисть рисует только по непрозрачности слоя. Чёрный скрывает, белый проявляет. X переключает цвет независимо от раскладки.</p><div class="layer-mask-btns"><button class="linebtn" data-mask-fill="black">Залить чёрным</button><button class="linebtn" data-mask-fill="white">Залить белым</button></div><button class="linebtn wide" data-mask-exit="1">Редактировать изображение</button></section>`;return}
 
- if(matchMedia('(max-width:760px)').matches&&app.panelOpen&&app.mobilePane){renderMobilePane();return}
+ if(mobileV36Small()&&app.panelOpen&&app.mobilePane){renderMobilePane();return}
  const root=$('#inspector'),es=picked(),e=active(),d=app.doc;
  if(es.length>1){
   const allText=es.every(x=>x.type==='text'),common=es[0],opts=fontFamilies().map(f=>[f,f]);
@@ -932,12 +935,12 @@ function refreshInspector(){
 // v0.35: all mobile editor surfaces float over the stage, never refit its zoom.
 function mobileOverlayNodes(){return {layers:$('#mobileLayersSheet'),inspector:$('#rightPanel'),series:$('#mobileSeriesSheet'),shapes:$('#shapeTray'),resources:$('#assetsPopover'),selection:$('#selectionMenu'),history:$('#historyPopover')}}
 function syncMobileOverlayState(){
- if(!matchMedia('(max-width:760px)').matches){document.body.classList.remove('mobile-panel-visible');return}
+ if(!mobileV36Small()){document.body.classList.remove('mobile-panel-visible');return}
  const e=mobileOverlayNodes();const blocking=e.layers.classList.contains('open')||e.inspector.classList.contains('open')||!e.series.classList.contains('hidden')||!e.shapes.classList.contains('hidden')||!e.resources.classList.contains('hidden');
  document.body.classList.toggle('mobile-panel-visible',blocking);
 }
 function closeMobileOverlays(except=''){
- if(!matchMedia('(max-width:760px)').matches)return;
+ if(!mobileV36Small())return;
  if(except!=='mobileProperties'&&typeof mobileV36Close==='function')mobileV36Close();
  const e=mobileOverlayNodes();
  if(except!=='layers'){e.layers.classList.remove('open');app.mobileLayersOpen=false;$('#mobileLayersHeaderBtn').classList.remove('on')}
@@ -953,13 +956,13 @@ function closeMobileOverlays(except=''){
 function relocateMobileHistory(){
  const dock=document.querySelector('.history-dock'),popover=$('#historyPopover'),toolbar=document.querySelector('.floating-docks'),header=document.querySelector('.topbar'),spacer=document.querySelector('.topbar .top-spacer');
  if(!dock||!popover||!toolbar||!header)return;
- if(matchMedia('(max-width:760px)').matches){if(dock.parentNode!==header)header.insertBefore(dock,spacer);if(popover.parentNode!==header)header.insertBefore(popover,spacer)}
+ if(mobileV36Small()){if(dock.parentNode!==header)header.insertBefore(dock,spacer);if(popover.parentNode!==header)header.insertBefore(popover,spacer)}
  else {if(dock.parentNode!==toolbar)toolbar.appendChild(dock);if(popover.parentNode!==toolbar)toolbar.appendChild(popover)}
  syncMobileOverlayState();
 }
 
-function showInspector(mode='settings'){if(matchMedia('(max-width:760px)').matches&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(matchMedia('(max-width:760px)').matches){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
-function hideInspector(){closeListStylePanel();closeUnderlinePanel();cancelRegionEffects();if(matchMedia('(max-width:760px)').matches&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
+function showInspector(mode='settings'){if(mobileV36Small()&&app.selectedIds.length&&typeof mobileV36Open==='function'){mobileV36Open(mode);return}if(mobileV36Small()){closeMobileOverlays('inspector');app.mobilePane=mode;app.panelOpen=true;$('#rightPanel').classList.add('open');refreshInspector();syncMobileOverlayState()}}
+function hideInspector(){closeListStylePanel();closeUnderlinePanel();cancelRegionEffects();if(mobileV36Small()&&typeof mobileV36Close==='function')mobileV36Close();app.panelOpen=false;app.mobilePane='';$('#rightPanel').classList.remove('open');syncMobileOverlayState()}
 function changeProperty(key,val,final=false){if(rejectMobileTextTarget(key))return;if(styleInlineSelection(key,val,final)||styleInlineLayer(key,val,final))return;if(app.wysiwyg&&!fallbackInlineWysiwyg('Форматирование'))return;const d=app.doc;const e=active()||(app.selectedIds.length>1?picked()[0]:null);if(e&&isLayerLocked(e)&&['x','y','w','h','rotation'].includes(key))return;if(key.startsWith('_doc')){if(key==='_docWidth'||key==='_docHeight'){const n=clamp(Number(val)||100,100,5000);d[key==='_docWidth'?'width':'height']=Math.round(n);fitCanvas()}else if(key==='_docBackground')d.background=val}else if(e){const multiText=app.selectedIds.length>1&&picked().every(x=>x.type==='text')&&['fontFamily','fontWeight','fontVariant','fontSize','textColor','textAlign','lineHeight','letterSpacing','opacity','strokeWidth','stroke','strokeStyle','strokeOpacity'].includes(key);if(['x','y','w','h','rotation','opacity','fontSize','lineHeight','letterSpacing','strokeWidth','corner','gradientAngle','cropZoom','cropX','cropY','cropRotation','textPathOffset','fillAlpha1','fillAlpha2'].includes(key)){let n=Number(val);if(!Number.isFinite(n))return;if(key==='w'||key==='h'||key==='fontSize')n=Math.max(1,n);if(key==='opacity')n=clamp(n,0,100);if(key==='strokeWidth')n=Math.max(0,n);if(key==='cropZoom')n=clamp(n,.02,20);if(key==='fontSize'&&e.type==='text'){retainRichTextSizeBase(e);e.autoFontSize=false;document.querySelectorAll('[data-text-auto-font]').forEach(box=>box.checked=false)}e[key]=n;if(['cropZoom','cropX','cropY','cropRotation'].includes(key))e.imageFit='crop'}else if(['flipX','flipY'].includes(key))e[key]=(val==='true'||val===true);else if(key==='imageFit')setImageFit(e,val);else if(key==='fontVariant'){const [weight,style]=String(val).split(':');e.fontWeight=weight||'400';e.fontStyle=style||'normal'}else if(key==='text')setTextValue(e,val);else e[key]=val;if(e.type==='text'&&['strokeWidth','stroke'].includes(key))restoreTextRuns(e,applyTextStyle(e,0,e.text.length,{[key]:null}).textRuns);if(multiText)for(const other of picked())if(other.id!==e.id){if(key==='fontVariant'){other.fontWeight=e.fontWeight;other.fontStyle=e.fontStyle}else{if(key==='fontSize')retainRichTextSizeBase(other);other[key]=e[key]}if(['strokeWidth','stroke'].includes(key))restoreTextRuns(other,applyTextStyle(other,0,other.text.length,{[key]:null}).textRuns);if(key==='fontSize')other.autoFontSize=false}if(e.type==='text'&&['w','h','fontFamily','fontWeight','fontVariant','fontStyle','lineHeight','letterSpacing'].includes(key)){const targets=multiText?picked():[e];for(const text of targets)if(autoFitTextFont(text,{preserveSizeBase:true})&&app.editingId===text.id)positionInlineText();if(!multiText)syncTextAutoFontControls(e)}if(key==='fillType'&&e.type==='text'&&val!=='solid'&&(e.fillType==='solid'||!e.fill)){e.fill=e.textColor||'#000000'}if(key==='fillType'&&val==='gradient'){gradientGeometry(e);gradientStops(e)}if(key==='fillType'&&val==='image'&&!e.imageSrc){app.pendingImage={kind:'fill',id:e.id};$('#imageInput').click()}}else if(key==='title'||key.startsWith('doc')){d.title=val}if(key==='title')markCardNameManual(d);if(key==='title'||key==='name'){$('#projectTitle').textContent=d.title;refreshLayers()}if(final)commit();else{paint();saveSoon()}}
 function handleInspectorChange(ev,final=false){const t=ev.target;if(t.dataset.hex){const color=String(t.value).trim();if(/^#[0-9a-f]{6}$/i.test(color)){changeProperty(t.dataset.hex,color,final);const other=$('#inspector [data-key="'+t.dataset.hex+'"]');if(other)other.value=color}else if(final){t.value=active()?.[t.dataset.hex]||app.doc.background||'#ffffff';toast('Укажи цвет в формате #RRGGBB')}return}if(t.dataset.doc){app.doc[t.dataset.doc]=t.value;if(t.dataset.doc==='title')markCardNameManual();updateProjectBadge();if(final)commit();else saveSoon();return}if(!t.dataset.key)return;if(['fontSize','letterSpacing','lineHeight','strokeWidth'].includes(t.dataset.key)&&String(t.value).trim()==='')return;const editedValue=t.value;inspectorEditingControl=t;try{changeProperty(t.dataset.key,editedValue,final)}finally{inspectorEditingControl=null}if(final&&['lineHeight','strokeWidth','strokeStyle'].includes(t.dataset.key))syncInspectorFontFamily();if(t.type==='range')t.parentElement.querySelector('.range-value').textContent=t.value;if(t.type==='color'){const v=$('#inspector [data-hex="'+t.dataset.key+'"]');if(v)v.value=t.value;}if(final&&(['fillType','fontFamily','fontVariant','imageFit'].includes(t.dataset.key))){refreshInspector();if(t.dataset.key==='fontVariant'&&app.editingId)restoreInlineCaret()}}
 $('#inspector').addEventListener('change',e=>{if(e.target.dataset.clipCheckbox){const elem=app.doc.elements.find(x=>x.id===e.target.dataset.clipCheckbox);if(elem){elem.clipped=!e.target.checked;toggleClip(elem.id)}refreshInspector()}});
@@ -1028,7 +1031,7 @@ function layerInteraction(root){
   else {const prev=ev.shiftKey||ev.ctrlKey||ev.metaKey||app.multiMode?[...(app.selectedGroupIds||[])]:[];select(row.dataset.layer,ev.shiftKey||ev.ctrlKey||ev.metaKey||app.multiMode,true);app.selectedGroupIds=prev;app.focusGroupId=prev.length===1?prev[0]:null;refreshLayers()}
  })
 }
-let maskMenuId=null;for(const root of [$('#layers'),$('#mobileLayerList')])root.addEventListener('contextmenu',ev=>{if(matchMedia('(max-width:760px)').matches){ev.preventDefault();ev.stopPropagation();return}const thumb=ev.target.closest('[data-select-mask]');if(!thumb)return;ev.preventDefault();ev.stopPropagation();maskMenuId=thumb.dataset.selectMask;const menu=$('#maskContextMenu');menu.style.left=Math.max(8,Math.min(innerWidth-250,ev.clientX))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-120,ev.clientY))+'px';menu.classList.remove('hidden')});
+let maskMenuId=null;for(const root of [$('#layers'),$('#mobileLayerList')])root.addEventListener('contextmenu',ev=>{if(mobileV36Small()){ev.preventDefault();ev.stopPropagation();return}const thumb=ev.target.closest('[data-select-mask]');if(!thumb)return;ev.preventDefault();ev.stopPropagation();maskMenuId=thumb.dataset.selectMask;const menu=$('#maskContextMenu');menu.style.left=Math.max(8,Math.min(innerWidth-250,ev.clientX))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-120,ev.clientY))+'px';menu.classList.remove('hidden')});
 $('#maskContextEdit').onclick=()=>{if(maskMenuId){app.maskEditId=maskMenuId;setSelected([maskMenuId],true);inkRefreshColor()}$('#maskContextMenu').classList.add('hidden')};
 $('#maskContextDelete').onclick=()=>{if(maskMenuId)removeLayerMask(maskMenuId);$('#maskContextMenu').classList.add('hidden')};
 document.addEventListener('pointerdown',ev=>{if(!ev.target.closest('#maskContextMenu'))$('#maskContextMenu').classList.add('hidden')},true);
@@ -1652,7 +1655,7 @@ function fxPositionSurface(surface,state){
  surface.style.top=clamp(r.top,margin,Math.max(margin,bottom-surface.offsetHeight))+'px';return true;
 }
 function fxSyncSurfaces(reconcile=false){
- const desktop=matchMedia('(min-width:761px)').matches&&!app.maskEditId&&!collapsedInspectorSections.has('Эффекты');
+ const desktop=!mobileV36Small()&&!app.maskEditId&&!collapsedInspectorSections.has('Эффекты');
  if(fxChooserState&&(!desktop||fxChooserState.documentId!==app.doc?.id||fxChooserState.layerId!==fxTarget()?.id||fxChooserState.selectionKey!==fxSelectionKey()||!fxPositionSurface($('#fxChooser'),fxChooserState)))fxCloseChooser();
  if(fxPopoverState){const f=fxSurfaceEffect(fxPopoverState);
   if(!desktop||!f||!fxPositionSurface($('#fxPopover'),fxPopoverState))fxClosePopover();
@@ -1664,7 +1667,7 @@ function fxSyncSurfaces(reconcile=false){
 }
 function fxOpenPopover(id,toggle=true){
  fxCloseChooser();fxCloseMenu();if(toggle&&fxPopoverState?.effectId===id&&fxSurfaceEffect(fxPopoverState)){fxClosePopover();return}
- fxClosePopover();const state=fxSurfaceState(id),f=fxSurfaceEffect(state);if(!f||matchMedia('(max-width:760px)').matches)return;
+ fxClosePopover();const state=fxSurfaceState(id),f=fxSurfaceEffect(state);if(!f||mobileV36Small())return;
  const section=$('#inspector [data-ins-section="Эффекты"]');if(section?.getAttribute('aria-expanded')==='false')section.click();
  fxPopoverState=state;const p=$('#fxPopover');
  p.innerHTML=`<div class="fx-popover-head"><strong id="fxPopoverTitle">${html(FX_TYPES[f.type]||'Эффект')}</strong><button type="button" data-fx-close aria-label="Закрыть настройки эффекта">×</button></div><div class="fx-details">${fxControls(f)}</div>`;
@@ -1727,7 +1730,7 @@ function fxCloseChooser(restoreFocus=false){
 function fxShowChooser(region=false){
  if(fxChooserState){fxCloseChooser();return}
  if(region&&!regionEffectsRequest()){openSelectedRegionEffects();return}
- if(matchMedia('(max-width:760px)').matches)return;
+ if(mobileV36Small())return;
  fxCloseMenu();fxClosePopover();
  const e=regionEffectsRequest()?null:fxTarget(),el=$('#fxChooser');
  el.innerHTML=FX_PRESETS.filter(([id])=>textFxAllowed(id,e)).map(([id,name,ico])=>`<button type="button" class="fx-choice" data-fx-add="${id}">${TEXT_FX_IDS.has(id)?`<span class="tf43-preview tf43-${id}">Ag</span>`:uiIcon(ico)} ${name}</button>`).join('');
@@ -2045,7 +2048,7 @@ function openSelectedRegionEffects(){
  if(!app.pixelSelection){toast('Сначала выдели область');return}
  const request={documentId:app.doc.id,historyIndex:app.historyIndex,maskSrc:app.pixelSelection.mask.toDataURL('image/png')};
  app.pendingRegionEffects=request;
- if(matchMedia('(max-width:760px)').matches){
+ if(mobileV36Small()){
   mobileV36Open('effects',true);
  }else{
   refreshInspector();showInspector('effects');
@@ -2100,7 +2103,7 @@ function selectionModeFromEvent(ev){return ev.altKey?'subtract':ev.shiftKey?'add
 function finishPixelSelection(dr){const shape=shapeFromDrag(dr);if(shape.kind!=='lasso'&&(shape.rect.w<2||shape.rect.h<2))return;if(shape.kind==='lasso'&&shape.points.length<3)return;
  selectionCombine(selectionBitsFromCanvas(makeSelectionCanvas(shape)),dr.mode||'replace',dr.start,dr.mode==='add'?'Добавление к выделению':dr.mode==='subtract'?'Вычитание из выделения':'Выделение области');toast(dr.mode==='add'?'Область добавлена к выделению':dr.mode==='subtract'?'Область вычтена из выделения':'Область выделена');}
 function clearPixelSelection(){const changed=!!app.pixelSelection;app.pixelSelection=null;app.pixelDraft=null;app.polyDraft=null;updateSelectionToolbar();if(changed)commit('Снятие выделения');else paint()}
-function updateSelectionToolbar(){const t=$('#selectionToolbar');if(!t)return;t.classList.toggle('hidden',matchMedia('(max-width:760px)').matches?(!app.marqueeTool||app.mobileSelectionMenuDismissed):(!app.marqueeTool&&!app.pixelSelection));$('#selectionKindLabel').textContent=selectionNames[app.marqueeKind];$('#maskFromSelection').disabled=!app.pixelSelection;$('#fxFromSelection').disabled=!app.pixelSelection;$('#magicToleranceControls').classList.toggle('hidden',app.marqueeKind!=='magic'||!app.marqueeTool);$('#selectionHint').textContent=app.altDown?'− Вычесть':(app.shiftSelectionDown?'+ Добавить':'Shift + / Alt −')}
+function updateSelectionToolbar(){const t=$('#selectionToolbar');if(!t)return;t.classList.toggle('hidden',mobileV36Small()?(!app.marqueeTool||app.mobileSelectionMenuDismissed):(!app.marqueeTool&&!app.pixelSelection));$('#selectionKindLabel').textContent=selectionNames[app.marqueeKind];$('#maskFromSelection').disabled=!app.pixelSelection;$('#fxFromSelection').disabled=!app.pixelSelection;$('#magicToleranceControls').classList.toggle('hidden',app.marqueeKind!=='magic'||!app.marqueeTool);$('#selectionHint').textContent=app.altDown?'− Вычесть':(app.shiftSelectionDown?'+ Добавить':'Shift + / Alt −')}
 function selectionHandleAt(p){const b=app.pixelSelection?.bounds;if(!b)return null;const pad=9/app.zoom;for(const [id,x,y] of [['nw',b.x,b.y],['n',b.x+b.w/2,b.y],['ne',b.x+b.w,b.y],['e',b.x+b.w,b.y+b.h/2],['se',b.x+b.w,b.y+b.h],['s',b.x+b.w/2,b.y+b.h],['sw',b.x,b.y+b.h],['w',b.x,b.y+b.h/2]]){if(Math.abs(p.x-x)<pad&&Math.abs(p.y-y)<pad)return id}return null}
 function selectionContains(p){const v=app.pixelSelection,b=v?.bounds;if(!b||p.x<b.x||p.y<b.y||p.x>=b.x+b.w||p.y>=b.y+b.h)return false;let x=Math.floor(p.x),y=Math.floor(p.y);return !!v.data[y*app.doc.width+x]}
 function transformedSelectionBounds(dr,p){const b=dr.origBounds,dx=p.x-dr.start.x,dy=p.y-dr.start.y;if(dr.type==='selectionMove')return{x:Math.round(b.x+dx),y:Math.round(b.y+dy),w:b.w,h:b.h};let left=b.x,top=b.y,right=b.x+b.w,bottom=b.y+b.h,k=dr.handle;
@@ -2159,7 +2162,11 @@ function paintDocument(c,d,withSelection=false){const model=d;d=boundaryRenderDo
  if(withSelection&&stylePanel?.doc===model&&!stylePanel.session&&stylePanel.draft){
   const {element,draft}=stylePanel;
   d={...d,elements:d.elements.map(e=>e.id===element.id?draft:e)};
- }const stack=withSelection&&app.editingId?{...d,elements:d.elements.filter(e=>e.id!==app.editingId||e.textMode==='boundary')}:d;maskRenderDocuments.set(stack,model);c.save();
+ }
+ const mobilePaintPreview=withSelection&&model===app.doc?mobileTextPaint.preview():null;
+ const showFormattedText=withSelection&&app.editingId&&$('#inlineText').classList.contains('mp-paint-projection');
+ if(mobilePaintPreview)d={...d,elements:d.elements.map(e=>e.id===mobilePaintPreview.id?mobilePaintPreview:e)};
+ const stack=withSelection&&app.editingId&&!showFormattedText?{...d,elements:d.elements.filter(e=>e.id!==app.editingId||e.textMode==='boundary')}:d;maskRenderDocuments.set(stack,model);c.save();
  // Regional pixelation must sample native document pixels, even in a scaled preview.
  const t=c.getTransform(),nativeRegion=(t.a!==1||t.d!==1||t.b!==0||t.c!==0)&&stack.elements.some(e=>e.isFxRegion&&isLayerVisible(e,stack)&&(e.effects||[]).some(f=>f.type==='pixelate'&&f.enabled!==false));
  if(nativeRegion){const native=fxCanvas(d);paintDocument(native.getContext('2d'),stack);c.drawImage(native,0,0)}
@@ -2185,7 +2192,7 @@ function mobileNudgeAvoidBubble(bubble){
 const quickBubbleCanvasPointers=new Set();
 function updateQuickBubble(){mobileNudgeSync();const bubble=$('#quickBubble');if(!bubble)return;
  if(!app.doc||homeVisible()||$('#app').classList.contains('hidden')){bubble.classList.add('hidden');return}
- const selected=picked();const onMobile=matchMedia('(max-width:760px)').matches;
+ const selected=picked();const onMobile=mobileV36Small();
  const show=onMobile&&!quickBubbleCanvasPointers.size&&!app.mobileLayersOpen&&selected.length>0&&!app.cropMode&&!app.editingId&&!$('#stageScroller').classList.contains('drag-over');
  bubble.classList.toggle('hidden',!show);if(!show)return;
  bubble.querySelector('[data-quick="edit"]').classList.toggle('hidden',active()?.type!=='text');
@@ -2318,7 +2325,7 @@ function positionInlineText(){const e=app.doc?.elements.find(x=>x.id===app.editi
 }
 function closeInlineText(cancel=false){
  if(!app.editingId)return;
- mobileListSettings.cancel();
+ mobileListSettings.cancel();mobileTextPaint.cancel();
  closeListStylePanel();closeUnderlinePanel();
  if(cancel)mobileTextCancelGesture();
  // A numeric property input may own the IME; settle its change while the session still owns history.
@@ -2353,20 +2360,21 @@ function closeInlineText(cancel=false){
   }
   commit('Изменение текста');
  }else{paint();updateHistoryButtons();}
+ if(mobileV36State.tool==='paint')mobileV36Close();
  refreshInspector();mobileV36SyncSelectionLabel();mobileV36SyncTypographyControls();updateQuickBubble();
 }
-for(const type of ['compositionstart','compositionend'])$('#inlineText').addEventListener(type,()=>{if(type==='compositionstart')mobileTextCancelGesture(false);if(mobileTextSession)mobileTextSession.composing=type==='compositionstart';mobileListSettings.sync()});
-$('#inlineText').addEventListener('beforeinput',ev=>{mobileTextCancelGesture(false);mobileListSettings.cancel();if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
+for(const type of ['compositionstart','compositionend'])$('#inlineText').addEventListener(type,()=>{if(type==='compositionstart'){mobileTextCancelGesture(false);mobileTextPaint.cancel();}if(mobileTextSession)mobileTextSession.composing=type==='compositionstart';mobileListSettings.sync();mobileTextPaint.sync()});
+$('#inlineText').addEventListener('beforeinput',ev=>{mobileTextCancelGesture(false);mobileListSettings.cancel();mobileTextPaint.cancel();if(app.inlineSession?.formatted&&['historyUndo','historyRedo'].includes(ev.inputType)){ev.preventDefault();inlineHistoryGo(ev.inputType==='historyUndo'?-1:1);return}recordInlineSession();let start=ev.target.selectionStart,end=ev.target.selectionEnd;if(start===end){if(ev.inputType==='deleteContentBackward')start=Math.max(0,start-1);if(ev.inputType==='deleteContentForward')end=Math.min(ev.target.value.length,end+1)}app.inlineInputSelection={start,end}});
 $('#inlineText').addEventListener('input',ev=>{mobileTextCancelGesture(false);const e=app.doc?.elements.find(x=>x.id===app.editingId);if(e){if(app.inlineRichHistory&&!app.inlineSession?.formatted){const result=editTextWithHistory(e,app.inlineRichHistory,ev.target.value,{selection:app.inlineInputSelection,inputType:ev.inputType});app.inlineRichHistory=result.history;e.text=result.element.text;restoreTextRuns(e,result.element.textRuns);if(result.element.paragraphRuns)e.paragraphRuns=result.element.paragraphRuns;else delete e.paragraphRuns}else setTextValue(e,ev.target.value,app.inlineInputSelection);app.inlineInputSelection=null;confirmMobileTextRevision(e);if(autoFitTextFont(e))positionInlineText();syncAutoCardTitle();rememberInlineCaret();recordInlineSession(ev.inputType);refreshSaveStatus();paint()}});
 $('#inlineText').addEventListener('blur',ev=>{
  // blur has already moved document.activeElement; capture only while input owns the selection.
  rememberInlineCaret(true);
  if(app.inlineToolPointer||ev.relatedTarget?.closest(inlineFormattingRoots+',.zoom-control'))return;
  // Android Back may dismiss only the IME. Keep the session and its visible exit.
- if(matchMedia('(max-width:760px)').matches&&(!ev.relatedTarget||ev.relatedTarget.closest('#documentTabsMenu,#documentTabsMenuToggle,#mobileToolbars,#mobilePropertyUI,#stageScroller,#zoomInBtn,#zoomOutBtn,#zoomLabel')))return;
+ if(mobileV36Small()&&(!ev.relatedTarget||ev.relatedTarget.closest('#documentTabsMenu,#documentTabsMenuToggle,#mobileToolbars,#mobilePropertyUI,#stageScroller,#zoomInBtn,#zoomOutBtn,#zoomLabel')))return;
  closeInlineText();
 });
-$('#inlineText').addEventListener('keydown',ev=>{if(app.inlineSession?.formatted&&(ev.ctrlKey||ev.metaKey)&&['z','y'].includes(ev.key.toLowerCase())){ev.preventDefault();ev.stopPropagation();inlineHistoryGo(ev.key.toLowerCase()==='y'||ev.shiftKey?1:-1);return}if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(!matchMedia('(max-width:760px)').matches);canvas.focus()}if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText()}});
+$('#inlineText').addEventListener('keydown',ev=>{if(app.inlineSession?.formatted&&(ev.ctrlKey||ev.metaKey)&&['z','y'].includes(ev.key.toLowerCase())){ev.preventDefault();ev.stopPropagation();inlineHistoryGo(ev.key.toLowerCase()==='y'||ev.shiftKey?1:-1);return}if(ev.key==='Escape'){ev.preventDefault();ev.stopPropagation();closeInlineText(!mobileV36Small());canvas.focus()}if((ev.ctrlKey||ev.metaKey)&&ev.key==='Enter'){ev.preventDefault();closeInlineText()}});
 // Formatting tools may take focus (including Android numeric inputs) without
 // releasing the textarea session. Inputs/selects keep native focus behavior.
 const inlineFormattingRoots='#inspector,#typographyPanel,#underlinePanel,#listStylePanel,#fillPopover,#fontDialog,#mobileToolbars,#mobilePropertyUI,#undoBtn,#redoBtn';
@@ -2466,7 +2474,7 @@ function mobileTextPreviewGesture(key,value,final,target){
 function mobileV36SyncTextStyle(){
  if(mobileTextGesture||!mobileV36Small()||!mobileV36State.tool||active()?.type!=='text')return;
  mobileV36SyncSelectionLabel();
- mobileListSettings.sync();
+ mobileListSettings.sync();mobileTextPaint.sync();
  const listButton=mobileV36.querySelector('[data-mp-format=listSettings]');
  if(listButton)listButton.disabled=!mobileListSettingsTarget()?.modes.length;
  for(const input of mobileV36.querySelectorAll('[data-mp-key]')){
@@ -3712,6 +3720,7 @@ function enableInlineTextInput(){
  const e=active(),owner=mobileTextSession;
  if(!app.editingId||e?.id!==app.editingId||isLayerLocked(e)||owner&&(owner.doc!==app.doc||owner.element!==e))return false;
  if(owner)owner.formatting=false;
+ if(mobileTextPaintTitles[mobileV36State.sub])mobileV36Close();
  const editor=$('#inlineText');editor.readOnly=false;editor.removeAttribute('inputmode');return true;
 }
 function resumeTextInputWithFocus(){
@@ -3750,10 +3759,10 @@ for(const type of ['select','keyup','input','pointerup'])$('#inlineText').addEve
 document.addEventListener('selectionchange',rememberInlineCaret);
 function resumeInlineTextFromButton(){if(mobileV36Small()&&!app.wysiwyg){restoreSelectionWithoutFocus();return}const focus=document.activeElement;if(app.editingId&&(focus===document.body||focus===$('#inlineText')||focus?.matches('button')))restoreInlineCaret()}
 for(const root of [$('#mobileToolbars'),$('#mobilePropertyUI'),$('#zoomInBtn'),$('#zoomOutBtn'),$('#zoomLabel')])root.addEventListener('pointerdown',ev=>{
- if(app.editingId&&document.activeElement===$('#inlineText')&&matchMedia('(max-width:760px)').matches&&ev.target.closest('button')){rememberInlineCaret();ev.preventDefault()}
+ if(app.editingId&&document.activeElement===$('#inlineText')&&mobileV36Small()&&ev.target.closest('button')){rememberInlineCaret();ev.preventDefault()}
 },true);
 function revealInlineText(){
- if(!app.editingId||!matchMedia('(max-width:760px)').matches)return;
+ if(!app.editingId||!mobileV36Small())return;
  const edit=$(app.wysiwyg?'#inlineWysiwyg':'#inlineText');if(edit.classList.contains('boundary-inline-editor'))return;
  const stage=$('#stageScroller'),r=edit.getBoundingClientRect(),sr=stage.getBoundingClientRect(),vv=window.visualViewport;
  const top=Math.max(sr.top,vv?.offsetTop||0)+8;
@@ -3775,7 +3784,7 @@ document.body.appendChild($('#quickBubble'));$('#stageScroller').addEventListene
 // Selection begins before the canvas's drag handler; hide the bubble immediately
 // so subsequent paint()/pointermove calls cannot float it over the moving layer.
 canvas.addEventListener('pointerdown',ev=>{
- if(!matchMedia('(max-width:760px)').matches)return;
+ if(!mobileV36Small())return;
  quickBubbleCanvasPointers.add(ev.pointerId);
  updateQuickBubble();
 },true);
@@ -3794,7 +3803,7 @@ window.addEventListener('blur',()=>{
 $('#stageScroller').addEventListener('scroll',()=>{if(app.editingId)positionInlineText()},{passive:true});window.addEventListener('resize',()=>{if(app.editingId)positionInlineText()});
 $('#quickBubble').addEventListener('pointerdown',ev=>ev.stopPropagation());
 $('#quickBubble').addEventListener('click',ev=>{ev.stopPropagation();const a=ev.target.closest('[data-quick]');if(!a)return;const action=a.dataset.quick;if(action==='edit')openInlineText();if(action==='duplicate')duplicateElement();if(action==='delete')deleteElement(true);if(action==='group')groupSelected();if(action==='ungroup')ungroupSelected();if(action==='multi'){app.multiMode=!app.multiMode;updateQuickBubble();toast(app.multiMode?'Выбирай другие слои':'Множественный выбор выключен')}if(action==='lock'){const val=!picked().every(e=>e.locked);picked().filter(e=>!ancestorGroups(e.groupId).some(g=>g.locked)).forEach(e=>e.locked=val);commit();refreshLayers();refreshInspector();updateQuickBubble()}});
-function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=Math.max(80,area.clientHeight-gutter*2);app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);app.lastZoom=app.zoom;applyZoom();if(mobile)requestAnimationFrame(()=>{area.scrollLeft=Math.max(0,(area.scrollWidth-area.clientWidth)/2);area.scrollTop=Math.max(0,(area.scrollHeight-area.clientHeight)/2)})}
+function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');const mobile=mobileV36Small(),gutter=mobile?8:34;const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=Math.max(80,area.clientHeight-gutter*2);app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);app.lastZoom=app.zoom;applyZoom();if(mobile)requestAnimationFrame(()=>{area.scrollLeft=Math.max(0,(area.scrollWidth-area.clientWidth)/2);area.scrollTop=Math.max(0,(area.scrollHeight-area.clientHeight)/2)})}
 function applyZoom(anchor){const d=app.doc,ratio=Math.min(window.devicePixelRatio||1,8192/(d.width*app.zoom),8192/(d.height*app.zoom),Math.sqrt(24000000/(d.width*d.height*app.zoom*app.zoom))),stage=$('#stageScroller'),old=app.lastZoom||app.zoom;app.renderScale=ratio;const rect=canvas.getBoundingClientRect();const pointer=anchor||{x:stage.getBoundingClientRect().left+stage.clientWidth/2,y:stage.getBoundingClientRect().top+stage.clientHeight/2};const dx=(pointer.x-rect.left)/old,dy=(pointer.y-rect.top)/old;app.lastZoom=app.zoom;canvas.style.width=Math.max(1,d.width*app.zoom)+'px';canvas.style.height=Math.max(1,d.height*app.zoom)+'px';canvas.width=Math.max(1,Math.round(d.width*app.zoom*ratio));canvas.height=Math.max(1,Math.round(d.height*app.zoom*ratio));$('#zoomLabel').textContent=Math.round(app.zoom*100)+'%';positionInlineText();updateQuickBubble();requestAnimationFrame(renderRulers);if(Math.abs(old-app.zoom)>.0001){const after=canvas.getBoundingClientRect();stage.scrollLeft+=(after.left+dx*app.zoom-pointer.x);stage.scrollTop+=(after.top+dy*app.zoom-pointer.y)}paint()}
 function setZoom(z,anchor){if(!Number.isFinite(z))return;if(app.editingId||mobileV36State.expanded)mobileV36State.userViewAdjusted=true;const keepText=!!app.editingId&&!anchor;if(keepText){const r=$(app.wysiwyg?'#inlineWysiwyg':'#inlineText').getBoundingClientRect();anchor={x:r.left+r.width/2,y:r.top+r.height/2}}app.zoom=clamp(z,.04,8);applyZoom(anchor);if(keepText)requestAnimationFrame(revealInlineText)}
 function clientDocPoint(ev){const r=canvas.getBoundingClientRect();return {x:(ev.clientX-r.left)/app.zoom,y:(ev.clientY-r.top)/app.zoom}}
@@ -3915,10 +3924,10 @@ function closeToolPopovers(except=''){
  if(except!=='shapes')document.querySelector('#dockShapes')?.setAttribute('aria-expanded','false');
  if(except!=='history')document.querySelector('#historyToggle')?.setAttribute('aria-expanded','false');
 }
-function openToolPopover(which){if(matchMedia('(max-width:760px)').matches)closeMobileOverlays(which);closeToolPopovers(which);syncMobileOverlayState()}
+function openToolPopover(which){if(mobileV36Small())closeMobileOverlays(which);closeToolPopovers(which);syncMobileOverlayState()}
 // Close floating tool menus when interacting with the canvas, sidebars or empty space.
 document.addEventListener('pointerdown',ev=>{
- if(matchMedia('(max-width:760px)').matches&&ev.pointerType==='touch'&&ev.target.closest('#stageScroller'))return;
+ if(mobileV36Small()&&ev.pointerType==='touch'&&ev.target.closest('#stageScroller'))return;
  if(!ev.target.closest('#dockText,#textModeMenu'))$('#textModeMenu').classList.add('hidden');if(ev.target.closest('#shapeTray,#selectionMenu,#assetsPopover,#historyPopover,#inkPopover,#textModeMenu'))return;if(!ev.target.closest('#dockBrush'))$('#inkPopover').classList.add('hidden');
  // Buttons on the dock must handle their own toggle on click, including mobile controls.
  if(ev.target.closest('#dockShapes,#mobileShapeBtn,#dockAssets,#assetsBtn,#historyToggle,#selectKindBtn,#dockMarquee,[data-mobile="shapes"],[data-mobile="assets"]'))return;
@@ -4043,7 +4052,7 @@ function applyLayerEraseMask(c,e,d){const live=null;const paths=[...(e.erasePath
 function inkOverlay(c){const d=app.inkDraft;if(!d||!inkPreviewPath)return;c.save();c.globalAlpha=(d.settings.alpha??100)/100;c.strokeStyle=d.settings.color;c.lineWidth=d.settings.size;c.lineCap='round';c.lineJoin='round';if(d.points.length===1){const p=d.points[0];c.beginPath();c.moveTo(p.x,p.y);c.lineTo(p.x+.01,p.y+.01);c.stroke()}else c.stroke(inkPreviewPath);c.restore()}
 function toolDockState(){$('#dockBrush').classList.toggle('selected',app.inkTool==='brush');
  $('#dockPen').classList.toggle('selected',app.penTool);
- $('#dockMarquee').classList.toggle('selected',app.marqueeTool);$('#selectionToolbar').classList.toggle('hidden',matchMedia('(max-width:760px)').matches?(!app.marqueeTool||app.mobileSelectionMenuDismissed):(!app.marqueeTool&&!app.pixelSelection));$('#selectionKindLabel').textContent=selectionNames[app.marqueeKind]||'Прямоугольник';
+ $('#dockMarquee').classList.toggle('selected',app.marqueeTool);$('#selectionToolbar').classList.toggle('hidden',mobileV36Small()?(!app.marqueeTool||app.mobileSelectionMenuDismissed):(!app.marqueeTool&&!app.pixelSelection));$('#selectionKindLabel').textContent=selectionNames[app.marqueeKind]||'Прямоугольник';
  $('#dockSelect').classList.toggle('selected',!app.inkTool&&!app.penTool&&!app.marqueeTool&&!app.insertTool&&!app.handTool&&!app.spaceDown);$('#dockHand').classList.toggle('selected',!!(app.handTool||app.spaceDown));
  $('#dockText').classList.toggle('selected',app.insertTool==='text');
  $('#dockShapes').classList.toggle('selected',app.insertTool==='shape');
@@ -4052,7 +4061,7 @@ function toolDockState(){$('#dockBrush').classList.toggle('selected',app.inkTool
 }
 function setMarqueeMode(on){cancelRegionEffects();
  if(on)app.mobileSelectionMenuDismissed=false;else app.mobileSelectionMenuDismissed=true;
- if(on&&matchMedia('(max-width:760px)').matches)closeMobileOverlays('selection');
+ if(on&&mobileV36Small())closeMobileOverlays('selection');
  inkStop();closeToolPopovers();app.handTool=false;app.spaceDown=false;$('#stageScroller').classList.remove('hand-mode');if(app.penTool)setPenMode(false);app.marqueeTool=on;app.insertTool=null;if(!on)app.polyDraft=null;
  toolDockState();updateSelectionToolbar();canvas.style.cursor=on?'crosshair':'default';paint();
 }
@@ -4161,7 +4170,7 @@ $('#stageScroller').addEventListener('pointermove',ev=>{if(!app.handDrag)return;
 function finishPan(ev){if(app.handDrag?.id===ev.pointerId){app.handDrag=null;ev.stopPropagation()}}
 $('#stageScroller').addEventListener('pointerup',finishPan,true);$('#stageScroller').addEventListener('pointercancel',finishPan,true);
 const touchPointers=new Map();
-$('#stageScroller').addEventListener('pointerdown',ev=>{if(matchMedia('(max-width:760px)').matches&&ev.pointerType==='touch'&&(mobileV36State?.tool||app.mobileLayersOpen))return;if(!ev.target.closest('canvas,#inlineText,#inlineWysiwyg')&&!app.cropMode){setSelected([]);hideInspector()}});
+$('#stageScroller').addEventListener('pointerdown',ev=>{if(mobileV36Small()&&ev.pointerType==='touch'&&(mobileV36State?.tool||app.mobileLayersOpen))return;if(!ev.target.closest('canvas,#inlineText,#inlineWysiwyg')&&!app.cropMode){setSelected([]);hideInspector()}});
 $('#layers').addEventListener('click',ev=>{if(ev.target.id==='layers')setSelected([])});
 canvas.addEventListener('pointerdown',ev=>{if(ev.button===2&&ev.pointerType==='mouse'&&app.inkTool==='brush'){ev.preventDefault();$('#brushContext').classList.add('hidden');if(ev.altKey){app.altBrushDrag={startX:ev.clientX,startY:ev.clientY,startSize:app.inkSettings.size,startHardness:app.inkSettings.hardness??100};canvas.setPointerCapture(ev.pointerId);$('#inkSizeBadge').classList.remove('hidden');inkMoveCursor(ev)}else showBrushContext(ev);return}if(ev.button!==0&&ev.pointerType==='mouse')return;touchPointers.set(ev.pointerId,{x:ev.clientX,y:ev.clientY});if(touchPointers.size===2){const points=[...touchPointers.values()];inkCancel(true);const mid={x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2},dist=Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);app.pinch={dist,zoom:app.zoom,mid};app.drag=null;for(const id of touchPointers.keys())try{canvas.setPointerCapture(id)}catch(e){};return}if(app.pinch)return;const p=clientDocPoint(ev),current=active();app.mouseDoc=p;if(app.inkTool==='brush'&&app.maskEditId&&maskPaintBegin(ev,p))return;if(app.inkTool&&inkDown(ev,p))return;if(penDown(ev,p))return;
 if(app.marqueeTool){
@@ -4583,7 +4592,7 @@ function renderAssetsPopover(){const list=$('#assetsPopoverGrid'),p=currentProje
  $('#assetsPopoverBreadcrumbs').innerHTML=folderBreadcrumbHTML();
  list.innerHTML=folders.map(f=>folderHTML(f,true)).join('')+assets.map(a=>`<div class="assets-choice" draggable="true" data-asset-pop-id="${html(a.id)}" title="Добавить на холст: ${html(a.name)}"><button type="button" data-insert-pop-id="${html(a.id)}" class="assets-preview"><img src="${html(a.src)}" alt="" loading="lazy"></button><span class="assets-name">${html(a.name)}</span>${resourceMoveSelect(a)}</div>`).join('')||'<div class="assets-empty">Папка пуста. Нажми «+», чтобы добавить изображение, или создай папку.</div>';
 }
-function showAssets(){const root=$('#assetsPopover');if(!root.classList.contains('hidden')){root.classList.add('hidden');return}openToolPopover('resources');renderAssetsPopover();root.classList.remove('hidden');const btn=matchMedia('(max-width:760px)').matches?document.querySelector('[data-mobile="assets"]'):$('#dockAssets');if(!matchMedia('(max-width:760px)').matches){const r=btn.getBoundingClientRect();root.style.left=Math.max(10,Math.min(innerWidth-root.offsetWidth-10,r.left+r.width/2-root.offsetWidth/2))+'px';root.style.bottom=Math.max(12,innerHeight-r.top+10)+'px'}else{root.style.removeProperty('left');root.style.removeProperty('bottom');syncMobileOverlayState()}}
+function showAssets(){const root=$('#assetsPopover');if(!root.classList.contains('hidden')){root.classList.add('hidden');return}openToolPopover('resources');renderAssetsPopover();root.classList.remove('hidden');const btn=mobileV36Small()?document.querySelector('[data-mobile="assets"]'):$('#dockAssets');if(!mobileV36Small()){const r=btn.getBoundingClientRect();root.style.left=Math.max(10,Math.min(innerWidth-root.offsetWidth-10,r.left+r.width/2-root.offsetWidth/2))+'px';root.style.bottom=Math.max(12,innerHeight-r.top+10)+'px'}else{root.style.removeProperty('left');root.style.removeProperty('bottom');syncMobileOverlayState()}}
 $('#assetsPopoverClose').onclick=()=>$('#assetsPopover').classList.add('hidden');
 $('#assetsPopoverAdd').onclick=()=>$('#resourceInput').click();$('#assetsFolderAdd').onclick=createResourceFolder;$('#resourceNewFolder').onclick=createResourceFolder;
 $('#assetsPopoverGrid').addEventListener('dblclick',ev=>{const label=ev.target.closest('[data-rename-folder]');if(label){ev.preventDefault();ev.stopPropagation();renameResourceFolder(label.dataset.renameFolder)}});
@@ -4772,7 +4781,7 @@ $('#mobileLayersSelect').onclick=()=>{mobileLayerMulti=!mobileLayerMulti;mobileL
 $$('[data-pickshape]').forEach(el=>el.onclick=()=>{closeDialogs();add(el.dataset.pickshape)});
 $('#mobileLayersBtn').onclick=()=>toggleMobileLayers();
 $('#mobileShapeBtn').onclick=()=>showShapeTray();
-$('#mobileToolbars').addEventListener('click',ev=>{const btn=ev.target.closest('[data-mobile]');if(!btn)return;const action=btn.dataset.mobile;if(action!=='marquee'&&app.marqueeTool){setMarqueeMode(false);app.mobileSelectionMenuDismissed=true;updateSelectionToolbar();}if(matchMedia('(max-width:760px)').matches&&$('#mobileContext').contains(btn)){mobileV36Open(action);return}if(!['shapes','assets'].includes(action))closeToolPopovers();if(action==='text')add('text');if(action==='brush')inkSetTool('brush');if(action==='image')add('image');if(action==='shapes')showShapeTray();if(action==='pen')setPenMode(true);if(action==='marquee'){if(app.marqueeTool){app.mobileSelectionMenuDismissed=!app.mobileSelectionMenuDismissed;updateSelectionToolbar();}else setMarqueeMode(true);}if(action==='layers')toggleMobileLayers();if(action==='assets')showAssets();if(['settings','font','size','color','align','spacing','opacity','stroke','round','position','more','fill','fit','effects'].includes(action))showInspector(action);if(action==='edit'){if(active()?.type==='text')openInlineText();else showInspector('settings')}if(action==='crop')enterCrop();if(action==='duplicate')duplicateElement();if(action==='delete')deleteElement();if(action==='back'){hideInspector();setSelected([])}if(action==='replace'&&active()){app.pendingImage={kind:'fill',id:active().id};$('#imageInput').click()}});
+$('#mobileToolbars').addEventListener('click',ev=>{const btn=ev.target.closest('[data-mobile]');if(!btn)return;const action=btn.dataset.mobile;if(action!=='marquee'&&app.marqueeTool){setMarqueeMode(false);app.mobileSelectionMenuDismissed=true;updateSelectionToolbar();}if(mobileV36Small()&&$('#mobileContext').contains(btn)){mobileV36Open(action);return}if(!['shapes','assets'].includes(action))closeToolPopovers();if(action==='text')add('text');if(action==='brush')inkSetTool('brush');if(action==='image')add('image');if(action==='shapes')showShapeTray();if(action==='pen')setPenMode(true);if(action==='marquee'){if(app.marqueeTool){app.mobileSelectionMenuDismissed=!app.mobileSelectionMenuDismissed;updateSelectionToolbar();}else setMarqueeMode(true);}if(action==='layers')toggleMobileLayers();if(action==='assets')showAssets();if(['settings','font','size','color','align','spacing','opacity','stroke','round','position','more','fill','fit','effects'].includes(action))showInspector(action);if(action==='edit'){if(active()?.type==='text')openInlineText();else showInspector('settings')}if(action==='crop')enterCrop();if(action==='duplicate')duplicateElement();if(action==='delete')deleteElement();if(action==='back'){hideInspector();setSelected([])}if(action==='replace'&&active()){app.pendingImage={kind:'fill',id:active().id};$('#imageInput').click()}});
 // Own context menu: mouse right-click on canvas or layer list.
 function showContextMenu(x,y){const m=$('#contextMenu');m.classList.remove('hidden');const w=m.offsetWidth,h=m.offsetHeight;m.style.left=clamp(x,8,innerWidth-w-8)+'px';m.style.top=clamp(y,8,innerHeight-h-8)+'px';m.classList.toggle('menu-left',x+w+250>innerWidth)}
 function hideContextMenu(){$('#contextMenu').classList.add('hidden')}
@@ -4865,7 +4874,7 @@ window.addEventListener('keydown',e=>{
  const input=['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)||document.activeElement?.isContentEditable;
  if(e.key==='Alt'){if(!['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName)&&!e.target?.isContentEditable)e.preventDefault();app.altDown=true;document.body.classList.add('alt-held');paint()}
  if(!input&&app.inkTool==='brush'&&(e.code==='BracketLeft'||e.code==='BracketRight')){e.preventDefault();const sz=app.inkSettings.size,step=sz<20?1:sz<100?5:sz<400?10:sz<1200?25:50;app.inkSettings.size=clamp(sz+(e.code==='BracketRight'?step:-step),1,5000);inkRefreshUI();inkMoveCursor(lastInkPointer);inkPersist();return}if(!input&&e.code==='KeyX'&&app.maskEditId&&app.inkTool==='brush'&&!e.ctrlKey&&!e.altKey&&!e.metaKey){e.preventDefault();app.maskPaintColor=app.maskPaintColor==='#000000'?'#ffffff':'#000000';inkRefreshColor();return}
- if(e.key==='Escape'&&regionEffectsRequest()){e.preventDefault();cancelRegionEffects();if(matchMedia('(max-width:760px)').matches)mobileV36Close();refreshInspector();return}
+ if(e.key==='Escape'&&regionEffectsRequest()){e.preventDefault();cancelRegionEffects();if(mobileV36Small())mobileV36Close();refreshInspector();return}
  if(input)return;
  if(e.key==='Escape'&&app.inkDraft){e.preventDefault();inkCancel();return}
  if(e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-text-auto-font],[data-align],[data-underline-open],[data-typography-open],#typographyPanel,#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]'))return;
@@ -4898,7 +4907,7 @@ window.addEventListener('keydown',e=>{
 });
 window.addEventListener('keyup',e=>{if(e.key==='Alt'){app.altDown=false;document.body.classList.remove('alt-held');paint()}if(e.code==='Space'&&!e.target.closest?.('[data-baseline-shift],[data-text-case],.paragraph-list-controls,[data-text-decoration],[data-text-auto-font],[data-align],[data-underline-open],[data-typography-open],#typographyPanel,#underlinePanel,#listStylePanel,#fillPopover[data-key=_underline],#fillPopover[data-key=_listMarker]')){e.preventDefault();app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()}});
 window.addEventListener('blur',()=>{document.body.classList.remove('alt-held');app.altDown=false;app.spaceDown=app.handTool;app.handDrag=null;$('#stageScroller').classList.toggle('hand-mode',app.handTool);toolDockState()});
-window.addEventListener('resize',()=>{if(!matchMedia('(max-width:760px)').matches&&!app.editingId&&!app.drag&&!homeVisible())fitCanvas()});
+window.addEventListener('resize',()=>{if(!mobileV36Small()&&!app.editingId&&!app.drag&&!homeVisible())fitCanvas()});
 window.addEventListener('beforeunload',()=>{if(app.wysiwyg)closeInlineText();if(app.doc)flushSave()});
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
@@ -5328,8 +5337,8 @@ function centerStageCanvas(target=null){
  stage.scrollTop+=b.top+b.height/2-centerY;
  ensureStagePanRoom();
 }
-function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');if(isArtboardSeries()){const d=app.doc;ensureCardSlides(d);const total=d.slides.reduce((s,slide)=>s+slide.width,0)+ARTBOARD_GAP*Math.max(0,d.slides.length-1);const mh=Math.max(...d.slides.map(slide=>slide.height));const narrow=window.matchMedia('(max-width:760px)').matches;const margin=narrow?8:90;app.zoom=narrow?clamp(Math.min((area.clientWidth-margin*2)/d.width,(area.clientHeight-margin*2-16)/d.height),.04,3):clamp(Math.min((area.clientWidth-180)/total,(area.clientHeight-175)/mh),.04,3);app.lastZoom=app.zoom;resetStagePanRoom();applyZoom();requestAnimationFrame(()=>seriesFocus(d.activeSlideIndex,'instant'));return}
- const viewport=$('#stageViewport');viewport.classList.remove('multi-artboard');viewport.style.width='';viewport.style.height='';$('#canvasHost').style.left='';$('#canvasHost').style.top='';$('#canvasHost').style.width='';$('#canvasHost').style.height='';const mobile=matchMedia('(max-width:760px)').matches,gutter=mobile?8:34;
+function fitCanvas(){if(!app.doc)return;const area=$('#stageScroller');if(isArtboardSeries()){const d=app.doc;ensureCardSlides(d);const total=d.slides.reduce((s,slide)=>s+slide.width,0)+ARTBOARD_GAP*Math.max(0,d.slides.length-1);const mh=Math.max(...d.slides.map(slide=>slide.height));const narrow=mobileV36Small();const margin=narrow?8:90;app.zoom=narrow?clamp(Math.min((area.clientWidth-margin*2)/d.width,(area.clientHeight-margin*2-16)/d.height),.04,3):clamp(Math.min((area.clientWidth-180)/total,(area.clientHeight-175)/mh),.04,3);app.lastZoom=app.zoom;resetStagePanRoom();applyZoom();requestAnimationFrame(()=>seriesFocus(d.activeSlideIndex,'instant'));return}
+ const viewport=$('#stageViewport');viewport.classList.remove('multi-artboard');viewport.style.width='';viewport.style.height='';$('#canvasHost').style.left='';$('#canvasHost').style.top='';$('#canvasHost').style.width='';$('#canvasHost').style.height='';const mobile=mobileV36Small(),gutter=mobile?8:34;
  const region=mobile?null:desktopCanvasFitRegion();
  const maxW=Math.max(80,area.clientWidth-gutter*2),maxH=region?.maxHeight??Math.max(80,area.clientHeight-gutter*2);
  app.zoom=clamp(Math.min(maxW/app.doc.width,maxH/app.doc.height),.04,3);
@@ -5558,7 +5567,7 @@ function renderMobileDocumentTabs(){
  if(focusId){const row=[...list.children].find(r=>r.dataset.mobileTabId===focusId)||list.firstElementChild;row?.querySelector(wasClose?'[data-mobile-tab-close]':'button')?.focus();if(!documentTabSession.tabs.length)toggle.focus()}
 }
 function openDocumentTabsMenu(){
- if(!matchMedia('(max-width:760px)').matches)return;
+ if(!mobileV36Small())return;
  // Only visibility changes here: no capture, commit or document save.
  renderMobileDocumentTabs();
  $('#documentTabsMenu').classList.remove('hidden');
@@ -5742,9 +5751,9 @@ window.addEventListener('blur',()=>sideHeld.clear());
 // Browser navigation initiated by physical mouse buttons can bypass JavaScript event delivery.
 // Keep one same-document guard state so a browser Back transition can undo without leaving the editor.
 const NAV_GUARD='__kartochnaya_back_guard_v22';
-function rearmBackGuard(){if(matchMedia('(max-width:760px)').matches&&!mobileBackPending())return;try{if(!history.state?.[NAV_GUARD])history.pushState({...(history.state||{}),[NAV_GUARD]:true},'',location.href)}catch(err){}}
+function rearmBackGuard(){if(mobileV36Small()&&!mobileBackPending())return;try{if(!history.state?.[NAV_GUARD])history.pushState({...(history.state||{}),[NAV_GUARD]:true},'',location.href)}catch(err){}}
 window.addEventListener('popstate',ev=>{
- if(matchMedia('(max-width:760px)').matches){if(!ev.state?.[NAV_GUARD]){mobileBack();rearmBackGuard()}return}
+ if(mobileV36Small()){if(!ev.state?.[NAV_GUARD]){mobileBack();rearmBackGuard()}return}
  if(homeVisible())return;
  if(ev.state?.[NAV_GUARD])return;
  undo(-1);
@@ -5791,10 +5800,10 @@ async function importWorkspaceBackup(payload){return importProjectSet(payload,pa
 
 
 // Touch long press must not show the desktop right-click menu on mobile.
-document.addEventListener('contextmenu',ev=>{if(matchMedia('(max-width:760px)').matches){ev.preventDefault();ev.stopImmediatePropagation()}},true);
+document.addEventListener('contextmenu',ev=>{if(mobileV36Small()){ev.preventDefault();ev.stopImmediatePropagation()}},true);
 // v0.35 viewport-specific toolbar relocation; only the fixed overlay changes.
-const mobileMediaQuery=window.matchMedia('(max-width:760px)');
-mobileMediaQuery.addEventListener?.('change',()=>{relocateMobileHistory();if(!mobileMediaQuery.matches){closeMobileOverlays();document.body.classList.remove('mobile-panel-visible')}});
+
+mobileMediaQuery.addEventListener?.('change',()=>{relocateMobileHistory();if(!mobileMediaQuery.matches){mobileV36Close();document.body.classList.remove('mobile-panel-visible')}});
 relocateMobileHistory();
 // Menu handlers already own visibility; track it for CSS so the selection tray does not obscure open sheets.
 const mobileOverlayObserver=new MutationObserver(changes=>{
@@ -5807,7 +5816,7 @@ for(const el of Object.values(mobileOverlayNodes()))mobileOverlayObserver.observ
 const mobileV36State={elementId:null,tool:null,expanded:false,sub:'',query:'',tab:'sort',colorTab:'solid',effectId:null,editEffect:false,fxColor:null,
   baseView:null,openDoc:null,aspectLock:true,palette:[],photoPalette:[],hue:265,sat:0.75,value:0.95,activeStop:0,picking:false};
 const mobileV36=$('#mobilePropertyUI');
-const mobileV36Small=()=>window.matchMedia('(max-width:760px)').matches;
+
 // The resident arrows share the property panel's pointer ownership and history.
 const mobileNudge=document.createElement('div');
 mobileNudge.id='mobileNudge';mobileNudge.className='hidden';mobileNudge.setAttribute('role','group');mobileNudge.setAttribute('aria-label','Точное перемещение');
@@ -5860,9 +5869,9 @@ function drawMobileNudgeMeasurements(c){
 }
 
 const mobileV36Text=()=>active()?.type==='text';
-const mobileV36Icons={edit:'✎',font:'Ff',size:'aA',color:'A̲',format:'B≡',spacing:'↕T',effects:'✧',opacity:'◐',layers:'▤',position:'▦',more:'•••',fit:'▣',crop:'▧',replace:'▤',stroke:'▱',round:'◜',settings:'⚙'};
-const mobileV36Label={edit:'Править',font:'Шрифт',size:'Размер',color:'Цвет',format:'Формат',spacing:'Интервал',effects:'Эффекты',opacity:'Прозрачн.',layers:'Слои',position:'Расположение',more:'Ещё',fit:'Размещение',crop:'Обрезка',replace:'Заменить',stroke:'Обводка',round:'Скругление',settings:'Свойства'};
-const mobileV36OrderText=['edit','font','size','color','format','spacing','effects','opacity','layers','position','more'];
+const mobileV36Icons={edit:'✎',font:'Ff',size:'aA',color:'A̲',format:'B≡',paint:'A̰',spacing:'↕T',effects:'✧',opacity:'◐',layers:'▤',position:'▦',more:'•••',fit:'▣',crop:'▧',replace:'▤',stroke:'▱',round:'◜',settings:'⚙'};
+const mobileV36Label={edit:'Править',font:'Шрифт',size:'Размер',color:'Цвет',format:'Формат',paint:'Оформл.',spacing:'Интервал',effects:'Эффекты',opacity:'Прозрачн.',layers:'Слои',position:'Расположение',more:'Ещё',fit:'Размещение',crop:'Обрезка',replace:'Заменить',stroke:'Обводка',round:'Скругление',settings:'Свойства'};
+const mobileV36OrderText=['edit','font','size','color','format','spacing','paint','effects','opacity','layers','position','more'];
 const mobileV36OrderOther=['color','opacity','effects','layers','position','more'];
 const mobileV36Escape=s=>html(String(s??''));
 function mobileV36RefreshTools(){
@@ -5872,7 +5881,7 @@ function mobileV36RefreshTools(){
  $('#mobileContext').classList.toggle('hidden',!has);$('#mobilePrimary').classList.toggle('hidden',has);
  let order=kind==='text'?mobileV36OrderText:kind==='image'?['replace','crop','effects','opacity','layers','position','more']:kind==='shape'?['color','stroke','effects','opacity','layers','position','more']:[];
  const oldScroll=$('#mobileContext').scrollLeft;
- $('#mobileContext').innerHTML=order.map(key=>`<button type="button" class="${mobileV36State.tool===key?'mobile-active':''}" data-mobile="${key}" title="${mobileV36Label[key]}"><span class="mp-action-symbol">${mobileV36Icons[key]||'⌁'}</span><span>${mobileV36Label[key]}</span></button>`).join('');
+ $('#mobileContext').innerHTML=order.map(key=>`<button type="button" class="${mobileV36State.tool===key?'mobile-active':''}" data-mobile="${key}" title="${key==='paint'?'Оформление текста':mobileV36Label[key]}" ${key==='paint'?'aria-label="Оформление текста"':''}><span class="mp-action-symbol">${mobileV36Icons[key]||'⌁'}</span><span>${mobileV36Label[key]}</span></button>`).join('');
  $('#mobileContext').scrollLeft=oldScroll;
  $$('#mobilePrimary button').forEach(b=>{const key=b.dataset.mobile;const k={text:'font',image:'replace',shapes:'fill',layers:'layers',settings:'settings'}[key]||'more';const ico=b.querySelector('b');if(ico)ico.innerHTML=uiIcon(k)});
  if(!has&&mobileV36State.tool)mobileV36Close();
@@ -5922,7 +5931,7 @@ function mobileV36ApplyView(){
  });
 }
 function mobileV36Close(){
- mobileListSettings.unmount();
+ mobileListSettings.unmount();mobileTextPaint.unmount();editorPaintProjection(false);
  mobileTextFinishGesture();
  cancelRegionEffects(); mobileV36FinishInteraction();
  mobileV36State.fontTall=false;mobileV36State.fontSearch=false;
@@ -5969,7 +5978,8 @@ function mobileV36Back(){
  mobileTextFinishGesture();
  const s=mobileV36State;
  if(s.tool==='format'&&s.sub==='listSettings'&&mobileListSettings.back())return;
- if(s.tool==='format'&&s.sub){s.sub='';mobileV36Render()}
+ if(mobileTextPaintTitles[s.sub]&&mobileTextPaint.back())return;
+ if(['format','paint'].includes(s.tool)&&s.sub){s.sub='';mobileV36Render()}
  else if(s.sub==='colorEdit'){s.sub='';s.fxColor=null;s.expanded=true;mobileV36Render()}
  else if(s.expanded&&['font','color'].includes(s.tool)){s.expanded=false;s.sub='';mobileV36Render()}
  else mobileV36Close();
@@ -6025,7 +6035,10 @@ function mobileV36HSVToHex(h,s,v){const c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c
 function mobileV36InitColor(){const target=mobileV36State.fxColor;const hsv=mobileV36HexToHSV((target?effectColorBinding(target.type,target.key).color:null)||(active()?.type==='text'?mobileV36StyleValue('textColor'):active()?.[mobileV36ColorKey()])||'#7857DE');[mobileV36State.hue,mobileV36State.sat,mobileV36State.value]=hsv}
 function mobileV36ColorEditor(){const state=mobileV36State,e=active();const hex=mobileV36HSVToHex(state.hue,state.sat,state.value);const gradient=!state.fxColor&&state.colorTab==='gradient',styleState=!gradient&&!state.fxColor&&e.type==='text'?mobileV36Style('textColor'):null,mixed=styleState?.kind==='mixed';const swatches=mobileV36Colors();
  const color=gradient?`<div class="mp-subtitle">Цвета градиента</div><div class="mp-line">${(e.gradientStops?.length?e.gradientStops:[{pos:0,color:e.fill||'#7857de'},{pos:100,color:e.fill2||'#2c4fea'}]).map((s,i)=>`<button class="mp-swatch ${state.activeStop===i?'active':''}" data-mp-stop="${i}" style="background:${s.color}"></button>`).join('')}<button class="mp-circle" data-mp-action="addStop">+</button></div><div class="mp-subtitle">Стиль</div><div class="mp-horizontal">${[['0','↔'],['90','↕'],['45','⤡'],['135','⤢'],['radial','◉']].map(([v,label])=>`<button class="mp-gradient-chip ${(v==='radial'?e.gradientMode==='radial':e.gradientAngle===Number(v))?'active':''}" data-mp-gradient-style="${v}" style="font-size:23px;color:white;text-shadow:0 1px 4px #222;background:${v==='radial'?`radial-gradient(circle,${e.fill||'#7857de'},${e.fill2||'#bcb9fe'})`:`linear-gradient(${Number(v)}deg,${e.fill||'#7857de'},${e.fill2||'#bcb9fe'})`}">${label}</button>`).join('')}</div>`:'';
- return mobileV36Sheet(gradient?'Редактор градиента':mixed?'Смешано':hex,`<div class="mp-color-plane" data-mp-plane="1" style="background:hsl(${state.hue} 100% 50%)"><div class="mp-color-cursor" style="left:${state.sat*100}%;top:${(1-state.value)*100}%"></div></div><div class="mp-color-gap"></div><input type="range" class="mp-hue" data-mp-hue="1" min="0" max="359" value="${Math.round(state.hue)}"><div class="mp-color-gap-small"></div><div class="mp-line mp-hex-row"><span class="mp-color-preview" data-mp-preview="1" style="background:${hex}"></span><input type="text" data-mp-hex="1" placeholder="${mixed?'Смешано':''}" value="${mixed?'':hex}" maxlength="7" inputmode="text" aria-label="HEX цвет"><button class="mp-circle" data-mp-action="eyedropper" title="Пипетка">${uiIcon('pipette')}</button></div>${color}${state.fxColor?'':mobileV36Tabs([['solid','Цвет'],['gradient','Градиент']],state.colorTab)}`,{back:true,colorEditor:true})}
+ return mobileV36Sheet(gradient?'Редактор градиента':mixed?'Смешано':hex,`${mobileColorFields({
+   plane:'data-mp-plane="1"',hue:'data-mp-hue="1"',hex:'data-mp-hex="1"',preview:'data-mp-preview="1"'
+ },[state.hue,state.sat,state.value],mixed?'':hex,mixed?'Смешано':'',
+ `<button class="mp-circle" data-mp-action="eyedropper" title="Пипетка">${uiIcon('pipette')}</button>`)}${color}${state.fxColor?'':mobileV36Tabs([['solid','Цвет'],['gradient','Градиент']],state.colorTab)}`,{back:true,colorEditor:true})}
 function mobileV36PhotoColors(){const colors=[];try{
  for(const e of app.doc.elements.filter(x=>(x.type==='image'||x.imageSrc)&&x.imageSrc).slice(0,5)){
   const im=getImage(e.imageSrc);if(!im||!im.complete||!im.naturalWidth)continue;
@@ -6207,6 +6220,85 @@ const mobileListSettings=createMobileListSettings(mobileV36,{
  hsvToColor:mobileV36HSVToHex,
  resizeStage:mobileV36ApplyView,
 });
+function editorPaintProjection(show){
+ $('#inlineText').classList.toggle('mp-paint-projection',show);
+}
+function mobileTextPaintTarget(tool){
+ const owner=mobileTextPanelOwner,element=active();
+ if(!owner||owner.doc!==app.doc||owner.slide!==app.doc.activeSlideIndex||!mobileV36Small()||app.wysiwyg||mobileV36State.tool!=='paint'||mobileV36State.sub!==tool||
+    element?.type!=='text'||app.selectedIds.length!==1||app.maskEditId||
+    (app.editingId&&!mobileTextSession?.formatting))return null;
+ const key={underlineSettings:'underline',strokeSettings:'strokeWidth',fillSettings:'fillOpacity'}[tool];
+ const target=mobileTextTarget(key);
+ if(target.kind==='unsupported')return {reason:target.reason};
+ const range=target.kind==='range'?target:null,fill=element.fillType||'solid';
+ const label=range?'Выделено: «'+mobileTextExcerpt(element.text,range)+'»':'Весь слой';
+ const result={owner,element,range,label,revision:JSON.stringify(element)};
+ if(app.editingId&&!app.inlineSession)
+  return {...result,reason:'Завершите ввод текста, чтобы изменить оформление всего слоя.'};
+ if(tool==='underlineSettings'&&(fill!=='solid'||!supportsHorizontalTextLayout(element)))
+  return {...result,reason:'Настройки подчёркивания доступны для горизонтального текста со сплошной заливкой.'};
+ if(tool==='strokeSettings'&&element.textMode==='path')
+  return {...result,reason:'Обводка текста по кривой недоступна.'};
+ if(tool==='fillSettings'&&fill==='none')return {...result,reason:'У текста нет заливки.'};
+ if(tool==='fillSettings'&&range&&fill!=='solid')
+  return {...result,reason:'Прозрачность градиентной и растровой заливки доступна только для всего слоя. Снимите выделение.'};
+ const scope={selection:range?{anchor:range.start,focus:range.end}:null};
+ if(tool==='underlineSettings'){
+  const {enabled,style,thickness,offset,color,opacity,inkColor,inkOpacity}=underlineState(scope,element);
+  return {...result,state:{
+   underline:enabled,underlineStyle:style,underlineThickness:thickness,underlineOffset:offset,
+   underlineColor:color,underlineOpacity:opacity,
+   underlineColorEffective:inkColor,underlineOpacityEffective:inkOpacity,
+  }};
+ }
+ const styles=supportsHorizontalTextLayout(element)?underlineStylesAt(scope,element):[resolveRichTextStyle(element)];
+ const same=sameUnderlineValue;
+ if(tool==='strokeSettings'){
+  result.state={strokeEnabled:same(styles.map(style=>style.strokeWidth>0))};
+  for(const key of ['stroke','strokeWidth','strokeStyle','strokeOpacity'])result.state[key]=same(styles.map(style=>style[key]));
+  if(result.state.stroke!=='mixed')result.state.strokeEffective=result.state.stroke;
+ }else{
+  result.state={fillOpacity:fill==='solid'?same(styles.map(style=>style.fillOpacity)):element.fillOpacity??100};
+  result.hint=fill==='solid'?'Заливка текста. Общая прозрачность слоя — в меню «Прозрачн.».':'Прозрачность всей заливки, включая её градиент или изображение.';
+ }
+ return result;
+}
+function changeMobileTextPaint({element,range,state},key,value){
+ const base=resolveRichTextStyle(element);
+ if(key==='strokeEnabled'){
+  if(state.strokeEnabled===value&&(range||(base.strokeWidth>0)===value))return element;
+  key='strokeWidth';value=value?(typeof state.strokeWidth==='number'&&state.strokeWidth>0?state.strokeWidth:2):0;
+ }
+ if(key==='underline'||key.startsWith('underline')){
+  const detail=key.slice(9).toLowerCase();
+  const patch=key==='underline'?{underline:value}:{underlineDetails:{[detail]:value}};
+  if(detail==='style'&&(state.underline!==true||!range&&!base.underline))patch.underline=true;
+  const baseValue=detail?(base.underlineDetails?.[detail]??underlineDefaults[detail]):base.underline;
+  if(state[key]===value&&(range||baseValue===value)&&(key==='underline'||!patch.underline))return element;
+  return range?applyTextStyle(element,range.start,range.end,patch,{preserveOverrides:true}):applyLayerUnderlineStyle(element,patch);
+ }
+ if(state[key]===value&&(range||base[key]===value))return element;
+ if(range)return applyTextStyle(element,range.start,range.end,{[key]:value},{preserveOverrides:true});
+ const next=!supportsHorizontalTextLayout(element)||key==='fillOpacity'&&(element.fillType||'solid')!=='solid'
+  ? {...element}
+  : applyTextStyle(element,0,element.text.length,{[key]:null},{preserveOverrides:true});
+ return {...next,[key]:value};
+}
+const mobileTextPaint=createMobileTextPaint(mobileV36,{
+ readTarget:mobileTextPaintTarget,
+ apply(target,key,value,final){
+  const next=changeMobileTextPaint(target,key,value);
+  if(next===target.element||JSON.stringify(next)===target.revision)return null;
+  if(final)commitMobileTextFormat(target.element,next,target.range,mobileTextPaintTitles[mobileV36State.sub]);
+  return next;
+ },
+ previewSliderEvents,
+ colorToHSV:mobileV36HexToHSV,
+ hsvToColor:mobileV36HSVToHex,
+ repaint:paint,
+ resizeStage:mobileV36ApplyView,
+});
 function mobileV36FormatPanel(){const e=active();
  const btn=(key,content,on,description,disabled=false)=>`<button class="mp-choice mp-format-btn ${on===true?'active':''} ${on==='mixed'?'mixed':''}" aria-pressed="${on}" data-mp-format="${key}" title="${description}" aria-label="${description}" ${disabled?'disabled':''}>${content}</button>`;
  const align=(key,label,on)=>btn(key,mobileV37AlignIcon(key),on,label+' · Весь слой');
@@ -6233,6 +6325,11 @@ function mobileV36FormatPanel(){const e=active();
  <button type="button" class="mp-choice mp-format-btn" data-mp-format="listSettings" aria-label="${listSettingsLabel}"
   title="${listSettingsLabel}" aria-haspopup="dialog" ${mobileListSettingsTarget()?.modes.length?'':'disabled'}>${listSettingsIcon}</button>
  </div></div>`)
+}
+function mobileV36PaintMenu(){
+ return mobileV36Sheet('Оформление текста',`<div class="mp-grid three mp-paint-entries" role="group" aria-label="Оформление текста">
+ ${Object.entries(mobileTextPaintTitles).map(([key,label])=>`<button type="button" class="mp-choice" data-mp-format="${key}" aria-label="${label}${key==='underlineSettings'?' · настройки':''}" aria-haspopup="dialog">${{underlineSettings:'Подчёркивание',strokeSettings:'Обводка',fillSettings:'Прозр. заливки'}[key]}</button>`).join('')}
+ </div>`,{back:true});
 }
 function mobileV36SpacingPanel(){const e=active();const row=(label,k,min,max,step)=>`<label class="mp-field">${label}<div class="mp-line">${mobileV36Slider(k,mobileV36StyleValue(k),min,max,step)}<input type="number" data-mp-key="${k}" value="${mobileV36StyleValue(k)}" ${mobileV36StyleAttributes(k)} min="${min}" max="${max}" step="${step}" inputmode="decimal"></div></label>`;
  return mobileV36Sheet('Интервалы',`${row('Межбуквенный интервал','letterSpacing',-20,100,.5)}${row('Расстояние между строками','lineHeight',.5,4,.05)}<div class="mp-subtitle">Закрепить поле · Весь слой</div><div class="mp-grid three">${[['top','По верху'],['middle','По центру'],['bottom','По низу']].map(([id,label])=>`<button class="mp-choice mp-valign-btn ${e.verticalAlign===id?'active':''}" data-mp-valign="${id}" title="${label}" aria-label="${label}"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="1" stroke-opacity=".4"/><path d="${id==='top'?'M7 7h10M7 10h10':id==='middle'?'M7 10h10M7 13h10':'M7 14h10M7 17h10'}"/></svg></button>`).join('')}</div>`)}
@@ -6266,7 +6363,7 @@ function mobileV36SyncSelectionLabel(){
    formatTarget.textContent=target?.reason||'Весь слой';formatTarget.title=target?.reason||'';return;
   }
   formatTarget.title='';label=formatTarget;
- }else if(target?.kind!=='range'||['typography','listSettings'].includes(mobileV36State.sub)){label?.remove();return;}
+ }else if(target?.kind!=='range'||(['typography','listSettings'].includes(mobileV36State.sub)||mobileTextPaintTitles[mobileV36State.sub])){label?.remove();return;}
  const host=mobileV36.querySelector('.mp-body,.mp-pill');if(!host)return;
  if(!label){label=document.createElement('div');label.dataset.mobileTextSelection='';label.className='mp-text-selection';label.setAttribute('role','status');host.prepend(label);}
  label.textContent='Выделено: «'+mobileTextExcerpt(active().text,target)+'»';
@@ -6283,7 +6380,9 @@ function mobileV36Render(){
  if(!mobileV36Small()||!t||!app.doc||!e){mobileV36Close();return}
  const listSettings=t==='format'&&s.sub==='listSettings';
  if(listSettings&&mobileV36.querySelector('.mp-list-settings')){mobileListSettings.sync();return}
- mobileListSettings.unmount();
+ const paintTitle=t==='paint'&&mobileTextPaintTitles[s.sub];
+ if(paintTitle&&mobileV36.querySelector('.mp-paint-settings')){mobileTextPaint.sync();return}
+ mobileListSettings.unmount();mobileTextPaint.unmount();editorPaintProjection(false);
  let content='';
  if(!s.expanded){
   if(t==='font')content=mobileV36Pill(`<div class="mp-horizontal">${fontFamilies().map(mobileV36FontChip).join('')}</div><button class="mp-expand" data-mp-action="expand">↑</button>`);
@@ -6292,6 +6391,9 @@ function mobileV36Render(){
  }else{
   if(t==='font')content=mobileV36FontPanel();
   else if(t==='color')content=mobileV36ColorPanel();
+  else if(t==='paint')content=paintTitle
+   ? mobileV36Sheet(paintTitle,mobileTextPaintContent(s.sub),{back:true,className:'mp-paint-settings'})
+   : mobileV36PaintMenu();
   else if(t==='format'){
    if(listSettings)content=mobileV36Sheet('Настройки списка',mobileListSettingsContent(),{back:true,className:'mp-list-settings'});
    else content=s.sub==='textCase'?mobileV36CasePanel():s.sub==='typography'?mobileV36TypographyPanel():mobileV36FormatPanel();
@@ -6315,6 +6417,10 @@ function mobileV36Render(){
  const typographyGroupsOpen=previousTypography?.querySelector('details').open;
  mobileV36.innerHTML=content;mobileV36.className='mp-open';mobileV36SyncSelectionLabel();
  if(listSettings)mobileListSettings.mount(mobileV36.firstElementChild);
+ if(paintTitle){
+  mobileTextPaint.mount(mobileV36.firstElementChild,s.sub);
+  editorPaintProjection(!!app.editingId&&supportsHorizontalTextLayout(e)&&mobileTextSession?.formatting===true);
+ }
  mobileV36SyncTypographyControls();
  const nextTypography=mobileV36.querySelector('.mp-typography-panel .mp-body');
  if(previousTypography&&nextTypography){
@@ -6329,6 +6435,10 @@ function mobileV36Render(){
 }
 function mobileV36AlignLayer(where){const es=picked().filter(x=>!isLayerLocked(x));for(const e of es){const d=app.doc;if(where==='aleft')e.x=0;if(where==='aright')e.x=d.width-e.w;if(where==='ahcenter')e.x=(d.width-e.w)/2;if(where==='atop')e.y=0;if(where==='abottom')e.y=d.height-e.h;if(where==='avcenter')e.y=(d.height-e.h)/2;}mobileV36Commit();mobileV36Render()}
 function mobileV36Format(key){const e=active();if(!e||rejectMobileTextTarget(key))return;
+ if(mobileTextPaintTitles[key]){
+  pauseInlineTextInput();
+  mobileV36State.sub=key;mobileV36Render();return;
+ }
  if(key==='listSettings'){
   pauseInlineTextInput();
   if(!mobileListSettingsTarget()?.modes.length)return;
@@ -6454,7 +6564,7 @@ mobileV36.addEventListener('pointermove',ev=>{
 for(const type of ['pointerup','pointercancel','lostpointercapture'])window.addEventListener(type,mobileV36FinishInteraction,true);
 mobileV36.addEventListener('click',ev=>{
  const b=ev.target.closest('button');if(!b||b.dataset.mpNudge)return;
- if(b.closest('.mp-list-settings .mp-body'))return;
+ if(b.closest(':is(.mp-list-settings,.mp-paint-settings) .mp-body'))return;
  if(!['done','back','expand','fontSearch','fontSearchClose','fontImport','colorEdit','aspect'].includes(b.dataset.mpAction)&&rejectMobileTextTarget('panel',['lock','copy'].includes(b.dataset.mpMore)))return;
  mobileV36FinishInteraction();mobileTextFinishGesture();
  if(b.dataset.mpAction){const action=b.dataset.mpAction;
@@ -6539,16 +6649,16 @@ function stepInspectorFontSize(field,direction){
 }
 const numericEditValid=field=>field.value.trim()!==''&&Number.isFinite(field.valueAsNumber)&&!field.validity.badInput&&!field.validity.rangeUnderflow&&!field.validity.rangeOverflow;
 for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),mobileV36]){
- root.addEventListener('focusin',ev=>{const field=ev.target;if(field.matches?.('input[type="number"]:not([data-mp-list-field])'))numericEditLastValue.set(field,field.value)});
+ root.addEventListener('focusin',ev=>{const field=ev.target;if(field.matches?.('input[type="number"]:not([data-mp-list-field],[data-mp-paint-field])'))numericEditLastValue.set(field,field.value)});
  root.addEventListener('input',ev=>{
-  const field=ev.target;if(!field.matches?.('input[type="number"]:not([data-mp-list-field])'))return;
+  const field=ev.target;if(!field.matches?.('input[type="number"]:not([data-mp-list-field],[data-mp-paint-field])'))return;
   // Empty/partial/out-of-range values must not reach Number('') => 0 in the
   // existing live input handlers. Keep the last accepted live value instead.
   if(!numericEditValid(field)){ev.stopPropagation();return}
   numericEditLastValue.set(field,field.value);
  },true);
  root.addEventListener('change',ev=>{
-  const field=ev.target;if(!field.matches?.('input[type="number"]:not([data-mp-list-field])'))return;
+  const field=ev.target;if(!field.matches?.('input[type="number"]:not([data-mp-list-field],[data-mp-paint-field])'))return;
   if(!numericEditValid(field)){
    if(field.closest('#mobilePropertyUI')&&mobileTextGestureKeys.has(field.dataset.mpKey)){mobileTextCancelGesture();field.value=mobileV36StyleValue(field.dataset.mpKey);ev.stopImmediatePropagation();return}
    field.value=numericEditLastValue.get(field)??'';
@@ -6559,7 +6669,7 @@ for(const root of [$('#inspector'),$('#fxPopover'),$('#fxMenu'),$('#fxChooser'),
  },true);
  root.addEventListener('keydown',ev=>{
   const field=ev.target;
-  if(ev.isComposing||!field.matches?.('input[type="number"]:not([data-mp-list-field])'))return;
+  if(ev.isComposing||!field.matches?.('input[type="number"]:not([data-mp-list-field],[data-mp-paint-field])'))return;
   if(field.dataset.key==='fontSize'&&field.hasAttribute('data-step-amount')&&['ArrowUp','ArrowDown'].includes(ev.key)){
    ev.preventDefault();ev.stopPropagation();
    const previous=field.value;
@@ -6675,17 +6785,17 @@ function mobileTopPanel(){
 function mobileBackPending(){return !homeVisible()&&(mobileImeVisible||!!app.editingId||!!mobileTopPanel()||!!app.selectedIds.length)}
 function mobileBack(){mobileTextFinishGesture();
  if(homeVisible())return false;
- if(mobileImeVisible){mobileImeVisible=false;const focused=document.activeElement;if(focused?.matches('input,textarea,select'))focused.blur();return true}
+ if(mobileImeVisible){mobileTextPaint.cancel();mobileImeVisible=false;const focused=document.activeElement;if(focused?.matches('input,textarea,select'))focused.blur();return true}
  const panel=mobileTopPanel();
  if(panel&&(!$('#documentTabsMenu').classList.contains('hidden')||$$('.dialog:not(.hidden)').length)){panel();return true}
- if(panel&&mobileV36State.tool==='format'&&mobileV36State.sub){panel();return true}
+ if(panel&&(mobileV36State.tool==='paint'||mobileV36State.tool==='format'&&mobileV36State.sub)){panel();return true}
  if(app.editingId)closeInlineText();
  if(panel){panel();return true}
  if(app.selectedIds.length){setSelected([]);return true}
  return false;
 }
 window.addEventListener('keydown',ev=>{
- if(ev.key==='Escape'&&mobileListSettings.escape(ev.target)){ev.preventDefault();ev.stopImmediatePropagation();return}
+ if(ev.key==='Escape'&&(mobileTextPaint.escape(ev.target)||mobileListSettings.escape(ev.target))){ev.preventDefault();ev.stopImmediatePropagation();return}
  if(ev.key==='Escape'&&ev.target.closest('#mobilePropertyUI')&&ev.target.matches('[data-mp-key],[data-mp-hex]')){mobileTextCancelGesture();ev.preventDefault();ev.stopImmediatePropagation();ev.target.dataset.mpCanceled='1';ev.target.blur();mobileV36SyncTextStyle();return}
  if(ev.target.id==='zoomInput'||!mobileV36Small()||!['Escape','BrowserBack','GoBack'].includes(ev.key))return;
  if(mobileBack()){ev.preventDefault();ev.stopImmediatePropagation()}
@@ -6719,7 +6829,7 @@ paintText=function(c,e){
 // v0.40: unified mobile gesture router is installed below.
 // v0.40: a dismissed selection toolbar leaves the pixel selection intact.
 document.addEventListener('pointerdown',ev=>{
- if(!matchMedia('(max-width:760px)').matches||!app.marqueeTool)return;
+ if(!mobileV36Small()||!app.marqueeTool)return;
  if(ev.target.closest('#selectionToolbar,#selectionMenu,[data-mobile="marquee"],#dockMarquee,#canvasHost,#canvas'))return;
  if(ev.target.closest('#mobileToolbars,#mobilePropertyUI,#mobileLayersSheet'))return;
  app.mobileSelectionMenuDismissed=true;updateSelectionToolbar();$('#selectionMenu').classList.add('hidden');
@@ -6744,7 +6854,7 @@ $('#stageScroller').addEventListener('pointerdown',ev=>{
 
 
 // Actual position of the toolbar (not its nominal CSS height) anchors every compact drawer.
-function syncMobileToolbarAnchor(){if(!matchMedia('(max-width:760px)').matches)return;const toolbar=$('#mobileToolbars');if(!toolbar)return;
+function syncMobileToolbarAnchor(){if(!mobileV36Small())return;const toolbar=$('#mobileToolbars');if(!toolbar)return;
  const top=toolbar.getBoundingClientRect().top;
  const height=Math.max(0,window.innerHeight-top);
  document.documentElement.style.setProperty('--mobile-toolbar-anchor',height+'px');
@@ -6780,7 +6890,7 @@ function v39RestoreTentative(){
  paint();
 }
 v39Stage.addEventListener('pointerdown',ev=>{
- if(!matchMedia('(max-width:760px)').matches||!ev.isTrusted||(ev.pointerType!=='touch'&&!app.editingId))return;
+ if(!mobileV36Small()||!ev.isTrusted||(ev.pointerType!=='touch'&&!app.editingId))return;
  if(ev.target.closest('#quickBubble,button,input,[contenteditable]')||(!app.editingId&&ev.target.closest('textarea')))return;
  v39InlineClick=false;
  const outside=!ev.target.closest('#inlineText,#inlineWysiwyg');
@@ -6851,7 +6961,7 @@ function v41KeyboardViewport(){
  const vv=window.visualViewport,typing=!!document.activeElement?.matches('input,textarea,select');
  if(!typing)mobileViewportMaxHeight=innerHeight;
  mobileImeVisible=typing&&Math.max(innerHeight,mobileViewportMaxHeight)-((vv?.offsetTop||0)+(vv?.height||innerHeight))>100;
- const editing=!!app.editingId&&matchMedia('(max-width:760px)').matches,root=document.documentElement;
+ const editing=!!app.editingId&&mobileV36Small(),root=document.documentElement;
  document.body.classList.toggle('karto-keyboard-open',editing);
  if(editing){const vv=window.visualViewport;
   root.style.setProperty('--v41-visual-height',(vv?.height||innerHeight)+'px');
@@ -6913,7 +7023,7 @@ if(new URLSearchParams(location.search).get('debugIme')==='1'){
 
 // v0.44: Editable text on geometrical boundaries. Old `textMode:path` documents remain readable.
 let boundaryPanelOpen=false;
-const boundarySmall=()=>matchMedia('(max-width:760px)').matches;
+const boundarySmall=()=>mobileV36Small();
 const boundarySupported=e=>!!e&&e.type!=='text'&&e.type!=='raster'&&(
  ['rect','circle','ellipse','image','triangle','star','hexagon','diamond','pentagon','octagon','chevron','arrow','cross','trapezoid','heart','speech','semicircle','parallelogram','path','vector'].includes(e.type)||!!e.vectorD);
 function boundaryVectorContours(src){

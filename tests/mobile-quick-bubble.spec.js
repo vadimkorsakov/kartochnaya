@@ -129,7 +129,17 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
     await select(page, 'second');
     await above(page, second);
     await page.setViewportSize({ width: viewport.height, height: viewport.width });
-    if (viewport.height > 760) await expect(page.locator('#quickBubble')).toBeHidden();
+    if (viewport.height > 760) {
+      // A wide, short coarse-pointer viewport is still mobile after M1.5.
+      // Wait for the landscape layout, then require safe floating actions.
+      await expect(page.locator('#quickBubble')).toBeVisible();
+      await expect(async () => {
+        const g = await geometry(page, second);
+        safe(g);
+        expect(g.bubble.bottom).toBeLessThanOrEqual(viewport.width - 7);
+        expect(g.bubble.right).toBeLessThanOrEqual(viewport.height - 7);
+      }).toPass({ timeout: 7000 });
+    }
     await page.setViewportSize(viewport);
     await expect(page.locator('#quickBubble')).toBeVisible();
     safe(await geometry(page, second));
@@ -177,5 +187,23 @@ for (const viewport of [{ width: 360, height: 640 }, { width: 390, height: 844 }
     const g = await geometry(page, element);
     safe(g);
     expect(g.bubble.right <= g.selection.left || g.bubble.left >= g.selection.right).toBe(true);
+  });
+});
+
+test.describe('mobile quick bubble desktop boundary', () => {
+  const viewport = { width: 390, height: 844 };
+  test.use({ viewport, hasTouch: true, isMobile: true });
+
+  test('hides outside the mobile breakpoint and returns to a safe position', async ({ page }) => {
+    const element = { x: 120, y: 100, w: 80, h: 60 };
+    await open(page, [element]);
+    await above(page, element);
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await expect(page.locator('#quickBubble')).toBeHidden();
+    await page.setViewportSize(viewport);
+    await expect(page.locator('#quickBubble')).toBeVisible();
+    await expect(async () => {
+      safe(await geometry(page, element));
+    }).toPass({ timeout: 7000 });
   });
 });

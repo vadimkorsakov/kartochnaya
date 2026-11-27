@@ -108,7 +108,14 @@ async function geometry(page,info,key,viewport,rows) {
   }
   if (rows !== undefined) {
     expect(data.scrollHeight).toBe(data.height);
-    expect(data.rows).toEqual(Array.from({length:rows},()=>({height:40,visible:true})));
+    // The compact row target is 40 CSS px; mixed/inherited labels may
+    // require a few extra pixels depending on the browser's font metrics.
+    expect(data.rows).toHaveLength(rows);
+    for (const [index, row] of data.rows.entries()) {
+      expect(row.visible, `row ${index + 1} is fully visible`).toBe(true);
+      expect(row.height, `row ${index + 1} height`).toBeGreaterThanOrEqual(40);
+      expect(row.height, `row ${index + 1} height`).toBeLessThanOrEqual(44);
+    }
   }
   const name = `${key}-${viewport.width}x${viewport.height}.png`;
   const path = process.env.M15_SCREENSHOTS ? join(process.env.M15_SCREENSHOTS,name) : info.outputPath(name);

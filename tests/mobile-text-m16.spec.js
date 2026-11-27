@@ -207,6 +207,7 @@ test.describe('M1.6 semantic parity',()=>{
     await expect(ui(page).locator('[data-mp-effect=outline]')).toHaveCount(0);
     await ui(page).locator('[data-mp-effect=dropShadow]').tap();
     expect((await model(page)).effects.some(effect=>effect.type==='dropShadow')).toBe(true);
+    await action(page,'back').tap();
     await ui(page).locator('[data-mp-effect=none]').tap();
     const cleared = await model(page);
     expect(cleared.effects).toEqual([]);

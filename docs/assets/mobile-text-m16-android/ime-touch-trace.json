@@ -1,0 +1,252 @@
+{
+  "browser": "Chromium 156",
+  "input": "CDP touch; viewport height simulated",
+  "viewports": {
+    "360x640": {
+      "before": {
+        "beforeY": 369,
+        "heldY": 594,
+        "toolbarAfterY": 594,
+        "opened": false,
+        "events": [
+          {
+            "type": "selectionchange",
+            "target": "inlineText",
+            "height": 415,
+            "toolbarY": 365
+          },
+          {
+            "type": "blur",
+            "target": "inlineText",
+            "height": 415,
+            "toolbarY": 365
+          },
+          {
+            "type": "VisualViewport.resize",
+            "target": "",
+            "height": 640,
+            "toolbarY": 365
+          },
+          {
+            "type": "pointerdown",
+            "target": "format",
+            "height": 640,
+            "toolbarY": 590
+          },
+          {
+            "type": "touchstart",
+            "target": "format",
+            "height": 640,
+            "toolbarY": 590
+          },
+          {
+            "type": "pointerup",
+            "target": "format",
+            "height": 640,
+            "toolbarY": 590
+          },
+          {
+            "type": "touchend",
+            "target": "format",
+            "height": 640,
+            "toolbarY": 590
+          },
+          {
+            "type": "focus",
+            "target": "inlineText",
+            "height": 640,
+            "toolbarY": 590
+          },
+          {
+            "type": "click",
+            "target": "inlineText",
+            "height": 640,
+            "toolbarY": 590
+          },
+          {
+            "type": "selectionchange",
+            "target": "inlineText",
+            "height": 640,
+            "toolbarY": 590
+          }
+        ]
+      },
+      "after": {
+        "beforeY": 369,
+        "heldY": 369,
+        "toolbarAfterY": 594,
+        "opened": true,
+        "events": [
+          {
+            "type": "selectionchange",
+            "target": "inlineText",
+            "height": 415,
+            "toolbarY": 365
+          },
+          {
+            "type": "pointerdown",
+            "target": "format",
+            "height": 415,
+            "toolbarY": 365
+          },
+          {
+            "type": "touchstart",
+            "target": "format",
+            "height": 415,
+            "toolbarY": 365
+          },
+          {
+            "type": "pointerup",
+            "target": "format",
+            "height": 415,
+            "toolbarY": 365
+          },
+          {
+            "type": "touchend",
+            "target": "format",
+            "height": 415,
+            "toolbarY": 365
+          },
+          {
+            "type": "click",
+            "target": "format",
+            "height": 415,
+            "toolbarY": 365
+          },
+          {
+            "type": "blur",
+            "target": "inlineText",
+            "height": 415,
+            "toolbarY": 365
+          },
+          {
+            "type": "VisualViewport.resize",
+            "target": "",
+            "height": 640,
+            "toolbarY": 365
+          }
+        ]
+      }
+    },
+    "390x844": {
+      "before": {
+        "beforeY": 573,
+        "heldY": 798,
+        "toolbarAfterY": 798,
+        "opened": false,
+        "events": [
+          {
+            "type": "selectionchange",
+            "target": "inlineText",
+            "height": 619,
+            "toolbarY": 569
+          },
+          {
+            "type": "blur",
+            "target": "inlineText",
+            "height": 619,
+            "toolbarY": 569
+          },
+          {
+            "type": "VisualViewport.resize",
+            "target": "",
+            "height": 844,
+            "toolbarY": 569
+          },
+          {
+            "type": "pointerdown",
+            "target": "format",
+            "height": 844,
+            "toolbarY": 794
+          },
+          {
+            "type": "touchstart",
+            "target": "format",
+            "height": 844,
+            "toolbarY": 794
+          },
+          {
+            "type": "pointerup",
+            "target": "format",
+            "height": 844,
+            "toolbarY": 794
+          },
+          {
+            "type": "touchend",
+            "target": "format",
+            "height": 844,
+            "toolbarY": 794
+          },
+          {
+            "type": "focus",
+            "target": "canvas",
+            "height": 844,
+            "toolbarY": 794
+          },
+          {
+            "type": "click",
+            "target": "canvas",
+            "height": 844,
+            "toolbarY": 794
+          }
+        ]
+      },
+      "after": {
+        "beforeY": 573,
+        "heldY": 573,
+        "toolbarAfterY": 798,
+        "opened": true,
+        "events": [
+          {
+            "type": "selectionchange",
+            "target": "inlineText",
+            "height": 619,
+            "toolbarY": 569
+          },
+          {
+            "type": "pointerdown",
+            "target": "format",
+            "height": 619,
+            "toolbarY": 569
+          },
+          {
+            "type": "touchstart",
+            "target": "format",
+            "height": 619,
+            "toolbarY": 569
+          },
+          {
+            "type": "pointerup",
+            "target": "format",
+            "height": 619,
+            "toolbarY": 569
+          },
+          {
+            "type": "touchend",
+            "target": "format",
+            "height": 619,
+            "toolbarY": 569
+          },
+          {
+            "type": "click",
+            "target": "format",
+            "height": 619,
+            "toolbarY": 569
+          },
+          {
+            "type": "blur",
+            "target": "inlineText",
+            "height": 619,
+            "toolbarY": 569
+          },
+          {
+            "type": "VisualViewport.resize",
+            "target": "",
+            "height": 844,
+            "toolbarY": 569
+          }
+        ]
+      }
+    }
+  }
+}

@@ -615,13 +615,22 @@ function mobileLayerHTML(){return renderLayerTree(row=>{
  const id=group?row.groupId:row.id,key=mobileLayerKey(row);
  const selected=mobileLayerMulti?mobileLayerChoice.has(key):(group?(app.selectedGroupIds||[]).includes(id):app.selectedIds.includes(id));
  const shown=group?groupEffectiveVisible(g):isLayerVisible(e),locked=group?groupEffectiveLocked(g):isLayerLocked(e);
+ const ancestors=ancestorGroups(group?g.parentId:e.groupId);
+ const inheritedHidden=ancestors.some(parent=>parent.visible===false),inheritedLock=ancestors.some(parent=>parent.locked===true);
+ const action=(key,state,icon,actionLabel,unavailable)=>{
+  const label=unavailable||(key==='visibility'?'Видимость':'Блокировка');
+  return `<button type="button" data-layeract="${key}" data-kind="${group?'group':'layer'}" data-id="${id}" aria-pressed="${state}" aria-label="${label}" title="${unavailable||actionLabel}" ${unavailable?'disabled':''}>${uiIcon(icon)}</button>`;
+ };
  const icon=group?uiIcon('folder'):e.type==='text'?textLayerIcon:`<img draggable="false" src="${layerThumbnail(e)}" alt="">`;
  return `<div class="mobile-layer layer-sort ${selected?'selected active':''} ${group?'group-row':''} ${locked?'tree-locked':''} ${!shown?'tree-hidden':''}" data-sort="${id}" ${group?`data-group-id="${id}"`:`data-layer="${id}"`} style="--depth:${row.depth}" draggable="false">
  ${mobileLayerMulti?`<input class="mobile-layer-check" type="checkbox" data-mobile-select="${key}" ${selected?'checked':''} aria-label="Выбрать ${html(group?g.name:e.name)}">`:''}${group?folderToggle(g):''}
  <span class="layer-symbol layer-thumb ${group?'folder-icon':''} ${e?.type==='text'?'text-layer-thumb':''}">${icon}</span>
  ${!mobileLayerMulti?'<span class="mobile-drag-handle" aria-label="Перетащить слой" title="Перетащить слой">⠿</span>':''}
  <span class="layer-name" data-rename="${id}">${html(group?g.name:e.name)}</span>
- ${!mobileLayerMulti?`<span class="layer-actions"><button type="button" data-layeract="visibility" data-kind="${group?'group':'layer'}" data-id="${id}" title="${shown?'Скрыть':'Показать'}">${uiIcon(shown?'eye':'eyeOff')}</button><button type="button" data-layeract="lock" data-kind="${group?'group':'layer'}" data-id="${id}" title="${locked?'Разблокировать':'Заблокировать'}">${uiIcon(locked?'lock':'unlock')}</button><button type="button" class="mobile-layer-more" data-mobile-layer-menu="${key}" title="Действия со слоем" aria-label="Действия со слоем">⋯</button></span>`:''}
+ ${!mobileLayerMulti?`<span class="layer-actions">
+ ${action('visibility',shown,shown?'eye':'eyeOff',shown?'Скрыть':'Показать',inheritedHidden?'Скрыто родительской группой':'')}
+ ${action('lock',locked,locked?'lock':'unlock',locked?'Разблокировать':'Заблокировать',inheritedLock?'Заблокировано родительской группой':'')}
+ <button type="button" class="mobile-layer-more" data-mobile-layer-menu="${key}" title="Действия со слоем" aria-label="Действия со слоем">⋯</button></span>`:''}
  </div>`})}
 function mobileSelectionUI(){const choose=$('#mobileLayersSelect'),bar=$('#mobileLayerMultiActions');if(!choose||!bar)return;
  choose.classList.toggle('active',mobileLayerMulti);choose.textContent=mobileLayerMulti?'Готово':'Выбрать';bar.classList.toggle('hidden',!mobileLayerMulti);
@@ -669,7 +678,7 @@ function onMobileMultiAction(action){if(action==='all'){for(const row of layerRo
 function active(){return app.doc?.elements.find(e=>e.id===app.selected)||null}
 function picked(){return app.doc?.elements.filter(e=>app.selectedIds.includes(e.id))||[]}
 function setSelected(ids,isolated=false){if(app.inkDraft&&(app.maskEditId||!ids.includes(app.inkDraft.targetId)))inkCancel();if(app.editingId&&(ids.length!==1||ids[0]!==app.editingId))closeInlineText();cancelRegionEffects();if(app.maskEditId&&!ids.includes(app.maskEditId))app.maskEditId=null;app.selectedGroupIds=[];app.focusGroupId=null;app.groupIsolation=isolated?(ids[0]||null):null;app.selectedIds=expandSelection([...new Set(ids)].filter(id=>app.doc.elements.some(e=>e.id===id)),isolated);app.selected=app.selectedIds.length===1?app.selectedIds[0]:null;app.guides=[];app.cropMode=false;$('#cropActions').classList.add('hidden');refreshLayers();refreshInspector();refreshMobileTools();paint()}
-const iconPaths={typography:'M7 9l-4 4 4 4 M11 9l-4 4 4 4 M13 9l4 4-4 4 M17 9l4 4-4 4 M17 2v4 M15 4h4',textFit:'M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5 M8 8h8 M12 8v8',text:'M4 5h16 M12 5v15 M8 20h8',image:'M3 4h18v16H3z M6 16l5-5 4 3 3-4 3 4 M8 9h.01',rect:'M4 5h16v14H4z',circle:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',triangle:'M12 3 22 21H2z',star:'M12 2 15 9l8 .4-6 5 2 8-7-4.5L5 22l2-8-6-5 8-.4z',hexagon:'M7 3h10l5 9-5 9H7l-5-9z',parallelogram:'M8 4h13l-5 16H3z',edit:'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',font:'M3 19 10 4l7 15 M6 13h9 M18 5h4 M20 5v14',size:'M4 6h16 M12 6v14 M8 20h8',color:'M12 3a9 9 0 1 0 9 9c0-2-2-2-3-1s-3 0-2-2S16 3 12 3z M7 10h.01 M11 7h.01 M16 8h.01',align:'M4 6h16 M4 10h10 M4 14h16 M4 18h10',spacing:'M4 4v16 M20 4v16 M8 9h8 M8 15h8',opacity:'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 2a10 10 0 0 1 0 20z',crop:'M7 3v14a3 3 0 0 0 3 3h11 M3 7h14a3 3 0 0 1 3 3v11',replace:'M4 6h16v13H4z M4 15l5-5 4 4 3-3 4 5 M8 9h.01',stroke:'M3 12h18 M12 3v18',round:'M3 21V10a7 7 0 0 1 7-7h11',layers:'M4 7l8-4 8 4-8 4z M4 12l8 4 8-4 M4 17l8 4 8-4',duplicate:'M8 7h12v14H8z M4 17V3h13',delete:'M4 7h16 M9 7V4h6v3 M7 7l1 14h8l1-14',back:'M19 12H5m7-7-7 7 7 7',position:'M12 2v20 M2 12h20 M8 6l4-4 4 4 M8 18l4 4 4-4',more:'M5 12h.01 M12 12h.01 M19 12h.01',fill:'M5 14 13 4l7 7-8 8-7-5z M4 21h17',settings:'M5 6h14 M5 12h14 M5 18h14',eye:'M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6 M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',eyeOff:'M3 3l18 18 M10 6c6-2 11 6 11 6s-2 4-5 5 M8 18C4 17 2 12 2 12s1-2 3-4',lock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4',unlock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0',alignLeft:'M4 4v16 M7 7h13 M7 12h9 M7 17h13',alignCenter:'M12 3v18 M4 7h16 M7 12h10 M4 17h16',alignJustify:'M4 5h16 M4 10h16 M4 15h16 M4 20h16',alignRight:'M20 4v16 M4 7h13 M8 12h9 M4 17h13',alignTop:'M3 4h18 M7 7v13 M12 7v9 M17 7v13',alignMiddle:'M3 12h18 M7 4v16 M12 7v10 M17 4v16',alignBottom:'M3 20h18 M7 4v13 M12 8v9 M17 4v13'};
+const iconPaths={reset:'M4 11a8 8 0 1 1 2.5 6 M4 5v6h6',plus:'M12 5v14 M5 12h14',typography:'M7 9l-4 4 4 4 M11 9l-4 4 4 4 M13 9l4 4-4 4 M17 9l4 4-4 4 M17 2v4 M15 4h4',textFit:'M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5 M8 8h8 M12 8v8',text:'M4 5h16 M12 5v15 M8 20h8',image:'M3 4h18v16H3z M6 16l5-5 4 3 3-4 3 4 M8 9h.01',rect:'M4 5h16v14H4z',circle:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z',triangle:'M12 3 22 21H2z',star:'M12 2 15 9l8 .4-6 5 2 8-7-4.5L5 22l2-8-6-5 8-.4z',hexagon:'M7 3h10l5 9-5 9H7l-5-9z',parallelogram:'M8 4h13l-5 16H3z',edit:'M4 20h4L19 9l-4-4L4 16z M14 6l4 4',font:'M3 19 10 4l7 15 M6 13h9 M18 5h4 M20 5v14',size:'M4 6h16 M12 6v14 M8 20h8',color:'M12 3a9 9 0 1 0 9 9c0-2-2-2-3-1s-3 0-2-2S16 3 12 3z M7 10h.01 M11 7h.01 M16 8h.01',align:'M4 6h16 M4 10h10 M4 14h16 M4 18h10',spacing:'M4 4v16 M20 4v16 M8 9h8 M8 15h8',opacity:'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z M12 2a10 10 0 0 1 0 20z',crop:'M7 3v14a3 3 0 0 0 3 3h11 M3 7h14a3 3 0 0 1 3 3v11',replace:'M4 6h16v13H4z M4 15l5-5 4 4 3-3 4 5 M8 9h.01',stroke:'M3 12h18 M12 3v18',round:'M3 21V10a7 7 0 0 1 7-7h11',layers:'M4 7l8-4 8 4-8 4z M4 12l8 4 8-4 M4 17l8 4 8-4',duplicate:'M8 7h12v14H8z M4 17V3h13',delete:'M4 7h16 M9 7V4h6v3 M7 7l1 14h8l1-14',back:'M19 12H5m7-7-7 7 7 7',position:'M12 2v20 M2 12h20 M8 6l4-4 4 4 M8 18l4 4 4-4',more:'M5 12h.01 M12 12h.01 M19 12h.01',fill:'M5 14 13 4l7 7-8 8-7-5z M4 21h17',settings:'M5 6h14 M5 12h14 M5 18h14',eye:'M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6 M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6',eyeOff:'M3 3l18 18 M10 6c6-2 11 6 11 6s-2 4-5 5 M8 18C4 17 2 12 2 12s1-2 3-4',lock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4',unlock:'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0',alignLeft:'M4 4v16 M7 7h13 M7 12h9 M7 17h13',alignCenter:'M12 3v18 M4 7h16 M7 12h10 M4 17h16',alignJustify:'M4 5h16 M4 10h16 M4 15h16 M4 20h16',alignRight:'M20 4v16 M4 7h13 M8 12h9 M4 17h13',alignTop:'M3 4h18 M7 7v13 M12 7v9 M17 7v13',alignMiddle:'M3 12h18 M7 4v16 M12 7v10 M17 4v16',alignBottom:'M3 20h18 M7 4v13 M12 8v9 M17 4v13'};
 iconPaths.folder='M3 8V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8h18';
 iconPaths.chevronRight='M9 6l6 6-6 6';
 iconPaths.chevronDown='M6 9l6 6 6-6';
@@ -720,15 +729,20 @@ function resetHistory(){if(!app.doc)return;const initial=snapshot();app.historyB
 function commit(label){if(!app.doc)return;if(app.editingId&&(app.inlineSession||mobileV36Small())){recordInlineSession();const e=app.doc.elements.find(x=>x.id===app.editingId),edit=$('#inlineText');if(e&&edit.value!==e.text){edit.value=e.text;restoreInlineCaret(false)}positionInlineText();paint();return;}boundarySyncDoc(app.doc);syncCurrentSlide();syncAutoCardTitle();const state=snapshot(),previous=app.history[app.historyIndex];if(previous!==state){app.history=app.history.slice(0,app.historyIndex+1);app.historyNames=(app.historyNames||[]).slice(0,app.historyIndex+1);app.history.push(state);app.historyNames.push(typeof label==='string'?label:describeChange(previous,state));if(app.history.length>51){const n=app.history.length-51;app.history.splice(1,n);app.historyNames.splice(1,n);}app.historyIndex=app.history.length-1;app.historyPreviewOriginal=false}updateHistoryButtons();const save=saveState(app.doc.id),key=JSON.stringify(app.doc);if(key!==save.saved&&key!==save.pending?.key)app.doc.updatedAt=Date.now();saveSoon();paint();renderSlideStrip()}
 function historyGo(index){mobileTextPaint.cancel();closeListStylePanel();closeUnderlinePanel();inkCancel();if(app.editingId)closeInlineText();if(app.penDraft){toast('Сначала завершите работу пером');return}if(!Number.isInteger(index)||index<0||index>=app.history.length||index===app.historyIndex)return;const oldSlide=app.doc.activeSlideIndex;
  const owner=mobileTextPanelOwner;
- const restoreFormatOwner=['format','paint'].includes(mobileV36State.tool)&&owner?.doc===app.doc&&
+ const followLayerPanel=['format','paint','spacing','position','effects'].includes(mobileV36State.tool)&&owner?.doc===app.doc&&
   owner.element===active()&&!owner.session;
  app.historyIndex=index;const state=JSON.parse(app.history[index]);const storedSelection=state.selection,storedLayers=state.layerSelection;delete state.selection;delete state.layerSelection;Object.assign(app.doc,state);boundaryRememberDoc(app.doc);ensureGroupData(app.doc);if(app.doc.type==='card')ensureCardSlides(app.doc);app.selectedGroupIds=[];app.focusGroupId=null;app.selectedIds=[];app.selected=null;app.guides=app.doc.rulers||[];restoreSelectionFromHistory(storedSelection);restoreLayerSelection(storedLayers);
  // Undo/Redo replaces layer objects. A current layer panel can follow the
  // same layer on the same slide without reusing any native selection.
- if(restoreFormatOwner&&oldSlide===app.doc.activeSlideIndex&&owner.element?.id===app.selected)
-  mobileTextPanelOwner={...owner,element:active()};
+ const restoreMobilePanel=followLayerPanel&&oldSlide===app.doc.activeSlideIndex&&(owner.element?.id??null)===app.selected&&
+  (mobileV36State.tool!=='position'||mobileV36State.positionSelection===mobileV36PositionSelection());
+ if(restoreMobilePanel)mobileTextPanelOwner={...owner,element:active()};
  if(oldSlide!==app.doc.activeSlideIndex){$('#sizeLabel').textContent=`${app.doc.width} × ${app.doc.height} px`;applyZoom()}updateHistoryButtons();updateProjectBadge();refreshLayers();refreshInspector();refreshMobileTools();
- if(restoreFormatOwner)mobileV36SyncTextStyle();
+ if(restoreMobilePanel){
+  mobileV36SyncTextStyle();
+  if(mobileV36State.tool==='position')mobileV36SyncPositionControls();
+  if(mobileV36State.tool==='effects')mobileV36RefreshEffectHistory();
+ }
  paint();renderSlideStrip();app.historyPreviewOriginal=index===0&&app.history.length>1;if(app.historyPreviewOriginal){clearTimeout(app.saveTimer);app.saveTimer=null;$('#saveStatus').textContent='Исходное состояние · предпросмотр';}else saveSoon()}
 function undo(dir){mobileTextPaint.cancel();closeListStylePanel();cancelUnderlineGesture();mobileTextFinishGesture();if(app.wysiwyg){app.wysiwyg.travel(dir);return}if(app.inlineSession?.formatted){inlineHistoryGo(dir);return}if(app.editingId)closeInlineText();if(app.penDraft){penDraftHistory(dir);return}historyGo(app.historyIndex+dir)}
 function renderHistoryList(){const root=$('#historyEntries');if(!root)return;root.innerHTML=(app.history||[]).map((_,i)=>`<button type="button" class="history-entry ${i===app.historyIndex?'active':''}" data-history-index="${i}" ${i===app.historyIndex?'aria-current="step"':''}><span class="history-step">${i===0?'●':i}</span><span>${html(app.historyNames?.[i]||'Изменение макета')}</span></button>`).join('');const current=root.querySelector('.history-entry.active');if(current&&!$('#historyPopover').classList.contains('hidden'))current.scrollIntoView({block:'nearest'})}
@@ -1019,7 +1033,7 @@ function layerInteraction(root){
   const selectmask=ev.target.closest('[data-select-mask]');if(selectmask){ev.stopPropagation();const id=selectmask.dataset.selectMask;app.maskEditId=id;setSelected([id],true);inkRefreshColor();return}
   const selectlayer=ev.target.closest('[data-select-layer-thumb]');if(selectlayer){ev.stopPropagation();app.maskEditId=null;setSelected([selectlayer.dataset.selectLayerThumb],true);inkRefreshColor();return}
   const act=ev.target.closest('[data-layeract]');if(act){
-   ev.preventDefault();ev.stopPropagation();
+   ev.preventDefault();ev.stopPropagation();if(act.disabled)return;
    const obj=act.dataset.kind==='group'?groupInfo(act.dataset.id):app.doc.elements.find(x=>x.id===act.dataset.id);
    if(!obj)return;
    const k=act.dataset.layeract==='visibility'?'visible':'locked';if(k==='visible')obj.visible=obj.visible===false;else obj.locked=obj.locked!==true;
@@ -2401,7 +2415,10 @@ function inlineHistoryGo(dir){
  const session=app.inlineSession,e=app.doc?.elements.find(x=>x.id===app.editingId);if(!session||!e)return;
  recordInlineSession();const state=moveInlineHistory(session,dir);if(!state)return;
  restoreInlineElement(e,state.element);$('#inlineText').value=e.text;app.inlineCaret=state.caret;if(mobileTextSession){if(mobileTextSession.text!==e.text){mobileTextSession.text=e.text;mobileTextSession.revision++}mobileTextSession.caret=state.caret&&{...state.caret}}restoreInlineCaret();
- positionInlineText();syncAutoCardTitle();refreshInspector();refreshMobileTools();mobileV36SyncTextStyle();updateHistoryButtons();paint();if(mobileV36Small()&&!app.wysiwyg)saveSoon();
+ positionInlineText();syncAutoCardTitle();refreshInspector();refreshMobileTools();mobileV36SyncTextStyle();
+ if(mobileV36State.tool==='position')mobileV36SyncPositionControls();
+ if(mobileV36State.tool==='effects')mobileV36RefreshEffectHistory();
+ updateHistoryButtons();paint();if(mobileV36Small()&&!app.wysiwyg)saveSoon();
 }
 // One range gesture owns all previews. Canonical runs are temporary during the
 // gesture so Canvas can paint them. History and every save entry see only the
@@ -2526,6 +2543,14 @@ function mobileV36SyncTextStyle(){
   button.setAttribute('aria-pressed',String(pressed));button.classList.toggle('active',pressed===true);button.classList.toggle('mixed',pressed==='mixed');
   button.disabled=state.kind==='unsupported';button.title=state.reason||button.getAttribute('aria-label');
   const mixed=button.querySelector('.decoration-mixed');if(mixed)mixed.textContent=pressed==='mixed'?'Разные':'';
+ }
+ const resets=mobileV36.querySelectorAll('[data-mp-spacing-reset]');
+ if(resets.length){
+  const defaults=resolveRichTextStyle({});
+  for(const button of resets){
+   const key=button.dataset.mpSpacingReset,state=mobileV36Style(key);
+   button.disabled=state.kind==='unsupported'||state.value===defaults[key];
+  }
  }
  for(const button of mobileV36.querySelectorAll('[data-mp-valign]')){
   const pressed=(active().verticalAlign||'top')===button.dataset.mpValign;
@@ -3736,7 +3761,25 @@ function styleInlineSelection(key,value,final){
 }
 // Ownership lasts through the native mouse/focus/click sequence, including
 // touch compatibility events. The next pointer destination releases it.
-document.addEventListener('pointerdown',ev=>{if(!app.editingId)return;app.inlineToolPointer=!!ev.target.closest(inlineFormattingRoots);if(app.inlineToolPointer){rememberInlineCaret();pauseInlineTextInput()}},true);
+let mobileContextPress=null;
+document.addEventListener('pointerdown',ev=>{
+ if(ev.isPrimary)mobileContextPress=null;
+ if(!app.editingId)return;
+ app.inlineToolPointer=!!ev.target.closest(inlineFormattingRoots);
+ if(!app.inlineToolPointer)return;
+ rememberInlineCaret();
+ const button=ev.target.closest('#mobileContext button[data-mobile]');
+ if(ev.isPrimary&&ev.pointerType==='touch'&&mobileTextSession&&button&&
+    !['edit','layers','crop','replace'].includes(button.dataset.mobile)){
+  // Blur moves the toolbar while the finger is still down. Keep native
+  // focus and click ownership until activation, even if the viewport shifts.
+  ev.preventDefault();
+  mobileContextPress={button,doc:app.doc,slide:app.doc.activeSlideIndex,session:mobileTextSession};
+  if(ev.isTrusted)try{button.setPointerCapture(ev.pointerId)}catch{}
+  return;
+ }
+ pauseInlineTextInput();
+},true);
 document.addEventListener('mousedown',ev=>{
  if(!app.editingId||ev.button!==0||!ev.target.closest(inlineFormattingRoots))return;
  app.inlineToolPointer=true;rememberInlineCaret();
@@ -4833,7 +4876,11 @@ $('#mobileLayersSelect').onclick=()=>{mobileLayerMulti=!mobileLayerMulti;mobileL
 $$('[data-pickshape]').forEach(el=>el.onclick=()=>{closeDialogs();add(el.dataset.pickshape)});
 $('#mobileLayersBtn').onclick=()=>toggleMobileLayers();
 $('#mobileShapeBtn').onclick=()=>showShapeTray();
-$('#mobileToolbars').addEventListener('click',ev=>{const btn=ev.target.closest('[data-mobile]');if(!btn)return;const action=btn.dataset.mobile;if(action!=='marquee'&&app.marqueeTool){setMarqueeMode(false);app.mobileSelectionMenuDismissed=true;updateSelectionToolbar();}if(mobileV36Small()&&$('#mobileContext').contains(btn)){mobileV36Open(action);return}if(!['shapes','assets'].includes(action))closeToolPopovers();if(action==='text')add('text');if(action==='brush')inkSetTool('brush');if(action==='image')add('image');if(action==='shapes')showShapeTray();if(action==='pen')setPenMode(true);if(action==='marquee'){if(app.marqueeTool){app.mobileSelectionMenuDismissed=!app.mobileSelectionMenuDismissed;updateSelectionToolbar();}else setMarqueeMode(true);}if(action==='layers')toggleMobileLayers();if(action==='assets')showAssets();if(['settings','font','size','color','align','spacing','opacity','stroke','round','position','more','fill','fit','effects'].includes(action))showInspector(action);if(action==='edit'){if(active()?.type==='text')openInlineText();else showInspector('settings')}if(action==='crop')enterCrop();if(action==='duplicate')duplicateElement();if(action==='delete')deleteElement();if(action==='back'){hideInspector();setSelected([])}if(action==='replace'&&active()){app.pendingImage={kind:'fill',id:active().id};$('#imageInput').click()}});
+$('#mobileToolbars').addEventListener('click',ev=>{const btn=ev.target.closest('[data-mobile]');if(!btn)return;const action=btn.dataset.mobile;if(action!=='marquee'&&app.marqueeTool){setMarqueeMode(false);app.mobileSelectionMenuDismissed=true;updateSelectionToolbar();}if(mobileV36Small()&&$('#mobileContext').contains(btn)){
+ const press=mobileContextPress;mobileContextPress=null;
+ if(ev.pointerType==='touch'&&press&&(press.button!==btn||press.doc!==app.doc||press.slide!==app.doc?.activeSlideIndex||press.session!==mobileTextSession))return;
+ mobileV36Open(action);return
+}if(!['shapes','assets'].includes(action))closeToolPopovers();if(action==='text')add('text');if(action==='brush')inkSetTool('brush');if(action==='image')add('image');if(action==='shapes')showShapeTray();if(action==='pen')setPenMode(true);if(action==='marquee'){if(app.marqueeTool){app.mobileSelectionMenuDismissed=!app.mobileSelectionMenuDismissed;updateSelectionToolbar();}else setMarqueeMode(true);}if(action==='layers')toggleMobileLayers();if(action==='assets')showAssets();if(['settings','font','size','color','align','spacing','opacity','stroke','round','position','more','fill','fit','effects'].includes(action))showInspector(action);if(action==='edit'){if(active()?.type==='text')openInlineText();else showInspector('settings')}if(action==='crop')enterCrop();if(action==='duplicate')duplicateElement();if(action==='delete')deleteElement();if(action==='back'){hideInspector();setSelected([])}if(action==='replace'&&active()){app.pendingImage={kind:'fill',id:active().id};$('#imageInput').click()}});
 // Own context menu: mouse right-click on canvas or layer list.
 function showContextMenu(x,y){const m=$('#contextMenu');m.classList.remove('hidden');const w=m.offsetWidth,h=m.offsetHeight;m.style.left=clamp(x,8,innerWidth-w-8)+'px';m.style.top=clamp(y,8,innerHeight-h-8)+'px';m.classList.toggle('menu-left',x+w+250>innerWidth)}
 function hideContextMenu(){$('#contextMenu').classList.add('hidden')}
@@ -5047,7 +5094,11 @@ function updatePickerColor(hex,final=false){hex=normalizeHex(hex);if(!hex)return
  if(app.wysiwyg&&!fallbackInlineWysiwyg('Цвет слоя'))return;
  if(k==='_effect'){const p=$('#fillPopover'),field=p.dataset.effectField||'color';
   const {e,effect,legacyKey}=effectColorBinding(p.dataset.effectType,field,p.dataset.effectId);
-  if(effect)fxModify(effect.id,fx=>fx[field]=hex,final);
+  if(p.dataset.effectType&&mobileV36State.tool==='effects'){
+   if(rejectMobileTextTarget('panel')||!e||!effect&&!legacyKey||p.dataset.effectId&&effect?.id!==p.dataset.effectId)return;
+   if(effect)effect[field]=hex;else e[legacyKey]=hex;
+   if(final)mobileV36CommitEffect('Цвет эффекта');else{paint();saveSoon()}
+  }else if(effect)fxModify(effect.id,fx=>fx[field]=hex,final);
   else if(e&&legacyKey){e[legacyKey]=hex;if(final)commit();else{paint();saveSoon()}}
   else return;
   refreshPickerVisual(false);refreshColorRowOnly();syncEffectColorSwatches();return}
@@ -5471,7 +5522,7 @@ function liveDocumentTab(){return documentTabSession.tabs.find(t=>t.id===documen
 // These surfaces belong to the current editor visit, not a saved document view.
 function closeEditorTransientUI(){mobileNudgeClearMeasurements();$('#mobileNudge')?.classList.add('hidden');fxCloseMenu();fxClosePopover();cancelRegionEffects();closeListStylePanel();
  mobileV36Close(); // F-06 settles actual changes and releases owned pointers/timers.
- closeMobileOverlays('mobileProperties');closeToolPopovers();closeMobileLayerMenu();
+ closeMobileEffectColorPopover();closeMobileOverlays('mobileProperties');closeToolPopovers();closeMobileLayerMenu();
  if(!$('#fillPopover').classList.contains('hidden')||app.pipetteArmed)closeFillPopover();
  boundaryPanelOpen=false;$('#boundaryFloatingPanel')?.classList.add('hidden');
  for(const id of ['quickBubble','editorProjectMenu','inkPopover','textModeMenu'])$('#'+id).classList.add('hidden');
@@ -5865,7 +5916,7 @@ const mobileOverlayObserver=new MutationObserver(changes=>{
 for(const el of Object.values(mobileOverlayNodes()))mobileOverlayObserver.observe(el,{attributes:true,attributeFilter:['class']});
 
 // v0.36 · two-tier mobile properties. The desktop inspector remains untouched.
-const mobileV36State={elementId:null,tool:null,expanded:false,sub:'',query:'',tab:'sort',colorTab:'solid',effectId:null,editEffect:false,fxColor:null,
+const mobileV36State={elementId:null,tool:null,expanded:false,sub:'',query:'',tab:'sort',colorTab:'solid',effectId:null,fxColor:null,
   baseView:null,openDoc:null,aspectLock:true,palette:[],photoPalette:[],hue:265,sat:0.75,value:0.95,activeStop:0,picking:false};
 const mobileV36=$('#mobilePropertyUI');
 
@@ -5928,7 +5979,8 @@ const mobileV36OrderOther=['color','opacity','effects','layers','position','more
 const mobileV36Escape=s=>html(String(s??''));
 function mobileV36RefreshTools(){
  const has=app.selectedIds.length>0;
- if(mobileV36State.tool&&mobileV36State.elementId!==app.selected)mobileV36Close();
+ if(mobileV36State.tool&&(mobileV36State.elementId!==app.selected||
+    mobileV36State.tool==='position'&&mobileV36State.positionSelection!==mobileV36PositionSelection()))mobileV36Close();
  const kind=mobileV36Text()?'text':active()?.type==='image'||(active()?.fillType==='image'&&active()?.imageSrc)?'image':has?'shape':'none';
  $('#mobileContext').classList.toggle('hidden',!has);$('#mobilePrimary').classList.toggle('hidden',has);
  let order=kind==='text'?mobileV36OrderText:kind==='image'?['replace','crop','effects','opacity','layers','position','more']:kind==='shape'?['color','stroke','effects','opacity','layers','position','more']:[];
@@ -5967,10 +6019,14 @@ function mobileV36ApplyView(){
   // Reserve space on the scroller, so the existing toolbar stays at the bottom.
   // Column padding would lift the toolbar underneath the property sheet.
   column.style.paddingBottom='';
-  const covered=Math.max(sheet.getBoundingClientRect().height,$('#mobileToolbars').getBoundingClientRect().top-sheet.getBoundingClientRect().top);
-  area.style.setProperty('margin-bottom',Math.ceil(covered)+'px','important');
+  const toolbar=$('#mobileToolbars').getBoundingClientRect(),sheetRect=sheet.getBoundingClientRect();
+  const covered=Math.max(sheetRect.height,toolbar.top-sheetRect.top);
+  const available=Math.max(0,column.getBoundingClientRect().bottom-area.getBoundingClientRect().top-toolbar.height);
+  // Reserving more than the stage can give would push the toolbar below the
+  // sheet in a short viewport. Let the sheet cover the remainder instead.
+  area.style.setProperty('margin-bottom',Math.min(Math.ceil(covered),Math.floor(available))+'px','important');
   mobileV36State.userViewAdjusted=true;
-  requestAnimationFrame(()=>{positionInlineText();revealInlineText();paint()});return;
+  requestAnimationFrame(()=>{syncMobileToolbarAnchor();positionInlineText();revealInlineText();paint()});return;
  }
  // Keep the bottom toolbar in its normal flow position for images and
  // shapes, just as for text. Padding on the entire stage column moves the
@@ -5991,12 +6047,20 @@ function mobileV36ApplyView(){
   paint();
  });
 }
+function mobileEffectColorPopoverOpen(){
+ const picker=$('#fillPopover');
+ return !picker.classList.contains('hidden')&&picker.dataset.key==='_effect'&&Boolean(picker.dataset.effectType);
+}
+function closeMobileEffectColorPopover(){
+ if(mobileEffectColorPopoverOpen())closeFillPopover();
+}
 function mobileV36Close(){
+ closeMobileEffectColorPopover();
  mobileListSettings.unmount();mobileTextPaint.unmount();editorPaintProjection(false);
  mobileTextFinishGesture();
  cancelRegionEffects(); mobileV36FinishInteraction();
  mobileV36State.fontTall=false;mobileV36State.fontSearch=false;
- mobileV36State.tool=null;mobileV36State.elementId=null;mobileTextPanelOwner=null;mobileV36State.expanded=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.fxColor=null;
+ mobileV36State.tool=null;mobileV36State.elementId=null;mobileTextPanelOwner=null;mobileV36State.expanded=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.fxColor=null;
  mobileV36.className='';mobileV36.innerHTML='';mobileV36ResetView();
  $$('#mobileContext button').forEach(b=>b.classList.remove('mobile-active'));
  if(app.editingId)requestAnimationFrame(()=>{positionInlineText();revealInlineText()});
@@ -6026,9 +6090,10 @@ function mobileV36Open(tool,expanded){
  if(tool==='crop'){mobileV36Close();openMobileImageModes();return}
  if(mobileTextSession?.composing){toast('Завершите ввод текста перед форматированием.');return}
  if(mobileV36State.tool===tool&&expanded===undefined){mobileV36Close();return}
- closeMobileOverlays('mobileProperties');closeToolPopovers();
- if(mobileV36State.tool!==tool){mobileV36State.colorTab='solid';mobileV36State.activeStop=0;mobileV36State.fontVariantFamily=null;mobileV36State.colorBodyScroll=0;mobileV36State.effectScroll=0;mobileV36State.fontTall=false;mobileV36State.fontSearch=false;mobileV36State.userViewAdjusted=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.editEffect=false;mobileV36State.effectId=null;mobileV36State.tab=tool==='position'?'sort':'solid'}
+ closeMobileEffectColorPopover();closeMobileOverlays('mobileProperties');closeToolPopovers();
+ if(mobileV36State.tool!==tool){mobileV36State.colorTab='solid';mobileV36State.activeStop=0;mobileV36State.fontVariantFamily=null;mobileV36State.colorBodyScroll=0;mobileV36State.effectScroll=0;mobileV36State.fontTall=false;mobileV36State.fontSearch=false;mobileV36State.userViewAdjusted=false;mobileV36State.sub='';mobileV36State.query='';mobileV36State.effectId=null;mobileV36State.tab=tool==='position'?'sort':'solid'}
  mobileV36State.tool=tool;mobileV36State.elementId=app.selected;
+ if(tool==='position')mobileV36State.positionSelection=mobileV36PositionSelection();
  rememberInlineCaret();pauseInlineTextInput();mobileTextPanelOwner={doc:app.doc,slide:app.doc.activeSlideIndex,element:active(),session:mobileTextSession,revision:mobileTextSession?.revision||0};
  mobileV36State.expanded=expanded===undefined?!['font','size','color','opacity'].includes(tool):!!expanded;
  mobileV36Render();
@@ -6042,9 +6107,10 @@ function mobileV36Back(){
  if(mobileTextPaintTitles[s.sub]&&mobileTextPaint.back())return;
  if(['format','paint'].includes(s.tool)&&s.sub){s.sub='';mobileV36Render()}
  else if(s.sub==='colorEdit'){
-  s.sub='';s.fxColor=null;s.colorTab='solid';s.expanded=!s.colorFromPill;mobileV36Render();
+  s.sub=s.fxColor?'effectSettings':'';s.fxColor=null;s.colorTab='solid';s.expanded=!s.colorFromPill;mobileV36Render();
   const body=mobileV36.querySelector('.mp-text-palette .mp-body');if(body)body.scrollTop=s.colorBodyScroll;
  }
+ else if(s.sub==='effectSettings'){s.sub='';mobileV36Render()}
  else if(s.expanded&&['font','color'].includes(s.tool)){s.expanded=false;s.sub='';mobileV36Render()}
  else mobileV36Close();
 }
@@ -6062,12 +6128,12 @@ function mobileV36Colors(){const vals=[];const add=c=>{if(typeof c==='string'&&/
  return vals.slice(0,40)
 }
 function mobileV36ColorKey(){return mobileV36Text()?'textColor':'fill'}
-function mobileV36Swatch(c){const e=active(),color=e?.type==='text'?'':e?.[mobileV36ColorKey()]||'#000000';return `<button class="mp-swatch ${color.toLowerCase()===c.toLowerCase()?'active':''}" data-mp-swatch="${mobileV36Escape(c)}" title="${mobileV36Escape(c)}" style="background:${mobileV36Escape(c)}"></button>`}
+function mobileV36Swatch(c,compact=false){const e=active(),color=e?.type==='text'?'':e?.[mobileV36ColorKey()]||'#000000';return `<button class="mp-swatch ${color.toLowerCase()===c.toLowerCase()?'active':''}" data-mp-swatch="${mobileV36Escape(c)}" title="${mobileV36Escape(c)}" aria-label="${mobileV36Escape(c)}" ${compact===true?`style="--mp-swatch-color:${mobileV36Escape(c)}"><span class="mp-color-glyph" aria-hidden="true"></span>`:`style="background:${mobileV36Escape(c)}">`}</button>`}
 function mobileV36Stepper(key,val,min,max,step){return `<div class="mp-stepper"><button data-mp-step="${key}" data-dir="-1" title="Уменьшить">−</button><input data-mp-key="${key}" aria-label="${key==='fontSize'?'Размер, px':'Прозрачность, %'}" enterkeyhint="done" type="number" inputmode="decimal" value="${val}" ${mobileRangeKeys.has(key)?mobileV36StyleAttributes(key):''} min="${min}" max="${max}" step="${step}"><button data-mp-step="${key}" data-dir="1" title="Увеличить">+</button></div>`}
 function mobileV36SizePosition(value){value=clamp(value,1,500);return value<=100?(value-1)*4:396+(value-100)*.25}
 function mobileV36SizeValue(position){return Math.round(position<=396?1+position/4:100+(position-396)*4)}
 function mobileV36Slider(key,val,min,max,step,label=mobileV36Label[key]||key){if(key==='fontSize')return `<input data-mp-key="fontSize" data-mp-size-scale="1" type="range" min="0" max="496" step="1" value="${mobileV36SizePosition(Number(val)||24)}" aria-label="Размер" aria-valuetext="${val===''?'Разные':val+' px'}" ${mobileV36StyleAttributes(key)}>`;return `<input data-mp-key="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${val}" aria-label="${label}" ${mobileRangeKeys.has(key)?mobileV36StyleAttributes(key):''} aria-valuetext="${val===''?'Разные':val}">`}
-function mobileV36Pill(content){return `<div class="mp-pill">${content}</div>`}
+function mobileV36Pill(content,className=''){return `<div class="mp-pill ${className}">${content}</div>`}
 function mobileV36Sheet(title,content,opts={}){return `<section class="mp-sheet ${opts.className||(title==='Шрифт'?'mp-font-sheet':title==='Формат'?'mp-format-sheet':title==='Расположение'?'mp-position-sheet':title==='Интервалы'?'mp-spacing-sheet':title==='Обводка'?'mp-stroke-sheet':(opts.colorEditor?'mp-color-editor':''))}" role="dialog" aria-label="${mobileV36Escape(title)}"><div class="mp-grab"></div><div class="mp-head">${opts.back?'<button data-mp-action="back" aria-label="Назад">←</button>':'<span aria-hidden="true"></span>'}<strong>${mobileV36Escape(title)}</strong><button data-mp-action="done" aria-label="Готово">✓</button></div><div class="mp-body">${content}</div></section>`}
 function mobileV36Tabs(options,selected){return `<div class="mp-tabs">${options.map(([id,label])=>`<button data-mp-tab="${id}" class="${id===selected?'active':''}" aria-pressed="${id===selected}">${label}</button>`).join('')}</div>`}
 // Height gestures are confined to the font sheet handle and never reserve canvas space.
@@ -6116,7 +6182,7 @@ function mobileV36HexToHSV(hex){const n=parseInt(hex.replace('#',''),16),r=(n>>1
 function mobileV36HSVToHex(h,s,v){const c=v*s,x=c*(1-Math.abs((h/60)%2-1)),m=v-c;let [r,g,b]=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];return '#'+[r+m,g+m,b+m].map(z=>Math.round(z*255).toString(16).padStart(2,'0')).join('').toUpperCase()}
 function mobileV36InitColor(){
  const s=mobileV36State,e=active(),fx=s.fxColor;
- const color=fx?effectColorBinding(fx.type,fx.key).color:
+ const color=fx?effectColorBinding(fx.type,fx.key,fx.id).color:
   s.colorTab==='gradient'&&e?.type==='text'?(e.gradientStops?.[s.activeStop]?.color||(s.activeStop?e.fill2:e.fill)):
   e?.type==='text'?mobileV36StyleValue('textColor'):e?.[mobileV36ColorKey()];
  [s.hue,s.sat,s.value]=mobileV36HexToHSV(color||'#7857DE');
@@ -6127,7 +6193,8 @@ function mobileV36ColorEditor(){const state=mobileV36State,e=active();const hex=
    plane:'data-mp-plane="1"',hue:'data-mp-hue="1"',hex:'data-mp-hex="1"',preview:'data-mp-preview="1"'
  },[state.hue,state.sat,state.value],mixed?'':hex,mixed?'Разные':'#RRGGBB',
  `<button class="mp-circle" data-mp-action="eyedropper" aria-label="Пипетка" title="Пипетка">${uiIcon('pipette')}</button>`);
- if(!textEditor)return mobileV36Sheet(gradient?'Редактор градиента':hex,fields+color+(state.fxColor?'':mobileV36Tabs([['solid','Цвет'],['gradient','Градиент']],state.colorTab)),{back:true,colorEditor:true});
+ if(state.fxColor)return mobileV36Sheet('Цвет эффекта',`<div class="mp-text-color-fields">${fields}</div>`,{back:true,className:'mp-text-compact mp-effect-color-editor'});
+ if(!textEditor)return mobileV36Sheet(gradient?'Редактор градиента':hex,fields+color+mobileV36Tabs([['solid','Цвет'],['gradient','Градиент']],state.colorTab),{back:true,colorEditor:true});
  const tabs=mobileV36Tabs([['solid','Цвет'],['gradient','Градиент · Весь слой']],state.colorTab);
  return mobileV36Sheet(gradient?'Редактор градиента':'Свой цвет',`${tabs}
  ${unavailable?`<div class="mp-text-status" role="status">${mobileV36Escape(unavailable)}</div>`:`<div class="mp-text-color-fields">${fields}</div>`}
@@ -6141,7 +6208,7 @@ function mobileV36PhotoColors(){const colors=[];try{
  } }catch(e){console.warn('Фото-палитра недоступна',e)}return colors.slice(0,16)}
 function mobileV36ApplyColor(c,final=true){if(!/^#[0-9a-fA-F]{6}$/.test(c)){if(final)mobileTextCancelGesture();return}const e=active();if(!e||rejectMobileTextTarget(mobileV36State.fxColor||mobileV36State.colorTab==='gradient'?'fill':'textColor'))return;
  if(!mobileV36State.fxColor&&mobileV36State.colorTab!=='gradient'&&styleInlineSelection('textColor',c,final)){mobileV36State.hue=mobileV36HexToHSV(c)[0];return}
- if(mobileV36State.fxColor){const target=mobileV36State.fxColor,{effect,legacyKey}=effectColorBinding(target.type,target.key);if(effect)effect[target.key]=c;else if(legacyKey)e[legacyKey]=c;else return;if(final)mobileV36Commit();else{paint();saveSoon()}}
+ if(mobileV36State.fxColor){const target=mobileV36State.fxColor,{effect,legacyKey}=effectColorBinding(target.type,target.key,target.id);if(effect)effect[target.key]=c;else if(legacyKey)e[legacyKey]=c;else return;if(final)mobileV36CommitEffect('Цвет эффекта');else{paint();saveSoon()}}
  else if(mobileV36State.sub==='colorEdit'&&mobileV36State.colorTab==='gradient'){
   e.fillType='gradient';e.gradientMode=e.gradientMode||'linear';e.gradientStops||=[{pos:0,color:e.fill||c,alpha:100},{pos:100,color:e.fill2||c,alpha:100}];gradientStops(e);gradientGeometry(e);
   const at=Math.min(e.gradientStops.length-1,mobileV36State.activeStop);e.gradientStops[at].color=normalizeHex(c);if(at===0)e.fill=c;if(at===e.gradientStops.length-1)e.fill2=c;
@@ -6156,18 +6223,73 @@ function mobileV37AlignIcon(kind){
  return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">${offsets.map((x,i)=>`<path d="M${x} ${6+i*6}h${lens[i]}"/>`).join('')}</svg>`;
 }
 function mobileV37LayerIcon(kind){
- const align={forward:'M12 19V5m-5 5 5-5 5 5',backward:'M12 5v14m-5-5 5 5 5-5',front:'M12 19V5m-5 5 5-5 5 5',back:'M12 5v14m-5-5 5 5 5-5',atop:'M4 4h16M12 20V7m-5 5 5-5 5 5',abottom:'M4 20h16M12 4v13m-5-5 5 5 5-5',aleft:'M4 4v16M20 12H7m5-5-5 5 5 5',aright:'M20 4v16M4 12h13m-5-5 5 5-5 5',ahcenter:'M12 2v20M4 12h16',avcenter:'M2 12h20M12 4v16'}[kind]||'M5 12h14';
- return `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="8" height="6" rx="1" opacity=".36"/><rect x="12" y="14" width="8" height="6" rx="1" opacity=".36"/><path d="${align}"/></svg>`;
+ const paths={
+  forward:'M12 19V5 M7 10l5-5 5 5',backward:'M12 5v14 M7 14l5 5 5-5',
+  front:'M5 3h14 M12 21V7 M7 12l5-5 5 5',back:'M5 21h14 M12 3v14 M7 12l5 5 5-5',
+  aleft:'M4 4v16 M4 7h12v4H4 M4 14h8v4H4',aright:'M20 4v16 M20 7H8v4h12 M20 14h-8v4h8',
+  atop:'M4 4h16 M7 4v12h4V4 M14 4v8h4V4',abottom:'M4 20h16 M7 20V8h4v12 M14 20v-8h4v8',
+  ahcenter:'M12 3v18 M5 7h14v4H5z M8 14h8v4H8z',avcenter:'M3 12h18 M7 5h4v14H7z M14 8h4v8h-4z',
+ };
+ return `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${paths[kind]}"/></svg>`;
 }
-function mobileV36PositionPanel(){const e=active(),text=e.type==='text';const tab=mobileV36State.tab;
- let content='';const a=(name,id,icon)=>`<button class="mp-choice mp-arrange" data-mp-arrange="${id}">${mobileV37LayerIcon(id)}<span>${name}</span></button>`;
- if(tab==='sort')content=`<div class="mp-grid two">${a('Вперёд','forward','↑')}${a('Назад','backward','↓')}${a('Спереди','front','⇈')}${a('Сзади','back','⇊')}</div>`;
- if(tab==='align')content=`<div class="mp-grid two">${a('По верхнему краю','atop','↟')}${a('По левому краю','aleft','⇤')}${a('По центру (гориз.)','ahcenter','↔')}${a('По центру (вертик.)','avcenter','↕')}${a('По нижнему краю','abottom','↡')}${a('По правому краю','aright','⇥')}</div>`;
- if(tab==='advanced')content=`<div class="mp-grid three">${[['Ширина','w',e.w],['Высота','h',e.h],['Соотношение','aspect',0],['X','x',e.x],['Y','y',e.y],['Повернуть, °','rotation',e.rotation||0]].map(([label,key,val])=>key==='aspect'?`<label class="mp-field">Соотношение<button class="mp-ratio ${mobileV36State.aspectLock?'active':''}" data-mp-action="aspect">${mobileV36State.aspectLock?'🔒':'🔓'}</button></label>`:`<label class="mp-field">${label}<input type="number" data-mp-key="${key}" value="${Math.round(val*10)/10}" step="1" inputmode="decimal"></label>`).join('')}</div>`;
- const tabs=mobileV36Tabs([['sort',text?'Слой':'Сортировка'],['align','Выровнять'],['advanced',text?'Геометрия':'Расширенные']],tab);
- if(!text)return mobileV36Sheet('Расположение',`${content}${tabs}`);
- const opacity=tab==='sort'?mobileV36NumericRow('Прозрачность, %','opacity',e.opacity??100,[0,100,1]):'';
- return mobileV36Sheet('Слой',`${tabs}${opacity}${content}`,{className:'mp-position-sheet mp-text-compact'});
+const mobileLayerOrderLabels={forward:'Вперёд',backward:'Назад',front:'Спереди',back:'Сзади'};
+const mobileLayerOrderNames={forward:'На один уровень вперёд',backward:'На один уровень назад',front:'На передний план',back:'На задний план'};
+const mobileLayerAlignLabels={atop:'По верхнему краю',aleft:'По левому краю',ahcenter:'По центру (гориз.)',avcenter:'По центру (вертик.)',abottom:'По нижнему краю',aright:'По правому краю'};
+function mobileV36PositionSelection(){
+ return JSON.stringify([app.selectedIds,app.selectedGroupIds||[]]);
+}
+function mobileV36PositionPlan(){
+ const elements=picked(),groupIds=app.selectedGroupIds||[];
+ if(!elements.length||elements.some(element=>isLayerLocked(element)))
+  return {reason:elements.length?'Выбор содержит заблокированные слои':'Выберите слой или непустую группу'};
+ const box=selectionBounds(elements),{width,height}=app.doc;
+ const offsets={aleft:[-box.x,0],aright:[width-box.right,0],ahcenter:[(width-box.x-box.right)/2,0],
+  atop:[0,-box.y],abottom:[0,height-box.bottom],avcenter:[0,(height-box.y-box.bottom)/2]};
+ const group=groupIds.length===1?groupInfo(groupIds[0]):null;
+ const singleGroup=group&&groupMembers(group.id).length===elements.length&&elements.every(e=>groupAncestor(e.groupId,group.id));
+ const source=singleGroup?{id:group.id,groupId:group.id,parent:group.parentId||null}:
+  !groupIds.length&&elements.length===1?{id:elements[0].id,groupId:null,parent:elements[0].groupId||null}:null;
+ if(!source)return {elements,offsets};
+ // Use the same bottom-to-top sibling blocks as the layer tree and drag reorder.
+ const siblings=layerRows().filter(row=>row.score>=0&&(row.kind==='group'?(groupInfo(row.groupId).parentId||null)===(source.parent):(row.e.groupId||null)===(source.parent)));
+ const index=siblings.findIndex(row=>(row.groupId||row.id)===source.id);
+ const order=index<0?{}:{
+  forward:siblings[index-1],backward:siblings[index+1],
+  front:index>0?siblings[0]:null,back:index<siblings.length-1?siblings.at(-1):null,
+ };
+ return {elements,offsets,source,order};
+}
+function mobileV36ArrangeUnavailable(plan,key){
+ if(plan.reason)return plan.reason;
+ if(key in mobileLayerOrderLabels)return !plan.source?'Выберите один слой или целую группу':
+  !plan.order[key]?(key==='forward'||key==='front'?'Уже вверху своего уровня':'Уже внизу своего уровня'):'';
+ return plan.offsets[key].every(delta=>Math.abs(delta)<1e-6)?'Уже выровнено':'';
+}
+function mobileV36SyncPositionControls(){
+ const buttons=mobileV36.querySelectorAll('[data-mp-arrange]');
+ if(!buttons.length)return;
+ const plan=mobileV36PositionPlan();
+ for(const button of buttons){
+  const key=button.dataset.mpArrange,reason=mobileV36ArrangeUnavailable(plan,key);
+  button.disabled=!!reason;
+  button.title=reason||button.getAttribute('aria-label');
+ }
+}
+function mobileV36PositionPanel(){
+ const e=active(),text=e?.type==='text',tab=mobileV36State.tab;
+ const buttons=labels=>Object.entries(labels).map(([key,label])=>
+  `<button type="button" class="mp-choice mp-arrange" data-mp-arrange="${key}" aria-label="${mobileLayerOrderNames[key]||label}">${mobileV37LayerIcon(key)}<span>${label}</span></button>`).join('');
+ const tabs=mobileV36Tabs([['sort',text?'Слой':'Сортировка'],['align','Выровнять'],...(e?[['advanced','Геометрия']]:[])],tab);
+ let content='';
+ if(tab==='sort'){
+  const opacity=text?mobileV36NumericRow('Прозрачность, %','opacity',e.opacity??100,[0,100,1]):'';
+  content=`${opacity}<div class="mp-grid mp-order-actions">${buttons(mobileLayerOrderLabels)}</div>`;
+ }
+ if(tab==='align')content=`<div class="mp-grid two">${buttons(mobileLayerAlignLabels)}</div>`;
+ if(tab==='advanced'&&e)content=`<div class="mp-grid three">${[['Ширина','w',e.w],['Высота','h',e.h],['Соотношение','aspect',0],['X','x',e.x],['Y','y',e.y],['Повернуть, °','rotation',e.rotation||0]].map(([label,key,val])=>key==='aspect'?`<label class="mp-field">Соотношение<button class="mp-ratio ${mobileV36State.aspectLock?'active':''}" data-mp-action="aspect">${mobileV36State.aspectLock?'🔒':'🔓'}</button></label>`:`<label class="mp-field">${label}<input type="number" data-mp-key="${key}" value="${Math.round(val*10)/10}" step="1" inputmode="decimal"></label>`).join('')}</div>`;
+ const status=mobileV36PositionPlan().reason;
+ return mobileV36Sheet(text?'Слой':e?'Расположение':app.selectedGroupIds?.length===1?'Группа':'Слои',
+  `${tabs}${status?`<p class="mp-text-status">${status}</p>`:''}${content}`,{className:'mp-position-sheet mp-text-compact'});
 }
 function mobileV36SyncTypographyControls(){
  if(mobileV36State.tool!=='format')return;
@@ -6429,31 +6551,105 @@ function mobileV36PaintMenu(){
  ${Object.entries(mobileTextPaintTitles).map(([key,label])=>`<button type="button" class="mp-choice" data-mp-format="${key}" aria-label="${label}${key==='underlineSettings'?' · настройки':''}" aria-haspopup="dialog">${{underlineSettings:'Подчёркивание',strokeSettings:'Обводка',fillSettings:'Прозр. заливки'}[key]}</button>`).join('')}
  </div>`,{className:'mp-text-compact mp-paint-menu'});
 }
-function mobileV36NumericRow(label,key,value,[min,max,step],[numberMin,numberMax]=[min,max]){
+function mobileV36NumericRow(label,key,value,[min,max,step],[numberMin,numberMax]=[min,max],resetLabel=''){
  const id='mp-number-'+key;
  return `<div class="mp-text-number">
   <label for="${id}">${label}</label>${mobileV36Slider(key,value,min,max,step,label)}
   <input id="${id}" type="number" data-mp-key="${key}" value="${value}" ${mobileRangeKeys.has(key)?mobileV36StyleAttributes(key):''} ${Number.isFinite(numberMin)?'min="'+numberMin+'"':''} ${Number.isFinite(numberMax)?'max="'+numberMax+'"':''} step="any" inputmode="decimal" enterkeyhint="done">
+  ${resetLabel?`<button type="button" class="mp-spacing-reset" data-mp-spacing-reset="${key}" title="${resetLabel}" aria-label="${resetLabel}">${uiIcon('reset')}</button>`:''}
  </div>`;
+}
+function mobileV36ResetSpacing(key){
+ const target=mobileTextTarget(key),e=active(),value=resolveRichTextStyle({})[key];
+ if(target.kind==='unsupported'||mobileTextStyle(e,target,key).value===value)return;
+ if(target.kind==='range')mobileV36Property(key,value,true);
+ else{
+  const next={...e,[key]:value};
+  if(next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
+  commitMobileTextFormat(e,next,null,key==='lineHeight'?'Сброс интерлиньяжа':'Сброс трекинга');
+ }
+ mobileV36SyncTextStyle();
 }
 function mobileV36SpacingPanel(){
  const e=active();
  return mobileV36Sheet('Интервалы',`
- ${mobileV36NumericRow('Трекинг, px','letterSpacing',mobileV36StyleValue('letterSpacing'),[-20,100,.5],[-Infinity,Infinity])}
- ${mobileV36NumericRow('Интерлиньяж','lineHeight',mobileV36StyleValue('lineHeight'),[.5,4,.05],[.05,Infinity])}
+ ${mobileV36NumericRow('Трекинг, px','letterSpacing',mobileV36StyleValue('letterSpacing'),[-20,100,.5],[-Infinity,Infinity],'Сбросить трекинг')}
+ ${mobileV36NumericRow('Интерлиньяж','lineHeight',mobileV36StyleValue('lineHeight'),[.5,4,.05],[.05,Infinity],'Сбросить интерлиньяж')}
  <div class="mp-text-number mp-vertical-align"><span>По высоте<small>Весь слой</small></span><div class="mp-format-align" role="group" aria-label="Выравнивание по высоте · Весь слой">
  ${[['top','По верху'],['middle','По центру'],['bottom','По низу']].map(([id,label])=>`<button class="mp-choice mp-format-btn" data-mp-valign="${id}" title="${label}" aria-label="${label}" aria-pressed="${(e.verticalAlign||'top')===id}"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="1" stroke-opacity=".4"/><path d="${id==='top'?'M7 7h10M7 10h10':id==='middle'?'M7 10h10M7 13h10':'M7 14h10M7 17h10'}"/></svg></button>`).join('')}
  </div></div>`,{className:'mp-spacing-sheet mp-text-compact'});
 }
 function mobileV36StrokePanel(){const e=active(),color=e.type==='text'?mobileV36StyleValue('stroke'):e.stroke||'#7857de';return mobileV36Sheet('Обводка',`<div class="mp-field">Толщина обводки<div class="mp-line">${mobileV36Slider('strokeWidth',mobileV36StyleValue('strokeWidth'),0,120,1)}<input type="number" data-mp-key="strokeWidth" value="${mobileV36StyleValue('strokeWidth')}" ${mobileV36StyleAttributes('strokeWidth')} min="0" max="120"></div></div><div class="mp-subtitle">Цвет обводки</div><div class="mp-swatches" style="flex-wrap:wrap;overflow:visible">${[color,...mobileV36Colors()].filter((v,i,a)=>v&&a.indexOf(v)===i).slice(0,18).map(c=>`<button class="mp-swatch ${c===color?'active':''}" data-mp-stroke-color="${c}" style="background:${c}" title="${c}"></button>`).join('')}</div>`)}
-function mobileV36EffectPanel(){const e=regionEffectsRequest()?{}:active(),effects=e.effects||[];const defs=[['none','Без эффекта','Ag'],['dropShadow','Падающая тень','Ag'],['innerShadow','Внутренняя тень','Ag'],['glow','Подсветка / Неон','Ag'],['outline','Контур','Ag'],['background','Фон-плашка','Ag'],['curve','Изогнуть по дуге','Ag'],['gaussianBlur','По Гауссу','Ag'],['pixelate','Пикселизация','▦'],['noise','Шум','Ag'],['textGlow','Подсветка','Ag'],['textEcho','Эхо','Ag'],['textBackdrop','Фон','Ag'],['textCombine','Совмещение','Ag'],['textGlitch','Искажение','Ag']].filter(([id])=>textFxAllowed(id,e)&&(e.type!=='text'||id!=='outline')&&(!regionEffectsRequest()||FX_TYPES[id]));
- const selected=mobileV36State.effectId;const cards=defs.map(([id,label,icon])=>{const on=id==='outline'?Number(e.strokeWidth)>0:id==='glow'?!!e.mobileGlow:id==='background'?!!e.mobileBackground:id==='curve'?!!e.mobileArcRadius:id==='none'?!effects.length&&!e.mobileGlow&&!e.mobileBackground&&!e.mobileArcRadius&&(e.type==='text'||!e.strokeWidth):effects.some(x=>x.type===id&&x.enabled!==false);return `<button class="mp-effect-tile ${on?'active':''}" data-mp-effect="${id}" aria-pressed="${on}"><strong class="${TEXT_FX_IDS.has(id)?`tf43-preview tf43-${id}`:``}">${icon}</strong>${mobileV36Escape(label)}${on?'<span class="mp-config">☷</span>':''}</button>`}).join('');
- let controls='';
- if(mobileV36State.editEffect&&selected){
-  const fx=effects.find(x=>x.type===selected);let defs2=TEXT_FX_IDS.has(selected)?(selected==='textGlow'?[['Интенсивность','intensity',0,100,1],['Радиус','radius',1,90,1]]:selected==='textEcho'?[['Направление','direction',-180,180,1],['Смещение','distance',0,160,1]]:selected==='textBackdrop'?[['Округлость','roundness',0,100,1],['Распространение','spread',0,90,1],['Непрозрачность','opacity',0,100,1]]:selected==='textCombine'?[['Толщина','thickness',0,30,1],['Смещение','distance',0,100,1],['Направление','direction',-180,180,1]]:[['Направление','direction',-180,180,1],['Смещение','distance',0,100,1]]):selected==='pixelate'?[['Размер блока, px','blockSize',2,160,1]]:selected==='curve'?[['Радиус изгиба','mobileArcRadius',-250,250,1]]:selected==='outline'?[['Толщина контура','strokeWidth',0,70,1]]:selected==='glow'?[['Свечение, px','mobileGlow',0,90,1]]:selected==='background'?[['Отступ, px','mobileBackgroundPadding',0,80,1]]:selected==='noise'?[['Плотность','density',0,100,1],['Сила','amount',0,100,1]]:selected==='dropShadow'||selected==='innerShadow'?[['Смещение X','x',-200,200,1],['Смещение Y','y',-200,200,1],['Размытие','radius',0,150,1],['Непрозрачность','opacity',0,100,1]]:[['Размытие, px','radius',0,300,1]];
-  controls=`<div class="mp-divider"></div><div class="mp-subtitle">Настройки · ${mobileV36Escape(defs.find(x=>x[0]===selected)?.[1]||selected)}</div>${defs2.map(([label,k,min,max,step])=>{const value=fx?.[k]??e[k]??0;return `<div class="${e.type==='text'?'mp-text-number':'mp-field'}"><label for="mp-fx-${k}">${label}</label><div class="mp-line"><input type="range" aria-label="${label}, ползунок" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}"><input id="mp-fx-${k}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" data-mp-effect-key="${k}" data-mp-effect-type="${selected}" inputmode="decimal" enterkeyhint="done"></div></div>`}).join('')}${selected==='pixelate'?'':`<div class="mp-line"><label>Цвет эффекта <input data-mp-effect-color="${selected}" data-mp-color-key="color" type="color" value="${effectColorBinding(selected,'color').color||'#7857de'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color" aria-label="Редактор цвета эффекта">◉ HEX</button></label>${selected==='textGlitch'?`<label>Второй цвет <input data-mp-effect-color="${selected}" data-mp-color-key="color2" type="color" value="${fx?.color2||'#00f0f0'}"><button type="button" class="mp-fx-picker" data-mp-fx-pick="${selected}" data-mp-color-key="color2" aria-label="Редактор второго цвета эффекта">◉ HEX</button></label>`:''}</div>`}`;
+const mobileEffectOptions=[
+ ['none','Без эффекта','Без эффекта'],['dropShadow','Падающая тень','Тень'],['innerShadow','Внутренняя тень','Внутр. тень'],
+ ['glow','Подсветка / Неон','Неон'],['outline','Контур','Контур'],['background','Фон-плашка','Плашка'],
+ ['curve','Изогнуть по дуге','Дуга'],['gaussianBlur','Размытие по Гауссу','Гаусс'],
+ ['pixelate','Пикселизация','Пиксели'],['noise','Шум','Шум'],['textGlow','Подсветка текста','Подсветка'],
+ ['textEcho','Эхо','Эхо'],['textBackdrop','Фон текста','Фон'],['textCombine','Совмещение','Совмещение'],['textGlitch','Искажение','Искажение'],
+];
+const mobileLegacyEffects={glow:'mobileGlow',outline:'strokeWidth',background:'mobileBackground',curve:'mobileArcRadius'};
+const mobileEffectParameters={
+ textGlow:[['Интенсивность','intensity',0,100],['Радиус','radius',1,90]],
+ textBackdrop:[['Округлость','roundness',0,100],['Распространение','spread',0,90],['Непрозрачность','opacity',0,100]],
+ textCombine:[['Толщина','thickness',0,30],['Смещение','distance',0,100],['Направление','direction',-180,180]],
+ outline:[['Толщина контура','strokeWidth',0,70]],
+ glow:[['Свечение, px','mobileGlow',0,90]],
+ background:[['Отступ, px','mobileBackgroundPadding',0,80]],
+ curve:[['Радиус изгиба','mobileArcRadius',-250,250]],
+ pixelate:[['Размер блока, px','blockSize',2,160]],
+ noise:[['Плотность','density',0,100],['Сила','amount',0,100]],
+};
+const mobileShadowParameters=[['Смещение X','x',-200,200],['Смещение Y','y',-200,200],['Размытие','radius',0,150],['Непрозрачность','opacity',0,100]];
+const mobileEchoParameters=[['Направление','direction',-180,180],['Смещение','distance',0,160]];
+function mobileV36EffectActive(e,type){
+ return type in mobileLegacyEffects?Boolean(e[mobileLegacyEffects[type]]):e.effects?.some(f=>f.type===type&&f.enabled!==false);
+}
+function mobileV36RefreshEffectHistory(){
+ const s=mobileV36State;
+ if(s.fxColor){
+  const {type,key,id}=s.fxColor,e=active(),{effect}=effectColorBinding(type,key,id);
+  if(!e||!mobileV36EffectActive(e,type)||id&&effect?.id!==id){
+   s.sub='';s.fxColor=null;
+  }else mobileV36InitColor();
  }
- return mobileV36Sheet('Эффекты',`<div class="mp-text-status">Весь слой</div><div class="mp-tile-scroll">${cards}</div>${controls}`,e.type==='text'?{className:'mp-text-compact mp-text-effects'}:{})}
+ mobileV36Render();
+}
+function mobileV36EffectPanel(){
+ const request=regionEffectsRequest(),e=request?{}:active(),s=mobileV36State;
+ const options=mobileEffectOptions.filter(([type])=>textFxAllowed(type,e)&&(e.type!=='text'||type!=='outline')&&(!request||FX_TYPES[type]));
+ const scope=request||e.isFxRegion?'Область выделения':'Весь слой';
+ const selected=options.find(([type])=>type===s.effectId);
+ if(s.sub==='effectSettings'&&selected&&mobileV36EffectActive(e,s.effectId)){
+  const [type,title]=selected;
+  const fx=(e.effects||[]).find(f=>f.type===type&&f.enabled!==false);
+  const rows=mobileEffectParameters[type]||(type==='innerShadow'||type==='dropShadow'?mobileShadowParameters:TEXT_FX_IDS.has(type)?mobileEchoParameters:[['Размытие, px','radius',0,300]]);
+  const fields=rows.map(([label,key,min,max])=>{
+   const id='mp-fx-'+key, value=fx?.[key]??e[key]??0;
+   const attrs=`min="${min}" max="${max}" step="1" value="${value}" data-mp-effect-type="${type}" data-mp-effect-key="${key}"`;
+   return `<div class="mp-text-number"><label for="${id}">${label}</label><input type="range" aria-label="${label}, ползунок" ${attrs}><input id="${id}" type="number" ${attrs} inputmode="decimal" enterkeyhint="done"></div>`;
+  }).join('');
+  const colors=(type==='pixelate'?[]:type==='textGlitch'?['color','color2']:['color']).map((key,i)=>{
+   const label=i?'Второй цвет':'Цвет эффекта';
+   const color=effectColorBinding(type,key,fx?.id).color||(i?'#00f0f0':'#7857de');
+   return `<div class="mp-effect-color-row"><span>${label}</span>
+    <input aria-label="${label}" data-mp-effect-color="${type}" data-mp-effect-id="${fx?.id||''}" data-mp-color-key="${key}" type="color" value="${color}">
+    <button type="button" class="mp-fx-picker" data-mp-fx-pick="${type}" data-mp-effect-id="${fx?.id||''}" data-mp-color-key="${key}" aria-label="Редактор цвета эффекта · ${label}">HEX</button>
+   </div>`;
+  }).join('');
+  return mobileV36Sheet(title,`<p class="mp-text-status">${scope}</p>${fields}${colors}`,{back:true,className:'mp-text-compact mp-effect-settings'});
+ }
+ s.sub='';
+ const hasEffect=!!(e.effects?.length||e.mobileGlow||e.mobileBackground||e.mobileArcRadius||e.type!=='text'&&e.strokeWidth);
+ const cards=options.map(([type,title,label])=>{
+  const on=type==='none'?!hasEffect:!!mobileV36EffectActive(e,type);
+  const disabled=isLayerLocked(e)||type==='none'&&on||!on&&type in FX_TYPES&&!TEXT_FX_IDS.has(type)&&e.effects?.length>=16;
+  return `<button type="button" class="mp-effect-choice" data-mp-effect="${type}" aria-pressed="${on}" aria-label="${title}${type==='none'?'':on?' · Настроить':' · Применить и настроить'}" ${disabled?'disabled':''}>
+   <span class="mp-effect-example ${TEXT_FX_IDS.has(type)?`tf43-preview tf43-${type}`:''}" aria-hidden="true">${type==='pixelate'?uiIcon('grid'):'Ag'}</span>
+   <span>${label}</span>${on&&type!=='none'?'<span class="mp-effect-active" aria-hidden="true">✓</span>':''}
+  </button>`;
+ }).join('');
+ return mobileV36Sheet('Эффекты',`<p class="mp-text-status">${scope}</p><div class="mp-effect-grid">${cards}</div>`,{className:'mp-text-compact mp-effect-catalog'});
+}
 function mobileV36MorePanel(){
  const e=active(),elements=picked(),a=(id,label)=>`<button data-mp-more="${id}" class="mp-btn-wide">${label}</button>`;
  // Batch actions use the full selection; single-layer controls need active().
@@ -6489,7 +6685,7 @@ function mobileTextExcerpt(source,{start,end}){
 function mobileV36Render(){
  if(mobileTextGesture)return;
  mobileV36FinishInteraction();
- const s=mobileV36State,t=s.tool,e=(t==='effects'&&regionEffectsRequest()?{}:active())||(t==='more'?picked()[0]:null);
+ const s=mobileV36State,t=s.tool,e=(t==='effects'&&regionEffectsRequest()?{}:active())||(['more','position'].includes(t)?picked()[0]:null);
  if(!mobileV36Small()||!t||!app.doc||!e){mobileV36Close();return}
  const listSettings=t==='format'&&s.sub==='listSettings';
  if(listSettings&&mobileV36.querySelector('.mp-list-settings')){mobileListSettings.sync();return}
@@ -6500,7 +6696,7 @@ function mobileV36Render(){
  if(!s.expanded){
   if(t==='font')content=mobileV36Pill(`<div class="mp-horizontal">${fontFamilies().map(mobileV36FontChip).join('')}</div><button class="mp-expand" data-mp-action="expand" aria-label="Шрифты и начертания">↑</button>`);
   if(t==='size'||t==='opacity'){const key=t==='size'?'fontSize':'opacity',val=(t==='size'?mobileV36StyleValue(key):e[key])??100,min=t==='size'?1:0,max=t==='size'?100000:100;content=mobileV36Pill(`${mobileV36Slider(key,val,min,max,1)}${mobileV36Stepper(key,val,min,max,1)}${t==='size'&&e.type==='text'&&supportsHorizontalTextLayout(e)?`<label class="mp-auto-font" title="Подбирать размер под рамку"><input type="checkbox" aria-label="Автоподбор размера · Весь слой" data-text-auto-font ${e.autoFontSize?'checked':''}><span>Авто<small>Слой</small></span></label>`:''}`)}
-  if(t==='color')content=mobileV36Pill(`<button class="mp-circle mp-rainbow" data-mp-action="colorEdit" aria-label="Свой цвет или градиент">＋</button><div class="mp-swatches">${mobileV36Colors().map(mobileV36Swatch).join('')}</div><button class="mp-expand" data-mp-action="expand" aria-label="Палитра">↑</button>`);
+  if(t==='color')content=mobileV36Pill(`<button class="mp-circle mp-rainbow" data-mp-action="colorEdit" aria-label="Свой цвет или градиент"><span class="mp-color-glyph">${uiIcon('plus')}</span></button><div class="mp-swatches">${mobileV36Colors().map(color=>mobileV36Swatch(color,true)).join('')}</div><button class="mp-expand" data-mp-action="expand" aria-label="Палитра"><span class="mp-color-glyph">${uiIcon('chevronDown')}</span></button>`,'mp-color-pill');
  }else{
   if(t==='font')content=mobileV36FontPanel();
   else if(t==='color')content=mobileV36ColorPanel();
@@ -6525,8 +6721,8 @@ function mobileV36Render(){
  // or a different category (a different list of rows).
  const previousFontList=mobileV36.querySelector('.mp-font-scroll');
  const previousFontScroll=previousFontList?{scope:previousFontList.dataset.mpFontScope,top:previousFontList.scrollTop}:null;
- const priorEffectList=t==='effects'&&mobileV36.querySelector('.mp-tile-scroll');
- if(priorEffectList)s.effectScroll=priorEffectList.scrollLeft;
+ const priorEffectList=t==='effects'&&mobileV36.querySelector('.mp-effect-catalog .mp-body');
+ if(priorEffectList)s.effectScroll=priorEffectList.scrollTop;
  const previousTypography=mobileV36.querySelector('.mp-typography-panel .mp-body');
  const typographyScroll=previousTypography?.scrollTop;
  const typographyGroupsOpen=previousTypography?.querySelector('details').open;
@@ -6543,8 +6739,9 @@ function mobileV36Render(){
    mobileV36.querySelector('.mp-body,.mp-pill')?.prepend(status);
   }
  }
- const effectList=t==='effects'&&mobileV36.querySelector('.mp-tile-scroll');
- if(effectList)effectList.scrollLeft=s.effectScroll;
+ const effectList=t==='effects'&&mobileV36.querySelector('.mp-effect-catalog .mp-body');
+ if(effectList)effectList.scrollTop=s.effectScroll;
+ if(t==='position')mobileV36SyncPositionControls();
  const nextTypography=mobileV36.querySelector('.mp-typography-panel .mp-body');
  if(previousTypography&&nextTypography){
   nextTypography.querySelector('details').open=typographyGroupsOpen;nextTypography.scrollTop=typographyScroll;
@@ -6564,7 +6761,36 @@ function mobileV36AlignText(key,value){
  if(key==='textAlign'&&next.autoFontSize)autoFitTextFont(next,{preserveSizeBase:true});
  commitMobileTextFormat(e,next,null,'Выравнивание текста');
 }
-function mobileV36AlignLayer(where){const es=picked().filter(x=>!isLayerLocked(x));for(const e of es){const d=app.doc;if(where==='aleft')e.x=0;if(where==='aright')e.x=d.width-e.w;if(where==='ahcenter')e.x=(d.width-e.w)/2;if(where==='atop')e.y=0;if(where==='abottom')e.y=d.height-e.h;if(where==='avcenter')e.y=(d.height-e.h)/2;}mobileV36Commit();mobileV36Render()}
+function mobileV36ArrangeLayer(key){
+ const owner=mobileTextPanelOwner;
+ if(!owner||owner.doc!==app.doc||owner.slide!==app.doc.activeSlideIndex||
+    mobileV36State.positionSelection!==mobileV36PositionSelection())return;
+ const plan=mobileV36PositionPlan();
+ if(mobileV36ArrangeUnavailable(plan,key))return;
+ if(key in mobileLayerOrderLabels){
+  const target=plan.order[key],towardsFront=key==='forward'||key==='front';
+  // Inline history owns one text element. Publish any pending text before
+  // recording a change to the order of the document's element array.
+  if(app.editingId){
+   closeInlineText();
+   mobileTextPanelOwner={...owner,session:null,revision:0};
+  }
+  rememberLayerSelection();
+  reorderLayer(plan.source.id,target.groupId||target.id,towardsFront?'before':'after',plan.source.groupId,target.groupId);
+ }else{
+  const [dx,dy]=plan.offsets[key], label='Выравнивание слоя';
+  if(app.inlineSession&&plan.elements.length===1){
+   const [e]=plan.elements;
+   commitMobileTextFormat(e,{...e,x:e.x+dx,y:e.y+dy},null,label);
+  }else{
+   rememberLayerSelection();
+   for(const e of plan.elements){e.x+=dx;e.y+=dy}
+   commit(label);
+   refreshLayers();
+  }
+ }
+ mobileV36SyncPositionControls();
+}
 function mobileV36Format(key){const e=active();if(!e||rejectMobileTextTarget(key))return;
  if(mobileTextPaintTitles[key]){
   pauseInlineTextInput();
@@ -6605,19 +6831,46 @@ function mobileV36Format(key){const e=active();if(!e||rejectMobileTextTarget(key
   mobileV36SyncTextStyle();
  }
 }
+function mobileV36CommitEffect(label){
+ if(app.inlineSession){
+  const session=app.inlineSession,e=active();
+  if(!e||JSON.stringify(session.states[session.index].element)===JSON.stringify(e))return;
+  session.formatted=true;
+  commit(label);saveSoon();
+ }else{
+  rememberLayerSelection();commit(label);
+ }
+}
 function mobileV36ApplyEffect(type){
- if(regionEffectsRequest()){if(!FX_TYPES[type])return;fxAdd(type);mobileV36Open('effects',true);mobileV36State.effectId=type;mobileV36Render();return}
- const e=active();if(!e)return;
- const s=mobileV36State,found=(e.effects||[]).find(x=>x.type===type&&x.enabled!==false);
- if(s.effectId===type&&s.editEffect===false){s.editEffect=true;mobileV36Render();return}
- if(type==='none'){e.effects=[];e.mobileGlow=0;e.mobileBackground=false;e.mobileArcRadius=0;if(e.type!=='text')e.strokeWidth=0;}
- else if(type==='glow'){e.mobileGlow=e.mobileGlow||22;e.mobileGlowColor=e.mobileGlowColor||'#7857de'}
- else if(type==='outline'){e.strokeWidth=e.strokeWidth||3;e.stroke=e.stroke||'#7857de'}
- else if(type==='background'){e.mobileBackground=true;e.mobileBackgroundColor=e.mobileBackgroundColor||'#7857de';e.mobileBackgroundPadding=e.mobileBackgroundPadding??8}
- else if(type==='curve'){e.mobileArcRadius=e.mobileArcRadius||65}
- else if(FX_TYPES[type]&&!found){e.effects||=[];if(TEXT_FX_IDS.has(type))e.effects=e.effects.filter(f=>!TEXT_FX_IDS.has(f.type));if(e.effects.length<16){const effect=fxDefault(type);if(app.pixelSelection)effect.maskSrc=app.pixelSelection.mask.toDataURL('image/png');e.effects.push(effect)}}
- s.effectId=type;s.editEffect=false;
- mobileV36Commit();mobileV36Render()
+ if(regionEffectsRequest()){
+  if(!FX_TYPES[type])return;
+  fxAdd(type);mobileV36Open('effects',true);
+ }else{
+  const e=active();
+  if(!e||isLayerLocked(e))return;
+  if(type==='none'){
+   e.effects=[];e.mobileGlow=0;e.mobileBackground=false;e.mobileArcRadius=0;
+   if(e.type!=='text')e.strokeWidth=0;
+   mobileV36CommitEffect('Удаление эффектов');
+  }else if(!mobileV36EffectActive(e,type)){
+   if(type==='glow'){e.mobileGlow=22;e.mobileGlowColor=e.mobileGlowColor||'#7857de'}
+   else if(type==='outline'){e.strokeWidth=3;e.stroke=e.stroke||'#7857de'}
+   else if(type==='background'){e.mobileBackground=true;e.mobileBackgroundColor=e.mobileBackgroundColor||'#7857de';e.mobileBackgroundPadding=e.mobileBackgroundPadding??8}
+   else if(type==='curve')e.mobileArcRadius=65;
+   else if(FX_TYPES[type]){
+    e.effects||=[];
+    if(TEXT_FX_IDS.has(type))e.effects=e.effects.filter(f=>!TEXT_FX_IDS.has(f.type));
+    if(e.effects.length>=16)return;
+    const effect=fxDefault(type);
+    if(app.pixelSelection)effect.maskSrc=app.pixelSelection.mask.toDataURL('image/png');
+    e.effects.push(effect);
+   }
+   mobileV36CommitEffect('Применение эффекта');
+  }
+ }
+ mobileV36State.effectId=type==='none'?null:type;
+ mobileV36State.sub=type==='none'?'':'effectSettings';
+ mobileV36Render();
 }
 // The colour-plane handler updates the actual layer, rather than an independent preview.
 function mobileV36UpdatePlane(ev){const rect=ev.currentTarget.getBoundingClientRect();mobileV36State.sat=clamp((ev.clientX-rect.left)/rect.width,0,1);mobileV36State.value=1-clamp((ev.clientY-rect.top)/rect.height,0,1);
@@ -6649,7 +6902,10 @@ function mobileV36FinishInteraction(ev){
  }
  try{if(interaction.target.hasPointerCapture(interaction.pointerId))interaction.target.releasePointerCapture(interaction.pointerId)}catch{}
  if(interaction.textRange)mobileTextFinishGesture();
- else if(app.doc?.id===interaction.documentId&&interaction.before!==mobileV36InteractionModel())mobileV36Commit();
+ else if(app.doc?.id===interaction.documentId&&interaction.before!==mobileV36InteractionModel()){
+  if(interaction.type==='plane'&&mobileV36State.fxColor)mobileV36CommitEffect('Цвет эффекта');
+  else mobileV36Commit();
+ }
 }
 function mobileV36Nudge(dir,step=1){
  const shift={left:[-1,0],right:[1,0],up:[0,-1],down:[0,1]}[dir],elements=picked().filter(x=>!isLayerLocked(x));
@@ -6696,7 +6952,7 @@ for(const type of ['pointerup','pointercancel','lostpointercapture'])window.addE
 mobileV36.addEventListener('click',ev=>{
  const b=ev.target.closest('button');if(!b||b.dataset.mpNudge)return;
  if(b.closest(':is(.mp-list-settings,.mp-paint-settings) .mp-body'))return;
- if(!['done','back','expand','fontSearch','fontSearchClose','fontImport','colorEdit','aspect'].includes(b.dataset.mpAction)&&rejectMobileTextTarget('panel',['lock','copy'].includes(b.dataset.mpMore)))return;
+ if(!['done','back','expand','fontSearch','fontSearchClose','fontImport','colorEdit','aspect'].includes(b.dataset.mpAction)&&!(b.dataset.mpTab&&mobileV36State.tool==='position')&&rejectMobileTextTarget('panel',['lock','copy'].includes(b.dataset.mpMore)))return;
  mobileV36FinishInteraction();mobileTextFinishGesture();
  if(b.dataset.mpAction){const action=b.dataset.mpAction;
   if(action==='done'){mobileV36Close();resumeInlineTextFromButton();return}
@@ -6755,10 +7011,11 @@ mobileV36.addEventListener('click',ev=>{
  if(b.dataset.mpBaselineShift){mobileV36ApplyTypography('baselineShift',b.dataset.mpBaselineShift);return}
  if(b.dataset.mpTextCase){mobileV36ApplyTypography('textCase',b.dataset.mpTextCase);return}
  if(b.hasAttribute('data-typography-reset')){mobileV36ApplyTypography('typography',b);return}
+ if(b.dataset.mpSpacingReset){mobileV36ResetSpacing(b.dataset.mpSpacingReset);return}
  if(b.dataset.mpValign){mobileV36AlignText('verticalAlign',b.dataset.mpValign);return}
- if(b.dataset.mpArrange){if(b.dataset.mpArrange.startsWith('a'))mobileV36AlignLayer(b.dataset.mpArrange);else{arrangeLayer(b.dataset.mpArrange);mobileV36Render()}return}
- if(b.dataset.mpFxPick){mobileV36State.colorFromPill=false;mobileV36State.fxColor={type:b.dataset.mpFxPick,key:b.dataset.mpColorKey||'color'};mobileV36State.colorTab='solid';mobileV36State.sub='colorEdit';mobileV36State.expanded=true;mobileV36InitColor();mobileV36Render();return}
- if(b.dataset.mpEffect){mobileV36ApplyEffect(b.dataset.mpEffect);return}
+ if(b.dataset.mpArrange){if(!b.disabled)mobileV36ArrangeLayer(b.dataset.mpArrange);return}
+ if(b.dataset.mpFxPick){mobileV36State.colorFromPill=false;mobileV36State.fxColor={type:b.dataset.mpFxPick,key:b.dataset.mpColorKey||'color',id:b.dataset.mpEffectId};mobileV36State.colorTab='solid';mobileV36State.sub='colorEdit';mobileV36State.expanded=true;mobileV36InitColor();mobileV36Render();return}
+ if(b.dataset.mpEffect){if(!b.disabled)mobileV36ApplyEffect(b.dataset.mpEffect);return}
  if(b.dataset.mpMore){const id=b.dataset.mpMore;if(id==='copy')copyLayers();if(id==='paste')pasteLayers();if(id==='delete'){deleteElement();mobileV36Close();return}if(id==='lock')contextAction('lock');if(id==='group'){if(isOneGroup())ungroupSelected();else groupSelected()};if(id==='title'){const e=active();if(e.type==='text'){for(const x of app.doc.elements)if(x.type==='text')x.isTitleLayer=false;e.isTitleLayer=true;syncAutoCardTitle();commit()}}if(id==='saveShape')openSaveSelectedShape();mobileV36Render();return}
  if(b.dataset.mpTextmode){const mode=b.dataset.mpTextmode,e=active();if(mode==='path'&&(!e.textPathPoints||e.textPathPoints.length<2)){e.textPathPoints=[{x:0,y:.72},{x:.25,y:.15},{x:.5,y:.15},{x:.75,y:.72},{x:1,y:.72}];e.textPathOffset=0;e.textPathSide='above'}mobileV36Property('textMode',mode,true);mobileV36Render();return}
  if(b.dataset.mpBlend){mobileV36Property('blendMode',b.dataset.mpBlend,true);mobileV36Render();return}
@@ -6774,8 +7031,14 @@ mobileV36.addEventListener('input',ev=>{
  if(t.dataset.mpSearch){mobileV36State.query=t.value;const pos=t.selectionStart;mobileV36Render();const field=mobileV36.querySelector('[data-mp-search]');if(field){field.focus();field.setSelectionRange(pos,pos)}return}
  if(t.dataset.mpHue){mobileV36State.hue=Number(t.value);const hex=mobileV36HSVToHex(mobileV36State.hue,mobileV36State.sat,mobileV36State.value);mobileV36ApplyColor(hex,false);const plane=mobileV36.querySelector('[data-mp-plane]');if(plane)plane.style.background=`hsl(${mobileV36State.hue} 100% 50%)`;const field=mobileV36.querySelector('[data-mp-hex]');if(field)field.value=hex;const sw=mobileV36.querySelector('[data-mp-preview]');if(sw)sw.style.background=hex;return}
  if(t.dataset.mpHex){if(/^#[0-9a-fA-F]{6}$/.test(t.value)){mobileV36ApplyColor(t.value,false);mobileV36InitColor();}return}
- if(t.dataset.mpEffectColor){const type=t.dataset.mpEffectColor,e=active(),f=e.effects?.find(x=>x.type===type);if(f)f[t.dataset.mpColorKey||'color']=t.value;else if(type==='background')e.mobileBackgroundColor=t.value;else if(type==='glow')e.mobileGlowColor=t.value;else if(type==='outline')e.stroke=t.value;paint();saveSoon();return}
- if(t.dataset.mpEffectKey){const e=active(),f=e.effects?.find(x=>x.type===t.dataset.mpEffectType);if(f)f[t.dataset.mpEffectKey]=Number(t.value);else e[t.dataset.mpEffectKey]=Number(t.value);paint();saveSoon();const sibling=[...mobileV36.querySelectorAll(`[data-mp-effect-key="${t.dataset.mpEffectKey}"]`)].find(x=>x!==t);if(sibling)sibling.value=t.value;return}
+ if(t.dataset.mpEffectColor){
+  const key=t.dataset.mpColorKey||'color';
+  const {e,effect,legacyKey}=effectColorBinding(t.dataset.mpEffectColor,key,t.dataset.mpEffectId);
+  if(effect)effect[key]=t.value;
+  else if(legacyKey)e[legacyKey]=t.value;
+  paint();saveSoon();return;
+ }
+ if(t.dataset.mpEffectKey){const e=active(),f=e.effects?.find(x=>x.type===t.dataset.mpEffectType&&x.enabled!==false);if(f)f[t.dataset.mpEffectKey]=Number(t.value);else e[t.dataset.mpEffectKey]=Number(t.value);paint();saveSoon();const sibling=[...mobileV36.querySelectorAll(`[data-mp-effect-key="${t.dataset.mpEffectKey}"]`)].find(x=>x!==t);if(sibling)sibling.value=t.value;return}
  if(t.dataset.mpKey){const key=t.dataset.mpKey;if(mobileV36State.aspectLock&&['w','h'].includes(key)&&!t.dataset.mpAspectStart){t.dataset.mpAspectStart=JSON.stringify({w:active().w,h:active().h})}const value=t.dataset.mpSizeScale?mobileV36SizeValue(Number(t.value)):t.value;mobileV36Property(key,value,false);t.setAttribute('aria-valuetext',String(value));const sibling=[...mobileV36.querySelectorAll(`[data-mp-key="${key}"]`)].find(x=>x!==t);if(sibling){sibling.value=sibling.dataset.mpSizeScale?mobileV36SizePosition(Number(value)):value;sibling.dataset.styleState='value'}return}
 });
 mobileV36.addEventListener('change',ev=>{const t=ev.target;
@@ -6797,7 +7060,7 @@ mobileV36.addEventListener('change',ev=>{const t=ev.target;
   }else queueMicrotask(mobileV36SyncTextStyle);
   return;
  }
- if(t.dataset.mpEffectColor||t.dataset.mpEffectKey){mobileV36Commit();return}
+ if(t.dataset.mpEffectColor||t.dataset.mpEffectKey){mobileV36CommitEffect('Параметры эффекта');return}
  if(t.dataset.mpKey){const e=active(),k=t.dataset.mpKey;let n=Number(t.value);if(mobileV36State.aspectLock&&['w','h'].includes(k)){let before;try{before=JSON.parse(t.dataset.mpAspectStart)}catch{before=null}if(before){const factor=n/Math.max(1,before[k]),other=k==='w'?'h':'w';e[other]=Math.max(1,Math.round(before[other]*factor*100)/100)}}mobileV36Property(k,t.dataset.mpSizeScale?mobileV36SizeValue(Number(t.value)):t.value,true);if(['w','h','x','y','rotation'].includes(k))requestAnimationFrame(()=>mobileV36Render());else if(mobileV36Text())mobileV36SyncTextStyle();return}
 });
 mobileV36.addEventListener('focusin',ev=>{if(ev.target.dataset){delete ev.target.dataset.mpAborted;delete ev.target.dataset.mpCanceled}});
@@ -6958,6 +7221,7 @@ let mobileImeVisible=false,mobileViewportMaxHeight=innerHeight;
 function mobileTopPanel(){
  const dialog=$$('.dialog:not(.hidden)').at(-1);if(dialog)return ()=>{dialog.classList.add('hidden');if(!$$('.dialog:not(.hidden)').length)$('#shade').classList.add('hidden')};
  if(!$('#documentTabsMenu').classList.contains('hidden'))return ()=>closeDocumentTabsMenu(true);
+ if(mobileEffectColorPopoverOpen())return closeMobileEffectColorPopover;
  if(mobileV36State.tool)return ()=>mobileV36Back();
  if(app.mobileLayersOpen)return ()=>toggleMobileLayers(false);
  if($('#rightPanel').classList.contains('open'))return ()=>hideInspector();
@@ -6976,7 +7240,7 @@ function mobileBack(){mobileTextFinishGesture();
  if(mobileImeVisible){mobileTextPaint.cancel();mobileImeVisible=false;const focused=document.activeElement;if(focused?.matches('input,textarea,select'))focused.blur();return true}
  const panel=mobileTopPanel();
  if(panel&&(!$('#documentTabsMenu').classList.contains('hidden')||$$('.dialog:not(.hidden)').length)){panel();return true}
- if(panel&&(mobileV36State.sub==='colorEdit'||mobileV36State.tool==='paint'||mobileV36State.tool==='format'&&mobileV36State.sub)){panel();return true}
+ if(panel&&(['colorEdit','effectSettings'].includes(mobileV36State.sub)||mobileV36State.tool==='paint'||mobileV36State.tool==='format'&&mobileV36State.sub)){panel();return true}
  if(app.editingId)closeInlineText();
  if(panel){panel();return true}
  if(app.selectedIds.length){setSelected([]);return true}
@@ -7459,7 +7723,7 @@ function unifiedColorControl(el){if(!el||el.dataset.unifiedBound)return;el.datas
   if(fId){const p=$('#fillPopover');if(!p.classList.contains('hidden')&&p.dataset.key==='_effect')closeFillPopover();p.dataset.effectId=fId;p.dataset.effectType='';p.dataset.effectField=k||'color';openFillPopover('_effect',btn);return}
   const mobileType=el.dataset.mpEffectColor;
   if(mobileType){const p=$('#fillPopover');if(!p.classList.contains('hidden')&&p.dataset.key==='_effect')closeFillPopover();
-   p.dataset.effectId=effectColorBinding(mobileType,el.dataset.mpColorKey||'color').effect?.id||'';
+   p.dataset.effectId=effectColorBinding(mobileType,el.dataset.mpColorKey||'color',el.dataset.mpEffectId).effect?.id||'';
    p.dataset.effectType=mobileType;p.dataset.effectField=el.dataset.mpColorKey||'color';openFillPopover('_effect',btn);return}
   if(el.dataset.key){openFillPopover(el.dataset.key,btn);return}
   if(el.id==='rasterFillColor'){openFillPopover('rasterFillColor',btn);return}

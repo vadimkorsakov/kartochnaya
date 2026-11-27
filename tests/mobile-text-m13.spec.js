@@ -120,9 +120,9 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await nativeWord(page,start,end);
   await tool(page,'format');
   await expect(sheet(page).locator('[data-mobile-text-selection]')).toHaveText('Выделено: «Оплатить»');
-  await expect(sheet(page).locator('[data-mp-baseline-mixed]')).toContainText('Mixed');
+  await expect(sheet(page).locator('[data-mp-baseline-mixed]')).toContainText('Разные');
   await expect(sheet(page).locator('[data-mp-baseline-shift][aria-pressed=true]')).toHaveCount(0);
-  await expect(button(page,'case')).toHaveAttribute('aria-description','Mixed');
+  await expect(button(page,'case')).toHaveAttribute('aria-description','Разные');
   await capture(page,info,'format',viewport);
   expect(await element(page)).toEqual(initial);
   await shift(page,'super').tap();
@@ -140,7 +140,7 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
 
   await button(page,'case').tap();
   await expect(sheet(page)).toHaveAccessibleName('Регистр текста');
-  await expect(sheet(page).locator('[data-mp-case-mixed]')).toHaveText('Mixed');
+  await expect(sheet(page).locator('[data-mp-case-mixed]')).toHaveText('Разные');
   await expect(sheet(page).locator('[data-mp-text-case][aria-pressed=true]')).toHaveCount(0);
   await capture(page,info,'case',viewport);
   expect(await element(page)).toEqual(shifted);
@@ -149,7 +149,7 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   expect(upper.textRuns).toEqual([{start,end,style:{baselineShift:'super',textCase:'upper'}},initial.textRuns[1]]);
   await expect(textCase(page,'upper')).toHaveAttribute('aria-pressed','true');
   await undo(page);expect(await element(page)).toEqual(shifted);
-  await expect(sheet(page).locator('[data-mp-case-mixed]')).toHaveText('Mixed');
+  await expect(sheet(page).locator('[data-mp-case-mixed]')).toHaveText('Разные');
   await redo(page);expect(await element(page)).toEqual(upper);
   await page.goBack();
   await expect(sheet(page)).toHaveAccessibleName('Формат');
@@ -176,7 +176,7 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await select(page,0,0);
   await tool(page,'format');
   await expect(sheet(page).locator('[data-mp-format-target]')).toHaveText('Весь слой');
-  await expect(sheet(page).locator('[data-mp-baseline-mixed]')).toContainText('Mixed');
+  await expect(sheet(page).locator('[data-mp-baseline-mixed]')).toContainText('Разные');
   await shift(page,'normal').tap();
   await button(page,'case').tap();
   await textCase(page,'sentence').tap();

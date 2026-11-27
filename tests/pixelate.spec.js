@@ -170,7 +170,7 @@ for (const maskKind of ['polygon', 'grayscale']) test(`existing ${maskKind} regi
   await page.locator('#undoBtn').click(); expect((await exportPNG(page)).image.data.equals(result.data)).toBe(true);
 });
 
-for (const region of [false, true]) test(`mobile first tap, second tap and paired controls (region: ${region})`, async ({ page }) => {
+for (const region of [false, true]) test(`mobile first tap opens paired controls (region: ${region})`, async ({ page }) => {
   await fixture(page);
   if (region) {
     await page.locator('#dockMarquee').click(); const a = await canvasPoint(page, 30, 30), b = await canvasPoint(page, 200, 180);
@@ -185,7 +185,7 @@ for (const region of [false, true]) test(`mobile first tap, second tap and paire
   if (region) await page.locator('#fxFromSelection').click(); else await page.locator('#mobileContext [data-mobile="effects"]').click();
   const tile = page.locator('[data-mp-effect="pixelate"]'); await expect(tile).toBeVisible(); await tile.click();
   const number = page.locator('[data-mp-effect-key="blockSize"][type="number"]'), range = page.locator('[data-mp-effect-key="blockSize"][type="range"]');
-  await expect(number).toHaveCount(0); await tile.click(); await expect(number).toHaveValue('32');
+  await expect(tile).toHaveCount(0); await expect(number).toHaveValue('32');
   await number.fill('51'); await number.press('Tab'); await expect(range).toHaveValue('51');
   await range.fill('18'); await range.dispatchEvent('change'); await expect(number).toHaveValue('18');
   const model = await exportedDocument(page); expect(model.elements.at(-1).effects[0]).toMatchObject({ type: 'pixelate', blockSize: 18 });

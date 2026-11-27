@@ -39,7 +39,7 @@ async function touchPlane(page,{cancel=false}={}){
 for(const viewport of [{width:360,height:640},{width:390,height:844}])test.describe(`M1.2 ${viewport.width}`,()=>{
  test.use({viewport,hasTouch:true,isMobile:true});
  test('Mixed reads the entire range; toggles, selection boundaries and Undo/Redo',async({page},info)=>{
-  await open(page);const original=await element(page);await tool(page,'size');await expect(field(page,'fontSize')).toHaveValue('');await expect(field(page,'fontSize')).toHaveAttribute('placeholder','Смешано');
+  await open(page);const original=await element(page);await tool(page,'size');await expect(field(page,'fontSize')).toHaveValue('');await expect(field(page,'fontSize')).toHaveAttribute('placeholder','Разные');
   await page.screenshot({path:info.outputPath('mixed-size.png')});
   await tool(page,'spacing');for(const k of ['letterSpacing','lineHeight'])await expect(field(page,k)).toHaveValue('');
   await tool(page,'color');await expect(page.locator('[data-mp-swatch].active')).toHaveCount(0);
@@ -99,7 +99,7 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await drag(page,'[type=range][data-mp-key=fontSize]',{finish:false});
   await page.locator('#inlineText').dispatchEvent('compositionstart');await page.locator('#inlineText').dispatchEvent('compositionend');await page.mouse.up();expect(await element(page)).toEqual(before);
   const numeric=field(page,'fontSize');await numeric.fill('43');await numeric.press('Escape');expect(await element(page)).toEqual(before);
-  await numeric.fill('999');await numeric.press('Enter');expect(await element(page)).toEqual(before);
+  await numeric.fill('100001');await numeric.press('Enter');expect(await element(page)).toEqual(before);
   await numeric.fill('');await numeric.press('Enter');expect(await element(page)).toEqual(before);
   await page.locator('#mobileConfirm').tap();await expect(page.locator('#undoBtn')).toBeDisabled();
  });

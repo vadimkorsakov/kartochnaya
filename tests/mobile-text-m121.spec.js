@@ -82,7 +82,9 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await editor(page).dispatchEvent('compositionend');const composed=await element(page);expect(composed.text).toContain('漢');
   await page.keyboard.press('Control+z');expect(await element(page)).toEqual(typed);await page.keyboard.press('Control+y');expect(await element(page)).toEqual(composed);
   // Existing panel was created before this native revision and must refuse.
-  await page.locator('[data-mp-format=italic]').tap();await expect(page.locator('#toast')).toContainText('устарела');expect(await element(page)).toEqual(composed);await expect(editor(page)).not.toBeFocused();
+  const unavailable=page.locator('[data-mp-format=italic]');await expect(unavailable).toBeDisabled();
+   await expect(unavailable).toHaveAttribute('title',/устарела/);await unavailable.dispatchEvent('click');
+   await expect(page.locator('#toast')).toContainText('устарела');expect(await element(page)).toEqual(composed);
  });
  test('Justify spanning paragraphs and stretched spaces keeps exact backward UTF-16 boundaries',async({page})=>{
   await open(page,{text:'До   Оплатить  после много слов для переноса\n\nАбзац 👨‍👩‍👧‍👦 😀 е\u0301 конец'});
@@ -91,7 +93,9 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   expect(await caret(page)).toEqual([start,end,'backward']);await expect(editor(page)).not.toBeFocused();
   expect((await element(page)).textRuns).toEqual([{start,end,style:{fontWeight:'700',fontStyle:'italic'}}]);
   for(const [a,b] of [[original.text.indexOf('👨'),original.text.indexOf('👨')+2],[original.text.indexOf('😀')+1,original.text.indexOf('😀')+2],[original.text.indexOf('е\u0301'),original.text.indexOf('е\u0301')+1]]){
-   await select(page,a,b);await page.locator('[data-mp-format=underline]').tap();await expect(page.locator('#toast')).toContainText('целиком');expect((await element(page)).textRuns).toEqual([{start,end,style:{fontWeight:'700',fontStyle:'italic'}}]);
+   await select(page,a,b);const unavailable=page.locator('[data-mp-format=underline]');await expect(unavailable).toBeDisabled();
+   await expect(unavailable).toHaveAttribute('title',/целиком/);await unavailable.dispatchEvent('click');
+   await expect(page.locator('#toast')).toContainText('целиком');expect((await element(page)).textRuns).toEqual([{start,end,style:{fontWeight:'700',fontStyle:'italic'}}]);
   }
  });
  test('Back and Escape from a numeric gesture never resume text input',async({page})=>{
@@ -140,8 +144,9 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
  test('a synchronous IME input during blur cannot certify pre-blur offsets',async({page})=>{
   await open(page);
   await editor(page).evaluate(e=>e.addEventListener('blur',()=>{e.setRangeText('Я',0,0,'preserve');e.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'Я'}))},{once:true}));
-  await tool(page,'format');const before=await element(page);await page.locator('[data-mp-format=bold]').tap();
-  await expect(page.locator('#toast')).toContainText('Выделение не подтверждено');expect(await element(page)).toEqual(before);await expect(editor(page)).not.toBeFocused();
+  await tool(page,'format');const before=await element(page),bold=page.locator('[data-mp-format=bold]');
+  await expect(bold).toBeDisabled();await expect(bold).toHaveAttribute('title',/Выделение не подтверждено/);
+  await bold.dispatchEvent('click');await expect(page.locator('#toast')).toContainText('Выделение не подтверждено');expect(await element(page)).toEqual(before);await expect(editor(page)).not.toBeFocused();
   await select(page,4,12);await page.locator('[data-mp-format=bold]').tap();expect((await element(page)).textRuns).toEqual([{start:4,end:12,style:{fontWeight:'700'}}]);
  });
  test('explicit Ctrl+Enter from a formatting panel ends the session without input focus',async({page})=>{

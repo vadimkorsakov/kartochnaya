@@ -26,7 +26,7 @@ async function openLayer(page,text=false){
 async function openEffect(page,type){
  const tile=page.locator('#mobilePropertyUI [data-mp-effect="'+type+'"]');
  await expect(tile).toBeVisible();
- await tile.tap(); await tile.tap();
+ await tile.tap();
  await expect(page.locator('#mobilePropertyUI [data-mp-effect-color="'+type+'"]')).toHaveCount(1);
  await expect(page.locator('#mobilePropertyUI [data-unified-color]')).toBeVisible();
 }

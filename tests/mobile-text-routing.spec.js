@@ -72,7 +72,9 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
   await select(page,start,end);await panel(page,'format');await page.locator('[data-mp-format=bold]').tap();
   const styled=await element(page);expect(styled.text).toBe(before.text);expect(styled.textRuns).toEqual([{start,end,style:{fontWeight:'700'}}]);
   for(const [a,b] of [[start,start+2],[start+1,start+2],[before.text.indexOf('е\u0301'),before.text.indexOf('е\u0301')+1]]){
-   await select(page,a,b);await page.locator('[data-mp-format=italic]').tap();await expect(page.locator('#toast')).toContainText('целиком');expect(await element(page)).toEqual(styled);
+   await select(page,a,b);const unavailable=page.locator('[data-mp-format=italic]');await expect(unavailable).toBeDisabled();
+   await expect(unavailable).toHaveAttribute('title',/целиком/);await unavailable.dispatchEvent('click');
+   await expect(page.locator('#toast')).toContainText('целиком');expect(await element(page)).toEqual(styled);
   }
  });
  test('input → formatting → input, exact Undo/Redo, no-op, Done and saved snapshots',async({page})=>{
@@ -88,7 +90,9 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
  });
  for(const mode of ['vertical','path','boundary'])test(`specialized ${mode} refuses selected bold`,async({page})=>{
   await open(page,{textMode:mode,textPathPoints:[{x:0,y:.5},{x:1,y:.5}]});await select(page);const before=await element(page),h=await history(page);
-  await panel(page,'format');await page.locator('[data-mp-format=bold]').tap();await expect(page.locator('#toast')).toContainText('недоступно');expect(await element(page)).toEqual(before);expect(await history(page)).toBe(h);
+  await panel(page,'format');const unavailable=page.locator('[data-mp-format=bold]');await expect(unavailable).toBeDisabled();
+   await expect(unavailable).toHaveAttribute('title',/недоступно/);await unavailable.dispatchEvent('click');
+   await expect(page.locator('#toast')).toContainText('недоступно');expect(await element(page)).toEqual(before);expect(await history(page)).toBe(h);
  });
  test('alignment stays layer-only; switching left to Justify retains a safe range',async({page})=>{
   await open(page);await select(page);await panel(page,'format');await page.locator('[data-mp-format=justify]').tap();
@@ -100,7 +104,19 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
  test('rejected commands leave PNG and document history unchanged after Done',async({page})=>{
   await open(page,{textMode:'vertical',textRuns:[{start:7,end:10,style:{fontStyle:'italic'}}]});const png=(await exportPNG(page)).image.data,h=await history(page);
   await panel(page,'edit');await select(page);const before=await element(page);await panel(page,'format');
-  for(const key of ['bold','italic','underline'])await page.locator(`[data-mp-format=${key}]`).tap();
+  for(const key of ['bold','italic','underline']){
+   const unavailable=page.locator(`[data-mp-format=${key}]`);
+   // M1.6 disables unsupported range controls. Verify the UI contract and
+   // exercise the rejection guard with a synthetic event, as in the
+   // specialized-mode and stale-target tests above/below.
+   await expect(unavailable).toBeDisabled();
+   await expect(unavailable).toHaveAttribute('title',/недоступно/);
+   await unavailable.dispatchEvent('click');
+   await expect(page.locator('#toast')).toContainText('недоступно');
+   expect(await element(page)).toEqual(before);
+   expect(await history(page)).toBe(h);
+   expect(await caret(page)).toEqual([0,6,'backward']);
+  }
   await page.locator('#mobileConfirm').tap();expect(await element(page)).toEqual(before);expect(await history(page)).toBe(h);expect((await exportPNG(page)).image.data.equals(png)).toBe(true);
  });
  test('old panel controls cannot mutate either layer after selection changes',async({page})=>{
@@ -136,6 +152,8 @@ for(const viewport of [{width:360,height:640},{width:390,height:844}])test.descr
  });
  test('old panel after native text revision refuses command until reopened',async({page})=>{
   await open(page);await select(page);await panel(page,'format');await page.locator('#inlineText').tap({position:{x:5,y:12}});await page.keyboard.insertText('Новое');const before=await element(page),h=await history(page);
-  await page.locator('[data-mp-format=bold]').tap();await expect(page.locator('#toast')).toContainText('устарела');expect(await element(page)).toEqual(before);expect(await history(page)).toBe(h);
+  const unavailable=page.locator('[data-mp-format=bold]');await expect(unavailable).toBeDisabled();
+   await expect(unavailable).toHaveAttribute('title',/устарела/);await unavailable.dispatchEvent('click');
+   await expect(page.locator('#toast')).toContainText('устарела');expect(await element(page)).toEqual(before);expect(await history(page)).toBe(h);
  });
 });

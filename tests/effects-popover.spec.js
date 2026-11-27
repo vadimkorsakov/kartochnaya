@@ -189,7 +189,6 @@ test('mobile effects still use the bottom sheet and its existing parameter contr
   await page.locator('#mobileContext [data-mobile="effects"]').click();
   await expect(page.locator('.mp-sheet')).toBeVisible();
   await page.locator('[data-mp-effect="textGlow"]').click();
-  await page.locator('[data-mp-effect="textGlow"]').click();
   const number = page.locator('[data-mp-effect-type="textGlow"][data-mp-effect-key="intensity"][type="number"]');
   await number.fill('66'); await number.press('Tab');
   await expect(popover(page)).toBeHidden(); await expect(page.locator('#fxChooser')).toBeHidden();

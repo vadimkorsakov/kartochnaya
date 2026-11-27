@@ -481,7 +481,6 @@ for (const mode of ['gradient', 'effect']) test(`color cancellation retains ${mo
   if (mode === 'gradient') { await color(page); await page.locator('[data-mp-tab="gradient"]').tap(); }
   else {
     await tool(page, 'effects'); await page.locator('[data-mp-effect="dropShadow"]').tap();
-    await page.locator('[data-mp-effect="dropShadow"]').tap();
     await page.locator('[data-mp-fx-pick="dropShadow"]').tap();
   }
   const before = await exportedDocument(page), h = await history(page);
